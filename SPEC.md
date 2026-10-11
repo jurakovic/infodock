@@ -1055,6 +1055,8 @@ Stored under `settings` in the config (§11.2).
 
 ### 10.2 Bar
 
+Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use the prefixes shown in their keys, and §10.1 keys sit directly under `settings`. Settings whose default depends on the theme are `null` until the user changes them.
+
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | edge | top / bottom | bottom | |

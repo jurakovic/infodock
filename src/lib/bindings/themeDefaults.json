@@ -1,0 +1,26 @@
+{
+  "classic": {
+    "barHeight": 25,
+    "backgroundColor": "#2A2A2E",
+    "backgroundOpacity": 90,
+    "backgroundMaterial": "none",
+    "sensorFont": "Arial",
+    "sensorFontStyle": "bold",
+    "popupBackground": "#000000",
+    "popupOpacity": 78,
+    "popupFont": "Arial",
+    "popupFontStyle": "bold"
+  },
+  "modern": {
+    "barHeight": 28,
+    "backgroundColor": "#1C1C1F",
+    "backgroundOpacity": 80,
+    "backgroundMaterial": "acrylic",
+    "sensorFont": "Segoe UI Variable Text",
+    "sensorFontStyle": "semibold",
+    "popupBackground": "#202024",
+    "popupOpacity": 92,
+    "popupFont": "Segoe UI Variable Text",
+    "popupFontStyle": "normal"
+  }
+}
