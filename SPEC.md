@@ -162,13 +162,17 @@ src-tauri/src/
                             battery.rs, wifi.rs, uptime.rs, recycle_bin.rs
   platform/
     mod.rs                  traits: Platform, AppBar, Shell, Power, Devices, Icons, Monitors
+    geometry.rs             pure placement math: docking strips, monitor selection
     windows/                appbar.rs, monitors.rs, shell.rs (ShellExecuteEx, IFileOperation,
                             known folders, .lnk/.url), icons.rs (shell icon → PNG),
-                            power.rs, eject.rs, wlan.rs, pdh.rs, msgwnd.rs (hidden message
-                            window: WM_DEVICECHANGE, WM_POWERBROADCAST, TaskbarCreated),
+                            power.rs, eject.rs, wlan.rs, pdh.rs, msgwnd.rs (hidden top-level
+                            window for WM_DEVICECHANGE, WM_POWERBROADCAST, WM_TIMECHANGE; not
+                            message-only, because message-only windows receive no broadcasts),
                             keys.rs (GetAsyncKeyState), droptarget.rs (M3b)
-  windows/                  bar.rs (placement, appbar glue, rise animation), hint.rs,
-                            popup.rs (placement), settings.rs
+    stub.rs                 portable fallback for other OSes (development only)
+  windowing/                bar.rs (placement, appbar glue, rise animation), hint.rs,
+                            popup.rs (placement), settings.rs  (not `windows/`, which would
+                            clash with the `windows` crate)
   commands/                 Tauri command handlers: config, data, shell, system, ui, app
   protocol/                 icon.rs (shell icons), skin.rs (user skin packs)
 ```
@@ -282,6 +286,8 @@ pub struct Capabilities {
 
 `per_core_cpu` means per-processor counters can be read. It does not depend on the number of logical processors: a single-processor system still has it.
 
+The AppBar needs the bar's window handle and its UI thread, so it is attached to the bar window when that window is created (`platform::attach_appbar(window, sink) → AppBar`) instead of being reached through `Platform::appbar()`.
+
 Sensor types declare `requires: (keyof Capabilities)[]`. The picker hides types whose capabilities are missing. Configured sensors that are unsupported on the current platform render as a dimmed placeholder with the hint "Not available on this system".
 
 ---
@@ -312,7 +318,7 @@ When `reserveSpace = true` (default) and docked:
 
 When `reserveSpace = false`: place the window at the edge without registering; maximised windows may overlap it.
 
-Implementation note: the AppBar callback needs a window procedure. Preferred: a hidden message-only window owned by Rust receives the callback message (less coupling with Tauri's window procedure); `ABM_SETPOS` still references the bar HWND. Alternative: subclass the bar window with `SetWindowSubclass`.
+Implementation note: the AppBar is registered for the bar window itself, and the bar window is subclassed with `SetWindowSubclass` to receive the callback message, `WM_ACTIVATE`/`WM_WINDOWPOSCHANGED` (forwarded as `ABM_ACTIVATE`/`ABM_WINDOWPOSCHANGED`) and the broadcasts above. A hidden message-only window does not work: message-only windows receive no broadcasts (`TaskbarCreated`, `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`), and an appbar registered under a different window than the visible bar loses the shell's z-order coupling. The subclass also keeps other code (Aero Snap, DPI-change resizes, activation) from moving the bar or lifting it out of its z-order.
 
 ### 5.3 Z-order, full-screen, focus, power
 
@@ -1061,7 +1067,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 |---|---|---|---|
 | edge | top / bottom | bottom | |
 | mode | docked / floating | docked | |
-| monitor | "primary" \| device name | primary | |
+| monitor | "primary" \| monitor key | primary | Key from `list_monitors`: `<device>\|<friendly name>\|<width>x<height>`. Matching (§5.1): device and name → name and resolution → device → primary |
 | reserveSpace | bool | true | |
 | zOrder | topmost / normal / bottom | topmost | |
 | hideOnFullscreen | bool | true | |

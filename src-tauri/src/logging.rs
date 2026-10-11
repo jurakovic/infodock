@@ -75,7 +75,6 @@ pub fn install_panic_hook() {
 }
 
 /// Registers work that must run if the app dies from a panic on the main thread.
-#[allow(dead_code, reason = "first caller is the Windows AppBar (M0 S3)")]
 pub fn on_fatal_panic(cleanup: Cleanup) {
     FATAL_CLEANUP
         .lock()

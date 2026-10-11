@@ -5,10 +5,15 @@ pub mod config;
 mod error;
 pub mod i18n;
 mod logging;
+pub mod platform;
+mod windowing;
 
-use tauri::{Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use std::sync::Arc;
+
+use tauri::{Emitter, Manager, RunEvent};
 
 use crate::config::ConfigStore;
+use crate::windowing::bar::BarController;
 
 /// Event broadcast to all windows after every config change (SPEC §4.4 step 8).
 pub const EVENT_CONFIG_CHANGED: &str = "config-changed";
@@ -34,29 +39,27 @@ pub fn run() {
                 }
             }));
             app.manage(store);
+            app.manage(platform::current());
 
-            WebviewWindowBuilder::new(app, "bar", WebviewUrl::App("bar".into()))
-                .title("Infodock")
-                .decorations(false)
-                .transparent(true)
-                .skip_taskbar(true)
-                .resizable(false)
-                .shadow(false)
-                .always_on_top(true)
-                .inner_size(800.0, 28.0)
-                .build()?;
+            let bar = BarController::create(app.handle())?;
+            app.manage(bar);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
             commands::config::get_config,
             commands::config::update_settings,
+            commands::system::capabilities,
+            commands::system::list_monitors,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Infodock");
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
+            if let Some(bar) = app.try_state::<Arc<BarController>>() {
+                bar.release();
+            }
             if let Some(store) = app.try_state::<ConfigStore>() {
                 store.shutdown();
             }
