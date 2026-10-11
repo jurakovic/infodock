@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
+
+use crate::hotkey::{self, HotkeyStatus};
 use ts_rs::TS;
 
 use crate::error::{CmdError, CmdResult};
@@ -30,4 +32,16 @@ pub async fn app_info<R: Runtime>(app: AppHandle<R>) -> CmdResult<AppInfo> {
         data_dir: data_dir.display().to_string(),
         log_dir: path.app_log_dir().map_err(io)?.display().to_string(),
     })
+}
+
+#[tauri::command]
+pub async fn quit(app: AppHandle) -> CmdResult<()> {
+    app.exit(0);
+    Ok(())
+}
+
+/// The global hotkey and why it could not be registered, if so (SPEC §6.5).
+#[tauri::command]
+pub async fn hotkey_status(app: AppHandle) -> CmdResult<HotkeyStatus> {
+    Ok(hotkey::status(&app))
 }

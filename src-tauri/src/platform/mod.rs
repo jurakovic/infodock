@@ -39,6 +39,8 @@ pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// All active monitors, physical pixels.
     fn monitors(&self) -> Vec<MonitorInfo>;
+    /// The OS "transparency effects" setting; materials are disabled while it is off (SPEC §10.3).
+    fn transparency_effects(&self) -> bool;
 }
 
 /// Where and how the bar should sit (SPEC §5.1–5.3), derived from the settings.

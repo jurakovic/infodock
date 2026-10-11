@@ -1,5 +1,8 @@
 //! Portable fallback for systems without a native implementation yet (SPEC §2.2: only Windows
 //! ships in v1). Places the bar with Tauri's window API and reserves no screen space.
+//!
+//! Known limitation: on Linux, GTK keeps a mapped WebKitGTK window at least 200 px tall, so a
+//! live move (e.g. bottom → top) leaves the bar taller than requested until restart.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -20,6 +23,10 @@ impl Platform for StubPlatform {
 
     fn monitors(&self) -> Vec<MonitorInfo> {
         Vec::new()
+    }
+
+    fn transparency_effects(&self) -> bool {
+        true
     }
 }
 

@@ -3,6 +3,7 @@
 mod commands;
 pub mod config;
 mod error;
+mod hotkey;
 pub mod i18n;
 mod logging;
 pub mod platform;
@@ -22,6 +23,15 @@ pub fn run() {
     logging::install_panic_hook();
 
     let app = tauri::Builder::default()
+        // Must be the first plugin: a second launch shows the bar and opens Settings (SPEC §6.5).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            windowing::bring_bar_to_front(app);
+            if let Err(e) = windowing::settings::open(app, "general") {
+                tracing::warn!("could not open settings: {e}");
+            }
+        }))
+        .plugin(hotkey::plugin())
+        .manage(hotkey::HotkeyState::default())
         .setup(|app| {
             let log_dir = app.path().app_log_dir()?;
             if let Err(e) = logging::init(&log_dir) {
@@ -43,14 +53,22 @@ pub fn run() {
 
             let bar = BarController::create(app.handle())?;
             app.manage(bar);
+            windowing::tray::create(app.handle())?;
+
+            // A taken hotkey must not stop the app; Settings shows the error (SPEC §6.5).
+            let accelerator = app.state::<ConfigStore>().get().settings.hotkey;
+            let _ = hotkey::set(app.handle(), &accelerator);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
+            commands::app::hotkey_status,
+            commands::app::quit,
             commands::config::get_config,
             commands::config::update_settings,
             commands::system::capabilities,
             commands::system::list_monitors,
+            commands::ui::open_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Infodock");

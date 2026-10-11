@@ -3,5 +3,5 @@
   "identifier": "bar",
   "description": "Bar window (SPEC §14.3). Command permissions are added per milestone.",
   "windows": ["bar"],
-  "permissions": ["core:event:default", "core:window:default", "allow-app-info", "allow-capabilities", "allow-get-config", "allow-update-settings"]
+  "permissions": ["core:event:default", "core:window:default", "allow-app-info", "allow-capabilities", "allow-get-config", "allow-open-settings", "allow-quit", "allow-update-settings"]
 }

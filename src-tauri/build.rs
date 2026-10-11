@@ -5,7 +5,10 @@ fn main() {
         "app_info",
         "capabilities",
         "get_config",
+        "hotkey_status",
         "list_monitors",
+        "open_settings",
+        "quit",
         "update_settings",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
