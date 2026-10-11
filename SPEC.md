@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft 2 — ready for implementation |
+| Status | Draft 3 — ready for implementation |
 | Date | 2026-10-11 |
 | Product | **Infodock** — a compact system-information and launcher bar for the desktop |
 | Target | Windows 10/11 first; macOS/Linux later |
@@ -232,9 +232,12 @@ Commands (all `async`; errors as `{ code, message }`):
 | | `unsubscribe` | `(subId) → void` |
 | system | `capabilities` | `() → Capabilities` (§4.6) |
 | | `list_volumes` / `list_net_adapters` / `list_batteries` / `list_monitors` / `list_fonts` / `list_skins` | `() → …[]` |
+| | `install_skin` | `(path) → SkinInfo` (folder or `.zip`; validated, then copied into the skins folder, §12.4) |
+| | `remove_skin` | `(id) → void` |
 | shell | `shell_open` | `(target, { args?, cwd?, verb? }) → void` (ShellExecuteEx) |
 | | `shell_reveal` | `(path) → void` (Explorer with the item selected) |
 | | `resolve_link` | `(path) → { target, args, cwd, iconPath? }` (.lnk/.url) |
+| | `path_info` | `(paths[]) → { path, exists, kind: "file"\|"folder"\|"drive", volume? }[]` (`volume` = volume root; used to classify drops §6.3, check Shortcut targets §9.17, and choose move vs copy §9.19) |
 | | `list_dir` | `(path, { showHidden }) → DirEntry[]` |
 | | `known_folder` | `("programs"\|"commonPrograms"\|"desktop"\|…) → path` |
 | | `file_op` | `(op: "move"\|"copy"\|"link", paths[], destDir) → void` (IFileOperation with native progress/conflict UI) |
@@ -249,7 +252,7 @@ Commands (all `async`; errors as `{ code, message }`):
 | | `show_popup` / `hide_popup` / `popup_ready` | `(kind, anchor, payload)`; `popup_ready(w, h)` reports the measured size |
 | | `open_settings` | `(route: string)` |
 | | `bar_focus` | `()` |
-| app | `app_info` | `() → { version, locale, dataDir, logDir }` |
+| app | `app_info` | `() → { version, locale, dataDir, logDir, skinsDir }` |
 | | `set_autostart` / `quit` | |
 
 Events (Rust → windows): `config-changed`, `bar-geometry` (bar rect, edge, monitor, scale), `popup-payload`, `hint-payload`, `system-resume`, `theme-changed` (OS light/dark, accent, transparency changes), `drop` (M3b).
@@ -276,6 +279,8 @@ pub struct Capabilities {
     pub battery: bool, pub power_modes: Vec<PowerMode>, pub eject: bool, pub per_core_cpu: bool,
 }
 ```
+
+`per_core_cpu` means per-processor counters can be read. It does not depend on the number of logical processors: a single-processor system still has it.
 
 Sensor types declare `requires: (keyof Capabilities)[]`. The picker hides types whose capabilities are missing. Configured sensors that are unsupported on the current platform render as a dimmed placeholder with the hint "Not available on this system".
 
@@ -380,7 +385,7 @@ Sources: Explorer items (paths) and browser links (URLs).
 
 * Sensors created by a drop are added **without** opening the Properties dialog.
 * Zone and index come from the drop position, using the rules of §6.2.
-* **Implementation (v1)**: Tauri's webview drag-drop events (`onDragDropEvent`: `enter/over/drop/leave` with `paths` and physical `position`) for file paths. Modifier keys for file operations come from `get_modifier_keys` at drop time.
+* **Implementation (v1)**: Tauri's webview drag-drop events (`onDragDropEvent`: `enter/over/drop/leave` with `paths` and physical `position`) for file paths. Each path is classified (file, folder or drive) with `path_info`. Modifier keys for file operations come from `get_modifier_keys` at drop time.
 * **URL drops (milestone M3b)**: Tauri's handler only delivers file paths (`CF_HDROP`); browsers offer links as `UniformResourceLocatorW` / `CFSTR_INETURLW`. M3b replaces the drop target with a custom `IDropTarget` registered on the WebView2 child HWNDs (revoke and re-register). It handles `CF_HDROP`, `CFSTR_INETURLW` and `CFSTR_SHELLIDLIST`, reads `grfKeyState`, and forwards a `drop` event to the UI.
 
 ### 6.4 Context menus
@@ -503,7 +508,7 @@ export interface SensorType<P extends object, S extends object = {}> {
   description: MsgKey;
   requires?: (keyof Capabilities)[];
   props: PropSchema<P>;                 // ordered fields: drives the form and validation
-  defaults(ctx: DefaultsCtx): P;        // ctx: locale, first volume, etc.
+  defaults(ctx: DefaultsCtx): P;        // ctx: locale, volumes, CPU count; storage rules in §11.2
   topics?(p: P): TopicRequest[];        // system data needed (none for pure-UI sensors)
   view: Component<ViewProps<P, S>>;     // rendered in the bar slot (height = bar content height)
   hint?(c: SensorCtx<P, S>): HintContent | null;
@@ -538,14 +543,16 @@ export interface SensorCtx<P, S> {
 | `opacity` | slider in % | integer 0–100 | option `min` |
 | `file` | path + Browse… (extension filter) | string | Existence is checked when used, not on save |
 | `folder` | path + Browse… | string | |
-| `font` | dropdown of system font families | string | |
-| `fontStyle` | Normal / Bold / Italic / Bold Italic | string | |
+| `font` | dropdown of system font families | string | In sensor properties, a first **Default** entry (stored as `""`) follows the global sensor font (§10.4) |
+| `fontStyle` | Normal / Semibold / Bold / Italic / Semibold Italic / Bold Italic | string: `normal`, `semibold`, `bold`, `italic`, `semiboldItalic`, `boldItalic` | Semibold = CSS weight 600; fonts without a semibold face render bold |
 | `drive` | dropdown from `list_volumes` (live) | `X:\` | option `hideOptical` |
 | `netAdapter` | dropdown from `list_net_adapters` (live) + "Automatic" | `{ id, name }` | |
 | `battery` | dropdown from `list_batteries` | index | |
 | `hidden` | — | any | internal values (e.g. popup size) |
 
-Field definition: `{ key, type, label, description?, default, ...typeOptions, visibleIf?(p) }`.
+Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf?(p) }`.
+
+`default` is normally a static value. A **machine-derived** field (`machineDefault: true`) instead gets its default from `defaults(ctx)`, e.g. the first fixed drive or the locale's clock format. §11.2 defines how this affects what is stored.
 
 ### 8.3 Reusable building blocks
 
@@ -619,8 +626,8 @@ Conventions:
 | Key | XML key | Type | Default | Notes |
 |---|---|---|---|---|
 | text | `text` | text | "Text" | |
-| font | `font` | font | (global sensor font) | |
-| fontStyle | `fontstyle` | fontStyle | normal | XML values `""`, `bold`, `italic`, `bold, italic` |
+| font | `font` | font | `""` (Default = global sensor font) | |
+| fontStyle | `fontstyle` | fontStyle | normal | XML `""` → normal, `bold` → bold, `italic` → italic, `bold, italic` → boldItalic |
 | fontSize | `fontsize` | slider 9–25 | 13 | |
 | shadow | `shadow` | bool | false | 1 px offset (1,1). Shadow colour = black if the text colour is light (grey = 0.2R + 0.5G + 0.3B ≥ 128), else white |
 
@@ -669,7 +676,7 @@ View: a transparent hit area `width` × bar height. A 1 px divider is centred (x
 
 | Key | XML key | Type | Default | Options (XML value) |
 |---|---|---|---|---|
-| use24h | `24hours` | bool | from the locale (en-US → false, otherwise true) | |
+| use24h | `24hours` | bool | machine-derived: from the locale's hour cycle (`h11`/`h12`, e.g. en-US → false; otherwise true) | |
 | showSeconds | `seconds` | bool | false | |
 | shadow | `shadow` | bool | false | |
 | chime | `chime` | select | never | never (0) / every hour (60) / every half hour (30) / every 15 minutes (15) |
@@ -738,13 +745,13 @@ All properties of §9.8 except graphColor/graphOpacity, plus:
 
 | Key | XML key | Type | Default |
 |---|---|---|---|
-| topSeries | — | select | core 0 — options: total, user, system, core 0…N−1 |
-| bottomSeries | — | select | core 1 (total if there is only one logical processor) |
+| topSeries | — | select | `core0` — options: `total`, `user`, `system`, `core0` … `core<N−1>` (N = logical processors) |
+| bottomSeries | — | select | `core1` |
 | topColor / topOpacity | `graph-top-color` / `graph-top-opacity` | colorMode / opacity | custom `#20B7FF` / 86 % |
 | bottomColor / bottomOpacity | `graph-bottom-color` / `graph-bottom-opacity` | | custom `#FFAD5B` / 86 % |
 | flipBottom | `graph-bottom-flip` | bool | true |
 
-View: Dual graph, label "CPUs", value `{total}%`. On single-processor systems the picker shows a note and both series default to total. Hint and click as §9.7.
+View: Dual graph, label "CPUs", value `{total}%`. A `core<i>` series whose processor does not exist on this machine (e.g. `core1` on a single-processor system, or a layout imported from a larger machine) shows total instead, and the Properties dialog marks that selection as unavailable. On single-processor systems the picker adds the note "This computer has one processor; both halves show the same data." Hint and click as §9.7.
 
 ### 9.10 `memory-meter` / `memory-graph` — Memory  (System; `DockMemMeter`, `DockMemGraph`)
 
@@ -752,7 +759,7 @@ Meter: interval (1–60, default 2), color. Graph: as §9.8 (interval 1–10, de
 
 | Key | XML key | Type | Default | Options (XML value) |
 |---|---|---|---|---|
-| display | `display-mode` | select | value | used bytes, e.g. `5.21 GB` (0) / percent (1) |
+| display | `display-mode` | select | bytes | bytes — used bytes, e.g. `5.21 GB` (0) / percent (1) |
 
 Topic `memory`. Label "RAM". Meter value `{load}%`; graph value per `display` (the reserved column fits "9999 MB" in bytes mode).
 
@@ -767,7 +774,7 @@ Click: Task Manager.
 
 ### 9.11 `swap-meter` / `swap-graph` — Swap  (System; `DockSwapMeter`, `DockSwapGraph`)
 
-Same properties as memory (graph `display`: used bytes / percent). Topic `swap`. Label "Swap".
+Same properties as memory (graph `display`: `bytes` / `percent`). Topic `swap`. Label "Swap".
 
 **Hint**:
 ```
@@ -783,7 +790,7 @@ Without a page file: value `n/a`, inactive, hint "No page file configured".
 | Key | XML key | Type | Default | Notes |
 |---|---|---|---|---|
 | title | `title` | text | "" → `HD: C:\` | |
-| drive | `disk` | drive (optical hidden) | first fixed drive | |
+| drive | `disk` | drive (optical hidden) | machine-derived: first fixed drive | |
 | mode | `mode` | select | used % | used % (0) / free % (1) / used bytes (2) / free bytes (3) |
 | interval | `interval` | interval | 30 | 10–300 |
 | color | `colorize` | colorMode (all) | standard | |
@@ -935,14 +942,14 @@ Recycle Bin
 * **Automatic title**: URL → the URL, middle-truncated to 150 characters (first 75 + `…` + last 75). File → file name without extension. Folder → folder name.
 * **Hint**: the title if set; otherwise `Open '{title}'` (only `{title}` when clicks need Alt, §6.1).
 * **Click**: URL → open with the default handler. Folder → open in Explorer. File → `ShellExecuteExW(verb = runAs ? "runas" : "open", file = target, params = args, dir = workDir)`.
-* **Inactive** while the target does not exist (checked when properties change and every 60 s).
+* **Inactive** while the target does not exist (checked with `path_info` when properties change and every 60 s).
 * Created by dropping a file or URL onto the bar (§6.3).
 
 ### 9.18 `disk` — Disk  (Launchers; `DockDisk`)
 
 | Key | XML key | Type | Default |
 |---|---|---|---|
-| drive | `disk` | drive (optical/removable included) | first drive |
+| drive | `disk` | drive (optical/removable included) | machine-derived: first drive |
 | title | `title` | text | "" → shell display name, e.g. `Local Disk (C:)` |
 | image | `image` | file | "" → shell drive icon |
 | color / opacity | `colorize` / `opacity` | | standard / 100 % |
@@ -974,7 +981,7 @@ Hint: `Open '{display name}'` (or the title). Click: open the drive. Menu: **Eje
 * **Placement**: as §7.3, but the popup's left edge aligns with the sensor's left edge. If that would overflow the monitor, its right edge aligns with the sensor's right edge instead.
 * **Menu**: `Open folder`.
 * **Drop onto the sensor**:
-  * Files/folders follow the **Explorer convention**: same volume → move, other volume → copy. Ctrl forces copy, Shift forces move, Alt creates shortcuts (`.lnk`).
+  * Files/folders follow the **Explorer convention**: same volume → move, other volume → copy (volumes from `path_info`). Ctrl forces copy, Shift forces move, Alt creates shortcuts (`.lnk`).
   * URLs → `create_url_shortcut`: a `.url` file named after the page title, or after the URL with the characters `:/\&+?*=.` replaced by `-`.
   * Executed with `IFileOperation` (native progress and conflict dialogs).
   * While dragging over the sensor: its background is highlighted (black at 78 %) and a **floating drop hint** appears above it, e.g. `Move 'report.pdf' to 'Downloads'`, `Copy 3 items to 'Downloads'`, `Create shortcut to 'https://…' in 'Downloads'` (source text truncated to 100 characters).
@@ -1139,14 +1146,16 @@ Pages:
                 { "id": "s_n7d0w", "type": "network-graph", "props": {} } ],
     "center": [ { "id": "s_1a9x0", "type": "image", "props": { "popupText": "Infodock %v" } } ],
     "right":  [ { "id": "s_q7m2p", "type": "date", "props": {} },
-                { "id": "s_z0c4d", "type": "time", "props": {} } ]
+                { "id": "s_z0c4d", "type": "time", "props": { "use24h": true } } ]  // machine-derived, see below
   },
   "state": { "s_u1": { "longestSecs": 1093221 } },
   "legacy": { "unsupported": [ { "type": "DockRSSSensor", "zone": "left", "props": { "url": "…" } } ] }
 }
 ```
 
-* `props` stores **only values that differ from the defaults**, so defaults can evolve.
+* `props` stores **only values that differ from the static defaults**, so defaults can evolve. Two refinements:
+  * **Machine-derived** fields (`machineDefault: true`, §8.2) are resolved once by `defaults(ctx)` when the sensor is created or imported, and are **always stored**. A sensor therefore keeps its meaning when drives, the locale or the hardware change. v1: `drive` (Disk Meter, Disk) and `use24h` (Time).
+  * Fields whose default is "follow the global setting" (`font` → global sensor font) store `""` for that default. An explicit value is stored even if it currently equals the global setting.
 * Unknown `type`s are preserved and rendered as placeholders (§4.6), never deleted silently.
 * Writes are **debounced by 500 ms** and **atomic** (write `config.json.tmp`, flush, rename). `config.json.bak` keeps the previous good version. If the config fails to parse on load: rename it to `config.broken-<timestamp>.json`, load the `.bak` (or defaults), and notify the user with a toast.
 * Schema migrations run in Rust (`migrate.rs`) on load; each step is a pure, tested function.
@@ -1201,7 +1210,7 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 | `DockUpTime` | `uptime` | `max-uptime` → state `longestSecs` |
 | `DockCPUMeter` | `cpu-meter` | |
 | `DockCPUGraph` | `cpu-graph` | |
-| `DockCPUGraphDual` | `cpu-graph-dual` | topSeries = core 0, bottomSeries = core 1 |
+| `DockCPUGraphDual` | `cpu-graph-dual` | topSeries/bottomSeries keep their defaults (`core0`/`core1`) |
 | `DockMemMeter` / `DockMemGraph` | `memory-meter` / `memory-graph` | |
 | `DockSwapMeter` / `DockSwapGraph` | `swap-meter` / `swap-graph` | |
 | `DockDiskMeter` | `disk-meter` | |
@@ -1281,13 +1290,15 @@ A compact, denser look:
   "image": "tile.png",           // tiled horizontally across the bar
   "imageTop": "tile-top.png",    // optional: used when the bar is at the top
   "imageBottom": "tile-bottom.png", // optional: used when the bar is at the bottom
+  "height": 25,                  // optional: bar height the tiles were drawn for (default 25)
   "shadowBand": 9                // optional: px of transparent shadow on the side facing the screen center
 }
 ```
 
-* Tiles are never stretched horizontally. Tile height = bar height + shadowBand (+ 1 px tolerance). Bar content height stays 25.
+* Tiles are never stretched horizontally. A tile is `height + shadowBand` px tall (± 1 px tolerance).
+* When the configured bar height (§5.1) differs from `height`, the bar part of the tile is scaled vertically to the bar height; the shadow band keeps its size. This is pre-rendered on the same canvas as the tint (§12.3). Sensors always use the full configured bar height.
 * Validation on load: PNG/JPEG magic bytes, ≤ 1 MB per file, ≤ 512 px per side, only files named in `skin.json`. Invalid packs are listed in Settings with the reason.
-* Settings ▸ Appearance: "Install skin pack…" (pick a folder or `.zip`, copied into the skins folder), "Open skins folder", "Remove".
+* Settings ▸ Appearance: "Install skin pack…" (pick a folder or `.zip`; `install_skin`), "Open skins folder" (`shell_open` on `skinsDir`), "Remove" (`remove_skin`).
 * A configured skin that is missing on this machine falls back to Gloss, with a one-line notice in Settings ▸ Appearance.
 
 ---
@@ -1327,7 +1338,14 @@ Techniques: one sampler thread; PDH query handles opened once and reused; no WMI
 
 ### 14.3 Security
 
-* Tauri **capabilities** per window: `hint` gets only `popup_ready`; `bar` gets data, ui and shell commands; `settings` gets config and system commands.
+* Tauri **capabilities** per window (`src-tauri/capabilities/<window>.json`), least privilege. Every window also gets the core permissions needed to listen for events.
+
+  | Window | Commands (§4.5) and plugins |
+  |---|---|
+  | `bar` | config, data, system, shell, ui; `app_info`, `quit`; plugins: dialog (file pickers, confirmations), notification |
+  | `hint` | `get_config`, `popup_ready` |
+  | `popup` | `get_config`, `update_sensor` (popup size), `subscribe` / `unsubscribe`, `popup_ready`, `hide_popup`, `list_dir`, `known_folder`, `shell_open`, `shell_reveal`, `list_volumes`, `eject_volume`, `open_safely_remove`; plugin: notification (eject results) |
+  | `settings` | config, system, app; `shell_open` / `shell_reveal` (logs and skins folders); plugin: dialog |
 * Strict CSP: no remote scripts or content; `img-src 'self' icon: skin: data: blob:`.
 * No `eval`. No shell-string execution: launching uses `ShellExecuteExW` with target and parameters as separate fields.
 * `shell_open` validates URIs (`http`, `https`, `ftp`, `mailto`, `ms-settings`, and other registered schemes the user configured).
@@ -1580,7 +1598,8 @@ Also expected:
 * `state` has no uptime record (empty `max-uptime`).
 * The report: 9 added, 1 skipped (`DockRSSSensor`: "not supported yet"), 0 warnings.
 * Rounding: opacity 196 → 77 %, 18 → 7 %, 137 → 54 %, 225 → 88 %.
-* The memory graph's `display-mode` 0 equals the default ("value"), so it is not stored. The Date sensor's `year-format` 4 (top) and `show-calendar` 1 (monday) equal the defaults.
+* The memory graph's `display-mode` 0 equals the default (`bytes`), so it is not stored. The Date sensor's `year-format` 4 (top) and `show-calendar` 1 (monday) equal the defaults. The Uptime `fontstyle` bold equals the Uptime default.
+* The Disk Meter's `drive` is stored because it is machine-derived. The Uptime `font: "Arial"` is stored because the default is `""` (global sensor font), whatever the current global font is (§11.2).
 
 ---
 
