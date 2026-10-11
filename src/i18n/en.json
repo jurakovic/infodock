@@ -1,0 +1,16 @@
+{
+  "app.name": "Infodock",
+  "app.notAvailable": "Not available on this system",
+  "common.items": {
+    "one": "{count} item",
+    "other": "{count} items"
+  },
+  "tray.tooltip": "Infodock",
+  "tray.showBar": "Show bar",
+  "tray.hideBar": "Hide bar",
+  "tray.lock": "Lock",
+  "tray.popups": "Popups",
+  "tray.settings": "Settings…",
+  "tray.quit": "Quit Infodock",
+  "settings.title": "Infodock Settings"
+}

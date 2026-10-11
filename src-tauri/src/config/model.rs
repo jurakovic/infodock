@@ -658,9 +658,10 @@ mod tests {
         }
     }
 
-    /// Writes the theme defaults for the UI next to the ts-rs bindings (checked in CI).
+    /// Writes the theme defaults and default settings for the UI next to the ts-rs bindings
+    /// (checked in CI), so UI code and tests never hand-copy Rust defaults.
     #[test]
-    fn export_theme_defaults() {
+    fn export_defaults_json() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/bindings");
         std::fs::create_dir_all(&dir).unwrap();
         let table: BTreeMap<&str, ThemeDefaults> = [
@@ -670,5 +671,7 @@ mod tests {
         .into();
         let json = serde_json::to_string_pretty(&table).unwrap() + "\n";
         std::fs::write(dir.join("themeDefaults.json"), json).unwrap();
+        let settings = serde_json::to_string_pretty(&Settings::default()).unwrap() + "\n";
+        std::fs::write(dir.join("defaultSettings.json"), settings).unwrap();
     }
 }
