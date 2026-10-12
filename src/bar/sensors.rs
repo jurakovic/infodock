@@ -9,6 +9,7 @@ use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::platform::{Canvas, Capabilities, Platform, RectF};
+use crate::sampler::{Delivery, TopicRequest};
 use crate::sensors::registry::Registry;
 use crate::sensors::{ClickResult, DrawCtx, HintContent, LayoutCtx, Sensor, SensorCtx, State};
 
@@ -18,6 +19,8 @@ const PRESSED_OPACITY: f32 = 0.6;
 struct Placed {
     entry: SensorInstance,
     sensor: Box<dyn Sensor>,
+    /// What it subscribes to, asked once when it is created (SPEC §4.4).
+    topics: Vec<TopicRequest>,
     /// Logical px, from the last measurement.
     width: f32,
     /// Logical px from the bar's left edge.
@@ -98,9 +101,11 @@ impl BarSensors {
                         created = true;
                         let empty = State::new();
                         let state = state.get(&entry.id).unwrap_or(&empty);
+                        let sensor = registry.create(entry, state, caps);
                         Placed {
                             entry: entry.clone(),
-                            sensor: registry.create(entry, state, caps),
+                            topics: sensor.topics(),
+                            sensor,
                             width: 0.0,
                             x: 0.0,
                             dirty: true,
@@ -277,6 +282,31 @@ impl BarSensors {
         changed
     }
 
+    /// The topics of each sensor that has any (SPEC §4.4).
+    pub fn subscriptions(&self) -> HashMap<String, Vec<TopicRequest>> {
+        self.zones
+            .iter()
+            .flatten()
+            .filter(|p| !p.topics.is_empty())
+            .map(|p| (p.entry.id.clone(), p.topics.clone()))
+            .collect()
+    }
+
+    /// Hands a sample to the sensors it is for; returns whether any changed what it shows.
+    pub fn deliver(&mut self, delivery: &Delivery, env: &Env) -> bool {
+        let mut changed = false;
+        for p in self.all_mut() {
+            let addressed = delivery.to.as_ref().is_none_or(|to| *to == p.entry.id);
+            if addressed && p.topics.iter().any(|r| r.topic == delivery.topic) {
+                let cx = env.ctx(&p.entry.id);
+                let dirty = p.sensor.on_sample(&delivery.topic, &delivery.sample, &cx);
+                p.dirty |= dirty;
+                changed |= dirty;
+            }
+        }
+        changed
+    }
+
     /// Each sensor's id and place, in drawing order; for tests.
     #[cfg(test)]
     fn places(&self) -> Vec<(String, f32, f32)> {
@@ -299,6 +329,7 @@ mod tests {
     use super::*;
     use crate::config::model::Config;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
+    use crate::sampler::{Sample, Topic};
     use crate::sensors::registry::registry;
     use crate::sensors::test_support::theme;
 
@@ -445,6 +476,7 @@ mod tests {
                 start,
                 wakes: Rc::clone(&wakes),
             }),
+            topics: Vec::new(),
             width: 0.0,
             x: 0.0,
             dirty: true,
@@ -466,6 +498,94 @@ mod tests {
         );
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert_eq!(sensors.places()[0].2, 11.0, "re-measured after waking");
+    }
+
+    /// Shows the uptime in whole minutes, from samples.
+    struct Uptime {
+        minutes: u64,
+    }
+
+    impl Sensor for Uptime {
+        fn measure(&mut self, _cx: &LayoutCtx) -> f32 {
+            10.0 + self.minutes as f32
+        }
+
+        fn draw(&self, _canvas: &mut dyn Canvas, _cx: &DrawCtx) {}
+
+        fn topics(&self) -> Vec<TopicRequest> {
+            vec![TopicRequest {
+                topic: Topic::Uptime,
+                interval: Duration::from_secs(60),
+            }]
+        }
+
+        fn on_sample(&mut self, _topic: &Topic, sample: &Sample, _cx: &SensorCtx) -> bool {
+            let Sample::Uptime(uptime) = sample;
+            let minutes = uptime.uptime_secs / 60;
+            let changed = minutes != self.minutes;
+            self.minutes = minutes;
+            changed
+        }
+    }
+
+    #[test]
+    fn delivers_samples_to_the_sensors_that_subscribe() {
+        let theme = theme();
+        let settings = Settings::default();
+        let platform = crate::platform::current();
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+        };
+        let mut sensors = BarSensors::default();
+        for id in ["u1", "u2"] {
+            let sensor: Box<dyn Sensor> = Box::new(Uptime { minutes: 0 });
+            sensors.zones[0].push(Placed {
+                entry: entry(id, "uptime", json!({})),
+                topics: sensor.topics(),
+                sensor,
+                width: 0.0,
+                x: 0.0,
+                dirty: true,
+            });
+        }
+        sensors.zones[2].push(Placed {
+            entry: entry("t", "ticker", json!({})),
+            sensor: Box::new(Ticker {
+                start: Instant::now(),
+                wakes: Rc::new(Cell::new(0)),
+            }),
+            topics: Vec::new(),
+            width: 0.0,
+            x: 0.0,
+            dirty: true,
+        });
+        let mut ids: Vec<_> = sensors.subscriptions().into_keys().collect();
+        ids.sort();
+        assert_eq!(ids, ["u1", "u2"]);
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+
+        let delivery = |secs, to: Option<&str>| Delivery {
+            topic: Topic::Uptime,
+            sample: std::sync::Arc::new(Sample::Uptime(crate::sampler::UptimeSample {
+                boot_unix_ms: 0,
+                uptime_secs: secs,
+            })),
+            to: to.map(str::to_owned),
+        };
+        // A catch-up reaches only its subscriber.
+        assert!(sensors.deliver(&delivery(120, Some("u2")), &env));
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+        let widths: Vec<f32> = sensors.places().iter().map(|p| p.2).collect();
+        assert_eq!(widths, [10.0, 12.0, 10.0]);
+        // Every subscriber gets a broadcast; one whose minute is unchanged stays clean.
+        assert!(sensors.deliver(&delivery(150, None), &env));
+        assert!(!sensors.deliver(&delivery(170, None), &env));
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+        let widths: Vec<f32> = sensors.places().iter().map(|p| p.2).collect();
+        assert_eq!(widths, [12.0, 12.0, 10.0]);
     }
 
     #[test]

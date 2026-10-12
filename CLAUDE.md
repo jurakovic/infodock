@@ -13,6 +13,8 @@ src/                 Rust sources
   bar/               the native bar: BarController (any thread) and its logic on the bar thread
   settings/          the Settings window (Slint) and its glue to the config
   sensors/           sensor framework: traits, property schemas, registry, placeholders; one module per type
+  sampler/           the sampler thread: topic subscriptions and scheduling (SPEC §4.4)
+  providers/         the system data behind the topics, read through the Platform trait
   platform/          OS layer behind traits; Windows code in platform/windows, other OSes get a stub
 ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs) and its icons (`ui/icons`)
 i18n/                message catalogs (`en.json`)

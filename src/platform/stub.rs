@@ -26,6 +26,12 @@ impl Platform for StubPlatform {
     fn appearance(&self) -> OsAppearance {
         OsAppearance::default()
     }
+
+    /// The time since the process started, which serves for development.
+    fn uptime(&self) -> std::time::Duration {
+        static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        START.get_or_init(std::time::Instant::now).elapsed()
+    }
 }
 
 struct StubAppBar;

@@ -23,6 +23,8 @@ mod hotkey;
 pub mod i18n;
 mod logging;
 pub mod platform;
+pub mod providers;
+pub mod sampler;
 pub mod sensors;
 mod settings;
 #[cfg(test)]
@@ -92,6 +94,7 @@ pub fn run() {
         }
     };
     app.set_bar(bar);
+    app.start_sampler();
 
     hotkey::init(&app);
     settings::watch(&app);

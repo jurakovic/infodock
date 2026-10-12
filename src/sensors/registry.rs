@@ -255,6 +255,9 @@ mod tests {
         fn appearance(&self) -> OsAppearance {
             OsAppearance::default()
         }
+        fn uptime(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
     }
 
     fn registry() -> Registry {

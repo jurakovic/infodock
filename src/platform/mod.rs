@@ -93,6 +93,8 @@ pub trait Platform: Send + Sync {
     /// All active monitors, physical pixels.
     fn monitors(&self) -> Vec<MonitorInfo>;
     fn appearance(&self) -> OsAppearance;
+    /// The time since the system started (the `uptime` topic, SPEC Appendix A).
+    fn uptime(&self) -> std::time::Duration;
     /// The installed font families, sorted by name (SPEC §4.5: lists of fonts); none where
     /// the platform cannot list them.
     fn font_families(&self) -> Vec<String> {

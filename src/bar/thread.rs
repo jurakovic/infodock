@@ -25,6 +25,7 @@ use crate::platform::{
     BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
     PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent,
 };
+use crate::sampler::{Delivery, TopicRequest};
 use crate::sensors::ops::index_after_removal;
 use crate::sensors::registry::registry;
 use crate::sensors::{ClickResult, HintContent, LayoutCtx, State};
@@ -72,9 +73,31 @@ pub(super) struct BarLogic {
     material: Option<Material>,
     /// Whether the tray icon is shown; `None` until first applied.
     tray_shown: Option<bool>,
+    /// The topics each sensor was last subscribed to (SPEC §4.4).
+    subscribed: HashMap<String, Vec<TopicRequest>>,
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
+}
+
+/// The subscription changes from `old` to `new` (by sensor id): new or changed topic lists, and
+/// an empty list for sensors that no longer subscribe. Sorted by id.
+fn subscription_changes(
+    old: &HashMap<String, Vec<TopicRequest>>,
+    new: &HashMap<String, Vec<TopicRequest>>,
+) -> Vec<(String, Vec<TopicRequest>)> {
+    let mut changes: Vec<(String, Vec<TopicRequest>)> = new
+        .iter()
+        .filter(|(id, topics)| old.get(*id) != Some(*topics))
+        .map(|(id, topics)| (id.clone(), topics.clone()))
+        .chain(
+            old.keys()
+                .filter(|id| !new.contains_key(*id))
+                .map(|id| (id.clone(), Vec::new())),
+        )
+        .collect();
+    changes.sort_by(|a, b| a.0.cmp(&b.0));
+    changes
 }
 
 impl BarLogic {
@@ -100,6 +123,7 @@ impl BarLogic {
             appearance,
             material: None,
             tray_shown: None,
+            subscribed: HashMap::new(),
             platform,
             commands,
             host,
@@ -468,7 +492,26 @@ impl BarLogic {
             window.invalidate();
             self.refresh_hint(window);
         }
+        let subscriptions = self.sensors.subscriptions();
+        for (id, topics) in subscription_changes(&self.subscribed, &subscriptions) {
+            self.host.subscribe(&id, topics);
+        }
+        self.subscribed = subscriptions;
         self.arm_timer(window);
+    }
+
+    /// Hands a sample to its sensors and redraws what changed.
+    fn deliver(&mut self, window: &dyn BarWindow, delivery: &Delivery) {
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+        };
+        if self.sensors.deliver(delivery, &env) {
+            window.invalidate();
+            self.refresh_hint(window);
+        }
     }
 
     /// Sets the window's timer to the earliest wake-up any sensor asked for (SPEC §4.4).
@@ -546,6 +589,7 @@ impl BarHandler for BarLogic {
                         Command::EndPreview(id) => {
                             layout_changed |= self.previews.remove(&id).is_some();
                         }
+                        Command::Sample(delivery) => self.deliver(window, &delivery),
                     }
                 }
                 self.refresh_theme(window);
@@ -722,6 +766,9 @@ mod tests {
         fn move_sensor(&self, id: &str, zone: Zone, index: usize) {
             self.log(format!("move {id} {} {index}", zone_id(zone)));
         }
+        fn subscribe(&self, id: &str, topics: Vec<TopicRequest>) {
+            self.log(format!("subscribe {id} {topics:?}"));
+        }
     }
 
     const WIDTH: f32 = 1200.0;
@@ -810,6 +857,31 @@ mod tests {
         let mut canvas = RecordingCanvas::new(1.0);
         logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
         canvas.dump().contains("opacity 0.6")
+    }
+
+    #[test]
+    fn subscriptions_change_only_where_topics_differ() {
+        use crate::sampler::Topic;
+        let uptime = |secs| TopicRequest {
+            topic: Topic::Uptime,
+            interval: Duration::from_secs(secs),
+        };
+        let map = |list: &[(&str, u64)]| -> HashMap<String, Vec<TopicRequest>> {
+            list.iter()
+                .map(|(id, secs)| ((*id).to_owned(), vec![uptime(*secs)]))
+                .collect()
+        };
+        let old = map(&[("a", 60), ("b", 60), ("c", 60)]);
+        let new = map(&[("a", 60), ("b", 30), ("d", 60)]);
+        assert_eq!(
+            subscription_changes(&old, &new),
+            [
+                ("b".to_owned(), vec![uptime(30)]),
+                ("c".to_owned(), Vec::new()),
+                ("d".to_owned(), vec![uptime(60)]),
+            ]
+        );
+        assert!(subscription_changes(&new, &new).is_empty());
     }
 
     #[test]

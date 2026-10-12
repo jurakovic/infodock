@@ -1,13 +1,15 @@
 //! The running app: state shared by all threads, bar visibility, and quitting.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use crate::bar::{BarController, BarHost};
 use crate::config::model::{Settings, Zone};
 use crate::config::{ConfigError, ConfigStore};
 use crate::platform::Platform;
+use crate::providers::Providers;
+use crate::sampler::{Pending, Sampler, TopicRequest};
 use crate::sensors::registry::registry;
 use crate::sensors::{DefaultsCtx, Props, ops};
 use crate::settings;
@@ -19,21 +21,49 @@ pub struct App {
     pub store: ConfigStore,
     pub platform: Arc<dyn Platform>,
     bar: OnceLock<Arc<BarController>>,
+    sampler: Sampler,
+    /// The sampler thread until [`App::start_sampler`] starts it.
+    pending: Mutex<Option<Pending>>,
     shut_down: AtomicBool,
 }
 
 impl App {
     pub fn new(store: ConfigStore, platform: Arc<dyn Platform>) -> Self {
+        let (sampler, pending) = Sampler::new();
         Self {
             store,
             platform,
             bar: OnceLock::new(),
+            sampler,
+            pending: Mutex::new(Some(pending)),
             shut_down: AtomicBool::new(false),
         }
     }
 
     pub fn set_bar(&self, bar: Arc<BarController>) {
         let _ = self.bar.set(bar);
+    }
+
+    /// Starts the sampler thread, which delivers to the bar (SPEC §4.4). Subscriptions made
+    /// before it starts are kept.
+    pub fn start_sampler(&self) {
+        let pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        let (Some(pending), Some(bar)) = (pending, self.bar.get()) else {
+            return;
+        };
+        let bar = Arc::downgrade(bar);
+        let deliver = Box::new(move |delivery| {
+            if let Some(bar) = bar.upgrade() {
+                bar.deliver(delivery);
+            }
+        });
+        if let Err(e) = pending.start(Providers::new(Arc::clone(&self.platform)), deliver) {
+            tracing::error!("the sampler could not start: {e}");
+        }
     }
 
     pub fn bar_visible(&self) -> bool {
@@ -82,6 +112,7 @@ impl App {
         if let Some(bar) = self.bar.get() {
             bar.release();
         }
+        self.sampler.shutdown();
         self.store.shutdown();
         tracing::info!("Infodock exiting");
         crate::logging::shutdown();
@@ -202,6 +233,10 @@ impl BarHost for AppHost {
         if let Err(e) = self.0.move_sensor(id, zone, index) {
             tracing::warn!("could not move sensor {id}: {e}");
         }
+    }
+
+    fn subscribe(&self, id: &str, topics: Vec<TopicRequest>) {
+        self.0.sampler.subscribe(id, topics);
     }
 }
 

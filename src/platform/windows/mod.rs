@@ -58,6 +58,12 @@ impl Platform for WindowsPlatform {
             }),
         }
     }
+
+    fn uptime(&self) -> std::time::Duration {
+        // SAFETY: no arguments; it only reads the tick count.
+        let ms = unsafe { windows::Win32::System::SystemInformation::GetTickCount64() };
+        std::time::Duration::from_millis(ms)
+    }
 }
 
 /// A DWORD value under `HKEY_CURRENT_USER`, if present.

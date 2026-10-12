@@ -231,6 +231,8 @@ Controls bind two-way to the `SettingsState` global. Rust fills it from the conf
 7. Graph **history lives in the sensor instance**: a ring buffer of raw values (not pixels). It is not persisted.
 8. Config changes always go through the config store, whether they come from Settings commands, the tray, the hotkey or bar actions (drag, drop, remove). The store persists them and notifies its listeners: the bar thread re-creates changed sensors (matched by id) and re-lays out; Settings receives `config-changed`.
 
+Implementation (`sampler/`, `providers/`): topics and samples are typed (`Topic`, `Sample`). The bar thread asks a sensor for its topics once, when it creates it, and passes on only subscriptions that changed (keyed by sensor id; an empty list unsubscribes). The scheduler samples a topic at the shortest interval its subscribers ask for (at least 100 ms), keeps the cadence unless a reading comes more than an interval late, and keeps the newest sample: a sensor that joins a topic receives it at once, addressed to it alone. A failed reading keeps the previous sample and is retried at the next tick. Providers reach the OS through the `Platform` trait (§4.6).
+
 ### 4.5 Operations used by Settings
 
 Settings runs in the same process, on the main thread, and calls the core directly; there is no IPC. Errors carry a stable code and a message (e.g. `hotkey`, `invalid`, `io`).

@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::config::ConfigStore;
 use crate::config::model::{SensorInstance, Settings, Zone};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
+use crate::sampler::{Delivery, TopicRequest};
 use thread::BarLogic;
 
 /// What the bar asks of the rest of the app. Called on the bar thread.
@@ -40,6 +41,8 @@ pub trait BarHost: Send + Sync {
     fn remove_sensor(&self, id: &str);
     /// Moves a sensor; `index` counts with it already taken out (SPEC §6.2).
     fn move_sensor(&self, id: &str, zone: Zone, index: usize);
+    /// Replaces the topics sensor `id` receives samples of; empty to stop (SPEC §4.4).
+    fn subscribe(&self, id: &str, topics: Vec<TopicRequest>);
 }
 
 /// Work for the bar thread, queued by [`BarController`].
@@ -49,6 +52,8 @@ enum Command {
     /// Show a sensor with other props until the preview ends (SPEC §6.7).
     Preview(Box<SensorInstance>),
     EndPreview(String),
+    /// A sample from the sampler thread (SPEC §4.4).
+    Sample(Delivery),
 }
 
 /// Cross-thread handle to the bar.
@@ -151,6 +156,11 @@ impl BarController {
 
     pub fn end_preview(&self, id: &str) {
         self.send(Command::EndPreview(id.to_owned()));
+    }
+
+    /// Passes a sample to the sensors on the bar (sampler thread).
+    pub fn deliver(&self, delivery: Delivery) {
+        self.send(Command::Sample(delivery));
     }
 
     /// Releases the reserved screen space. Call on exit.

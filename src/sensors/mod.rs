@@ -23,6 +23,7 @@ use serde_json::{Map, Value};
 use crate::bar::theme::Theme;
 use crate::config::model::Settings;
 use crate::platform::{Canvas, Capability, Platform, RectF, TextEngine};
+use crate::sampler::{Sample, Topic, TopicRequest};
 use schema::PropField;
 
 /// An `i18n` message key.
@@ -184,6 +185,14 @@ pub trait Sensor {
     /// The value read by screen readers (SPEC §14.4).
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         String::new()
+    }
+    /// The system data this sensor needs (SPEC §4.4); asked once per instance.
+    fn topics(&self) -> Vec<TopicRequest> {
+        Vec::new()
+    }
+    /// A new sample of one of its topics; returns whether what it shows changed.
+    fn on_sample(&mut self, _topic: &Topic, _sample: &Sample, _cx: &SensorCtx) -> Dirty {
+        false
     }
     /// When the sensor next needs [`Sensor::on_wake`], for timer-driven sensors (clock,
     /// uptime). The bar keeps one timer for the earliest wake-up of all sensors.
