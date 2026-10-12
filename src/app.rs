@@ -166,7 +166,7 @@ impl BarHost for AppHost {
         if let Some(bar) = self.0.bar.get() {
             bar.set_visible(true);
         }
-        self.open_settings();
+        self.open_settings("general");
     }
 
     fn bar_visible(&self) -> bool {
@@ -177,9 +177,9 @@ impl BarHost for AppHost {
         self.0.toggle_bar();
     }
 
-    fn open_settings(&self) {
-        let app = Arc::clone(&self.0);
-        let _ = slint::invoke_from_event_loop(move || settings::open(&app, "general"));
+    fn open_settings(&self, route: &str) {
+        let (app, route) = (Arc::clone(&self.0), route.to_owned());
+        let _ = slint::invoke_from_event_loop(move || settings::open(&app, &route));
     }
 
     fn change_settings(&self, change: Box<dyn FnOnce(&mut Settings) + Send>) {
@@ -189,6 +189,19 @@ impl BarHost for AppHost {
         });
         if let Err(e) = result {
             tracing::warn!("could not change settings: {e}");
+        }
+    }
+
+    fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String> {
+        self.0
+            .add_sensor(kind, zone, index, &Props::new())
+            .map_err(|e| tracing::warn!("could not add a {kind} sensor: {e}"))
+            .ok()
+    }
+
+    fn remove_sensor(&self, id: &str) {
+        if let Err(e) = self.0.remove_sensor(id) {
+            tracing::warn!("could not remove sensor {id}: {e}");
         }
     }
 }

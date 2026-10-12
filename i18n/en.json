@@ -82,5 +82,17 @@
   "sensor.spacer.name": "Spacer",
   "sensor.spacer.description": "Empty space between sensors, with an optional divider line.",
   "sensor.spacer.field.showDivider": "Show a divider line",
-  "sensor.spacer.field.width": "Width"
+  "sensor.spacer.field.width": "Width",
+  "menu.newSensor": "New sensor…",
+  "menu.newSensor.submenu": "New sensor",
+  "menu.properties": "Properties…",
+  "menu.remove": "Remove sensor",
+  "menu.remove.confirm": "Remove sensor “{name}”?",
+  "menu.remove.action": "Remove",
+  "menu.tools": "Tools",
+  "menu.layoutManager": "Layout manager…",
+  "menu.importLayout": "Import layout…",
+  "menu.exportLayout": "Export layout…",
+  "menu.importLegacy": "Import legacy XML layout…",
+  "menu.help": "Help"
 }

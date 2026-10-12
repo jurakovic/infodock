@@ -48,6 +48,25 @@ impl Registry {
         Self { types }
     }
 
+    pub fn types(&self) -> &[&'static dyn SensorType] {
+        &self.types
+    }
+
+    /// Whether the sensor for `instance` has properties to edit: its type is known, can run
+    /// here and shows at least one field.
+    pub fn editable(&self, instance: &SensorInstance, caps: &Capabilities) -> bool {
+        self.get(&instance.kind).is_some_and(|ty| {
+            let (props, _) = schema::resolve(ty.schema(), &instance.props, &Props::new());
+            Self::available(ty, caps) && ty.schema().iter().any(|f| f.visible(&props))
+        })
+    }
+
+    /// The localised name of the sensor type `kind`, or the id of an unknown type.
+    pub fn type_name(&self, kind: &str) -> String {
+        self.get(kind)
+            .map_or_else(|| kind.to_owned(), |ty| t(ty.name()))
+    }
+
     pub fn get(&self, id: &str) -> Option<&'static dyn SensorType> {
         self.types.iter().copied().find(|ty| ty.id() == id)
     }

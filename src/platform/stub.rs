@@ -56,6 +56,12 @@ impl BarWindow for NoWindow {
     }
 
     fn set_timer(&self, _delay: Option<std::time::Duration>) {}
+
+    fn capture_pointer(&self, _capture: bool) {}
+
+    fn confirm(&self, _message: &str, _action: &str) -> bool {
+        false
+    }
 }
 
 struct NoTray;

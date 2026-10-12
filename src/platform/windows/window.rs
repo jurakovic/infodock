@@ -32,19 +32,26 @@ use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateRectRgn, DeleteObject, EndPaint, InvalidateRect, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
     GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
     LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW,
     SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE, WM_DPICHANGED,
-    WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_MOUSEACTIVATE, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_POPUP,
+    WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMER,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
 use super::appbar::{Shared as AppBarState, WinAppBar};
+use super::dialog;
 use super::instance::activate_message;
 use super::menu;
 use super::render::Renderer;
@@ -52,8 +59,8 @@ use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
-    AppBarEvent, BarHandler, BarThread, BarWindow, HandlerFactory, MenuEntry, PlatformError, SizeF,
-    TrayIcon, UiEvent, UiWaker,
+    AppBarEvent, BarHandler, BarThread, BarWindow, HandlerFactory, MenuEntry, Modifiers,
+    PlatformError, PointF, PointerButton, SizeF, TrayIcon, UiEvent, UiWaker,
 };
 
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
@@ -80,6 +87,8 @@ struct WindowState {
     wake_queued: Arc<AtomicBool>,
     /// Rendering failed once; later failures are logged at debug level.
     render_failed: Cell<bool>,
+    /// `TrackMouseEvent` asked for `WM_MOUSELEAVE`.
+    tracking_leave: Cell<bool>,
 }
 
 impl WindowState {
@@ -138,6 +147,52 @@ impl WindowState {
             }
             WM_CLOSE => {
                 self.dispatch(UiEvent::CloseRequested);
+                return LRESULT(0);
+            }
+            WM_MOUSEMOVE => {
+                if !self.tracking_leave.replace(true) {
+                    let mut track = TRACKMOUSEEVENT {
+                        cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    };
+                    // SAFETY: `track` is valid for the call.
+                    if unsafe { TrackMouseEvent(&mut track) }.is_err() {
+                        self.tracking_leave.set(false);
+                    }
+                }
+                self.dispatch(UiEvent::PointerMove(self.point(lparam)));
+                return LRESULT(0);
+            }
+            WM_MOUSELEAVE => {
+                self.tracking_leave.set(false);
+                self.dispatch(UiEvent::PointerLeave);
+                return LRESULT(0);
+            }
+            WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONUP
+            | WM_MBUTTONUP => {
+                let button = match msg {
+                    WM_LBUTTONDOWN | WM_LBUTTONUP => PointerButton::Left,
+                    WM_RBUTTONDOWN | WM_RBUTTONUP => PointerButton::Right,
+                    _ => PointerButton::Middle,
+                };
+                let (at, modifiers) = (self.point(lparam), modifiers());
+                let down = matches!(msg, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN);
+                self.dispatch(if down {
+                    UiEvent::PointerDown {
+                        button,
+                        at,
+                        modifiers,
+                    }
+                } else {
+                    UiEvent::PointerUp {
+                        button,
+                        at,
+                        modifiers,
+                    }
+                });
+                // Handled here, so no WM_CONTEXTMENU follows the right button.
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == WAKE_TIMER => {
@@ -255,6 +310,16 @@ impl WindowState {
         }
     }
 
+    /// The pointer position in `lparam` (client px) in logical px.
+    fn point(&self, lparam: LPARAM) -> PointF {
+        // SAFETY: plain query on our own window.
+        let scale = unsafe { GetDpiForWindow(self.hwnd()) }.max(96) as f32 / 96.0;
+        // Signed 16-bit coordinates: negative while captured left of or above the window.
+        let x = (lparam.0 & 0xFFFF) as u16 as i16;
+        let y = ((lparam.0 >> 16) & 0xFFFF) as u16 as i16;
+        PointF::new(f32::from(x) / scale, f32::from(y) / scale)
+    }
+
     fn report_render_error(&self, e: &windows::core::Error) {
         if self.render_failed.replace(true) {
             tracing::debug!("bar rendering failed: {e}");
@@ -303,6 +368,21 @@ impl BarWindow for WindowState {
         menu::show(self.hwnd(), entries)
     }
 
+    fn capture_pointer(&self, capture: bool) {
+        // SAFETY: plain calls on our own window.
+        unsafe {
+            if capture {
+                SetCapture(self.hwnd());
+            } else {
+                let _ = ReleaseCapture();
+            }
+        }
+    }
+
+    fn confirm(&self, message: &str, action: &str) -> bool {
+        dialog::confirm(self.hwnd(), &t("app.name"), message, action)
+    }
+
     fn set_timer(&self, delay: Option<Duration>) {
         let hwnd = self.hwnd();
         match delay {
@@ -330,6 +410,17 @@ impl HasWindowHandle for BarHandle {
         let raw = RawWindowHandle::Win32(Win32WindowHandle::new(self.0));
         // SAFETY: the bar window lives as long as the process.
         Ok(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+}
+
+/// The modifier keys held now.
+fn modifiers() -> Modifiers {
+    // SAFETY: plain key-state queries; the high bit is set while the key is down.
+    let down = |key: VIRTUAL_KEY| unsafe { GetKeyState(i32::from(key.0)) } < 0;
+    Modifiers {
+        alt: down(VK_MENU),
+        ctrl: down(VK_CONTROL),
+        shift: down(VK_SHIFT),
     }
 }
 
@@ -407,6 +498,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         renderer: RefCell::new(None),
         wake_queued: Arc::new(AtomicBool::new(false)),
         render_failed: Cell::new(false),
+        tracking_leave: Cell::new(false),
     }));
     let title = HSTRING::from(t("app.name"));
     // SAFETY: creates our own window; `state` outlives it.

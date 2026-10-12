@@ -150,6 +150,14 @@ pub enum HintContent {
     Text(String),
 }
 
+/// What a click did (SPEC §8.1). Popups arrive with the sensors that open them (M3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClickResult {
+    /// The sensor has no click action.
+    None,
+    Handled,
+}
+
 /// A placed sensor. Lives on the bar thread; re-created when its props change (SPEC §8.1).
 pub trait Sensor {
     /// Width in logical px; the height is the bar's. Called after creation and whenever the
@@ -159,6 +167,10 @@ pub trait Sensor {
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
         None
+    }
+    /// The click action (SPEC §6.1); called only when the Lock rules allow clicks.
+    fn click(&mut self, _cx: &SensorCtx) -> ClickResult {
+        ClickResult::None
     }
     /// Drives inactive rendering (SPEC §8.5).
     fn inactive(&self) -> bool {

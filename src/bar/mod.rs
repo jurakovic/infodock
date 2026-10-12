@@ -1,7 +1,9 @@
 //! The bar (SPEC §4.1, §5): a native window on its own thread. [`BarController`] is the handle
 //! the rest of the app uses; the logic in `thread.rs` runs on the bar thread.
 
+mod interact;
 mod layout;
+mod menus;
 mod paint;
 mod sensors;
 pub mod theme;
@@ -14,7 +16,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::Config;
 use crate::config::ConfigStore;
-use crate::config::model::{SensorInstance, Settings};
+use crate::config::model::{SensorInstance, Settings, Zone};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use thread::BarLogic;
 
@@ -27,9 +29,13 @@ pub trait BarHost: Send + Sync {
     fn bar_visible(&self) -> bool;
     /// Shows or hides the bar (tray click, tray menu).
     fn toggle_bar(&self);
-    fn open_settings(&self);
+    /// Opens Settings on `route`, e.g. `general` or `sensor/<id>` (SPEC §4.1).
+    fn open_settings(&self, route: &str);
     /// Changes and saves settings (tray menu: Lock, Popups).
     fn change_settings(&self, change: Box<dyn FnOnce(&mut Settings) + Send>);
+    /// Adds a sensor of type `kind` with its defaults; returns its id (SPEC §4.5).
+    fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String>;
+    fn remove_sensor(&self, id: &str);
 }
 
 /// Work for the bar thread, queued by [`BarController`].

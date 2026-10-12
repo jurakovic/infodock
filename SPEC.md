@@ -365,10 +365,11 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 ### 6.1 Lock mode and clicks
 
 * `locked` (default false; context-menu item "Lock" ✓).
-* **Unlocked**: pointer-down on a sensor dims it (opacity −40 %). Moving more than 4 px starts a **reorder drag** (§6.2). Releasing without moving is a **click**.
+* **Unlocked**: pointer-down on a sensor dims it (opacity −40 %). Moving more than 4 px starts a **reorder drag** (§6.2). Releasing without moving is a **click**. The bar captures the pointer while the button is down, so the release is seen anywhere; releasing outside the pressed sensor is no click.
 * **Locked**: reordering is disabled. Click behaviour follows `clicksWhenLocked`:
   * `always` (default): clicks work normally.
   * `altOnly`: clicks only work while Alt is held. This makes the bar a passive display.
+* While locked, a press dims the sensor only when a click would reach it (`always`, or Alt held with `altOnly`); otherwise the press does nothing.
 * Hint texts end with a "Click to …" line only when a click would actually do something in the current mode.
 * Double-click and middle-click have no default action (reserved).
 
@@ -435,7 +436,7 @@ Settings…
 ✓ Popups
 ```
 
-Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a menu hides any hint/popup.
+Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a menu hides any hint/popup. The menu opens on the right button's release. Tools items whose features arrive later (import and export in M4, Help in M5) are shown greyed out until then. "New sensor…" opens Settings on `new?zone=<zone>&index=<index>` (bar menu: the zone by thirds and its insertion point, §6.6) or `new?target=<id>` (sensor menu); in submenu mode, choosing a type adds it after the target sensor (or at the zone's insertion point) and opens its Properties (`sensor/<id>`).
 
 ### 6.5 Global hotkey and tray
 

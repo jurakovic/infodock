@@ -302,6 +302,36 @@ pub enum UiEvent {
     TrayMenu,
     /// The time set with [`BarWindow::set_timer`] has come.
     Timer,
+    /// The pointer moved over the window (or anywhere while captured); logical px from the
+    /// window's top-left corner.
+    PointerMove(PointF),
+    /// The pointer left the window.
+    PointerLeave,
+    PointerDown {
+        button: PointerButton,
+        at: PointF,
+        modifiers: Modifiers,
+    },
+    PointerUp {
+        button: PointerButton,
+        at: PointF,
+        modifiers: Modifiers,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerButton {
+    Left,
+    Right,
+    Middle,
+}
+
+/// Modifier keys held during an input event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Modifiers {
+    pub alt: bool,
+    pub ctrl: bool,
+    pub shift: bool,
 }
 
 /// An entry of a native menu: the tray menu, and the context menus of SPEC §6.4.
@@ -314,6 +344,10 @@ pub enum MenuEntry {
         enabled: bool,
     },
     Separator,
+    Submenu {
+        label: String,
+        entries: Vec<MenuEntry>,
+    },
 }
 
 impl MenuEntry {
@@ -332,6 +366,21 @@ impl MenuEntry {
             label: label.into(),
             checked,
             enabled: true,
+        }
+    }
+
+    /// The same item, greyed out unless `enabled`.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        if let Self::Item { enabled: e, .. } = &mut self {
+            *e = enabled;
+        }
+        self
+    }
+
+    pub fn submenu(label: impl Into<String>, entries: Vec<MenuEntry>) -> Self {
+        Self::Submenu {
+            label: label.into(),
+            entries,
         }
     }
 }
@@ -357,6 +406,11 @@ pub trait BarWindow {
     /// Delivers [`UiEvent::Timer`] once after `delay` (it may come a few ms early), replacing the
     /// previous timer; `None` cancels it.
     fn set_timer(&self, delay: Option<std::time::Duration>);
+    /// While captured, pointer events keep coming when the pointer leaves the window.
+    fn capture_pointer(&self, capture: bool);
+    /// Asks a yes/no question in a native dialog (SPEC §6.4): `message` as the main text and
+    /// `action` on the confirming button. Returns whether the user confirmed.
+    fn confirm(&self, message: &str, action: &str) -> bool;
 }
 
 /// Removes the tray icon from any thread, e.g. on exit.

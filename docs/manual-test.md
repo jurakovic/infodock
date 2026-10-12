@@ -80,6 +80,15 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] At 150 % scaling, the logo and the labels are crisp, not blurred.
 - [ ] Optional, by editing `config.json` while Infodock is closed: a `text` sensor (`{ "id": "s_t1", "type": "text", "props": { "text": "Hello" } }`) shows its text; a `spacer` with `"showDivider": true` shows a faint vertical line; an `image` with `"image": "C:\\path\\to\\picture.png"` shows that picture one pixel less than the bar tall.
 
+**Menus and Lock** (since M1 S6)
+
+- [ ] Right-click an empty part of the bar: *New sensor…*, *Tools ▸* (only *Layout manager…* enabled), *Settings…*, *Lock*, *Popups*, *Quit Infodock*. The check marks match the tray menu.
+- [ ] Right-click the logo: *New sensor…*, *Properties…*, *Remove sensor*, *Tools ▸*, *Settings…*, *Lock*, *Popups*. On a placeholder (e.g. `cpu-graph`), *Properties…* is greyed out.
+- [ ] *Remove sensor* on the logo asks "Remove sensor “Image”?"; *Cancel* keeps it, *Remove* removes it at once (and from `config.json`).
+- [ ] Settings ▸ General ▸ *New sensor menu* is not there yet; set `"newSensorMenu": "submenu"` in `config.json` (Infodock closed): *New sensor* becomes a submenu *General ▸ Image, Spacer, Text*; choosing *Text* adds a "Text" sensor after the one you clicked (or in the zone under the pointer) and opens Settings.
+- [ ] Press and hold the left button on the logo: it dims; release: it is back. Press, move the pointer a few px away and release: no click (dragging arrives in S8).
+- [ ] *Lock* on and Settings ▸ General ▸ *Clicks while locked* → *Only while Alt is held*: pressing the logo no longer dims it; with Alt held it does.
+
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.

@@ -7,10 +7,13 @@ use std::time::Instant;
 
 use super::layout::{self, Zones};
 use super::theme::Theme;
-use crate::config::model::{Layout, SensorInstance, Settings};
+use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::platform::{Canvas, Capabilities, Platform, RectF};
 use crate::sensors::registry::Registry;
-use crate::sensors::{DrawCtx, LayoutCtx, Sensor, SensorCtx, State};
+use crate::sensors::{ClickResult, DrawCtx, LayoutCtx, Sensor, SensorCtx, State};
+
+/// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
+const PRESSED_OPACITY: f32 = 0.6;
 
 struct Placed {
     entry: SensorInstance,
@@ -28,6 +31,8 @@ pub(super) struct Env<'a> {
     pub settings: &'a Settings,
     pub theme: &'a Theme,
     pub platform: &'a dyn Platform,
+    /// Alt is held.
+    pub alt: bool,
 }
 
 impl Env<'_> {
@@ -37,16 +42,28 @@ impl Env<'_> {
             settings: self.settings,
             theme: self.theme,
             locked: self.settings.locked,
-            alt: false,
+            alt: self.alt,
             platform: self.platform,
         }
     }
 }
 
+/// A sensor under the pointer.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Hit {
+    pub zone: Zone,
+    pub index: usize,
+    pub entry: SensorInstance,
+}
+
+const ZONES: [Zone; 3] = [Zone::Left, Zone::Center, Zone::Right];
+
 #[derive(Default)]
 pub(super) struct BarSensors {
     /// Left, centre, right; each in visual order.
     zones: [Vec<Placed>; 3],
+    /// Drawn dimmed while the pointer presses it (SPEC §6.1).
+    pressed: Option<String>,
     /// The zones must be placed again.
     relayout: bool,
     /// The bar width and scale of the last layout.
@@ -147,14 +164,63 @@ impl BarSensors {
         }
     }
 
-    /// Draws every sensor in its place: left, right, then the centre on top (SPEC §5.4).
+    /// Draws every sensor in its place: left, right, then the centre on top (SPEC §5.4). A
+    /// pressed sensor is dimmed by 40 % (§6.1).
     pub fn draw(&self, canvas: &mut dyn Canvas, theme: &Theme, bar_height: f32) {
         for zone in [0, 2, 1] {
             for p in &self.zones[zone] {
                 let rect = RectF::new(p.x, 0.0, p.x + p.width, bar_height);
+                let pressed = self.pressed.as_deref() == Some(p.entry.id.as_str());
+                if pressed {
+                    canvas.push_opacity(PRESSED_OPACITY);
+                }
                 p.sensor.draw(canvas, &DrawCtx { theme, rect });
+                if pressed {
+                    canvas.pop();
+                }
             }
         }
+    }
+
+    /// The sensor at `x`; the centre zone first, since it is drawn on top.
+    pub fn hit(&self, x: f32) -> Option<Hit> {
+        [1, 0, 2].into_iter().find_map(|zone| {
+            let index = self.zones[zone]
+                .iter()
+                .position(|p| x >= p.x && x < p.x + p.width)?;
+            Some(Hit {
+                zone: ZONES[zone],
+                index,
+                entry: self.zones[zone][index].entry.clone(),
+            })
+        })
+    }
+
+    /// How many sensors `zone` has.
+    pub fn len(&self, zone: Zone) -> usize {
+        self.zones[zone as usize].len()
+    }
+
+    /// The bar width of the last layout, in logical px.
+    pub fn bar_width(&self) -> f32 {
+        self.bar_width
+    }
+
+    /// Dims sensor `id` (or none); returns whether that changed.
+    pub fn set_pressed(&mut self, id: Option<&str>) -> bool {
+        if self.pressed.as_deref() == id {
+            return false;
+        }
+        self.pressed = id.map(str::to_owned);
+        true
+    }
+
+    /// Clicks sensor `id`; returns whether it changed what it shows.
+    pub fn click(&mut self, id: &str, env: &Env) -> ClickResult {
+        let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
+            return ClickResult::None;
+        };
+        p.sensor.click(&env.ctx(id))
     }
 
     /// The earliest wake-up any sensor asked for.
@@ -336,6 +402,7 @@ mod tests {
             settings: &settings,
             theme: &theme,
             platform: platform.as_ref(),
+            alt: false,
         };
         let start = Instant::now();
         let wakes = Rc::new(Cell::new(0));
