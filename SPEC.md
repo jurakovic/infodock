@@ -1338,7 +1338,7 @@ A compact, denser look:
 |---|---|
 | Idle CPU (4-core laptop) | ≤ 0.5 % average over 60 s |
 | Memory, Settings closed: private working set (Task Manager's *Memory* column) of `infodock.exe` plus any child processes | ≤ 30 MB (stretch 20 MB) |
-| Memory with Settings open | reported by CI; no browser engine is involved |
+| Memory with Settings open | ≤ 20 MB (measured 9.7 MB, plan D16) |
 | Memory after Settings was opened and closed | back within the budget above 10 s after closing |
 | Cold start → bar visible | ≤ 0.5 s; warm ≤ 0.3 s |
 | Full bar redraw (2560 px wide, first-run layout) | ≤ 2 ms |
