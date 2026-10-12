@@ -4,8 +4,29 @@
 import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
 
+// One field of a sensor's properties form (SPEC §6.7, §8.2); see `settings/form.rs`.
+export struct PropRow {
+    key: string,
+    // 0 text, 1 switch, 2 list, 3 slider, 4 colour, 5 colour mode, 6 file, 7 folder.
+    kind: int,
+    label: string,
+    help: string,
+    visible: bool,
+    text: string,
+    checked: bool,
+    number: float,
+    minimum: float,
+    maximum: float,
+    step: float,
+    // A message key with a `{value}` placeholder.
+    unit: string,
+    options: [string],
+    index: int,
+    color: string,
+}
+
 export global SettingsState {
-    // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups.
+    // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups; 4 = a sensor's properties.
     in-out property <int> page;
 
     // General (SPEC §10.1)
@@ -64,6 +85,11 @@ export global SettingsState {
     in-out property <float> show-delay;
     in-out property <float> hide-delay;
 
+    // A sensor's properties (SPEC §6.7)
+    in property <[PropRow]> props;
+    in property <string> props-title;
+    in property <string> props-error;
+
     // The last save error other than a hotkey error; empty when the last save worked.
     in property <string> save-error;
 
@@ -81,6 +107,18 @@ export global SettingsState {
     callback set-font-style(path: string, index: int);
     // The colour of a #RRGGBB text, for swatches; transparent if it is not one.
     pure callback to-color(text: string) -> color;
+
+    // The navigation moved to another page (leaving the properties form cancels it).
+    callback page-changed(page: int);
+    // Edits in the properties form; each previews on the bar.
+    callback prop-text(key: string, text: string);
+    callback prop-flag(key: string, value: bool);
+    callback prop-number(key: string, value: float);
+    callback prop-choice(key: string, index: int);
+    callback prop-color-mode(key: string, index: int, color: string);
+    callback prop-browse(key: string);
+    callback props-save();
+    callback props-cancel();
 }
 
 // One setting, laid out like Windows Settings: label, help text and error on the left (they
@@ -648,6 +686,135 @@ component PopupsPage inherits VerticalLayout {
     }
 }
 
+// The properties form, generated from the sensor type's schema (SPEC §6.7).
+component PropertiesPage inherits VerticalLayout {
+    alignment: start;
+
+    if SettingsState.props-error != "": Text {
+        text: SettingsState.props-error;
+        wrap: word-wrap;
+        color: #d13438;
+    }
+
+    if SettingsState.props.length == 0: Text {
+        text: I18n.tr("settings.props.noFields");
+        wrap: word-wrap;
+        color: Palette.foreground;
+    }
+
+    for row in SettingsState.props: VerticalLayout {
+        if row.visible: Row {
+            label: row.label;
+            help: row.help;
+
+            if row.kind == 0: LineEdit {
+                width: 280px;
+                text: row.text;
+                accessible-label: row.label;
+                edited(text) => {
+                    SettingsState.prop-text(row.key, text);
+                }
+            }
+            if row.kind == 1: Switch {
+                checked: row.checked;
+                accessible-label: row.label;
+                toggled => {
+                    SettingsState.prop-flag(row.key, self.checked);
+                }
+            }
+            if row.kind == 2: ComboBox {
+                width: 280px;
+                model: row.options;
+                current-index: row.index;
+                accessible-label: row.label;
+                selected => {
+                    SettingsState.prop-choice(row.key, self.current-index);
+                }
+            }
+            if row.kind == 3: ValueSlider {
+                label: row.label;
+                minimum: row.minimum;
+                maximum: row.maximum;
+                step: row.step;
+                unit: row.unit;
+                value: row.number;
+                released(v) => {
+                    SettingsState.prop-number(row.key, v);
+                }
+            }
+            if row.kind == 4: ColorField {
+                label: row.label;
+                value: row.text;
+                accepted(text) => {
+                    SettingsState.prop-text(row.key, text);
+                }
+            }
+            if row.kind == 5: VerticalLayout {
+                spacing: 8px;
+                ComboBox {
+                    width: 280px;
+                    model: row.options;
+                    current-index: row.index;
+                    accessible-label: row.label;
+                    selected => {
+                        SettingsState.prop-color-mode(row.key, self.current-index, row.color);
+                    }
+                }
+                // Custom: the colour.
+                if row.index == 1: ColorField {
+                    label: row.label;
+                    value: row.color;
+                    accepted(text) => {
+                        SettingsState.prop-color-mode(row.key, row.index, text);
+                    }
+                }
+            }
+            if row.kind == 6 || row.kind == 7: HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    width: 280px;
+                    text: row.text;
+                    accessible-label: row.label;
+                    accepted(text) => {
+                        SettingsState.prop-text(row.key, text);
+                    }
+                    changed has-focus => {
+                        if !self.has-focus {
+                            SettingsState.prop-text(row.key, self.text);
+                        }
+                    }
+                }
+                Button {
+                    text: I18n.tr("settings.props.browse");
+                    clicked => {
+                        SettingsState.prop-browse(row.key);
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        padding-top: 16px;
+        Button {
+            text: I18n.tr("settings.props.cancel");
+            clicked => {
+                SettingsState.props-cancel();
+            }
+        }
+
+        Button {
+            text: I18n.tr("settings.props.save");
+            primary: true;
+            clicked => {
+                SettingsState.props-save();
+            }
+        }
+    }
+}
+
 export component SettingsWindow inherits Window {
     title: I18n.tr("settings.title");
     icon: @image-url("../icons/32x32.png");
@@ -670,6 +837,9 @@ export component SettingsWindow inherits Window {
                 ];
                 current-item <=> SettingsState.page;
                 accessible-label: I18n.tr("settings.nav.label");
+                changed current-item => {
+                    SettingsState.page-changed(self.current-item);
+                }
             }
         }
 
@@ -684,7 +854,7 @@ export component SettingsWindow inherits Window {
             spacing: 8px;
 
             Text {
-                text: [
+                text: SettingsState.page == 4 ? SettingsState.props-title : [
                     I18n.tr("settings.nav.general"),
                     I18n.tr("settings.nav.bar"),
                     I18n.tr("settings.nav.sensors"),
@@ -712,6 +882,7 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == 1: BarPage { }
                     if SettingsState.page == 2: SensorsPage { }
                     if SettingsState.page == 3: PopupsPage { }
+                    if SettingsState.page == 4: PropertiesPage { }
                 }
             }
         }

@@ -8,6 +8,7 @@ pub mod instance;
 mod menu;
 mod monitors;
 pub mod render;
+pub mod shell;
 pub mod text;
 mod tray;
 pub mod window;

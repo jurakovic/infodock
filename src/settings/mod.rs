@@ -5,7 +5,9 @@
 //! through the config store; the store's change listener then refreshes the window, so changes
 //! made elsewhere (tray, hotkey) show up too.
 
+mod form;
 mod model;
+mod properties;
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -32,6 +34,8 @@ struct Open {
     families: Vec<String>,
     /// The font list as shown; index 0 is the theme default.
     fonts: Vec<String>,
+    /// A sensor's properties being edited.
+    form: Option<properties::FormState>,
 }
 
 /// Why a change was not saved.
@@ -44,10 +48,12 @@ enum SaveError {
 /// Opens Settings on `route` (e.g. `bar`), or switches the open window to it and brings it to
 /// the front. Main thread only.
 pub fn open(app: &Arc<App>, route: &str) {
-    let page = match model::route(route) {
-        model::Route::Page(index) => index as i32,
-        // The picker and the properties form arrive in later steps of M1 S9.
-        model::Route::New { .. } | model::Route::Sensor(_) => 2,
+    let route = model::route(route);
+    let page = match &route {
+        model::Route::Page(index) => *index as i32,
+        // The picker arrives in the next part of M1 S9.
+        model::Route::New { .. } => 2,
+        model::Route::Sensor(_) => properties::PAGE,
     };
     let existing = WINDOW.with(|w| w.borrow().as_ref().map(|open| open.window.clone_strong()));
     let window = match existing {
@@ -60,7 +66,10 @@ pub fn open(app: &Arc<App>, route: &str) {
             }
         },
     };
-    window.global::<ui::SettingsState>().set_page(page);
+    match &route {
+        model::Route::Sensor(id) => properties::open_form(app, id, false),
+        _ => window.global::<ui::SettingsState>().set_page(page),
+    }
     if let Err(e) = window.show() {
         tracing::warn!("could not show settings: {e}");
         return;
@@ -90,8 +99,17 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     connect(&window, app);
     record_hotkey(&window, app);
 
-    window.window().on_close_requested(|| {
-        // Drop the window once it is hidden, which frees what it allocated.
+    let a = Arc::clone(app);
+    window.window().on_close_requested(move || {
+        // Closing drops an open properties form (SPEC §6.7), then the window once it is hidden,
+        // which frees what it allocated.
+        WINDOW.with(|w| {
+            if let Ok(mut w) = w.try_borrow_mut()
+                && let Some(open) = w.as_mut()
+            {
+                properties::cancel(open, &a);
+            }
+        });
         let _ = slint::invoke_from_event_loop(|| {
             WINDOW.with(|w| w.borrow_mut().take());
         });
@@ -103,6 +121,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         monitor_keys: Vec::new(),
         families: app.platform.font_families(),
         fonts: Vec::new(),
+        form: None,
     };
     fill(&mut open, app, &app.store.get().settings);
     WINDOW.with(|w| *w.borrow_mut() = Some(open));
@@ -111,6 +130,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
 
 /// Handles the window's callbacks: saving changes and converting colours.
 fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
+    properties::connect(window, app);
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_set_flag(move |path, value| save(&a, model::patch(&path, Value::Bool(value))));
@@ -430,7 +450,7 @@ mod screenshots {
         MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
     };
     use slint::platform::{Platform, WindowAdapter};
-    use slint::{ComponentHandle, PhysicalSize};
+    use slint::{ComponentHandle, PhysicalSize, SharedString};
 
     use super::{Open, fill};
     use crate::app::App;
@@ -467,6 +487,7 @@ mod screenshots {
             monitor_keys: Vec::new(),
             families: vec!["Arial".into(), "Consolas".into(), "Segoe UI".into()],
             fonts: Vec::new(),
+            form: None,
         };
         fill(&mut open, &app, &app.store.get().settings);
         ui.show().expect("shown");
@@ -497,6 +518,31 @@ mod screenshots {
         let taken = crate::i18n::t_args("settings.general.hotkey.taken", &[("hotkey", "Ctrl+K")]);
         state.set_hotkey_error(taken.into());
         render("settings-general-recording");
+        state.set_recording_hotkey(false);
+        state.set_hotkey_error(SharedString::new());
+
+        // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
+        super::WINDOW.with(|w| *w.borrow_mut() = Some(open));
+        let logo = app.store.get().layout.center[0].id.clone();
+        super::properties::open_form(&app, &logo, false);
+        render("settings-properties-image");
+        state.invoke_prop_color_mode("color".into(), 1, "#20B7FF".into());
+        render("settings-properties-image-custom");
+        let text = app
+            .add_sensor(
+                "text",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &text, true);
+        render("settings-properties-text");
+        // Cancel removes the new sensor again.
+        state.invoke_props_cancel();
+        assert!(app.store.get().layout.find(&text).is_none());
+        assert_eq!(state.get_page(), 2);
+        super::WINDOW.with(|w| w.borrow_mut().take());
         app.store.shutdown();
     }
 }

@@ -90,13 +90,6 @@ impl App {
 
 /// Sensor operations (SPEC §4.5). Each saves through the config store, which updates the bar
 /// and Settings.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "called by the bar menus (M1 S6, S8) and Settings (S9)"
-    )
-)]
 impl App {
     /// Adds a sensor; see [`ops::add`]. Returns its id.
     pub fn add_sensor(

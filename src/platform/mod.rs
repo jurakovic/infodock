@@ -209,6 +209,30 @@ fn decode_raster(
     }
 }
 
+/// What a file or folder picker asks for (SPEC §4.6 `IFileOpenDialog`).
+pub struct PathRequest<'a> {
+    pub title: &'a str,
+    /// Pick a folder instead of a file.
+    pub folder: bool,
+    /// The file types offered first, e.g. `["png", "jpg"]`, under `types_name`; "All files"
+    /// (`all_files`) is always offered too.
+    pub extensions: &'a [&'a str],
+    pub types_name: &'a str,
+    pub all_files: &'a str,
+}
+
+/// Shows the OS file or folder picker, modal to the native window `owner`, on the calling
+/// thread. `None` if the user cancelled, or where there is no picker.
+pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> {
+    #[cfg(windows)]
+    return windows::shell::pick_path(owner, request);
+    #[cfg(not(windows))]
+    {
+        let _ = (owner, request);
+        None
+    }
+}
+
 /// Renders `width`×`height` physical px at `scale` with the bar's renderer, e.g. for previews
 /// and the screenshots CI publishes (SPEC §12.4, §16). Windows only for now.
 pub fn render_offscreen(

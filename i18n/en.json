@@ -127,5 +127,22 @@
   "settings.popups.fontSize": "Text size",
   "settings.popups.shadow": "Shadow",
   "settings.popups.showDelay": "Delay before a popup shows",
-  "settings.popups.hideDelay": "Delay before a popup hides"
+  "settings.popups.hideDelay": "Delay before a popup hides",
+  "common.seconds": "{value} s",
+  "common.number": "{value}",
+  "settings.props.font.default": "Default",
+  "settings.props.colorMode.standard": "Standard",
+  "settings.props.colorMode.custom": "Custom",
+  "settings.props.colorMode.dynamic": "Dynamic",
+  "settings.props.title": "{name} properties",
+  "settings.props.browse": "Browse…",
+  "settings.props.save": "Save",
+  "settings.props.cancel": "Cancel",
+  "settings.props.missing": "This sensor no longer exists.",
+  "settings.props.invalid": "This value cannot be used.",
+  "settings.props.noFields": "This sensor has no properties to change.",
+  "settings.props.pickFile": "Choose a file",
+  "settings.props.pickFolder": "Choose a folder",
+  "settings.props.allFiles": "All files",
+  "settings.props.supportedFiles": "Supported files"
 }

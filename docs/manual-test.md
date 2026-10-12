@@ -107,6 +107,14 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] At 150 % scaling the hint text is crisp.
 - [ ] Settings ▸ General ▸ no popup settings yet; with `popups.showDelayMs` set to `0` in `config.json` (Infodock closed), hints appear at once.
 
+**Sensor properties** (since M1 S9)
+
+- [ ] Right-click the logo → *Properties…*: Settings opens "Image properties" with *Image file*, *Colour*, *Opacity* and *Popup text*.
+- [ ] *Colour* → *Custom* and a colour such as `#20B7FF` (Enter): within a moment the logo on the bar turns that colour; nothing is saved yet. *Opacity* 50 %: the logo fades.
+- [ ] *Browse…* opens the Windows file picker filtered to images; pick a PNG: the bar shows it.
+- [ ] *Cancel*: the logo is back as it was. Again with *Save*: the change stays, also after a restart.
+- [ ] Change something, then click *General* in the navigation, or close Settings: the change is dropped.
+
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.

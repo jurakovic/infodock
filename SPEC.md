@@ -458,6 +458,7 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 
 * Route `/settings/sensor/<id>`. The form is generated from the sensor's `props` schema (§8.2); `hidden` fields are not shown.
 * Changes **preview live** on the bar (debounced 150 ms, `preview_sensor`). **Save** persists (`update_sensor`) and ends the preview; **Cancel**, or closing Settings, ends the preview, which restores the saved props.
+* Implementation (`settings/form.rs`, `settings/properties.rs`): one row per field in schema order, with one control per field type: text box (`text`), switch (`bool`), list (`select`, `font` with a first *Default* entry, `fontStyle`), slider with its unit (`slider`, `interval` in s, `opacity` in %), colour box (`color`), mode list plus a colour box for Custom (`colorMode`), path box with *Browse…* (`file` with its extensions, `folder`; `IFileOpenDialog`). Rows hidden by `visibleIf` disappear at once. Text boxes preview as they are typed; sliders when released. Leaving the page by the navigation counts as Cancel. `drive`, `netAdapter` and `battery` controls arrive with the sensors that use them (M2, M3).
 * Validation per field type; invalid fields show inline errors and disable Save.
 * Each field shows its description as helper text.
 
