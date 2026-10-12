@@ -1398,6 +1398,7 @@ infodock/
 
 * NSIS installer, **per-user** (`installMode: "currentUser"`), WebView2 bootstrapper (`webviewInstallMode: downloadBootstrapper`), Start Menu shortcut, optional autostart.
 * MSI MAY be built for managed environments.
+* **Portable build**: the bare `infodock.exe` from the same release build (the UI is embedded in the binary). It needs no install but still requires the WebView2 runtime and stores config, skins and logs in the same per-user folders as the installed app (§11.1); no Start Menu shortcut.
 
 ### 15.4 Later
 

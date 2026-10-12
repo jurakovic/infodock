@@ -73,3 +73,10 @@ jobs:
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 30
+      # Portable build (SPEC §15.3): the frontend is embedded, so the exe runs on its own.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: infodock-windows-portable
+          path: src-tauri/target/release/infodock.exe
+          if-no-files-found: error
+          retention-days: 30

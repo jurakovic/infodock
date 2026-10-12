@@ -28,7 +28,7 @@ tests/fixtures/      shared test fixtures (legacy XML)
 | Format Rust | `bun run fmt` |
 | Run the app | `bun run tauri dev` (Windows) |
 
-Cloud sessions run on Linux. `check:win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, NSIS installer artifact) and by the manual checklist in `docs/manual-test.md`.
+Cloud sessions run on Linux. `check:win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, NSIS installer and portable exe artifacts) and by the manual checklist in `docs/manual-test.md`.
 
 ## Gate before every commit
 

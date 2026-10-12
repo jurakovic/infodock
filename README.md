@@ -6,7 +6,7 @@ Status: early development. See [SPEC.md](SPEC.md) for the full specification and
 
 ## Download
 
-Every push to `master` builds a Windows installer. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download the `infodock-windows-installer` artifact. The installer is per-user and does not need admin rights. It is not code-signed yet, so SmartScreen may warn.
+Every push to `master` builds a Windows installer. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download the `infodock-windows-installer` artifact. The installer is per-user and does not need admin rights. For a build without installing, download `infodock-windows-portable` instead: it contains `infodock.exe`, which runs as is (it needs the WebView2 runtime, which Windows 10/11 normally has). Neither is code-signed yet, so SmartScreen may warn.
 
 ## Development
 
