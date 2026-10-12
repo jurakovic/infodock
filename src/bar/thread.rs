@@ -1174,7 +1174,10 @@ mod tests {
 
     #[test]
     fn rises_into_place_and_slides_out_before_changing_edges() {
-        let (mut logic, window, host, config) = rising_bar(Settings::default());
+        // On, so the OS "Animation effects" setting (off on CI runners) does not matter.
+        let mut settings = Settings::default();
+        settings.bar.animations = crate::config::model::Animations::On;
+        let (mut logic, window, host, config) = rising_bar(settings);
         // Placed: 28 px below its place, transparent, then rising.
         assert_eq!(window.slides.borrow().first(), Some(&28));
         let mut canvas = RecordingCanvas::new(1.0);
