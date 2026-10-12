@@ -42,6 +42,30 @@ pub struct Capabilities {
     pub per_core_cpu: bool,
 }
 
+impl Capabilities {
+    pub fn has(&self, capability: Capability) -> bool {
+        match capability {
+            Capability::RecycleBin => self.recycle_bin,
+            Capability::StartMenu => self.start_menu,
+            Capability::Wifi => self.wifi,
+            Capability::Battery => self.battery,
+            Capability::Eject => self.eject,
+            Capability::PerCoreCpu => self.per_core_cpu,
+        }
+    }
+}
+
+/// A capability a sensor type can require (SPEC §4.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Capability {
+    RecycleBin,
+    StartMenu,
+    Wifi,
+    Battery,
+    Eject,
+    PerCoreCpu,
+}
+
 /// The OS appearance settings the bar follows (SPEC §10.3, §12.1–12.2).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OsAppearance {

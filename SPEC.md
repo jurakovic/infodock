@@ -292,7 +292,7 @@ Implementation notes:
 
 `per_core_cpu` means per-processor counters can be read. It does not depend on the number of logical processors: a single-processor system still has it.
 
-Sensor types declare `requires: &[Capability]`. The picker hides types whose capabilities are missing. Configured sensors that are unsupported on the current platform render as a dimmed placeholder with the hint "Not available on this system".
+Sensor types declare `requires: &[Capability]`. The picker hides types whose capabilities are missing. Configured sensors that are unsupported on the current platform render as a dimmed placeholder with the hint "Not available on this system". Entries of an unknown type (from a newer version, or a v1 type that arrives in a later milestone) render the same way, labelled with the type id and the hint "This sensor ({type}) is not available in this version of Infodock". The placeholder is an outlined label in the sensor font at reduced opacity; the entry stays in the config unchanged.
 
 ---
 
@@ -531,7 +531,8 @@ pub trait Sensor {
     fn on_sample(&mut self, topic: &Topic, sample: &Sample, cx: &mut SensorCtx) -> Dirty;
     fn wake_at(&self, now: Instant) -> Option<Instant>;   // timer-driven sensors (clock, uptime)
     fn on_wake(&mut self, cx: &mut SensorCtx) -> Dirty;
-    fn measure(&self, cx: &LayoutCtx) -> f32;             // width in logical px; height = bar content height
+    fn measure(&mut self, cx: &LayoutCtx) -> f32;         // width in logical px; height = bar content height;
+                                                          // builds and keeps text layouts and bitmaps
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent>;
     fn click(&mut self, cx: &mut SensorCtx) -> ClickResult;  // None, Handled, or OpenPopup(Box<dyn Popup>)
@@ -549,9 +550,13 @@ pub struct SensorCtx<'a> {
     pub locked: bool, pub alt: bool, pub platform: &'a dyn Platform,
     /* set_state(patch), update_props(patch), notify(title, body), open_settings(route), t(key, args) */
 }
+
+/// Measuring may lay out text and decode images; drawing happens in the sensor's place on the bar.
+pub struct LayoutCtx<'a> { pub theme: &'a Theme, pub text: &'a dyn TextEngine, pub scale: f32 }
+pub struct DrawCtx<'a> { pub theme: &'a Theme, pub rect: RectF }   // logical px, bar coordinates
 ```
 
-All trait methods except the identity ones have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. Settings reads the schemas through the sensor types operation (§4.5).
+All trait methods except the identity ones, `create`, `measure` and `draw` have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. Settings reads the schemas through the sensor types operation (§4.5).
 
 ### 8.2 Property field types
 
@@ -575,6 +580,8 @@ All trait methods except the identity ones have default implementations (no topi
 | `hidden` | — | any | internal values (e.g. popup size) |
 
 Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf? }`. `visibleIf` is declarative so Settings can evaluate it: `{ key, in: [values] }` (shown while another field has one of these values).
+
+Validation (`sensors/schema.rs`): each value is normalised for its field type: colours to upper-case `#RRGGBB`, numbers clamped to their range (`slider`, `interval`, `opacity`), drives to `X:\`. A value of the wrong type or shape is invalid: on load it is ignored (the field takes its default) and logged; `update_sensor` rejects it with error code `invalid`. An empty `text` with `emptyIsDefault` means the default.
 
 `default` is normally a static value. A **machine-derived** field (`machineDefault: true`) instead gets its default from `defaults(ctx)`, e.g. the first fixed drive or the locale's clock format. §11.2 defines how this affects what is stored.
 
@@ -1183,7 +1190,7 @@ Pages:
 * `props` stores **only values that differ from the static defaults**, so defaults can evolve. Two refinements:
   * **Machine-derived** fields (`machineDefault: true`, §8.2) are resolved once by `defaults(ctx)` when the sensor is created or imported, and are **always stored**. A sensor therefore keeps its meaning when drives, the locale or the hardware change. v1: `drive` (Disk Meter, Disk) and `use24h` (Time).
   * Fields whose default is "follow the global setting" (`font` → global sensor font) store `""` for that default. An explicit value is stored even if it currently equals the global setting.
-* Unknown `type`s are preserved and rendered as placeholders (§4.6), never deleted silently.
+* Unknown `type`s are preserved and rendered as placeholders (§4.6), never deleted silently. Likewise, `props` keys that a type's schema does not know (e.g. written by a newer version) are kept when the sensor is saved.
 * Writes are **debounced by 500 ms** and **atomic** (write `config.json.tmp`, flush, rename). `config.json.bak` keeps the previous good version. If the config fails to parse on load: rename it to `config.broken-<timestamp>.json`, load the `.bak` (or defaults), and notify the user with a toast.
 * Schema migrations run in Rust (`migrate.rs`) on load; each step is a pure, tested function.
 

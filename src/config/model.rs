@@ -486,6 +486,13 @@ impl Layout {
     pub fn all(&self) -> impl Iterator<Item = &SensorInstance> {
         self.left.iter().chain(&self.center).chain(&self.right)
     }
+
+    pub fn all_mut(&mut self) -> impl Iterator<Item = &mut SensorInstance> {
+        self.left
+            .iter_mut()
+            .chain(&mut self.center)
+            .chain(&mut self.right)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

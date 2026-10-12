@@ -23,6 +23,7 @@ mod hotkey;
 pub mod i18n;
 mod logging;
 pub mod platform;
+pub mod sensors;
 mod settings;
 #[cfg(test)]
 mod test_util;
@@ -63,6 +64,8 @@ pub fn run() {
 
     let (store, report) = ConfigStore::open(&dirs.config, VERSION);
     log_load_report(&report);
+    let platform = platform::current();
+    fill_machine_defaults(&store, platform.as_ref());
 
     // The Settings window uses Slint's winit backend on this thread; software rendering keeps
     // GPU drivers out of the process (SPEC §3, §14.1).
@@ -75,7 +78,7 @@ pub fn run() {
         return;
     }
 
-    let app = Arc::new(App::new(store, platform::current()));
+    let app = Arc::new(App::new(store, platform));
     let bar = match BarController::create(
         &app.store,
         Arc::clone(&app.platform),
@@ -101,6 +104,18 @@ pub fn run() {
         tracing::error!("the event loop failed: {e}");
     }
     app.shutdown();
+}
+
+/// Stores the machine-derived props that sensors lack, e.g. after first run or an import
+/// (SPEC §11.2).
+fn fill_machine_defaults(store: &ConfigStore, platform: &dyn platform::Platform) {
+    let ctx = sensors::DefaultsCtx { platform };
+    let result = store.update(|config| {
+        Ok(sensors::registry::registry().fill_machine_defaults(&mut config.layout, &ctx))
+    });
+    if let Ok((true, _)) = result {
+        tracing::info!("stored machine-derived sensor props");
+    }
 }
 
 fn log_load_report(report: &config::store::LoadReport) {

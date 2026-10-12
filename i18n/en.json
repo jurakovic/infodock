@@ -55,5 +55,11 @@
   "settings.bar.hideOnFullscreen": "Step back for full-screen apps",
   "settings.bar.height": "Height",
   "settings.bar.height.help": "The theme default is {height} px.",
-  "settings.bar.height.reset": "Use theme default"
+  "settings.bar.height.reset": "Use theme default",
+  "sensor.category.general": "General",
+  "sensor.category.info": "Info",
+  "sensor.category.system": "System",
+  "sensor.category.network": "Network",
+  "sensor.category.launchers": "Launchers",
+  "sensor.placeholder.unknown": "This sensor ({type}) is not available in this version of Infodock."
 }
