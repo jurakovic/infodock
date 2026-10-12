@@ -9,8 +9,11 @@ export global SettingsState {
     in-out property <int> page;
 
     // General (SPEC §10.1)
-    in-out property <string> hotkey;
-    // Why the hotkey could not be registered; empty when it works.
+    in property <string> hotkey;
+    // Set while the hotkey button waits for a combination; Rust reads the keys (they are
+    // physical keys, which Slint's key events do not carry) and clears it.
+    in-out property <bool> recording-hotkey;
+    // Why the hotkey could not be registered or recorded; empty when it works.
     in property <string> hotkey-error;
     in-out property <int> hotkey-action;
     in-out property <bool> show-tray-icon;
@@ -34,7 +37,6 @@ export global SettingsState {
     // The last save error other than a hotkey error; empty when the last save worked.
     in property <string> save-error;
 
-    callback apply-hotkey(text: string);
     // `path` is the dotted settings key, e.g. "bar.reserveSpace".
     callback set-flag(path: string, value: bool);
     callback set-choice(path: string, index: int);
@@ -134,13 +136,14 @@ component GeneralPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.general.hotkey");
         help: I18n.tr("settings.general.hotkey.help");
-        error: SettingsState.hotkey-error == "" ? "" : I18n.tr-with("settings.general.hotkey.error", "error", SettingsState.hotkey-error);
-        LineEdit {
+        error: SettingsState.hotkey-error;
+        Button {
             width: 200px;
-            text <=> SettingsState.hotkey;
+            text: SettingsState.recording-hotkey ? I18n.tr("settings.general.hotkey.recording") : SettingsState.hotkey;
+            primary: SettingsState.recording-hotkey;
             accessible-label: I18n.tr("settings.general.hotkey");
-            accepted(text) => {
-                SettingsState.apply-hotkey(text);
+            clicked => {
+                SettingsState.recording-hotkey = !SettingsState.recording-hotkey;
             }
         }
     }

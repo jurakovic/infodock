@@ -52,7 +52,9 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 - [ ] Settings ▸ General ▸ *Show the tray icon* off: the icon disappears. Ctrl+Alt+Shift+I brings the bar back if it was hidden.
 - [ ] Hide the bar from the tray, then press Ctrl+Alt+Shift+I: the bar reappears.
 - [ ] *Hotkey action* → *Show or hide the bar*: the hotkey now toggles the bar.
-- [ ] Set the hotkey to something invalid (e.g. `Ctrl+`) and press Enter: an error appears under the field and the old hotkey keeps working. Set a combination another app already uses: an error appears too.
+- [ ] Settings ▸ General ▸ *Global hotkey*: select the button (it reads *Press keys…*), press Ctrl+Alt+K: the button shows `Ctrl+Alt+K` and the new hotkey works at once; the old one no longer does. Esc while recording keeps the old hotkey.
+- [ ] While recording, press K alone or Shift+K: a message asks for Ctrl, Alt or Win and recording goes on. F9 alone is accepted.
+- [ ] Record a combination another app already uses: the message names it, and the old hotkey keeps working. Quit the other app, then record the combination again: it is taken.
 - [ ] Start Infodock a second time (Start menu): no second bar; the existing bar shows and Settings opens with keyboard focus.
 - [ ] `taskkill /im infodock.exe` (without `/f`): Infodock quits and the reserved space is released.
 
@@ -74,7 +76,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.
-- [ ] Every control from the M0 checks works the same (hotkey with Enter, choices, switches, sliders save when released, *Use theme default*). A tray toggle of *Lock* or *Popups* shows up in Settings at once.
+- [ ] Every control from the M0 checks works the same (hotkey recording, choices, switches, sliders save when released, *Use theme default*). A tray toggle of *Lock* or *Popups* shows up in Settings at once.
 - [ ] Keyboard: Tab moves through the controls, Space toggles switches, arrow keys change choices and sliders. Narrator reads each control with its label.
 - [ ] Resize the window down to its minimum: labels and help texts wrap, nothing overlaps or is cut off.
 - [ ] With Settings open behind other windows, start Infodock again: Settings comes to the front.

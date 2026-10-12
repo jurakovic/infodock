@@ -431,7 +431,8 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 ### 6.5 Global hotkey and tray
 
 * `hotkey` (default `Ctrl+Alt+Shift+I`) with `hotkeyAction`: `bringToFront` (default) | `toggleVisibility`.
-* If registration fails (key already taken), Settings shows the error next to the field; the app MUST still start.
+* Settings records the hotkey: the user selects the hotkey button and presses the new combination; Esc or leaving the window cancels. Keys are read as physical keys, so the keyboard layout does not matter (Ctrl+Alt is AltGr on many layouts). A hotkey needs Ctrl, Alt or Win; only F1–F24 may stand alone, so a hotkey never takes a key away from typing. A refused combination is explained and recording goes on.
+* A recorded hotkey is registered before it is saved. If registration fails (typically another app already uses the combination), Settings shows the error next to the button and the previous hotkey stays. A hotkey that cannot be registered at start-up is shown the same way; the app MUST still start. Recording the same combination again retries it.
 * Tray icon: left-click toggles bar visibility; right-click opens the tray menu (§4.1). It can be hidden (`showTrayIcon`, default true). If both the tray icon and the bar are hidden, the hotkey or a second launch (single instance → show the bar and open Settings) brings it back.
 
 ### 6.6 Sensor picker and creation flow
@@ -1059,7 +1060,7 @@ Stored under `settings` in the config (§11.2).
 | dateLocale | system / ui | system | Locale for date/number formats and weekday/month names |
 | autostart | bool | false | Asked on first run |
 | showTrayIcon | bool | true | |
-| hotkey | accelerator | `Ctrl+Alt+Shift+I` | |
+| hotkey | accelerator | `Ctrl+Alt+Shift+I` | Modifiers in the order `Win+Ctrl+Alt+Shift`, then the key: a letter, a digit or a `KeyboardEvent.code` name (`F5`, `ArrowUp`, `Backquote`) |
 | hotkeyAction | bringToFront / toggleVisibility | bringToFront | |
 | locked | bool | false | |
 | popupsEnabled | bool | true | |

@@ -1,6 +1,7 @@
 //! The global hotkey (SPEC §6.5): brings the bar to the front or toggles it.
 //!
-//! The hotkey manager lives on the main thread, whose event loop delivers its messages.
+//! The hotkey manager lives on the main thread, whose event loop delivers its messages. Errors are
+//! sentences for Settings to show as they are.
 
 use std::cell::RefCell;
 use std::str::FromStr;
@@ -11,6 +12,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use crate::app::App;
 use crate::config::model::HotkeyAction;
+use crate::i18n::{t, t_args};
 
 struct State {
     current: Option<HotKey>,
@@ -38,7 +40,7 @@ pub fn init(app: &Arc<App>) {
         Ok(manager) => MANAGER.with(|m| *m.borrow_mut() = Some(manager)),
         Err(e) => {
             tracing::warn!("global hotkeys unavailable: {e}");
-            state().error = Some(e.to_string());
+            state().error = Some(t("settings.general.hotkey.unavailable"));
             return;
         }
     }
@@ -59,9 +61,62 @@ fn on_pressed(app: &Arc<App>) {
     }
 }
 
-/// Parses an accelerator such as `Ctrl+Alt+Shift+I`.
+/// Parses an accelerator such as `Ctrl+Alt+Shift+I` or `Win+Ctrl+1`.
 pub fn parse(accelerator: &str) -> Result<HotKey, String> {
-    HotKey::from_str(accelerator.trim()).map_err(|e| e.to_string())
+    // global-hotkey calls the Windows key Super.
+    let tokens: Vec<&str> = accelerator
+        .trim()
+        .split('+')
+        .map(|token| {
+            if token.trim().eq_ignore_ascii_case("win") {
+                "Super"
+            } else {
+                token
+            }
+        })
+        .collect();
+    HotKey::from_str(&tokens.join("+")).map_err(|e| e.to_string())
+}
+
+/// Modifier keys held with a recorded key.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub win: bool,
+}
+
+/// The accelerator for a combination recorded in Settings (SPEC §6.5), e.g. `Ctrl+Alt+K`. `code`
+/// names the physical key as `KeyboardEvent.code` does (`KeyK`, `Digit1`, `F5`, `ArrowUp`).
+/// Without Ctrl, Alt or Win only a function key may stand alone, so that a hotkey never takes a
+/// key away from typing.
+pub fn accelerator(modifiers: Modifiers, code: &str) -> Result<String, String> {
+    let short = |prefix: &str| code.strip_prefix(prefix).filter(|rest| rest.len() == 1);
+    let key = short("Key").or_else(|| short("Digit")).unwrap_or(code);
+    let function_key = key
+        .strip_prefix('F')
+        .and_then(|n| n.parse::<u8>().ok())
+        .is_some_and(|n| (1..=24).contains(&n));
+    let Modifiers {
+        ctrl,
+        alt,
+        shift,
+        win,
+    } = modifiers;
+    if !(ctrl || alt || win || function_key) {
+        return Err(t("settings.general.hotkey.needsModifier"));
+    }
+    let names = [(win, "Win"), (ctrl, "Ctrl"), (alt, "Alt"), (shift, "Shift")];
+    let mut parts: Vec<&str> = names
+        .into_iter()
+        .filter_map(|(held, name)| held.then_some(name))
+        .collect();
+    parts.push(key);
+    let accelerator = parts.join("+");
+    parse(&accelerator)
+        .map_err(|_| t_args("settings.general.hotkey.unsupported", &[("key", key)]))?;
+    Ok(accelerator)
 }
 
 /// Registers `accelerator` in place of the current hotkey. On failure the previous hotkey stays
@@ -76,16 +131,23 @@ pub fn set(accelerator: &str) -> Result<(), String> {
 }
 
 fn register(accelerator: &str) -> Result<(), String> {
-    let hotkey = parse(accelerator)?;
+    let failed = |error: &str| t_args("settings.general.hotkey.error", &[("error", error)]);
+    let hotkey = parse(accelerator).map_err(|e| failed(&e))?;
     if state().current == Some(hotkey) {
         return Ok(());
     }
     MANAGER.with(|m| {
         let manager = m.borrow();
         let Some(manager) = manager.as_ref() else {
-            return Err("global hotkeys are unavailable".to_owned());
+            return Err(t("settings.general.hotkey.unavailable"));
         };
-        manager.register(hotkey).map_err(|e| e.to_string())?;
+        manager.register(hotkey).map_err(|e| match e {
+            global_hotkey::Error::AlreadyRegistered(_) => t_args(
+                "settings.general.hotkey.taken",
+                &[("hotkey", accelerator.trim())],
+            ),
+            e => failed(&e.to_string()),
+        })?;
         if let Some(old) = state().current.replace(hotkey) {
             let _ = manager.unregister(old);
         }
@@ -113,6 +175,55 @@ mod tests {
         ] {
             assert!(parse(a).is_ok(), "{a}: {:?}", parse(a));
         }
+    }
+
+    #[test]
+    fn parses_the_windows_key() {
+        let win = parse("Win+Ctrl+1").expect("parses");
+        assert_eq!(Some(win), parse("Super+Ctrl+1").ok());
+    }
+
+    fn mods(ctrl: bool, alt: bool, shift: bool, win: bool) -> Modifiers {
+        Modifiers {
+            ctrl,
+            alt,
+            shift,
+            win,
+        }
+    }
+
+    #[test]
+    fn recorded_combinations_become_accelerators() {
+        let cases = [
+            (mods(true, true, true, false), "KeyK", "Ctrl+Alt+Shift+K"),
+            (mods(true, false, false, true), "Digit1", "Win+Ctrl+1"),
+            (mods(false, true, false, false), "ArrowUp", "Alt+ArrowUp"),
+            (
+                mods(true, false, false, false),
+                "Backquote",
+                "Ctrl+Backquote",
+            ),
+            (mods(false, false, false, false), "F9", "F9"),
+            (mods(false, false, true, false), "F24", "Shift+F24"),
+        ];
+        for (m, code, expected) in cases {
+            let accelerator = accelerator(m, code);
+            assert_eq!(accelerator.as_deref(), Ok(expected));
+            assert!(parse(expected).is_ok(), "{expected} parses back");
+        }
+    }
+
+    #[test]
+    fn a_plain_key_needs_ctrl_alt_or_win() {
+        assert!(accelerator(mods(false, false, false, false), "KeyA").is_err());
+        assert!(accelerator(mods(false, false, true, false), "KeyA").is_err());
+        assert!(accelerator(mods(false, false, false, false), "Space").is_err());
+    }
+
+    #[test]
+    fn keys_the_os_cannot_register_are_refused() {
+        assert!(accelerator(mods(true, false, false, false), "IntlBackslash").is_err());
+        assert!(accelerator(mods(true, false, false, false), "F25").is_err());
     }
 
     #[test]

@@ -63,13 +63,13 @@ pub fn open(app: &Arc<App>, route: &str) {
 /// Refreshes the open window whenever the config changes (from any thread).
 pub fn watch(app: &Arc<App>) {
     let a = Arc::clone(app);
-    app.store.on_change(Box::new(move |old, new| {
-        let (old, new) = (old.settings.clone(), new.settings.clone());
+    app.store.on_change(Box::new(move |_, new| {
+        let new = new.settings.clone();
         let a = Arc::clone(&a);
         let _ = slint::invoke_from_event_loop(move || {
             WINDOW.with(|w| {
                 if let Some(open) = w.borrow_mut().as_mut() {
-                    fill(open, &a, &new, Some(&old));
+                    fill(open, &a, &new);
                 }
             });
         });
@@ -81,15 +81,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     crate::install_i18n!(window);
     let state = window.global::<ui::SettingsState>();
 
-    let a = Arc::clone(app);
-    state.on_apply_hotkey(move |text| {
-        let text = text.trim().to_owned();
-        let unchanged = a.store.get().settings.hotkey == text;
-        if unchanged && hotkey::error().is_none() {
-            return;
-        }
-        save(&a, model::patch("hotkey", Value::String(text)));
-    });
+    record_hotkey(&window, app);
     let a = Arc::clone(app);
     state.on_set_flag(move |path, value| save(&a, model::patch(&path, Value::Bool(value))));
     let a = Arc::clone(app);
@@ -130,21 +122,18 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         window: window.clone_strong(),
         monitor_keys: Vec::new(),
     };
-    fill(&mut open, app, &app.store.get().settings, None);
+    fill(&mut open, app, &app.store.get().settings);
     WINDOW.with(|w| *w.borrow_mut() = Some(open));
     Ok(window)
 }
 
-/// Copies `settings` into the window. `previous` is what the window was filled from before; the
-/// hotkey field keeps what the user is typing unless the saved hotkey itself changed.
-fn fill(open: &mut Open, app: &App, settings: &Settings, previous: Option<&Settings>) {
+/// Copies `settings` into the window.
+fn fill(open: &mut Open, app: &App, settings: &Settings) {
     let state = open.window.global::<ui::SettingsState>();
     let json = serde_json::to_value(settings).unwrap_or_default();
     let choice = |path: &str| model::choice(path).map_or(0, |c| model::choice_index(&json, c));
 
-    if previous.is_none_or(|p| p.hotkey != settings.hotkey) {
-        state.set_hotkey(settings.hotkey.as_str().into());
-    }
+    state.set_hotkey(settings.hotkey.as_str().into());
     state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
     state.set_hotkey_action(choice("hotkeyAction"));
     state.set_show_tray_icon(settings.show_tray_icon);
@@ -188,9 +177,9 @@ fn save(app: &Arc<App>, patch: Value) {
             }
         }
         if matches!(result, Err(SaveError::Config(_))) {
-            // Put the controls back to what is saved; a rejected hotkey stays in its field.
+            // Put the controls back to what is saved.
             let settings = app.store.get().settings;
-            fill(open, app, &settings, None);
+            fill(open, app, &settings);
         }
     });
 }
@@ -208,6 +197,98 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
         })
         .map(|(_, config)| config)
         .map_err(SaveError::Config)
+}
+
+/// While `recording-hotkey` is set, the next key pressed with its modifiers becomes the hotkey
+/// (SPEC §6.5); Esc or leaving the window cancels. The keys are read from winit as physical keys,
+/// so the keyboard layout does not matter (Ctrl+Alt is AltGr on many layouts).
+fn record_hotkey(window: &ui::SettingsWindow, app: &Arc<App>) {
+    use slint::winit_030::winit::event::{ElementState, WindowEvent};
+    use slint::winit_030::winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+    use slint::winit_030::{EventResult, WinitWindowAccessor};
+
+    let app = Arc::clone(app);
+    let weak = window.as_weak();
+    let mut modifiers = ModifiersState::empty();
+    window.window().on_winit_window_event(move |_, event| {
+        let Some(window) = weak.upgrade() else {
+            return EventResult::Propagate;
+        };
+        let state = window.global::<ui::SettingsState>();
+        let stop = || {
+            state.set_recording_hotkey(false);
+            state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
+        };
+        match event {
+            WindowEvent::ModifiersChanged(m) => modifiers = m.state(),
+            WindowEvent::Focused(false) if state.get_recording_hotkey() => stop(),
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } if state.get_recording_hotkey() => {
+                let pressed = event.state == ElementState::Pressed && !event.repeat;
+                match event.physical_key {
+                    PhysicalKey::Code(_) if !pressed => {}
+                    PhysicalKey::Code(KeyCode::Escape) if modifiers.is_empty() => stop(),
+                    // A modifier on its own: wait for the key.
+                    PhysicalKey::Code(
+                        KeyCode::ControlLeft
+                        | KeyCode::ControlRight
+                        | KeyCode::AltLeft
+                        | KeyCode::AltRight
+                        | KeyCode::ShiftLeft
+                        | KeyCode::ShiftRight
+                        | KeyCode::SuperLeft
+                        | KeyCode::SuperRight
+                        | KeyCode::Meta,
+                    ) => {}
+                    PhysicalKey::Code(code) => {
+                        let held = hotkey::Modifiers {
+                            ctrl: modifiers.control_key(),
+                            alt: modifiers.alt_key(),
+                            shift: modifiers.shift_key(),
+                            win: modifiers.super_key(),
+                        };
+                        // A combination that is not allowed is explained; recording goes on.
+                        match hotkey::accelerator(held, &format!("{code:?}")) {
+                            Ok(accelerator) => {
+                                state.set_recording_hotkey(false);
+                                apply_hotkey(&app, &accelerator);
+                            }
+                            Err(e) => state.set_hotkey_error(e.into()),
+                        }
+                    }
+                    PhysicalKey::Unidentified(_) => {}
+                }
+                // Keys pressed while recording are not typing or navigation.
+                return EventResult::PreventDefault;
+            }
+            _ => {}
+        }
+        EventResult::Propagate
+    });
+}
+
+/// Registers a recorded hotkey, then saves it; if it cannot be registered, nothing is saved and
+/// the previous hotkey stays (SPEC §6.5). Registering first also retries a saved hotkey that
+/// failed at start-up.
+fn apply_hotkey(app: &Arc<App>, accelerator: &str) {
+    let result = hotkey::set(accelerator);
+    if result.is_ok() && app.store.get().settings.hotkey != accelerator {
+        save(
+            app,
+            model::patch("hotkey", Value::String(accelerator.to_owned())),
+        );
+        return;
+    }
+    WINDOW.with(|w| {
+        if let Some(open) = w.borrow().as_ref() {
+            let error = result.err().unwrap_or_default();
+            let state = open.window.global::<ui::SettingsState>();
+            state.set_hotkey_error(error.into());
+        }
+    });
 }
 
 /// Brings the window to the front, e.g. when a second launch asked for Settings.
@@ -278,26 +359,32 @@ mod screenshots {
             window: ui.clone_strong(),
             monitor_keys: Vec::new(),
         };
-        fill(&mut open, &app, &app.store.get().settings, None);
+        fill(&mut open, &app, &app.store.get().settings);
         ui.show().expect("shown");
         window.set_size(PhysicalSize::new(width, height));
 
         let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/screenshots");
         std::fs::create_dir_all(&out).expect("screenshot dir");
-        for (index, page) in super::model::PAGES.iter().enumerate() {
-            ui.global::<ui::SettingsState>().set_page(index as i32);
+        let render = |name: &str| {
             window.request_redraw();
             let mut pixels = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
             window.draw_if_needed(|renderer| {
                 renderer.render(&mut pixels, width as usize);
             });
-            write_png(
-                &out.join(format!("settings-{page}.png")),
-                width,
-                height,
-                &pixels,
-            );
+            write_png(&out.join(format!("{name}.png")), width, height, &pixels);
+        };
+        let state = ui.global::<ui::SettingsState>();
+        for (index, page) in super::model::PAGES.iter().enumerate() {
+            state.set_page(index as i32);
+            render(&format!("settings-{page}"));
         }
+
+        // The hotkey button while it waits for keys, with a refused combination.
+        state.set_page(0);
+        state.set_recording_hotkey(true);
+        let taken = crate::i18n::t_args("settings.general.hotkey.taken", &[("hotkey", "Ctrl+K")]);
+        state.set_hotkey_error(taken.into());
+        render("settings-general-recording");
         app.store.shutdown();
     }
 }
