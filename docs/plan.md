@@ -13,7 +13,7 @@ Exit: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survi
 - [x] **S2 Logging, i18n, theme**: rolling logs (§11.1), panic hook, `t()` with plurals (TS) + Rust lookup, theme tokens (§12.1, modern), reactive config store in the UI
 - [x] **S3 Platform + AppBar**: platform traits (§4.6), Windows monitors (device name, friendly name, scale), AppBar negotiation (§5.2), z-order and full-screen (§5.3), Explorer restart, `ABM_REMOVE` on exit and panic; stub platform elsewhere
 - [x] **S4 App shell**: bar window placement and material, tray (§4.1, §6.5), single instance, global hotkey, minimal Settings window (General + Bar pages) to exercise edge/monitor/height changes, `docs/manual-test.md` M0 section
-- [ ] **S5 Close-out**: clean-context review of the Windows code, fixes, CI green, report
+- [x] **S5 Close-out**: clean-context review of the Windows code, fixes, CI green, report. Remaining: manual Windows check (`docs/manual-test.md` M0)
 
 ## M1 — Framework
 
