@@ -300,8 +300,8 @@ pub enum UiEvent {
     TrayClick,
     /// The tray icon's menu was requested (right click, menu key).
     TrayMenu,
-    /// The time set with [`BarWindow::set_timer`] has come.
-    Timer,
+    /// A timer set with [`BarWindow::set_timer`] is due.
+    Timer(TimerId),
     /// The pointer moved over the window (or anywhere while captured); logical px from the
     /// window's top-left corner.
     PointerMove(PointF),
@@ -317,6 +317,15 @@ pub enum UiEvent {
         at: PointF,
         modifiers: Modifiers,
     },
+}
+
+/// The bar logic's timers; each runs independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimerId {
+    /// The sensors' earliest wake-up (SPEC §4.4).
+    Wake,
+    /// The hint's show or hide delay (SPEC §7.1).
+    Hint,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,8 +413,12 @@ pub trait BarWindow {
     /// events that arrive meanwhile are delivered after the current handler call.
     fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32>;
     /// Delivers [`UiEvent::Timer`] once after `delay` (it may come a few ms early), replacing the
-    /// previous timer; `None` cancels it.
-    fn set_timer(&self, delay: Option<std::time::Duration>);
+    /// previous timer with this id; `None` cancels it.
+    fn set_timer(&self, id: TimerId, delay: Option<std::time::Duration>);
+    /// Shows the hint window (SPEC §7.1) at `rect` (physical screen px) with what `paint` draws
+    /// at `scale`: fading in when it was hidden, updated in place when it was shown.
+    fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas));
+    fn hide_hint(&self);
     /// While captured, pointer events keep coming when the pointer leaves the window.
     fn capture_pointer(&self, capture: bool);
     /// Asks a yes/no question in a native dialog (SPEC §6.4): `message` as the main text and

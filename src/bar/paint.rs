@@ -460,5 +460,47 @@ mod tests {
                 save(&format!("{name}{suffix}"), &bitmap);
             }
         }
+
+        // Hints (SPEC §7.1): a two-column hint above a bottom bar, one below a top bar.
+        use crate::bar::hint::{self, HintFrame, HintText};
+        use crate::bar::placement::Anchor;
+        use crate::platform::RectF;
+        for (name, settings, os, edge) in [
+            ("hint-modern", Settings::default(), dark, Edge::Bottom),
+            (
+                "hint-modern-light-top",
+                Settings::default(),
+                light,
+                Edge::Top,
+            ),
+            ("hint-classic", classic.clone(), dark, Edge::Bottom),
+        ] {
+            let theme = Theme::resolve(&settings, os);
+            let bar = match edge {
+                Edge::Bottom => RectF::new(0.0, 572.0, 800.0, 600.0),
+                Edge::Top => RectF::new(0.0, 0.0, 800.0, 28.0),
+            };
+            let anchor = Anchor {
+                rect: RectF::new(380.0, bar.top, 420.0, bar.bottom),
+                bar,
+                monitor: RectF::new(0.0, 0.0, 800.0, 600.0),
+                edge,
+            };
+            let text = HintText::new(
+                "Processor: 37%\nUser:\t25%\nKernel:\t12%\nCores:\t8 (16 threads)",
+                text.as_ref(),
+                &theme,
+            );
+            let frame = HintFrame::new(&text, &anchor, &theme);
+            for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
+                let width = (frame.window.width() * scale).round() as u32;
+                let height = (frame.window.height() * scale).round() as u32;
+                let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
+                    hint::paint(canvas, &frame, &text, &theme)
+                })
+                .expect("rendered");
+                save(&format!("{name}{suffix}"), &bitmap);
+            }
+        }
     }
 }

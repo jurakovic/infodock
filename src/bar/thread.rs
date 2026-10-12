@@ -1,16 +1,18 @@
 //! The bar logic on the bar thread (SPEC §4.1, §4.4): applies the config and the OS appearance,
-//! keeps the sensors, their wake-up timer and layout, and draws the bar. Interaction arrives in
-//! later M1 slices.
+//! keeps the sensors, their wake-up timer and layout, draws the bar, and handles the pointer:
+//! clicks, context menus and the hover hint (§6, §7.1).
 
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use super::hint::{self, HintFrame, HintText, Hover, Step};
 use super::interact::{self, Press};
 use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
+use super::placement::Anchor;
 use super::sensors::{BarSensors, Env};
 use super::theme::Theme;
 use super::tray::{self, TrayCommand};
@@ -20,11 +22,11 @@ use crate::config::model::Zone;
 use crate::config::model::{Layout, Material, SensorInstance, Settings};
 use crate::i18n::{t, t_args};
 use crate::platform::{
-    BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF, PointerButton, SizeF,
-    TextEngine, UiEvent,
+    BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
+    PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent,
 };
 use crate::sensors::registry::registry;
-use crate::sensors::{ClickResult, LayoutCtx, State};
+use crate::sensors::{ClickResult, HintContent, LayoutCtx, State};
 
 /// A zone as Settings routes name it.
 fn zone_id(zone: Zone) -> &'static str {
@@ -43,6 +45,10 @@ pub(super) struct BarLogic {
     previews: HashMap<String, SensorInstance>,
     /// The left button is down on a sensor.
     press: Option<Press>,
+    /// When the hover hint shows and hides.
+    hover: Hover,
+    /// Where the bar is; hints are placed from it.
+    geometry: Option<BarGeometry>,
     sensors: BarSensors,
     text: Rc<dyn TextEngine>,
     appearance: OsAppearance,
@@ -71,6 +77,8 @@ impl BarLogic {
             state: config.state,
             previews: HashMap::new(),
             press: None,
+            hover: Hover::default(),
+            geometry: None,
             sensors: BarSensors::default(),
             text: crate::platform::text_engine(),
             appearance,
@@ -93,6 +101,8 @@ impl BarLogic {
     }
 
     fn tray_menu(&mut self, window: &dyn BarWindow) {
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
         let entries = tray::menu(&self.settings, self.host.bar_visible());
         let Some(command) = window.show_menu(&entries).and_then(TrayCommand::from_id) else {
             return;
@@ -119,6 +129,9 @@ impl BarLogic {
     /// A left press on a sensor dims it until release, if it can lead to a click or a drag
     /// (SPEC §6.1).
     fn pointer_down(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
+        // Any click closes the hint (SPEC §7.1).
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
         let Some(hit) = self.sensors.hit(at.x) else {
             return;
         };
@@ -135,11 +148,112 @@ impl BarLogic {
     fn pointer_moved(&mut self, window: &dyn BarWindow, at: PointF) {
         // Past the threshold a reorder drag starts (M1 S8); until then the press just stops
         // being a click.
-        if let Some(press) = &mut self.press
-            && press.moved_to(at)
-            && self.sensors.set_pressed(None)
+        if let Some(press) = &mut self.press {
+            if press.moved_to(at) && self.sensors.set_pressed(None) {
+                window.invalidate();
+            }
+            return;
+        }
+        let over = self.sensors.hit(at.x).map(|h| h.entry.id);
+        let over = over.filter(|_| self.settings.popups_enabled);
+        let popups = &self.settings.popups;
+        let step = self.hover.over(
+            over.as_deref(),
+            Duration::from_millis(u64::from(popups.show_delay_ms)),
+            Duration::from_millis(u64::from(popups.hide_delay_ms)),
+        );
+        self.apply_hint(window, step);
+    }
+
+    fn pointer_left(&mut self, window: &dyn BarWindow) {
+        let hide = Duration::from_millis(u64::from(self.settings.popups.hide_delay_ms));
+        let step = self.hover.leave(hide);
+        self.apply_hint(window, step);
+    }
+
+    /// Carries out what the hover logic decided.
+    fn apply_hint(&mut self, window: &dyn BarWindow, step: Step) {
+        match step {
+            Step::Idle => {}
+            Step::Show(id) => {
+                if !self.show_hint(window, &id) {
+                    self.hover.nothing_shown();
+                    window.hide_hint();
+                }
+            }
+            Step::Hide => {
+                window.set_timer(TimerId::Hint, None);
+                window.hide_hint();
+            }
+            Step::Wait(delay) => window.set_timer(TimerId::Hint, Some(delay)),
+            Step::StopWaiting => window.set_timer(TimerId::Hint, None),
+        }
+    }
+
+    /// Shows (or updates) sensor `id`'s hint above or below it (SPEC §7.1, §7.3); `false` if
+    /// it has none.
+    fn show_hint(&self, window: &dyn BarWindow, id: &str) -> bool {
+        let Some(geometry) = &self.geometry else {
+            return false;
+        };
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+        };
+        let (Some(HintContent::Text(text)), Some((x, width))) =
+            (self.sensors.hint(id, &env), self.sensors.place_of(id))
+        else {
+            return false;
+        };
+        if text.is_empty() {
+            return false;
+        }
+        let scale = geometry.scale as f32;
+        let logical = |r: Rect| {
+            RectF::new(
+                r.left as f32 / scale,
+                r.top as f32 / scale,
+                r.right as f32 / scale,
+                r.bottom as f32 / scale,
+            )
+        };
+        let bar = logical(geometry.rect);
+        let anchor = Anchor {
+            rect: RectF::new(bar.left + x, bar.top, bar.left + x + width, bar.bottom),
+            bar,
+            monitor: logical(geometry.monitor.bounds),
+            edge: geometry.edge,
+        };
+        let layout = HintText::new(&text, self.text.as_ref(), &self.theme);
+        let frame = HintFrame::new(&layout, &anchor, &self.theme);
+        let physical = |v: f32| (v * scale).round() as i32;
+        let rect = Rect::new(
+            physical(frame.window.left),
+            physical(frame.window.top),
+            physical(frame.window.right),
+            physical(frame.window.bottom),
+        );
+        let theme = &self.theme;
+        window.show_hint(rect, scale, &mut |canvas| {
+            hint::paint(canvas, &frame, &layout, theme);
+        });
+        true
+    }
+
+    /// Redraws a shown hint, whose sensor or theme may have changed (SPEC §7.1: live).
+    fn refresh_hint(&mut self, window: &dyn BarWindow) {
+        if !self.settings.popups_enabled {
+            let step = self.hover.dismiss();
+            self.apply_hint(window, step);
+            return;
+        }
+        if let Some(id) = self.hover.shown().map(str::to_owned)
+            && !self.show_hint(window, &id)
         {
-            window.invalidate();
+            self.hover.nothing_shown();
+            window.hide_hint();
         }
     }
 
@@ -172,6 +286,8 @@ impl BarLogic {
 
     /// The bar or sensor menu at `at` (SPEC §6.4), and what its command does.
     fn context_menu(&mut self, window: &dyn BarWindow, at: PointF) {
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
         if self.press.take().is_some() {
             window.capture_pointer(false);
             self.sensors.set_pressed(None);
@@ -257,6 +373,7 @@ impl BarLogic {
             self.theme = theme;
             self.sensors.invalidate_all();
             window.invalidate();
+            self.refresh_hint(window);
         }
     }
 
@@ -271,6 +388,7 @@ impl BarLogic {
         }
         if self.sensors.sync(&shown, &self.state, &caps, registry()) {
             window.invalidate();
+            self.refresh_hint(window);
         }
         self.arm_timer(window);
     }
@@ -279,23 +397,33 @@ impl BarLogic {
     fn arm_timer(&self, window: &dyn BarWindow) {
         let now = Instant::now();
         window.set_timer(
+            TimerId::Wake,
             self.sensors
                 .next_wake(now)
                 .map(|at| at.saturating_duration_since(now)),
         );
     }
 
-    fn on_timer(&mut self, window: &dyn BarWindow) {
-        let env = Env {
-            settings: &self.settings,
-            theme: &self.theme,
-            platform: self.platform.as_ref(),
-            alt: false,
-        };
-        if self.sensors.wake(Instant::now(), &env) {
-            window.invalidate();
+    fn on_timer(&mut self, window: &dyn BarWindow, id: TimerId) {
+        match id {
+            TimerId::Wake => {
+                let env = Env {
+                    settings: &self.settings,
+                    theme: &self.theme,
+                    platform: self.platform.as_ref(),
+                    alt: false,
+                };
+                if self.sensors.wake(Instant::now(), &env) {
+                    window.invalidate();
+                    self.refresh_hint(window);
+                }
+                self.arm_timer(window);
+            }
+            TimerId::Hint => {
+                let step = self.hover.timer();
+                self.apply_hint(window, step);
+            }
         }
-        self.arm_timer(window);
     }
 }
 
@@ -339,7 +467,7 @@ impl BarHandler for BarLogic {
                     self.sync_sensors(window);
                 }
             }
-            UiEvent::Timer => self.on_timer(window),
+            UiEvent::Timer(id) => self.on_timer(window, id),
             UiEvent::PointerDown {
                 button: PointerButton::Left,
                 at,
@@ -356,8 +484,9 @@ impl BarHandler for BarLogic {
                 at,
                 ..
             } => self.context_menu(window, at),
-            // Hover arrives with the hint window (M1 S7); middle clicks are reserved (§6.1).
-            UiEvent::PointerDown { .. } | UiEvent::PointerUp { .. } | UiEvent::PointerLeave => {}
+            UiEvent::PointerLeave => self.pointer_left(window),
+            // Middle clicks are reserved (SPEC §6.1).
+            UiEvent::PointerDown { .. } | UiEvent::PointerUp { .. } => {}
             UiEvent::AppearanceChanged => {
                 let appearance = self.platform.appearance();
                 if appearance != self.appearance {
@@ -366,9 +495,17 @@ impl BarHandler for BarLogic {
                     self.refresh_theme(window);
                 }
             }
-            UiEvent::Placed(_) => window.invalidate(),
-            // Hint and popup windows arrive later in M1; they hide here (SPEC §5.3).
-            UiEvent::Fullscreen(_) => {}
+            UiEvent::Placed(geometry) => {
+                self.geometry = Some(geometry);
+                window.invalidate();
+                self.refresh_hint(window);
+            }
+            // Full-screen apps hide the hint (SPEC §5.3); popups arrive in M3.
+            UiEvent::Fullscreen(true) => {
+                let step = self.hover.dismiss();
+                self.apply_hint(window, step);
+            }
+            UiEvent::Fullscreen(false) => {}
             UiEvent::CloseRequested => self.host.quit(),
             UiEvent::Activate => self.host.activate(),
             UiEvent::TrayClick => self.host.toggle_bar(),
@@ -406,6 +543,9 @@ mod tests {
         menus: RefCell<Vec<Vec<MenuEntry>>>,
         captured: Cell<bool>,
         confirmed: RefCell<Vec<String>>,
+        hint_timer: Cell<Option<std::time::Duration>>,
+        /// The shown hint: where, and what it draws.
+        hint: RefCell<Option<(Rect, String)>>,
     }
 
     impl BarWindow for FakeWindow {
@@ -416,7 +556,19 @@ mod tests {
             self.menus.borrow_mut().push(entries.to_vec());
             self.choose.take()
         }
-        fn set_timer(&self, _delay: Option<std::time::Duration>) {}
+        fn set_timer(&self, id: TimerId, delay: Option<std::time::Duration>) {
+            if id == TimerId::Hint {
+                self.hint_timer.set(delay);
+            }
+        }
+        fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+            let mut canvas = RecordingCanvas::new(scale);
+            paint(&mut canvas);
+            *self.hint.borrow_mut() = Some((rect, canvas.dump()));
+        }
+        fn hide_hint(&self) {
+            *self.hint.borrow_mut() = None;
+        }
         fn capture_pointer(&self, capture: bool) {
             self.captured.set(capture);
         }
@@ -482,8 +634,28 @@ mod tests {
             rx,
             Arc::clone(&host) as Arc<dyn BarHost>,
         );
+        // The same text metrics on every OS, readable by the recording canvas.
+        logic.text = Rc::new(crate::platform::recording::FixedMetrics);
         let window = FakeWindow::default();
         logic.on_event(&window, UiEvent::Started);
+        // A 1200 × 1080 monitor with the bar at the bottom.
+        let monitor = crate::platform::MonitorInfo::new(
+            r"\\.\DISPLAY1".into(),
+            "Test".into(),
+            Rect::new(0, 0, 1200, 1080),
+            Rect::new(0, 0, 1200, 1052),
+            1.0,
+            true,
+        );
+        logic.on_event(
+            &window,
+            UiEvent::Placed(BarGeometry {
+                rect: Rect::new(0, 1052, 1200, 1080),
+                edge: crate::config::model::Edge::Bottom,
+                monitor,
+                scale: 1.0,
+            }),
+        );
         logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
         (logic, window, host, config)
     }
@@ -649,5 +821,90 @@ mod tests {
             .expect("text type");
         right_click(&mut logic, &window, LOGO, MenuCommand::Add(text));
         assert_eq!(host.calls(), ["add text center 1", "open sensor/s_new"]);
+    }
+
+    fn hover(logic: &mut BarLogic, window: &FakeWindow, at: PointF) {
+        logic.on_event(window, UiEvent::PointerMove(at));
+    }
+
+    fn hint_timer(logic: &mut BarLogic, window: &FakeWindow) {
+        logic.on_event(window, UiEvent::Timer(TimerId::Hint));
+    }
+
+    #[test]
+    fn hint_shows_after_the_delay_above_the_sensor() {
+        let (mut logic, window, _, _) = bar(Settings::default());
+        hover(&mut logic, &window, LOGO);
+        assert_eq!(
+            window.hint_timer.get(),
+            Some(Duration::from_millis(600)),
+            "the show delay runs"
+        );
+        assert!(window.hint.borrow().is_none());
+        hint_timer(&mut logic, &window);
+        let hint = window.hint.borrow().clone().expect("shown");
+        // The logo's popup text, above the bar, its pointer under the bubble.
+        assert!(
+            hint.1.contains(&format!("\"Infodock {}\"", crate::VERSION)),
+            "{}",
+            hint.1
+        );
+        assert!(hint.0.bottom <= 1052 + 6, "above the bar: {:?}", hint.0);
+        assert!(
+            hint.0.left < 600 && hint.0.right > 600,
+            "centred on the logo: {:?}",
+            hint.0
+        );
+
+        // Leaving: hidden after the hide delay.
+        logic.on_event(&window, UiEvent::PointerLeave);
+        assert_eq!(window.hint_timer.get(), Some(Duration::from_millis(100)));
+        assert!(window.hint.borrow().is_some());
+        hint_timer(&mut logic, &window);
+        assert!(window.hint.borrow().is_none());
+    }
+
+    #[test]
+    fn hint_closes_on_a_press_and_stays_closed() {
+        let (mut logic, window, _, _) = bar(Settings::default());
+        hover(&mut logic, &window, LOGO);
+        hint_timer(&mut logic, &window);
+        press(&mut logic, &window, LOGO, false);
+        assert!(window.hint.borrow().is_none());
+        release(&mut logic, &window, LOGO);
+        hover(&mut logic, &window, PointF::new(LOGO.x + 1.0, 14.0));
+        hint_timer(&mut logic, &window);
+        assert!(
+            window.hint.borrow().is_none(),
+            "not again over the same sensor"
+        );
+    }
+
+    #[test]
+    fn no_hints_while_popups_are_off() {
+        let settings = Settings {
+            popups_enabled: false,
+            ..Settings::default()
+        };
+        let (mut logic, window, _, _) = bar(settings);
+        hover(&mut logic, &window, LOGO);
+        hint_timer(&mut logic, &window);
+        assert!(window.hint.borrow().is_none());
+    }
+
+    #[test]
+    fn placeholders_explain_themselves() {
+        let (mut logic, window, _, _) = bar(Settings::default());
+        // The first placeholder (cpu-graph) starts at the edge padding.
+        hover(&mut logic, &window, PointF::new(10.0, 14.0));
+        hint_timer(&mut logic, &window);
+        let hint = window.hint.borrow().clone().expect("shown");
+        assert!(
+            hint.1.contains("not available in this version"),
+            "{}",
+            hint.1
+        );
+        // Kept on screen: 7 px from the monitor's left edge, less the shadow margin.
+        assert_eq!(hint.0.left, 1);
     }
 }

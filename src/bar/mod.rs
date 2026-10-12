@@ -1,10 +1,12 @@
 //! The bar (SPEC §4.1, §5): a native window on its own thread. [`BarController`] is the handle
 //! the rest of the app uses; the logic in `thread.rs` runs on the bar thread.
 
+mod hint;
 mod interact;
 mod layout;
 mod menus;
 mod paint;
+mod placement;
 mod sensors;
 pub mod theme;
 mod thread;

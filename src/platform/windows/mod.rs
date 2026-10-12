@@ -2,6 +2,7 @@
 
 pub mod appbar;
 mod dialog;
+mod hint;
 pub mod image;
 pub mod instance;
 mod menu;

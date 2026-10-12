@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 
 use super::{
-    AppBar, AppDirs, BarHandler, BarThread, BarWindow, Capabilities, DockRequest, HandlerFactory,
-    Instance, InstanceGuard, MenuEntry, MonitorInfo, OsAppearance, Platform, PlatformError,
-    TrayIcon, UiEvent, UiWaker,
+    AppBar, AppDirs, BarHandler, BarThread, BarWindow, Canvas, Capabilities, DockRequest,
+    HandlerFactory, Instance, InstanceGuard, MenuEntry, MonitorInfo, OsAppearance, Platform,
+    PlatformError, Rect, TimerId, TrayIcon, UiEvent, UiWaker,
 };
 use crate::config::model::Material;
 
@@ -55,7 +55,11 @@ impl BarWindow for NoWindow {
         None
     }
 
-    fn set_timer(&self, _delay: Option<std::time::Duration>) {}
+    fn set_timer(&self, _id: TimerId, _delay: Option<std::time::Duration>) {}
+
+    fn show_hint(&self, _rect: Rect, _scale: f32, _paint: &mut dyn FnMut(&mut dyn Canvas)) {}
+
+    fn hide_hint(&self) {}
 
     fn capture_pointer(&self, _capture: bool) {}
 

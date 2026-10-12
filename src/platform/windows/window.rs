@@ -52,6 +52,7 @@ use windows::core::{HSTRING, PCWSTR, w};
 
 use super::appbar::{Shared as AppBarState, WinAppBar};
 use super::dialog;
+use super::hint::HintWindow;
 use super::instance::activate_message;
 use super::menu;
 use super::render::Renderer;
@@ -59,15 +60,24 @@ use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
-    AppBarEvent, BarHandler, BarThread, BarWindow, HandlerFactory, MenuEntry, Modifiers,
-    PlatformError, PointF, PointerButton, SizeF, TrayIcon, UiEvent, UiWaker,
+    AppBarEvent, BarHandler, BarThread, BarWindow, Canvas, HandlerFactory, MenuEntry, Modifiers,
+    PlatformError, PointF, PointerButton, Rect, SizeF, TimerId, TrayIcon, UiEvent, UiWaker,
 };
 
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
 /// Private: [`UiWaker::wake`] was called.
 const WM_WAKE: u32 = WM_APP + 1;
-/// The id of the sensors' wake-up timer ([`BarWindow::set_timer`]).
+/// Window timer ids: the bar logic's timers ([`BarWindow::set_timer`]) and the hint's fade.
 const WAKE_TIMER: usize = 1;
+const HINT_TIMER: usize = 2;
+const FADE_TIMER: usize = 3;
+
+fn timer_id(id: TimerId) -> usize {
+    match id {
+        TimerId::Wake => WAKE_TIMER,
+        TimerId::Hint => HINT_TIMER,
+    }
+}
 
 /// Per-window state, reached from the window procedure through `GWLP_USERDATA`. The bar window
 /// lives as long as the process, so its state is never freed.
@@ -89,6 +99,8 @@ struct WindowState {
     render_failed: Cell<bool>,
     /// `TrackMouseEvent` asked for `WM_MOUSELEAVE`.
     tracking_leave: Cell<bool>,
+    /// Created on first use; `Err` once creating it failed.
+    hint: OnceCell<std::result::Result<HintWindow, ()>>,
 }
 
 impl WindowState {
@@ -195,11 +207,24 @@ impl WindowState {
                 // Handled here, so no WM_CONTEXTMENU follows the right button.
                 return LRESULT(0);
             }
-            WM_TIMER if wparam.0 == WAKE_TIMER => {
+            WM_TIMER if wparam.0 == WAKE_TIMER || wparam.0 == HINT_TIMER => {
                 // One-shot: the handler sets the next one.
                 // SAFETY: plain call on our own window.
-                let _ = unsafe { KillTimer(Some(hwnd), WAKE_TIMER) };
-                self.dispatch(UiEvent::Timer);
+                let _ = unsafe { KillTimer(Some(hwnd), wparam.0) };
+                let id = if wparam.0 == WAKE_TIMER {
+                    TimerId::Wake
+                } else {
+                    TimerId::Hint
+                };
+                self.dispatch(UiEvent::Timer(id));
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == FADE_TIMER => {
+                let going_on = matches!(self.hint.get(), Some(Ok(hint)) if hint.fade_step());
+                if !going_on {
+                    // SAFETY: plain call on our own window.
+                    let _ = unsafe { KillTimer(Some(hwnd), FADE_TIMER) };
+                }
                 return LRESULT(0);
             }
             WM_SIZE | WM_DPICHANGED => self.invalidate(),
@@ -383,21 +408,47 @@ impl BarWindow for WindowState {
         dialog::confirm(self.hwnd(), &t("app.name"), message, action)
     }
 
-    fn set_timer(&self, delay: Option<Duration>) {
-        let hwnd = self.hwnd();
+    fn set_timer(&self, id: TimerId, delay: Option<Duration>) {
+        let (hwnd, id) = (self.hwnd(), timer_id(id));
         match delay {
             // SetTimer replaces a timer with the same id; USER clamps tiny delays to ~10 ms.
             // SAFETY: plain calls on our own window.
             Some(delay) => unsafe {
                 let ms = u32::try_from(delay.as_millis()).unwrap_or(u32::MAX).max(1);
-                if SetTimer(Some(hwnd), WAKE_TIMER, ms, None) == 0 {
-                    tracing::warn!("the wake-up timer could not be set");
+                if SetTimer(Some(hwnd), id, ms, None) == 0 {
+                    tracing::warn!("timer {id} could not be set");
                 }
             },
             // SAFETY: plain call on our own window; a missing timer is no error worth noting.
             None => unsafe {
-                let _ = KillTimer(Some(hwnd), WAKE_TIMER);
+                let _ = KillTimer(Some(hwnd), id);
             },
+        }
+    }
+
+    fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+        let hint = self.hint.get_or_init(|| {
+            HintWindow::new(self.hwnd()).map_err(|e| {
+                tracing::warn!("the hint window could not be created: {e}");
+            })
+        });
+        let Ok(hint) = hint else {
+            return;
+        };
+        match hint.show(rect, scale, paint) {
+            Ok(true) => {
+                // About 60 steps a second while it fades in.
+                // SAFETY: plain call on our own window.
+                unsafe { SetTimer(Some(self.hwnd()), FADE_TIMER, 16, None) };
+            }
+            Ok(false) => {}
+            Err(e) => tracing::debug!("the hint could not be shown: {e}"),
+        }
+    }
+
+    fn hide_hint(&self) {
+        if let Some(Ok(hint)) = self.hint.get() {
+            hint.hide();
         }
     }
 }
@@ -499,6 +550,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         wake_queued: Arc::new(AtomicBool::new(false)),
         render_failed: Cell::new(false),
         tracking_leave: Cell::new(false),
+        hint: OnceCell::new(),
     }));
     let title = HSTRING::from(t("app.name"));
     // SAFETY: creates our own window; `state` outlives it.

@@ -472,6 +472,8 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 * Content (`HintContent`): `Text(String)` (multi-line plain text; `\n` line breaks; tab-aligned "label: value" columns) or `Rich(Box<dyn RichHint>)` for hints that measure and draw themselves (Date calendar).
 * Visuals: rounded rectangle (modern radius 8 px, classic 6 px); background `popups.background` at `popups.opacity`; text `popups.textColor`; font `popups.font` / `popups.fontStyle` / `popups.fontSize` (9–15, default 12); optional shadow (`popups.shadow`: a soft shadow drawn into the layered window's margin); padding 6 px; minimum size 30×20. A **pointer triangle** 13×7 points at the sensor (downward when the bar is at the bottom, upward at the top).
 * The hint is click-through. It closes when the pointer leaves the sensor, on any click, when a menu opens and when a drag starts.
+* After a click, a menu or a drag, the hint stays closed while the pointer remains over that sensor; it shows again over another sensor (or after leaving and coming back). Full-screen apps (§5.3) and turning `popupsEnabled` off close it too.
+* Implementation: `Text` hints split lines at `\n` and cells at `\t`; each column is as wide as its widest cell (a row's last cell may run on), with a 12 px gap. The shadow is a few rings of black at low alpha around the bubble, in a 6 px window margin (none without `popups.shadow`). The hint window is owned by the bar window; the bar's timers drive the show and hide delays and the fade-in.
 
 ### 7.2 Interactive popups
 

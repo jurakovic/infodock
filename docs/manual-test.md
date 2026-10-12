@@ -89,6 +89,17 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Press and hold the left button on the logo: it dims; release: it is back. Press, move the pointer a few px away and release: no click (dragging arrives in S8).
 - [ ] *Lock* on and Settings ▸ General ▸ *Clicks while locked* → *Only while Alt is held*: pressing the logo no longer dims it; with Alt held it does.
 
+**Hints** (since M1 S7)
+
+- [ ] Rest the pointer on the logo: after about half a second a dark rounded hint "Infodock 0.1.0" appears above it, with a small triangle pointing at the logo and a soft shadow; it fades in quickly. Move away: it disappears after a moment.
+- [ ] Rest on a placeholder (e.g. `cpu-graph`): its hint explains that the sensor is not available in this version. Near the screen's left edge the hint stays on screen and its triangle still points at the sensor.
+- [ ] With a hint shown, move straight to another sensor: the hint switches at once, without a new delay.
+- [ ] Click a sensor while its hint shows: the hint closes and does not come back until the pointer moves to another sensor. Right-click: the hint closes before the menu opens.
+- [ ] Tray → *Popups* off: no hints. On again: hints are back.
+- [ ] Bar at the top (Settings ▸ Bar ▸ Screen edge): hints appear below the bar, their triangle pointing up.
+- [ ] At 150 % scaling the hint text is crisp.
+- [ ] Settings ▸ General ▸ no popup settings yet; with `popups.showDelayMs` set to `0` in `config.json` (Infodock closed), hints appear at once.
+
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.

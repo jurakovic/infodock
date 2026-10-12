@@ -10,7 +10,7 @@ use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::platform::{Canvas, Capabilities, Platform, RectF};
 use crate::sensors::registry::Registry;
-use crate::sensors::{ClickResult, DrawCtx, LayoutCtx, Sensor, SensorCtx, State};
+use crate::sensors::{ClickResult, DrawCtx, HintContent, LayoutCtx, Sensor, SensorCtx, State};
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
 const PRESSED_OPACITY: f32 = 0.6;
@@ -213,6 +213,21 @@ impl BarSensors {
         }
         self.pressed = id.map(str::to_owned);
         true
+    }
+
+    /// Where sensor `id` is: its x and width, logical px.
+    pub fn place_of(&self, id: &str) -> Option<(f32, f32)> {
+        self.zones
+            .iter()
+            .flatten()
+            .find(|p| p.entry.id == id)
+            .map(|p| (p.x, p.width))
+    }
+
+    /// Sensor `id`'s hint.
+    pub fn hint(&self, id: &str, env: &Env) -> Option<HintContent> {
+        let p = self.zones.iter().flatten().find(|p| p.entry.id == id)?;
+        p.sensor.hint(&env.ctx(id))
     }
 
     /// Clicks sensor `id`; returns whether it changed what it shows.
