@@ -107,6 +107,12 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] At 150 % scaling the hint text is crisp.
 - [ ] Settings ▸ General ▸ no popup settings yet; with `popups.showDelayMs` set to `0` in `config.json` (Infodock closed), hints appear at once.
 
+**Highlight and fades** (since M1 S11)
+
+- [ ] Settings ▸ Bar ▸ *Highlight on hover* on: moving the pointer onto the bar makes its background noticeably more opaque over about a third of a second; leaving fades it back.
+- [ ] Add a Spacer without divider (*New sensor… ▸ Spacer*): hovering it fades in a faint vertical line; leaving fades it out. With *Show divider* on, the line is always there.
+- [ ] *Animations* → *Off*: the highlight and the Spacer's line appear and disappear at once. *Like Windows* follows Settings ▸ Accessibility ▸ Visual effects ▸ *Animation effects* (after switching it, move the pointer over the bar again).
+
 **Sensor properties** (since M1 S9)
 
 - [ ] Right-click the logo → *Properties…*: Settings opens "Image properties" with *Image file*, *Colour*, *Opacity* and *Popup text*.

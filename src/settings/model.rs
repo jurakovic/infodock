@@ -80,6 +80,10 @@ pub const CHOICES: &[Choice] = &[
         values: &["topmost", "normal", "bottom"],
     },
     Choice {
+        path: "bar.animations",
+        values: &["auto", "on", "off"],
+    },
+    Choice {
         path: "sensors.inactiveMode",
         values: &["opacity", "colorize"],
     },

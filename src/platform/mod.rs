@@ -75,6 +75,8 @@ pub struct OsAppearance {
     pub transparency: bool,
     /// The user's accent colour.
     pub accent: Color,
+    /// "Animation effects" is on (SPEC §5.5).
+    pub animations: bool,
 }
 
 impl Default for OsAppearance {
@@ -84,6 +86,7 @@ impl Default for OsAppearance {
             transparency: true,
             // The Windows default accent.
             accent: Color::rgba(0x00, 0x78, 0xD4, 1.0),
+            animations: true,
         }
     }
 }
@@ -361,6 +364,8 @@ pub enum TimerId {
     Hint,
     /// Polls Esc while a reorder drag runs (SPEC §6.2).
     Drag,
+    /// The next frame of a bar animation (SPEC §5.5).
+    Frame,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

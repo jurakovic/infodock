@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
+use super::anim::{self, Easing, Fade};
 use super::hint::{self, HintFrame, HintText, Hover, Step};
 use super::interact::{self, DropTarget, Press};
 use super::menus::{self, MenuCommand};
@@ -32,6 +33,8 @@ use crate::sensors::{ClickResult, HintContent, LayoutCtx, State};
 
 /// How often Esc is checked during a drag.
 const ESC_POLL: Duration = Duration::from_millis(50);
+/// The hover highlight fades in and out over this long (SPEC §5.5).
+const HIGHLIGHT: Duration = Duration::from_millis(300);
 
 /// A reorder drag in progress.
 struct Drag {
@@ -75,6 +78,14 @@ pub(super) struct BarLogic {
     tray_shown: Option<bool>,
     /// The topics each sensor was last subscribed to (SPEC §4.4).
     subscribed: HashMap<String, Vec<TopicRequest>>,
+    /// Transitions animate (the setting, or the OS for `auto`; SPEC §5.5).
+    animate: bool,
+    /// The pointer is over the bar.
+    inside: bool,
+    /// The sensor under the pointer, told when the pointer enters and leaves it.
+    hovered: Option<String>,
+    /// The hover highlight (SPEC §5.5), 0–1.
+    highlight: Fade,
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
@@ -108,6 +119,7 @@ impl BarLogic {
         host: Arc<dyn BarHost>,
     ) -> Self {
         let appearance = platform.appearance();
+        let config_animations = config.settings.bar.animations;
         Self {
             theme: Theme::resolve(&config.settings, appearance),
             settings: config.settings,
@@ -124,6 +136,10 @@ impl BarLogic {
             material: None,
             tray_shown: None,
             subscribed: HashMap::new(),
+            animate: anim::enabled(config_animations, appearance.animations),
+            inside: false,
+            hovered: None,
+            highlight: Fade::at(0.0, Instant::now()),
             platform,
             commands,
             host,
@@ -186,6 +202,10 @@ impl BarLogic {
     }
 
     fn pointer_moved(&mut self, window: &dyn BarWindow, at: PointF) {
+        if !self.inside {
+            self.inside = true;
+            self.refresh_highlight(window);
+        }
         if let Some(drag) = &mut self.drag {
             let target = interact::drop_target(
                 at.x,
@@ -216,6 +236,7 @@ impl BarLogic {
             return;
         }
         let over = self.sensors.hit(at.x).map(|h| h.entry.id);
+        self.set_hovered(window, over.clone());
         let over = over.filter(|_| self.settings.popups_enabled);
         let popups = &self.settings.popups;
         let step = self.hover.over(
@@ -261,6 +282,58 @@ impl BarLogic {
         let hide = Duration::from_millis(u64::from(self.settings.popups.hide_delay_ms));
         let step = self.hover.leave(hide);
         self.apply_hint(window, step);
+        self.inside = false;
+        self.refresh_highlight(window);
+        self.set_hovered(window, None);
+    }
+
+    /// Tells the sensors the pointer entered or left (e.g. the Spacer's divider fades in).
+    fn set_hovered(&mut self, window: &dyn BarWindow, id: Option<String>) {
+        if self.hovered == id {
+            return;
+        }
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+            animate: self.animate,
+        };
+        let now = Instant::now();
+        let mut dirty = false;
+        if let Some(old) = &self.hovered {
+            dirty |= self.sensors.on_hover(old, false, now, &env);
+        }
+        if let Some(new) = &id {
+            dirty |= self.sensors.on_hover(new, true, now, &env);
+        }
+        self.hovered = id;
+        if dirty {
+            window.invalidate();
+        }
+        self.arm_timer(window);
+    }
+
+    /// Fades the hover highlight in while the pointer is over the bar and the setting is on,
+    /// and out otherwise (SPEC §5.5).
+    fn refresh_highlight(&mut self, window: &dyn BarWindow) {
+        let on = self.inside && self.settings.bar.highlight_on_hover;
+        let (to, easing) = if on {
+            (1.0, Easing::In)
+        } else {
+            (0.0, Easing::Out)
+        };
+        if self.highlight.target() == to {
+            return;
+        }
+        let full = if self.animate {
+            HIGHLIGHT
+        } else {
+            Duration::ZERO
+        };
+        self.highlight.go(to, full, easing, Instant::now());
+        window.invalidate();
+        window.set_timer(TimerId::Frame, Some(anim::FRAME));
     }
 
     /// Carries out what the hover logic decided.
@@ -293,6 +366,7 @@ impl BarLogic {
             theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
+            animate: self.animate,
         };
         let (Some(HintContent::Text(text)), Some((x, width))) =
             (self.sensors.hint(id, &env), self.sensors.place_of(id))
@@ -384,6 +458,7 @@ impl BarLogic {
             theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: modifiers.alt,
+            animate: self.animate,
         };
         if self.sensors.click(&press.id, &env) == ClickResult::Handled {
             window.invalidate();
@@ -466,6 +541,8 @@ impl BarLogic {
 
     /// Re-resolves the theme; applies a changed material and repaints if anything changed.
     fn refresh_theme(&mut self, window: &dyn BarWindow) {
+        self.animate = anim::enabled(self.settings.bar.animations, self.appearance.animations);
+        self.refresh_highlight(window);
         let theme = Theme::resolve(&self.settings, self.appearance);
         if self.material != Some(theme.material) {
             window.set_material(theme.material);
@@ -507,6 +584,7 @@ impl BarLogic {
             theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
+            animate: self.animate,
         };
         if self.sensors.deliver(delivery, &env) {
             window.invalidate();
@@ -533,6 +611,7 @@ impl BarLogic {
                     theme: &self.theme,
                     platform: self.platform.as_ref(),
                     alt: false,
+                    animate: self.animate,
                 };
                 if self.sensors.wake(Instant::now(), &env) {
                     window.invalidate();
@@ -553,6 +632,12 @@ impl BarLogic {
                 }
             }
             TimerId::Drag => {}
+            TimerId::Frame => {
+                window.invalidate();
+                if self.highlight.running(Instant::now()) {
+                    window.set_timer(TimerId::Frame, Some(anim::FRAME));
+                }
+            }
         }
     }
 }
@@ -652,7 +737,8 @@ impl BarHandler for BarLogic {
             scale: canvas.scale(),
         };
         self.sensors.update_layout(&cx, size.width);
-        paint_bar(canvas, size, &self.theme, self.settings.bar.edge);
+        let highlight = self.highlight.value(Instant::now());
+        paint_bar(canvas, size, &self.theme, self.settings.bar.edge, highlight);
         self.sensors.draw(canvas, &self.theme, size.height);
         // The placer: a 2 px line in the accent colour where the dragged sensor would go
         // (SPEC §6.2, §12.2).
@@ -685,6 +771,8 @@ mod tests {
         captured: Cell<bool>,
         confirmed: RefCell<Vec<String>>,
         hint_timer: Cell<Option<std::time::Duration>>,
+        /// Frame timers requested.
+        frames: Cell<u32>,
         escape: Cell<bool>,
         /// The shown hint: where, and what it draws.
         hint: RefCell<Option<(Rect, String)>>,
@@ -699,8 +787,10 @@ mod tests {
             self.choose.take()
         }
         fn set_timer(&self, id: TimerId, delay: Option<std::time::Duration>) {
-            if id == TimerId::Hint {
-                self.hint_timer.set(delay);
+            match id {
+                TimerId::Hint => self.hint_timer.set(delay),
+                TimerId::Frame => self.frames.set(self.frames.get() + 1),
+                _ => {}
             }
         }
         fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
@@ -882,6 +972,29 @@ mod tests {
             ]
         );
         assert!(subscription_changes(&new, &new).is_empty());
+    }
+
+    #[test]
+    fn highlight_fades_in_while_the_pointer_is_over_the_bar() {
+        let mut settings = Settings::default();
+        settings.bar.highlight_on_hover = true;
+        let (mut logic, window, _, _) = bar(settings);
+        let empty = PointF::new(300.0, 14.0);
+        logic.on_event(&window, UiEvent::PointerMove(empty));
+        assert_eq!(logic.highlight.target(), 1.0);
+        assert_eq!(window.frames.get(), 1);
+        // Moving within the bar starts nothing new.
+        logic.on_event(&window, UiEvent::PointerMove(LOGO));
+        assert_eq!(window.frames.get(), 1);
+        logic.on_event(&window, UiEvent::PointerLeave);
+        assert_eq!(logic.highlight.target(), 0.0);
+        assert_eq!(window.frames.get(), 2);
+
+        // Off by default.
+        let (mut logic, window, _, _) = bar(Settings::default());
+        logic.on_event(&window, UiEvent::PointerMove(empty));
+        assert_eq!(logic.highlight.target(), 0.0);
+        assert_eq!(window.frames.get(), 0);
     }
 
     #[test]

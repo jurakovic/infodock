@@ -5,9 +5,24 @@ use super::theme::Theme;
 use crate::config::model::Edge;
 use crate::platform::{Canvas, RectF, SizeF};
 
-/// Draws the bar's background into a cleared canvas of `size` logical px.
-pub(super) fn paint_bar(canvas: &mut dyn Canvas, size: SizeF, theme: &Theme, edge: Edge) {
-    canvas.fill_rect(RectF::from_size(size), theme.bar_background);
+/// The hover highlight multiplies the background opacity by up to this (SPEC §5.5).
+const HIGHLIGHT_GAIN: f32 = 1.7;
+
+/// Draws the bar's background into a cleared canvas of `size` logical px; `highlight` (0–1) is
+/// how far the hover highlight has faded in.
+pub(super) fn paint_bar(
+    canvas: &mut dyn Canvas,
+    size: SizeF,
+    theme: &Theme,
+    edge: Edge,
+    highlight: f32,
+) {
+    let background = theme.bar_background;
+    let gain = 1.0 + (HIGHLIGHT_GAIN - 1.0) * highlight;
+    canvas.fill_rect(
+        RectF::from_size(size),
+        background.with_alpha(background.a * gain),
+    );
     if let Some(hairline) = theme.hairline {
         // One px on the edge facing the screen centre (SPEC §12.2), whole physical px thick.
         let thickness = canvas.snap(1.0).max(1.0 / canvas.scale());
@@ -32,7 +47,7 @@ mod tests {
         let size = SizeF::new(800.0, 28.0);
 
         let mut bottom = RecordingCanvas::new(1.0);
-        paint_bar(&mut bottom, size, &theme, Edge::Bottom);
+        paint_bar(&mut bottom, size, &theme, Edge::Bottom, 0.0);
         assert_eq!(
             bottom.dump(),
             "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,0 800×1 #FFFFFF/8%\n"
@@ -40,10 +55,46 @@ mod tests {
 
         // At 150 % the line is two physical px, so it stays crisp.
         let mut top = RecordingCanvas::new(1.5);
-        paint_bar(&mut top, size, &theme, Edge::Top);
+        paint_bar(&mut top, size, &theme, Edge::Top, 0.0);
         assert_eq!(
             top.dump(),
             "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,26.67 800×1.33 #FFFFFF/8%\n"
+        );
+    }
+
+    #[test]
+    fn hover_highlight_strengthens_the_background() {
+        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let mut canvas = RecordingCanvas::new(1.0);
+        // Fully in: 80 % × 1.7, capped at 100 %. Halfway at 40 %: 40 % × 1.35 = 54 %.
+        paint_bar(
+            &mut canvas,
+            SizeF::new(100.0, 28.0),
+            &theme,
+            Edge::Bottom,
+            1.0,
+        );
+        assert!(canvas.dump().starts_with("fill rect 0,0 100×28 #1C1C1F\n"));
+        let s = Settings {
+            background: crate::config::model::BackgroundSettings {
+                opacity: Some(40),
+                ..Default::default()
+            },
+            ..Settings::default()
+        };
+        let theme = Theme::resolve(&s, OsAppearance::default());
+        let mut canvas = RecordingCanvas::new(1.0);
+        paint_bar(
+            &mut canvas,
+            SizeF::new(100.0, 28.0),
+            &theme,
+            Edge::Bottom,
+            0.5,
+        );
+        assert!(
+            canvas
+                .dump()
+                .starts_with("fill rect 0,0 100×28 #1C1C1F/54%\n")
         );
     }
 
@@ -55,7 +106,13 @@ mod tests {
         };
         let theme = Theme::resolve(&s, OsAppearance::default());
         let mut canvas = RecordingCanvas::new(1.0);
-        paint_bar(&mut canvas, SizeF::new(100.0, 25.0), &theme, Edge::Bottom);
+        paint_bar(
+            &mut canvas,
+            SizeF::new(100.0, 25.0),
+            &theme,
+            Edge::Bottom,
+            0.0,
+        );
         assert_eq!(canvas.ops.len(), 1);
         assert_eq!(theme.bar_background, Color::rgba(0x2A, 0x2A, 0x2E, 0.9));
     }
@@ -133,6 +190,7 @@ mod tests {
                 SizeF::new(WIDTH, h),
                 theme,
                 crate::config::model::Edge::Bottom,
+                0.0,
             );
             let fg = theme.sensor_text;
             let small = TextStyle::new(&theme.sensor_font, theme.small_size).tabular();
@@ -365,7 +423,7 @@ mod tests {
             let theme = Theme::resolve(&settings, os);
             let size = SizeF::new(400.0, theme.bar_height as f32);
             let bitmap = render_offscreen(400, theme.bar_height, 1.0, &mut |canvas| {
-                paint_bar(canvas, size, &theme, edge)
+                paint_bar(canvas, size, &theme, edge, 0.0)
             })
             .expect("rendered");
             save(name, &bitmap);
@@ -453,7 +511,7 @@ mod tests {
                 let width = (size.width * scale).round() as u32;
                 let height = (size.height * scale).round() as u32;
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
-                    paint_bar(canvas, size, &theme, Edge::Bottom);
+                    paint_bar(canvas, size, &theme, Edge::Bottom, 0.0);
                     sensors.draw(canvas, &theme, size.height);
                 })
                 .expect("rendered");

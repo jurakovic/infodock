@@ -56,6 +56,7 @@ impl Platform for WindowsPlatform {
                 let [r, g, b, _] = v.to_le_bytes();
                 Color::rgba(r, g, b, 1.0)
             }),
+            animations: client_area_animation().unwrap_or(defaults.animations),
         }
     }
 
@@ -67,6 +68,25 @@ impl Platform for WindowsPlatform {
 }
 
 /// A DWORD value under `HKEY_CURRENT_USER`, if present.
+/// "Animation effects" (Settings ▸ Accessibility ▸ Visual effects).
+fn client_area_animation() -> Option<bool> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SPI_GETCLIENTAREAANIMATION, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
+    };
+    let mut on = windows::core::BOOL(1);
+    // SAFETY: SPI_GETCLIENTAREAANIMATION writes a BOOL to the pointer.
+    unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some((&raw mut on).cast()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    }
+    .ok()?;
+    Some(on.as_bool())
+}
+
 fn read_dword(key: PCWSTR, value: PCWSTR) -> Option<u32> {
     let mut data: u32 = 0;
     let mut size = size_of::<u32>() as u32;

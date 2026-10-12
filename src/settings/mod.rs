@@ -262,6 +262,8 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_reserve_space(settings.bar.reserve_space);
     state.set_z_order(choice("bar.zOrder"));
     state.set_hide_on_fullscreen(settings.bar.hide_on_fullscreen);
+    state.set_highlight_on_hover(settings.bar.highlight_on_hover);
+    state.set_animations(choice("bar.animations"));
     state.set_height(settings.bar_height() as f32);
     state.set_theme_height(
         crate::config::model::ThemeDefaults::of(settings.theme).bar_height as i32,
@@ -550,6 +552,9 @@ mod screenshots {
             state.set_page(index as i32);
             render(&format!("settings-{page}"));
         }
+        // The whole Bar page.
+        state.set_page(1);
+        render_sized("settings-bar-full", 1000);
         // The whole Sensors page, with the Layout manager; then a Remove waiting to be confirmed.
         state.set_page(2);
         render_sized("settings-sensors-layout", 1000);

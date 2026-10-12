@@ -36,6 +36,8 @@ pub(super) struct Env<'a> {
     pub platform: &'a dyn Platform,
     /// Alt is held.
     pub alt: bool,
+    /// Transitions animate (SPEC §5.5).
+    pub animate: bool,
 }
 
 impl Env<'_> {
@@ -46,6 +48,7 @@ impl Env<'_> {
             theme: self.theme,
             locked: self.settings.locked,
             alt: self.alt,
+            animate: self.animate,
             platform: self.platform,
         }
     }
@@ -282,6 +285,16 @@ impl BarSensors {
         changed
     }
 
+    /// Tells sensor `id` the pointer entered or left it; returns whether what it shows changed.
+    pub fn on_hover(&mut self, id: &str, hovered: bool, now: Instant, env: &Env) -> bool {
+        let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
+            return false;
+        };
+        let dirty = p.sensor.on_hover(hovered, now, &env.ctx(id));
+        p.dirty |= dirty;
+        dirty
+    }
+
     /// The topics of each sensor that has any (SPEC §4.4).
     pub fn subscriptions(&self) -> HashMap<String, Vec<TopicRequest>> {
         self.zones
@@ -466,6 +479,7 @@ mod tests {
             theme: &theme,
             platform: platform.as_ref(),
             alt: false,
+            animate: true,
         };
         let start = Instant::now();
         let wakes = Rc::new(Cell::new(0));
@@ -538,6 +552,7 @@ mod tests {
             theme: &theme,
             platform: platform.as_ref(),
             alt: false,
+            animate: true,
         };
         let mut sensors = BarSensors::default();
         for id in ["u1", "u2"] {

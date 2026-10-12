@@ -72,12 +72,14 @@ const WAKE_TIMER: usize = 1;
 const HINT_TIMER: usize = 2;
 const DRAG_TIMER: usize = 3;
 const FADE_TIMER: usize = 4;
+const FRAME_TIMER: usize = 5;
 
 fn timer_id(id: TimerId) -> usize {
     match id {
         TimerId::Wake => WAKE_TIMER,
         TimerId::Hint => HINT_TIMER,
         TimerId::Drag => DRAG_TIMER,
+        TimerId::Frame => FRAME_TIMER,
     }
 }
 
@@ -209,14 +211,15 @@ impl WindowState {
                 // Handled here, so no WM_CONTEXTMENU follows the right button.
                 return LRESULT(0);
             }
-            WM_TIMER if matches!(wparam.0, WAKE_TIMER | HINT_TIMER | DRAG_TIMER) => {
+            WM_TIMER if matches!(wparam.0, WAKE_TIMER | HINT_TIMER | DRAG_TIMER | FRAME_TIMER) => {
                 // One-shot: the handler sets the next one.
                 // SAFETY: plain call on our own window.
                 let _ = unsafe { KillTimer(Some(hwnd), wparam.0) };
                 let id = match wparam.0 {
                     WAKE_TIMER => TimerId::Wake,
                     HINT_TIMER => TimerId::Hint,
-                    _ => TimerId::Drag,
+                    DRAG_TIMER => TimerId::Drag,
+                    _ => TimerId::Frame,
                 };
                 self.dispatch(UiEvent::Timer(id));
                 return LRESULT(0);

@@ -153,11 +153,13 @@ mod tests {
         dark: true,
         transparency: true,
         accent: ACCENT,
+        animations: true,
     };
     const LIGHT: OsAppearance = OsAppearance {
         dark: false,
         transparency: true,
         accent: ACCENT,
+        animations: true,
     };
 
     fn hex(s: &str) -> Color {

@@ -258,6 +258,7 @@ mod tests {
             theme: &theme,
             locked: false,
             alt: false,
+            animate: true,
             platform: platform.as_ref(),
         };
         assert_eq!(image(json!({})).hint(&cx), None);

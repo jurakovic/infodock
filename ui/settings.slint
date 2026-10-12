@@ -74,6 +74,9 @@ export global SettingsState {
     in-out property <bool> reserve-space;
     in-out property <int> z-order;
     in-out property <bool> hide-on-fullscreen;
+    in-out property <bool> highlight-on-hover;
+    // 0 = like Windows, 1 = on, 2 = off.
+    in-out property <int> animations;
     in-out property <float> height;
     in property <int> theme-height;
     // The height differs from the theme default.
@@ -502,6 +505,36 @@ component BarPage inherits VerticalLayout {
                         SettingsState.reset("bar.height");
                     }
                 }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.highlightOnHover");
+        help: I18n.tr("settings.bar.highlightOnHover.help");
+        Switch {
+            checked <=> SettingsState.highlight-on-hover;
+            accessible-label: I18n.tr("settings.bar.highlightOnHover");
+            toggled => {
+                SettingsState.set-flag("bar.highlightOnHover", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.animations");
+        help: I18n.tr("settings.bar.animations.help");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.bar.animations.auto"),
+                I18n.tr("settings.bar.animations.on"),
+                I18n.tr("settings.bar.animations.off"),
+            ];
+            current-index <=> SettingsState.animations;
+            accessible-label: I18n.tr("settings.bar.animations");
+            selected => {
+                SettingsState.set-choice("bar.animations", self.current-index);
             }
         }
     }

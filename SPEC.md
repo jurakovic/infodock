@@ -357,6 +357,7 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 
 * **Background**: theme/skin (§12) + `background.color` (tint), `background.opacity`, optional material (Acrylic/Mica), optional `shadow`.
 * **Highlight on hover** (`highlightOnHover`, default false): on pointer enter, background opacity → min(100 %, opacity × 1.7) with a 300 ms ease-in; back with a 300 ms ease-out on leave.
+* Implementation (`bar/anim.rs`): fades are values 0–1 with cubic easing that a reversal resumes from where they are (taking the remaining share of the time). The bar's frame timer (16 ms) runs only while one moves; sensors animate through their wake-ups (§4.4). `animations` (§10.2): `auto` follows the OS "Animation effects" (`SPI_GETCLIENTAREAANIMATION`); without animations every transition jumps to its end.
 * **Rise animation**: on startup and after an edge change, the bar slides in from off-screen on its edge while its content fades 0→1 over **300 ms, ease-out**. After an edge change, the bar first slides out toward the old edge (300 ms). If the OS "animation effects" setting is off (`SPI_GETCLIENTAREAANIMATION`), there is no animation. The material (if any) moves with the window; only the drawn content fades.
 * **Sensor text colour**: `settings.sensors.textColor` (default `#FFFFFF`) applies to all labels and to icons in "standard" colour mode.
 
@@ -539,6 +540,7 @@ pub trait SensorType: Send + Sync {
 pub trait Sensor {
     fn topics(&self) -> Vec<TopicRequest>;                // system data needed (none for UI-only sensors)
     fn on_sample(&mut self, topic: &Topic, sample: &Sample, cx: &mut SensorCtx) -> Dirty;
+    fn on_hover(&mut self, hovered: bool, now: Instant, cx: &SensorCtx) -> Dirty;  // pointer entered/left
     fn wake_at(&self, now: Instant) -> Option<Instant>;   // timer-driven sensors (clock, uptime)
     fn on_wake(&mut self, now: Instant, cx: &mut SensorCtx) -> Dirty;  // Dirty = bool: what it shows changed
     fn measure(&mut self, cx: &LayoutCtx) -> f32;         // width in logical px; height = bar content height;

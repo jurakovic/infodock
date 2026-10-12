@@ -146,6 +146,8 @@ pub struct SensorCtx<'a> {
     pub locked: bool,
     /// Alt is held.
     pub alt: bool,
+    /// Transitions animate (SPEC §5.5); otherwise they jump.
+    pub animate: bool,
     pub platform: &'a dyn Platform,
 }
 
@@ -185,6 +187,11 @@ pub trait Sensor {
     /// The value read by screen readers (SPEC §14.4).
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         String::new()
+    }
+    /// The pointer entered (`true`) or left the sensor, e.g. to fade something in. A sensor
+    /// that animates asks for frames through [`Sensor::wake_at`].
+    fn on_hover(&mut self, _hovered: bool, _now: Instant, _cx: &SensorCtx) -> Dirty {
+        false
     }
     /// The system data this sensor needs (SPEC §4.4); asked once per instance.
     fn topics(&self) -> Vec<TopicRequest> {
