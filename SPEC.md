@@ -1476,7 +1476,7 @@ Ordered by expected value; each item reuses the framework unchanged.
 | R4 | Custom drawing costs more code than HTML/CSS (text layout, the Folder Menu popup, the calendar, accessibility) | Shared building blocks (§8.3), a small canvas API (§4.6), snapshot tests against a recording canvas, rendered PNGs from CI for review. UI Automation is scoped to name/value/invoke per sensor |
 | R5 | CPU % may differ from Task Manager | Use PDH `\Processor Information(_Total)\% Processor Utility` (clamped to 100) for the total, as Task Manager does; per-core via the same counter set; user/kernel split from `GetSystemTimes` |
 | R6 | Topmost transparent windows over full-screen games | `hideOnFullscreen` on by default |
-| R7 | WebView2 processes may outlive the Settings window | The memory check in CI opens and closes Settings (§16); if processes linger, release the webview environment explicitly |
+| R7 | WebView2 processes may outlive the Settings window | Resolved: the CI memory check (§16) shows all WebView2 processes gone within 10 s of closing Settings (plan D15) |
 | O1 | Artwork (Appendix C) | To be produced; placeholders acceptable until M5 |
 | O2 | Code signing | Deferred until after v1 (§15.4) |
 | O3 | Domain name | Optional; not needed for v1 |
