@@ -18,9 +18,9 @@ Neither is code-signed yet, so SmartScreen may warn.
 Requirements: Rust (stable). On Linux, `libfontconfig-dev` for the UI toolkit. The bar only appears on Windows; on other systems the app opens Settings only.
 
 ```sh
-cargo run --manifest-path src-tauri/Cargo.toml   # run the app
-cargo test --manifest-path src-tauri/Cargo.toml  # tests
-cargo lint                                       # clippy
+cargo run    # run the app
+cargo test   # tests
+cargo lint   # clippy
 ```
 
 ## Licence

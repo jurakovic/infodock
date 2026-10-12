@@ -161,7 +161,7 @@ Threads:
 ### 4.2 Rust modules
 
 ```
-src-tauri/src/
+src/
   main.rs / lib.rs          start-up and shutdown; starts the bar thread, the sampler and the main event loop
   app.rs                    App (state shared by all threads), bar visibility, quitting
   hotkey.rs, tray.rs        global hotkey and tray icon (main thread)
@@ -201,7 +201,6 @@ src-tauri/src/
                             IFileOperation, known folders, .lnk/.url), icons.rs (shell icons → bitmaps),
                             power.rs, eject.rs, wlan.rs, pdh.rs, locale.rs (NLS), sound.rs (PlaySound)
     stub.rs                 portable fallback for other OSes (development and tests only)
-  ui/                       (next to src/) Slint markup: app.slint, settings.slint, tray.slint, i18n.slint
 ```
 
 ### 4.3 Settings UI
@@ -1381,23 +1380,22 @@ Techniques: one sampler thread; PDH query handles opened once and reused; no WMI
 ### 15.1 Repository layout
 
 ```
-infodock/
+infodock/                     the Rust crate
   SPEC.md  LICENSE (MIT)  README.md
-  src-tauri/                  the Rust crate
-    Cargo.toml  build.rs      build.rs compiles the Slint UI and the Windows resources
-    src/                      Rust (§4.2)
-    ui/                       Slint markup (§4.3)
-    i18n/                     message catalogs (§13)
-    icons/                    app icons (Appendix C)
-    assets/                   icons/*.svg, logo.svg, sounds/chime.wav (embedded)
-    resources/                Windows application manifest
+  Cargo.toml  build.rs        build.rs compiles the Slint UI and the Windows resources
+  src/                        Rust (§4.2)
+  ui/                         Slint markup (§4.3)
+  i18n/                       message catalogs (§13)
+  icons/                      app icons (Appendix C)
+  assets/                     icons/*.svg, logo.svg, sounds/chime.wav (embedded)
+  resources/                  Windows application manifest
   tests/fixtures/legacy/      legacy XML samples (Appendix B and more)
   docs/manual-test.md         manual test checklist (§16)
 ```
 
 ### 15.2 Commands
 
-`cargo run` · `cargo test` · `cargo fmt --check` · `cargo lint` (clippy, warnings are errors) · `cargo check-win` (clippy for the Windows target, from Linux) · `cargo packager --release` (installer). From the repository root they take `--manifest-path src-tauri/Cargo.toml`; `lint` and `check-win` are aliases in `.cargo/config.toml`.
+`cargo run` · `cargo test` · `cargo fmt --check` · `cargo lint` (clippy, warnings are errors) · `cargo check-win` (clippy for the Windows target, from Linux) · `cargo packager --release` (installer). `lint` and `check-win` are aliases in `.cargo/config.toml`.
 
 ### 15.3 Packaging
 

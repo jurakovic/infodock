@@ -6,14 +6,17 @@
 
 ## Layout
 
+The repository root is the Rust crate `infodock` (lib `infodock_lib`).
+
 ```
-src-tauri/           the Rust crate `infodock` (lib `infodock_lib`); everything lives here
-  src/bar/           the native bar: BarController (any thread) and its logic on the bar thread
-  src/settings/      the Settings window (Slint) and its glue to the config
-  src/platform/      OS layer behind traits; Windows code in platform/windows, other OSes get a stub
-  ui/                Slint UI: Settings window, tray (`.slint`, compiled by build.rs)
-  i18n/              message catalogs (`en.json`)
-  resources/         Windows application manifest
+src/                 Rust sources
+  bar/               the native bar: BarController (any thread) and its logic on the bar thread
+  settings/          the Settings window (Slint) and its glue to the config
+  platform/          OS layer behind traits; Windows code in platform/windows, other OSes get a stub
+ui/                  Slint UI: Settings window, tray (`.slint`, compiled by build.rs)
+i18n/                message catalogs (`en.json`)
+icons/               app icons
+resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check)
 docs/                plan.md, manual-test.md
 tests/fixtures/      shared test fixtures (legacy XML)
@@ -21,23 +24,21 @@ tests/fixtures/      shared test fixtures (legacy XML)
 
 ## Commands
 
-Run from the repository root.
-
 | What | Command |
 |---|---|
-| Format | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
+| Format | `cargo fmt` |
 | Lint (clippy, warnings are errors) | `cargo lint` |
-| Tests | `cargo test --manifest-path src-tauri/Cargo.toml` |
-| Render the Settings pages to `src-tauri/target/screenshots/*.png` | `cargo test --manifest-path src-tauri/Cargo.toml render_settings_pages -- --ignored` |
+| Tests | `cargo test` |
+| Render the Settings pages to `target/screenshots/*.png` | `cargo test render_settings_pages -- --ignored` |
 | Type-check the Windows code from Linux | `cargo check-win` |
-| Run the app | `cargo run --manifest-path src-tauri/Cargo.toml` (Windows; elsewhere only Settings opens) |
-| Build the installer (Windows) | `cargo build --manifest-path src-tauri/Cargo.toml --release` then `cargo packager --manifest-path src-tauri/Cargo.toml --release` |
+| Run the app | `cargo run` (Windows; elsewhere only Settings opens) |
+| Build the installer (Windows) | `cargo build --release` then `cargo packager --release` |
 
 Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs. Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings screenshots, NSIS installer and portable exe, memory check) and by the manual checklist in `docs/manual-test.md`.
 
 ## Gate before every commit
 
-`cargo fmt --manifest-path src-tauri/Cargo.toml --check`, `cargo lint`, `cargo test --manifest-path src-tauri/Cargo.toml`, and `cargo check-win`.
+`cargo fmt --check`, `cargo lint`, `cargo test` and `cargo check-win`.
 
 ## Workflow
 
@@ -49,7 +50,7 @@ Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path w
 
 - Rust: edition 2024, no `unwrap()`/`expect()` on runtime paths (setup code that cannot continue may `expect`). OS calls only inside `platform/`; everything else talks to the `Platform` trait.
 - Pure logic (geometry, config merging, formatting, settings mapping) lives in plain functions with unit tests and no OS calls.
-- Every user-visible string goes through `i18n::t()` in Rust or `I18n.tr()` in `.slint`; keys live in `src-tauri/i18n/en.json`.
+- Every user-visible string goes through `i18n::t()` in Rust or `I18n.tr()` in `.slint`; keys live in `i18n/en.json`.
 - Config `props` store only values that differ from static defaults (SPEC §11.2).
 - Coordinates are logical (DIP) in layout and drawing; platform code converts to physical pixels with the monitor scale.
 - Threads: the bar thread owns the bar, hint and popup windows; other threads talk to it through `BarController`, which queues a command and wakes the thread. The main thread runs Slint's event loop and owns the Settings window, the tray and the hotkey; other threads reach it with `slint::invoke_from_event_loop`. Never touch either thread's UI from another thread.

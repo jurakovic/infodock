@@ -1,4 +1,4 @@
-src-tauri/target/
+target/
 *.log
 .DS_Store
 .vscode/*

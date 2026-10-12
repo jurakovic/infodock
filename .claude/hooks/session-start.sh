@@ -27,4 +27,4 @@ rustup component add clippy rustfmt >/dev/null
 rustup target add x86_64-pc-windows-msvc >/dev/null
 
 # Download crates for both targets so the first build does not wait on the network.
-cargo fetch --manifest-path src-tauri/Cargo.toml
+cargo fetch
