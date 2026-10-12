@@ -34,6 +34,21 @@ export struct PickerRow {
     entry: int,
 }
 
+// One line of the Layout manager (SPEC §10.7).
+export struct LayoutRow {
+    // 0 = a zone's heading, 1 = a sensor, 2 = the note in an empty zone.
+    kind: int,
+    // 0 = left, 1 = center, 2 = right.
+    zone: int,
+    id: string,
+    name: string,
+    detail: string,
+    editable: bool,
+    // The sensor can move up / down the list (across zones).
+    up: bool,
+    down: bool,
+}
+
 export global SettingsState {
     // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups; 4 = a sensor's properties, 5 = the picker.
     in-out property <int> page;
@@ -99,6 +114,11 @@ export global SettingsState {
     in property <string> props-title;
     in property <string> props-error;
 
+    // The Layout manager (SPEC §10.7)
+    in property <[LayoutRow]> layout-rows;
+    // The sensor whose Remove waits for confirmation.
+    in-out property <string> layout-confirm;
+
     // The sensor picker (SPEC §6.6)
     in property <[PickerRow]> picker-rows;
     in-out property <string> picker-search;
@@ -138,6 +158,13 @@ export global SettingsState {
     callback prop-browse(key: string);
     callback props-save();
     callback props-cancel();
+    // Layout manager: one step up or down; a drop before line `boundary`.
+    callback layout-move(id: string, up: bool);
+    callback layout-drop(id: string, boundary: int);
+    callback layout-edit(id: string);
+    callback layout-remove(id: string);
+    // Opens the picker for the end of zone `zone`.
+    callback layout-add(zone: int);
     // The picker's search text changed.
     callback picker-searched(text: string);
     // Adds the selected type and opens its properties.
@@ -480,8 +507,235 @@ component BarPage inherits VerticalLayout {
     }
 }
 
+// A heading for a group of settings on a page.
+component SectionHeading inherits VerticalLayout {
+    in property <string> title;
+    in property <string> help;
+    spacing: 2px;
+    Text {
+        text: root.title;
+        font-size: 16px;
+        font-weight: 600;
+        color: Palette.foreground;
+        accessible-role: text;
+    }
+
+    if root.help != "": Text {
+        text: root.help;
+        wrap: word-wrap;
+        font-size: 12px;
+        color: Palette.foreground;
+        opacity: 0.7;
+    }
+}
+
+// An icon-only button.
+component IconButton inherits Button {
+    in property <string> label;
+    colorize-icon: true;
+    icon-size: 16px;
+    accessible-label: self.label;
+}
+
+// The Layout manager (SPEC §10.7): each zone's sensors, which move by dragging or with the
+// arrow buttons. All lines are equally tall, so a pointer position maps to a line boundary.
+component LayoutList inherits Rectangle {
+    property <length> line-height: 44px;
+    // The sensor being dragged, and the line boundary it would drop at (-1: none).
+    property <string> drag-id;
+    property <int> drop-at: -1;
+
+    height: SettingsState.layout-rows.length * self.line-height;
+    accessible-role: list;
+    accessible-label: I18n.tr("settings.layout.title");
+
+    for row[i] in SettingsState.layout-rows: Rectangle {
+        x: 0;
+        y: i * root.line-height;
+        width: parent.width;
+        height: root.line-height;
+
+        if row.kind == 0: HorizontalLayout {
+            padding-top: 8px;
+            spacing: 8px;
+            Text {
+                horizontal-stretch: 1;
+                text: row.name;
+                font-weight: 600;
+                vertical-alignment: center;
+                color: Palette.foreground;
+            }
+
+            Button {
+                horizontal-stretch: 0;
+                text: I18n.tr("settings.layout.add");
+                icon: @image-url("icons/add.svg");
+                colorize-icon: true;
+                icon-size: 16px;
+                accessible-label: I18n.tr-with("settings.layout.addTo", "zone", row.name);
+                clicked => {
+                    SettingsState.layout-add(row.zone);
+                }
+            }
+        }
+
+        if row.kind == 2: Text {
+            x: 8px;
+            text: row.name;
+            vertical-alignment: center;
+            color: Palette.foreground;
+            opacity: 0.7;
+        }
+
+        if row.kind == 1: Rectangle {
+            border-radius: 4px;
+            // Dimmed while dragged, like on the bar (SPEC §6.2).
+            background: touch.has-hover || root.drag-id == row.id ? Palette.alternate-background
+                : transparent;
+            opacity: root.drag-id == row.id ? 0.6 : 1;
+            accessible-role: list-item;
+            accessible-label: row.detail == "" ? row.name : row.name + ", " + row.detail;
+
+            touch := TouchArea {
+                mouse-cursor: root.drag-id == row.id ? MouseCursor.grabbing : MouseCursor.grab;
+                moved => {
+                    if root.drag-id == row.id || abs(self.mouse-x - self.pressed-x) > 4px
+                        || abs(self.mouse-y - self.pressed-y) > 4px {
+                        root.drag-id = row.id;
+                        // Outside the list sideways: no drop.
+                        root.drop-at = self.mouse-x < 0 || self.mouse-x > self.width ? -1
+                            : max(0, min(SettingsState.layout-rows.length,
+                                round((i * root.line-height + self.mouse-y) / root.line-height)));
+                    }
+                }
+                pointer-event(event) => {
+                    if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel {
+                        if event.kind == PointerEventKind.up && root.drag-id != "" && root.drop-at >= 0 {
+                            SettingsState.layout-drop(root.drag-id, root.drop-at);
+                        }
+                        root.drag-id = "";
+                        root.drop-at = -1;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 4px;
+                spacing: 4px;
+
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: row.name;
+                        overflow: elide;
+                        color: Palette.foreground;
+                    }
+
+                    if row.detail != "": Text {
+                        text: row.detail;
+                        overflow: elide;
+                        font-size: 12px;
+                        color: Palette.foreground;
+                        opacity: 0.7;
+                    }
+                }
+
+                if SettingsState.layout-confirm == row.id: HorizontalLayout {
+                    spacing: 4px;
+                    alignment: end;
+                    Text {
+                        text: I18n.tr-with("menu.remove.confirm", "name", row.name);
+                        vertical-alignment: center;
+                        overflow: elide;
+                        color: Palette.foreground;
+                    }
+
+                    Button {
+                        text: I18n.tr("menu.remove.action");
+                        primary: true;
+                        clicked => {
+                            SettingsState.layout-confirm = "";
+                            SettingsState.layout-remove(row.id);
+                        }
+                    }
+
+                    Button {
+                        text: I18n.tr("settings.layout.cancel");
+                        clicked => {
+                            SettingsState.layout-confirm = "";
+                        }
+                    }
+                }
+
+                if SettingsState.layout-confirm != row.id: HorizontalLayout {
+                    spacing: 4px;
+                    alignment: end;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    IconButton {
+                        label: I18n.tr("settings.layout.up");
+                        icon: @image-url("icons/up.svg");
+                        enabled: row.up;
+                        clicked => {
+                            SettingsState.layout-move(row.id, true);
+                        }
+                    }
+
+                    IconButton {
+                        label: I18n.tr("settings.layout.down");
+                        icon: @image-url("icons/down.svg");
+                        enabled: row.down;
+                        clicked => {
+                            SettingsState.layout-move(row.id, false);
+                        }
+                    }
+
+                    IconButton {
+                        label: I18n.tr("settings.layout.edit");
+                        icon: @image-url("icons/edit.svg");
+                        enabled: row.editable;
+                        clicked => {
+                            SettingsState.layout-edit(row.id);
+                        }
+                    }
+
+                    IconButton {
+                        label: I18n.tr("settings.layout.remove");
+                        icon: @image-url("icons/remove.svg");
+                        clicked => {
+                            SettingsState.layout-confirm = row.id;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.drop-at >= 0: Rectangle {
+        x: 0;
+        y: root.drop-at * root.line-height - 1px;
+        width: parent.width;
+        height: 2px;
+        background: Palette.accent-background;
+    }
+}
+
 component SensorsPage inherits VerticalLayout {
     alignment: start;
+
+    SectionHeading {
+        title: I18n.tr("settings.layout.title");
+        help: I18n.tr("settings.layout.help");
+    }
+
+    LayoutList { }
+
+    SectionHeading {
+        padding-top: 24px;
+        title: I18n.tr("settings.sensors.defaults");
+        help: I18n.tr("settings.sensors.defaults.help");
+    }
 
     Row {
         label: I18n.tr("settings.sensors.textColor");
@@ -562,6 +816,7 @@ component SensorsPage inherits VerticalLayout {
             }
         }
     }
+
 }
 
 component PopupsPage inherits VerticalLayout {

@@ -6,6 +6,7 @@
 //! made elsewhere (tray, hotkey) show up too.
 
 mod form;
+mod layout;
 mod model;
 mod picker;
 mod properties;
@@ -91,12 +92,13 @@ pub fn open(app: &Arc<App>, route: &str) {
 pub fn watch(app: &Arc<App>) {
     let a = Arc::clone(app);
     app.store.on_change(Box::new(move |_, new| {
-        let new = new.settings.clone();
+        let (settings, sensors) = (new.settings.clone(), new.layout.clone());
         let a = Arc::clone(&a);
         let _ = slint::invoke_from_event_loop(move || {
             WINDOW.with(|w| {
                 if let Some(open) = w.borrow_mut().as_mut() {
-                    fill(open, &a, &new);
+                    fill(open, &a, &settings);
+                    layout::fill(open, &a, &sensors);
                 }
             });
         });
@@ -134,7 +136,9 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         form: None,
         picker: None,
     };
-    fill(&mut open, app, &app.store.get().settings);
+    let config = app.store.get();
+    fill(&mut open, app, &config.settings);
+    layout::fill(&open, app, &config.layout);
     WINDOW.with(|w| *w.borrow_mut() = Some(open));
     Ok(window)
 }
@@ -143,6 +147,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
 fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     properties::connect(window, app);
     picker::connect(window, app);
+    layout::connect(window, app);
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_page_changed(move |page| {
@@ -477,8 +482,8 @@ mod screenshots {
     use slint::platform::software_renderer::{
         MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
     };
-    use slint::platform::{Platform, WindowAdapter};
-    use slint::{ComponentHandle, PhysicalSize, SharedString};
+    use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
+    use slint::{ComponentHandle, LogicalPosition, PhysicalSize, SharedString};
 
     use super::{Open, fill};
     use crate::app::App;
@@ -519,10 +524,11 @@ mod screenshots {
             picker: None,
         };
         fill(&mut open, &app, &app.store.get().settings);
+        super::layout::fill(&open, &app, &app.store.get().layout);
         ui.show().expect("shown");
-        window.set_size(PhysicalSize::new(width, height));
 
-        let render = |name: &str| {
+        let render_sized = |name: &str, height: u32| {
+            window.set_size(PhysicalSize::new(width, height));
             // Let state animations (e.g. a button becoming disabled) finish.
             std::thread::sleep(std::time::Duration::from_millis(200));
             slint::platform::update_timers_and_animations();
@@ -538,11 +544,51 @@ mod screenshots {
                 .collect();
             write_png(&screenshot_path(name), width, height, &rgba);
         };
+        let render = |name: &str| render_sized(name, height);
         let state = ui.global::<ui::SettingsState>();
         for (index, page) in super::model::PAGES.iter().enumerate() {
             state.set_page(index as i32);
             render(&format!("settings-{page}"));
         }
+        // The whole Sensors page, with the Layout manager; then a Remove waiting to be confirmed.
+        state.set_page(2);
+        render_sized("settings-sensors-layout", 1000);
+        let logo = app.store.get().layout.center[0].id.clone();
+        state.set_layout_confirm(logo.as_str().into());
+        render_sized("settings-sensors-remove", 1000);
+        state.set_layout_confirm(SharedString::new());
+        // Drag memory-meter (lines: # Left 89, cpu 133, memory 177, network 221, # Centre 265)
+        // onto the lower half of network-graph: it moves to the end of the left zone.
+        let pointer = |event: fn(LogicalPosition) -> WindowEvent, y: f32| {
+            window.dispatch_event(event(LogicalPosition::new(300.0, y)));
+        };
+        pointer(
+            |position| WindowEvent::PointerPressed {
+                position,
+                button: PointerEventButton::Left,
+            },
+            199.0,
+        );
+        for y in [210.0, 235.0, 250.0] {
+            pointer(|position| WindowEvent::PointerMoved { position }, y);
+        }
+        render_sized("settings-sensors-drag", 1000);
+        pointer(
+            |position| WindowEvent::PointerReleased {
+                position,
+                button: PointerEventButton::Left,
+            },
+            250.0,
+        );
+        let kinds: Vec<_> = app
+            .store
+            .get()
+            .layout
+            .left
+            .iter()
+            .map(|s| s.kind.clone())
+            .collect();
+        assert_eq!(kinds, ["cpu-graph", "network-graph", "memory-meter"]);
 
         // The hotkey button while it waits for keys, with a refused combination.
         state.set_page(0);
@@ -555,7 +601,6 @@ mod screenshots {
 
         // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
         super::WINDOW.with(|w| *w.borrow_mut() = Some(open));
-        let logo = app.store.get().layout.center[0].id.clone();
         super::properties::open_form(&app, &logo, false);
         render("settings-properties-image");
         state.invoke_prop_color_mode("color".into(), 1, "#20B7FF".into());

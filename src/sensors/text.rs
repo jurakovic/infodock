@@ -1,6 +1,7 @@
 //! `text` — a line of text (SPEC §9.1).
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use super::schema::{FieldKind, Lit, PropField};
 use super::{Category, DrawCtx, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed};
@@ -75,6 +76,14 @@ impl SensorType for TextType {
             props: typed(props)?,
             layout: None,
         }))
+    }
+
+    fn summary(&self, props: &Props) -> Option<String> {
+        props
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
     }
 }
 
@@ -154,6 +163,16 @@ mod tests {
         let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
         assert!(ignored.is_empty());
         TextType.create(&props, &State::new()).expect("valid props")
+    }
+
+    #[test]
+    fn summary_is_the_text() {
+        let summary = |stored: serde_json::Value| {
+            let stored = stored.as_object().cloned().unwrap_or_default();
+            TextType.summary(&resolve(SCHEMA, &stored, &Props::new()).0)
+        };
+        assert_eq!(summary(json!({ "text": "Hello" })), Some("Hello".into()));
+        assert_eq!(summary(json!({ "text": "" })), None);
     }
 
     #[test]

@@ -9,6 +9,7 @@ use super::{
     Category, ColorChoice, ColorModeKind, DrawCtx, HintContent, LayoutCtx, Props, Sensor,
     SensorCtx, SensorType, State, typed,
 };
+use crate::i18n::t;
 use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image, load_image};
 
 /// The default image (Appendix C): monochrome white, so a custom colour tints it.
@@ -80,6 +81,19 @@ impl SensorType for ImageType {
             props: typed(props)?,
             bitmap: None,
         }))
+    }
+
+    fn summary(&self, props: &Props) -> Option<String> {
+        let path = props
+            .get("image")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        Some(if path.is_empty() {
+            t("sensor.image.logo")
+        } else {
+            let name = Path::new(path).file_name().and_then(|n| n.to_str());
+            name.unwrap_or(path).to_owned()
+        })
     }
 }
 
@@ -250,6 +264,19 @@ mod tests {
         assert_eq!(
             image(json!({ "popupText": "Infodock %v" })).hint(&cx),
             Some(HintContent::Text(format!("Infodock {}", crate::VERSION)))
+        );
+    }
+
+    #[test]
+    fn summary_is_the_file_name_or_the_logo() {
+        let summary = |stored: serde_json::Value| {
+            let stored = stored.as_object().cloned().unwrap_or_default();
+            ImageType.summary(&resolve(SCHEMA, &stored, &Props::new()).0)
+        };
+        assert_eq!(summary(json!({})), Some("Infodock logo".into()));
+        assert_eq!(
+            summary(json!({ "image": "C:/Pictures/cat.png" })),
+            Some("cat.png".into())
         );
     }
 }

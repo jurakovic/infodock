@@ -114,6 +114,11 @@ pub trait SensorType: Send + Sync {
     /// A sensor for resolved `props` (every schema field present and valid). Fails only if the
     /// type's typed props do not match its schema, which its tests rule out.
     fn create(&self, props: &Props, state: &State) -> serde_json::Result<Box<dyn Sensor>>;
+    /// What tells this instance apart in lists such as the Layout manager, e.g. a Text
+    /// sensor's text; `props` are resolved. `None` when the type's name says it all.
+    fn summary(&self, _props: &Props) -> Option<String> {
+        None
+    }
 }
 
 /// What measuring may use (bar thread).

@@ -14,7 +14,7 @@ src/                 Rust sources
   settings/          the Settings window (Slint) and its glue to the config
   sensors/           sensor framework: traits, property schemas, registry, placeholders; one module per type
   platform/          OS layer behind traits; Windows code in platform/windows, other OSes get a stub
-ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs)
+ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs) and its icons (`ui/icons`)
 i18n/                message catalogs (`en.json`)
 icons/               app icons
 assets/              artwork embedded in the binary (logo)

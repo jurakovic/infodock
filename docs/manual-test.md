@@ -123,6 +123,16 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Right-click empty space in the right third → *New sensor…*: there is no Insert choice; *Add* puts the sensor at the start of the right zone (next to the centre). In the left third, at the end of the left zone.
 - [ ] Open the picker, then click *Sensors* in the navigation: nothing is added.
 
+**Layout manager** (since M1 S9)
+
+- [ ] Right-click the bar → *Tools ▸ Layout manager…*: Settings opens on *Sensors* with *Layout* at the top; *Left*, *Centre* and *Right* list the bar's sensors in order. The logo's row reads *Image* with *Infodock logo* below it; placeholders read "Not available in this version" and their *Properties* button is greyed out. The sensor defaults follow below the list.
+- [ ] *Move down* on the logo: it moves to the start of the right zone, on the bar too. *Move up* brings it back. The first sensor's *Move up* and the last one's *Move down* are greyed out.
+- [ ] Drag a row: it dims and an accent line shows where it will go; release: the bar follows. Drag sideways out of the list and release: nothing moves.
+- [ ] Drag a sensor on the bar: the list in Settings follows at once.
+- [ ] *Remove* on a sensor: the row asks "Remove sensor “…”?"; *Cancel* keeps it, *Remove* removes it from the list and the bar.
+- [ ] *Add…* next to *Centre*: the picker opens without an Insert choice; *Add* puts the new sensor at the end of the centre zone and opens its properties.
+- [ ] Keyboard: Tab reaches every button of every row, Space activates it; Narrator reads each button's name (*Move up*, *Move down*, *Properties*, *Remove*).
+
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.
