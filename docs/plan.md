@@ -4,6 +4,8 @@ Milestones come from SPEC §17. Each milestone is split into slices; a slice is 
 
 Legend: `[x]` done · `[ ]` open · `[~]` partly done (see note)
 
+Work goes top to bottom: the next step is the first `[ ]` item. Each open item fits one session; split an item here when it does not (see `CLAUDE.md`, Sessions).
+
 ## M0 — Skeleton
 
 Exit: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survives an Explorer restart, and a clean exit restores the work area.
@@ -33,7 +35,13 @@ Since D13 the bar is native (Win32 + Direct2D, bar thread); since D16 Settings u
 - [x] **S9 Settings**: Settings shell (§10.7), SensorPicker (§6.6), PropertyForm generated from the sensor schemas with live preview and Cancel (§6.7), Layout manager, Sensors and Popups pages. Routes (`general`, `bar`, `sensors`, `popups`, `layout`, `new?…`, `sensor/<id>`) open the pages; the form, the picker and the Layout manager are `settings/properties.rs`, `picker.rs` and `layout.rs` with their pure parts unit-tested; the Settings render test also drags a sensor in the Layout manager. Open: the Appearance, Applications, Help and About pages (M4, M5); `drive`, `netAdapter` and `battery` form controls (M2, M3). D22
 - [x] **S10 Sampler**: scheduler thread, topics, subscriptions at the minimum requested interval, delivery to the bar thread (§4.4); `uptime` provider as the first topic. `sampler/scheduler.rs` is pure (generic over topic and sample, tested with a fake clock); `sampler/mod.rs` runs it on its own thread and delivers through `BarController::deliver`; sensors gain `topics()` and `on_sample()`, and `BarHost::subscribe` carries the bar's changed subscriptions. `Platform::uptime` (`GetTickCount64`). The first sensor that subscribes is Uptime (M2); resume handling (resample, provider baselines) comes with the resume event in M2
 - [x] **S11 Floating mode and animation**: floating mode (§5.1, D3), rise animation and hover highlight (§5.5). `bar/anim.rs` (fades with easing, driven by a frame timer that runs only while something moves); the hover highlight; the Spacer's hover fade through `Sensor::on_hover` and its wake-ups; floating placement (`geometry::floating_rect`) and dragging by the background (`BarWindow::move_by`); the rise at start-up and the slide-out before an edge change (`BarWindow::slide`, `BarHost::redock`). The Bar page gained *Position*, *Width*, *Highlight on hover* and *Animations*. Open: resizing a floating bar by its ends (only the *Width* setting for now); the bar's `shadow` (§5.5) with the skins (M4)
-- [ ] **S12 Close-out**: clean-context review, fixes, `docs/manual-test.md` M1 section, memory budget enforced in CI, CI green
+- [~] **S12 Close-out**: clean-context review, fixes, `docs/manual-test.md` M1 section, memory budget enforced in CI, CI green. Done: the review (findings in `docs/review-m1.md`), the memory budget enforced in CI (idle 8.2 MB, Settings open 11.4, closed 9.9), the *New sensor menu* setting, the manual test refreshed. The fixes are the items below, one session each
+- [ ] **S12a Settings input**: `docs/review-m1.md` § S12a (2 high: hotkey recording after a page change, typed paths/colours lost)
+- [ ] **S12b Settings validation and keyboard**: `docs/review-m1.md` § S12b
+- [ ] **S12c Bar fixes**: `docs/review-m1.md` § S12c
+- [ ] **S12d Image decoding limits**: `docs/review-m1.md` § S12d (1 high: SVG resource limits)
+- [ ] **S12e Sensor framework fixes before M2**: `docs/review-m1.md` § S12e
+- [ ] **S12f M1 done**: final pass over `docs/manual-test.md` M1, CI green, tick S12 and M1, note what needs a manual Windows check
 
 ## M2 — System sensors
 

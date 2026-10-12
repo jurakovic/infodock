@@ -22,7 +22,7 @@ icons/               app icons
 assets/              artwork embedded in the binary (logo)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check)
-docs/                plan.md, manual-test.md
+docs/                plan.md, manual-test.md, review findings (`review-m1.md`)
 tests/fixtures/      shared test fixtures (legacy XML)
 ```
 
@@ -45,10 +45,22 @@ Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path w
 
 `cargo fmt --check`, `cargo lint`, `cargo test` and `cargo check-win`.
 
+## Sessions
+
+Sessions are short: one plan item each, so the context stays small. When asked to continue (e.g. "continue implementation"):
+
+1. Check the latest CI run on `master`. If it is red, fixing it is this session's work.
+2. Otherwise take the first `[ ]` item in `docs/plan.md` and do only that item.
+3. Commit and push, tick the item (and log decisions) in the plan, then stop and report briefly. Do not start the next item.
+
+If an item turns out too big for one session, split it in the plan, finish the first part and stop. Before starting a milestone, split its slices into session-sized items.
+
+Reviews: after a slice that warrants it, one reviewer on the slice's `git diff` plus a few key files. A broader review closes each milestone as its own plan item and session.
+
 ## Workflow
 
 - Commit straight to `master`, one logical change per commit, and **push after every commit**.
-- After pushing, check the CI run; if it is red, fixing it comes before anything else. CI runs only when build inputs change (paths in `ci.yml`); docs-only commits do not trigger it.
+- Wait for CI once per batch of commits, before moving on; if it is red, fixing it comes before anything else. Do not wait at the end of a session: the next one checks it first. CI runs only when build inputs change (paths in `ci.yml`); docs-only commits do not trigger it.
 - End commit messages with the `Co-Authored-By` trailer the session provides.
 
 ## Conventions
