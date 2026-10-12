@@ -17,6 +17,7 @@ src/                 Rust sources
 ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs)
 i18n/                message catalogs (`en.json`)
 icons/               app icons
+assets/              artwork embedded in the binary (logo)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check)
 docs/                plan.md, manual-test.md

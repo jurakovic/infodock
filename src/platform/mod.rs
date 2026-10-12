@@ -300,6 +300,8 @@ pub enum UiEvent {
     TrayClick,
     /// The tray icon's menu was requested (right click, menu key).
     TrayMenu,
+    /// The time set with [`BarWindow::set_timer`] has come.
+    Timer,
 }
 
 /// An entry of a native menu: the tray menu, and the context menus of SPEC §6.4.
@@ -352,6 +354,9 @@ pub trait BarWindow {
     /// Shows a menu at the pointer and returns the chosen item's id. Runs the menu's modal loop;
     /// events that arrive meanwhile are delivered after the current handler call.
     fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32>;
+    /// Delivers [`UiEvent::Timer`] once after `delay` (it may come a few ms early), replacing the
+    /// previous timer; `None` cancels it.
+    fn set_timer(&self, delay: Option<std::time::Duration>);
 }
 
 /// Removes the tray icon from any thread, e.g. on exit.

@@ -54,6 +54,8 @@ impl BarWindow for NoWindow {
     fn show_menu(&self, _entries: &[MenuEntry]) -> Option<u32> {
         None
     }
+
+    fn set_timer(&self, _delay: Option<std::time::Duration>) {}
 }
 
 struct NoTray;

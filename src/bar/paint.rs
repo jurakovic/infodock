@@ -322,12 +322,16 @@ mod tests {
     }
 
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
-    /// them): plain bars per theme, and the canvas specimen at 100 % and 150 %.
+    /// them): plain bars per theme, the canvas specimen, the first-run layout and the General
+    /// sensors, at 100 % and 150 %.
     #[cfg(windows)]
     #[test]
     #[ignore = "writes PNGs to target/screenshots; run with --ignored"]
     fn render_bar() {
+        use crate::bar::sensors::BarSensors;
+        use crate::config::model::{Layout, SensorInstance};
         use crate::platform::{render_offscreen, text_engine};
+        use crate::sensors::LayoutCtx;
         use crate::test_util::{screenshot_path, write_png};
 
         let save = |name: &str, bitmap: &crate::platform::Bitmap| {
@@ -371,7 +375,7 @@ mod tests {
         for (name, settings, os) in [
             ("bar-specimen", Settings::default(), dark),
             ("bar-specimen-light", Settings::default(), light),
-            ("bar-specimen-classic", classic, dark),
+            ("bar-specimen-classic", classic.clone(), dark),
         ] {
             let theme = Theme::resolve(&settings, os);
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
@@ -381,6 +385,76 @@ mod tests {
                 let height = (theme.bar_height as f32 * scale).round() as u32;
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
                     specimen::paint(canvas, text.as_ref(), &theme, &images)
+                })
+                .expect("rendered");
+                save(&format!("{name}{suffix}"), &bitmap);
+            }
+        }
+
+        // Sensors (SPEC §16): the first-run layout (M2 types are placeholders until then) and
+        // the General sensors.
+        let mut general = Layout::default();
+        let entry = |id: &str, kind: &str, props: serde_json::Value| SensorInstance {
+            id: id.into(),
+            kind: kind.into(),
+            props: props.as_object().cloned().unwrap_or_default(),
+        };
+        general.left = vec![
+            entry("a", "text", serde_json::json!({})),
+            entry("b", "spacer", serde_json::json!({ "showDivider": true })),
+            entry(
+                "c",
+                "text",
+                serde_json::json!({ "text": "Shadow", "shadow": true }),
+            ),
+            entry(
+                "d",
+                "spacer",
+                serde_json::json!({ "showDivider": true, "width": 21 }),
+            ),
+            entry(
+                "e",
+                "text",
+                serde_json::json!({ "text": "Bold italic 18", "fontStyle": "boldItalic", "fontSize": 18 }),
+            ),
+        ];
+        general.center = vec![entry("f", "image", serde_json::json!({}))];
+        general.right = vec![
+            entry(
+                "g",
+                "image",
+                serde_json::json!({ "color": { "mode": "custom", "color": "#20B7FF" } }),
+            ),
+            entry("h", "image", serde_json::json!({ "opacity": 40 })),
+        ];
+        let first_run = crate::config::Config::first_run("1.0.0").layout;
+        for (name, layout, settings, os) in [
+            ("bar-first-run", &first_run, Settings::default(), dark),
+            ("bar-first-run-classic", &first_run, classic.clone(), dark),
+            ("bar-general", &general, Settings::default(), dark),
+            ("bar-general-light", &general, Settings::default(), light),
+        ] {
+            let theme = Theme::resolve(&settings, os);
+            for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
+                let size = SizeF::new(700.0, theme.bar_height as f32);
+                let mut sensors = BarSensors::default();
+                sensors.sync(
+                    layout,
+                    &Default::default(),
+                    &crate::platform::Capabilities::default(),
+                    crate::sensors::registry::registry(),
+                );
+                let cx = LayoutCtx {
+                    theme: &theme,
+                    text: text.as_ref(),
+                    scale,
+                };
+                sensors.update_layout(&cx, size.width);
+                let width = (size.width * scale).round() as u32;
+                let height = (size.height * scale).round() as u32;
+                let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
+                    paint_bar(canvas, size, &theme, Edge::Bottom);
+                    sensors.draw(canvas, &theme, size.height);
                 })
                 .expect("rendered");
                 save(&format!("{name}{suffix}"), &bitmap);

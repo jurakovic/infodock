@@ -276,7 +276,7 @@ pub struct Capabilities {
 
 UI services, used only on the bar thread (not `Send`):
 
-* **Windows**: create a native window of a kind (§4.1) with an event handler; set geometry (physical px), show/hide, global alpha (fades), capture the pointer, invalidate, read its scale. Input arrives as platform-neutral events: pointer move/leave/down/up (button, modifiers), wheel, key, DPI change, timer, drag-enter/over/leave/drop (§6.3), and the OS broadcasts the bar cares about (resume, time change, device change, appearance change).
+* **Windows**: create a native window of a kind (§4.1) with an event handler; set geometry (physical px), show/hide, global alpha (fades), capture the pointer, invalidate, read its scale, set a one-shot timer (the sensors' earliest wake-up, §4.4). Input arrives as platform-neutral events: pointer move/leave/down/up (button, modifiers), wheel, key, DPI change, timer, drag-enter/over/leave/drop (§6.3), and the OS broadcasts the bar cares about (resume, time change, device change, appearance change).
 * **Canvas**: drawing in logical px at the window's scale: filled and stroked rectangles, rounded rectangles, lines and polygons, linear gradients, text layouts, bitmaps (with opacity), clipping and layer opacity. **Text**: layout and measurement with a font family, size, weight and style, optional maximum width with an end ellipsis, tabular numerals. **Bitmaps**: decode files (PNG, JPEG, GIF, BMP, ICO; SVG through `resvg`) and wrap RGBA buffers.
 * **Menus** and **dialogs**: native popup menus at the cursor (checkable items, separators) and confirmation dialogs.
 * **Tray icon**: shown, updated or removed on the bar window; clicks and menu requests arrive as events; removable from any thread on exit.
@@ -522,7 +522,9 @@ pub trait SensorType: Send + Sync {
                                                           // validation and static defaults (§8.2)
     fn machine_defaults(&self, ctx: &DefaultsCtx) -> Props;  // ctx: locale, volumes, CPU count (§11.2)
     fn from_legacy(&self, raw: &LegacyProps, legacy_type: &str, report: &mut ImportReport) -> Props;
-    fn create(&self, props: &Props, state: &State) -> Box<dyn Sensor>;
+    fn create(&self, props: &Props, state: &State) -> serde_json::Result<Box<dyn Sensor>>;
+                                                          // fails only if the typed props do not match
+                                                          // the schema; the bar then shows a placeholder
 }
 
 /// A placed instance. Lives on the bar thread; re-created when its props change.
@@ -530,7 +532,7 @@ pub trait Sensor {
     fn topics(&self) -> Vec<TopicRequest>;                // system data needed (none for UI-only sensors)
     fn on_sample(&mut self, topic: &Topic, sample: &Sample, cx: &mut SensorCtx) -> Dirty;
     fn wake_at(&self, now: Instant) -> Option<Instant>;   // timer-driven sensors (clock, uptime)
-    fn on_wake(&mut self, cx: &mut SensorCtx) -> Dirty;
+    fn on_wake(&mut self, now: Instant, cx: &mut SensorCtx) -> Dirty;  // Dirty = bool: what it shows changed
     fn measure(&mut self, cx: &LayoutCtx) -> f32;         // width in logical px; height = bar content height;
                                                           // builds and keeps text layouts and bitmaps
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
@@ -673,7 +675,7 @@ View: one line, vertically centred, in the sensor text colour. No hint, no click
 | opacity | `opacity` | opacity, min 20 % | 100 % |
 | popupText | `text` | text | "" — `%v` is replaced by the app version |
 
-View: the image scaled to height = bar height − 1, keeping aspect ratio. Hint = popupText (none if empty). The first-run instance uses popupText "Infodock %v".
+View: the image scaled to height = bar height − 1, keeping aspect ratio, decoded at that physical height. A file that cannot be read shows the logo (and is logged). Hint = popupText (none if empty). The first-run instance uses popupText "Infodock %v".
 
 ### 9.3 `spacer` — Spacer  (General; `DockSpacer`)
 

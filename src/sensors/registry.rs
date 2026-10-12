@@ -11,9 +11,15 @@ use crate::config::model::{Layout, SensorInstance};
 use crate::i18n::t;
 use crate::platform::{Capabilities, Capability};
 
-/// The sensor types of this version. Types arrive with their slices: Text, Image and Spacer in
-/// M1 S4, the system sensors in M2, launchers and hardware in M3.
-static REGISTRY: LazyLock<Registry> = LazyLock::new(|| Registry::new(Vec::new()));
+/// The sensor types of this version. The system sensors arrive in M2, launchers and hardware
+/// in M3.
+static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
+    Registry::new(vec![
+        &super::text::TextType,
+        &super::image::ImageType,
+        &super::spacer::SpacerType,
+    ])
+});
 
 pub fn registry() -> &'static Registry {
     &REGISTRY
@@ -75,7 +81,10 @@ impl Registry {
                 i.value
             );
         }
-        ty.create(&props, state)
+        ty.create(&props, state).unwrap_or_else(|e| {
+            tracing::error!("sensor type {} cannot read its props: {e}", ty.id());
+            Box::new(Placeholder::unsupported(t(ty.name())))
+        })
     }
 
     /// Stores the machine-derived props that entries of known types lack (SPEC §11.2), so a
@@ -179,11 +188,11 @@ mod tests {
             p.insert("use24h".into(), json!(false));
             p
         }
-        fn create(&self, props: &Props, _state: &State) -> Box<dyn Sensor> {
-            Box::new(Echo(format!(
+        fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
+            Ok(Box::new(Echo(format!(
                 "use24h={} showSeconds={}",
                 props["use24h"], props["showSeconds"]
-            )))
+            ))))
         }
     }
 
@@ -205,8 +214,8 @@ mod tests {
         fn requires(&self) -> &'static [Capability] {
             &[Capability::Battery]
         }
-        fn create(&self, _props: &Props, _state: &State) -> Box<dyn Sensor> {
-            Box::new(Echo("battery".into()))
+        fn create(&self, _props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
+            Ok(Box::new(Echo("battery".into())))
         }
     }
 
@@ -329,6 +338,52 @@ mod tests {
         assert!(!infos[1].available);
         assert_eq!(infos[0].machine_defaults["use24h"], false);
         assert_eq!(infos[0].schema.len(), 2);
+    }
+
+    #[test]
+    fn every_type_has_its_messages() {
+        use crate::sensors::schema::FieldKind;
+        let mut keys = Vec::new();
+        for ty in &super::registry().types {
+            keys.extend([ty.name(), ty.description(), ty.category().name()]);
+            for field in ty.schema() {
+                keys.push(field.label);
+                keys.extend(field.description);
+                match field.kind {
+                    FieldKind::Select { options } => keys.extend(options.iter().map(|o| o.label)),
+                    FieldKind::Slider { unit, .. } => keys.extend(unit),
+                    _ => {}
+                }
+            }
+        }
+        let missing: Vec<_> = keys
+            .into_iter()
+            .filter(|k| !crate::i18n::exists(k))
+            .collect();
+        assert!(missing.is_empty(), "missing in en.json: {missing:?}");
+    }
+
+    #[test]
+    fn every_type_creates_a_sensor_from_its_defaults() {
+        let caps = Capabilities {
+            recycle_bin: true,
+            start_menu: true,
+            wifi: true,
+            battery: true,
+            eject: true,
+            per_core_cpu: true,
+            ..Capabilities::default()
+        };
+        for ty in &super::registry().types {
+            let entry = instance(ty.id(), json!({}));
+            let (props, _) = schema::resolve(ty.schema(), &entry.props, &Props::new());
+            assert!(ty.create(&props, &State::new()).is_ok(), "{}", ty.id());
+            assert!(
+                !super::registry()
+                    .create(&entry, &State::new(), &caps)
+                    .inactive()
+            );
+        }
     }
 
     #[test]

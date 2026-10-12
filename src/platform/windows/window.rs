@@ -19,6 +19,7 @@ use std::num::NonZeroIsize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
+use std::time::Duration;
 
 use raw_window_handle::{
     HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
@@ -34,11 +35,11 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, LoadCursorW,
-    MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW,
-    SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE, WM_DPICHANGED,
+    GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
+    LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW,
+    SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE, WM_DPICHANGED,
     WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_MOUSEACTIVATE, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WNDCLASSEXW, WS_EX_NOACTIVATE,
+    WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
@@ -58,6 +59,8 @@ use crate::platform::{
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
 /// Private: [`UiWaker::wake`] was called.
 const WM_WAKE: u32 = WM_APP + 1;
+/// The id of the sensors' wake-up timer ([`BarWindow::set_timer`]).
+const WAKE_TIMER: usize = 1;
 
 /// Per-window state, reached from the window procedure through `GWLP_USERDATA`. The bar window
 /// lives as long as the process, so its state is never freed.
@@ -135,6 +138,13 @@ impl WindowState {
             }
             WM_CLOSE => {
                 self.dispatch(UiEvent::CloseRequested);
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == WAKE_TIMER => {
+                // One-shot: the handler sets the next one.
+                // SAFETY: plain call on our own window.
+                let _ = unsafe { KillTimer(Some(hwnd), WAKE_TIMER) };
+                self.dispatch(UiEvent::Timer);
                 return LRESULT(0);
             }
             WM_SIZE | WM_DPICHANGED => self.invalidate(),
@@ -291,6 +301,24 @@ impl BarWindow for WindowState {
 
     fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32> {
         menu::show(self.hwnd(), entries)
+    }
+
+    fn set_timer(&self, delay: Option<Duration>) {
+        let hwnd = self.hwnd();
+        match delay {
+            // SetTimer replaces a timer with the same id; USER clamps tiny delays to ~10 ms.
+            // SAFETY: plain calls on our own window.
+            Some(delay) => unsafe {
+                let ms = u32::try_from(delay.as_millis()).unwrap_or(u32::MAX).max(1);
+                if SetTimer(Some(hwnd), WAKE_TIMER, ms, None) == 0 {
+                    tracing::warn!("the wake-up timer could not be set");
+                }
+            },
+            // SAFETY: plain call on our own window; a missing timer is no error worth noting.
+            None => unsafe {
+                let _ = KillTimer(Some(hwnd), WAKE_TIMER);
+            },
+        }
     }
 }
 

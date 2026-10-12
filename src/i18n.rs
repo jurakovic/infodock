@@ -40,6 +40,12 @@ pub fn t_args(key: &str, args: &[(&str, &str)]) -> String {
     })
 }
 
+/// Whether the catalog has `key`, for tests of code that names keys.
+#[cfg(test)]
+pub(crate) fn exists(key: &str) -> bool {
+    CATALOG.contains_key(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

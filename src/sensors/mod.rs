@@ -4,13 +4,19 @@
 //! type means adding one module and listing it in `registry.rs`.
 //!
 //! The [`Sensor`] trait grows with the slices that need it: topics and samples arrive with the
-//! sampler (M1 S10), wake-ups with the first timed sensors, clicks, menus and drops with the
-//! interaction slices (S5–S8, M3), and `from_legacy` with the legacy import (M4).
+//! sampler (M1 S10), clicks, menus and drops with the interaction slices (S5–S8, M3), and
+//! `from_legacy` with the legacy import (M4).
 
+pub mod image;
 pub mod placeholder;
 pub mod registry;
 pub mod schema;
+pub mod spacer;
+pub mod text;
 
+use std::time::Instant;
+
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::bar::theme::Theme;
@@ -27,6 +33,32 @@ pub type Props = Map<String, Value>;
 
 /// Runtime state kept per sensor id in the config, e.g. the uptime record.
 pub type State = Map<String, Value>;
+
+/// Whether what a sensor shows changed; the bar then re-measures and redraws it (SPEC §4.4).
+pub type Dirty = bool;
+
+/// Resolved props as a type's typed props struct (`camelCase` fields, as in the schema).
+pub fn typed<T: DeserializeOwned>(props: &Props) -> serde_json::Result<T> {
+    serde_json::from_value(Value::Object(props.clone()))
+}
+
+/// A `colorMode` prop (SPEC §8.2, §8.4).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct ColorChoice {
+    pub mode: ColorModeKind,
+    /// `#RRGGBB`, used in custom mode.
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ColorModeKind {
+    /// The sensor text colour.
+    Standard,
+    Custom,
+    /// Green → yellow → red by value.
+    Dynamic,
+}
 
 /// Groups of the sensor picker (SPEC §6.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -78,8 +110,9 @@ pub trait SensorType: Send + Sync {
     fn machine_defaults(&self, _ctx: &DefaultsCtx) -> Props {
         Props::new()
     }
-    /// A sensor for resolved `props` (every schema field present and valid).
-    fn create(&self, props: &Props, state: &State) -> Box<dyn Sensor>;
+    /// A sensor for resolved `props` (every schema field present and valid). Fails only if the
+    /// type's typed props do not match its schema, which its tests rule out.
+    fn create(&self, props: &Props, state: &State) -> serde_json::Result<Box<dyn Sensor>>;
 }
 
 /// What measuring may use (bar thread).
@@ -133,5 +166,49 @@ pub trait Sensor {
     /// The value read by screen readers (SPEC §14.4).
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         String::new()
+    }
+    /// When the sensor next needs [`Sensor::on_wake`], for timer-driven sensors (clock,
+    /// uptime). The bar keeps one timer for the earliest wake-up of all sensors.
+    fn wake_at(&self, _now: Instant) -> Option<Instant> {
+        None
+    }
+    /// Called at or after [`Sensor::wake_at`].
+    fn on_wake(&mut self, _now: Instant, _cx: &SensorCtx) -> Dirty {
+        false
+    }
+}
+
+/// Helpers for the sensor types' tests: the default modern theme, fixed text metrics, scale 1.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::{DrawCtx, LayoutCtx, Sensor};
+    use crate::bar::theme::Theme;
+    use crate::config::model::Settings;
+    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
+    use crate::platform::{OsAppearance, RectF};
+
+    pub fn theme() -> Theme {
+        Theme::resolve(&Settings::default(), OsAppearance::default())
+    }
+
+    pub fn measure(sensor: &mut dyn Sensor) -> f32 {
+        sensor.measure(&LayoutCtx {
+            theme: &theme(),
+            text: &FixedMetrics,
+            scale: 1.0,
+        })
+    }
+
+    /// What `sensor` draws at x = 7 with `width`, on a 28 px bar.
+    pub fn draw(sensor: &dyn Sensor, width: f32) -> String {
+        let mut canvas = RecordingCanvas::new(1.0);
+        sensor.draw(
+            &mut canvas,
+            &DrawCtx {
+                theme: &theme(),
+                rect: RectF::new(7.0, 0.0, 7.0 + width, 28.0),
+            },
+        );
+        canvas.dump()
     }
 }

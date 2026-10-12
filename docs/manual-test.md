@@ -73,6 +73,13 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Open Settings (tray → *Settings…*), then close it: Infodock keeps running, and memory is back near the idle value.
 - [ ] Hover and click the bar: the window you were working in keeps the focus.
 
+**Sensors on the bar** (since M1 S4; adding and editing sensors arrives with S5 and S9)
+
+- [ ] With the first-run config, the bar shows the Infodock logo in the centre, and dimmed, outlined labels `cpu-graph`, `memory-meter`, `network-graph` on the left and `date`, `time` on the right: those sensor types arrive in M2.
+- [ ] Settings ▸ General ▸ *Space between sensors*: the gaps on the left and right change at once.
+- [ ] At 150 % scaling, the logo and the labels are crisp, not blurred.
+- [ ] Optional, by editing `config.json` while Infodock is closed: a `text` sensor (`{ "id": "s_t1", "type": "text", "props": { "text": "Hello" } }`) shows its text; a `spacer` with `"showDivider": true` shows a faint vertical line; an `image` with `"image": "C:\\path\\to\\picture.png"` shows that picture one pixel less than the bar tall.
+
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.

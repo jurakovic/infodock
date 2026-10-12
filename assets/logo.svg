@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <!-- Placeholder logo (SPEC Appendix C): monochrome white, so the Image sensor can tint it. -->
+  <circle cx="20" cy="7" r="4" fill="#FFFFFF"/>
+  <rect x="16.5" y="13" width="7" height="14" rx="3.5" fill="#FFFFFF"/>
+  <rect x="2" y="30" width="36" height="8" rx="3" fill="#FFFFFF" opacity="0.55"/>
+</svg>

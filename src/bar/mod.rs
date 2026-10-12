@@ -1,7 +1,9 @@
 //! The bar (SPEC §4.1, §5): a native window on its own thread. [`BarController`] is the handle
 //! the rest of the app uses; the logic in `thread.rs` runs on the bar thread.
 
+mod layout;
 mod paint;
+mod sensors;
 pub mod theme;
 mod thread;
 mod tray;
@@ -10,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::config::Config;
 use crate::config::ConfigStore;
 use crate::config::model::Settings;
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
@@ -31,7 +34,8 @@ pub trait BarHost: Send + Sync {
 
 /// Work for the bar thread, queued by [`BarController`].
 enum Command {
-    Settings(Box<Settings>),
+    /// The config changed: settings, layout or sensor state.
+    Config(Box<Config>),
 }
 
 /// Cross-thread handle to the bar.
@@ -52,11 +56,11 @@ impl BarController {
         platform: Arc<dyn Platform>,
         host: Arc<dyn BarHost>,
     ) -> Result<Arc<Self>, PlatformError> {
-        let settings = store.get().settings;
+        let config = store.get();
+        let settings = config.settings.clone();
         let (commands, queue) = mpsc::channel();
-        let initial = settings.clone();
         let thread = platform::start_bar_thread(Box::new(move || {
-            Box::new(BarLogic::new(initial, platform, queue, host))
+            Box::new(BarLogic::new(config, platform, queue, host))
         }))?;
 
         let controller = Arc::new(Self {
@@ -80,7 +84,7 @@ impl BarController {
             {
                 c.apply(&new.settings);
             }
-            c.send(Command::Settings(Box::new(new.settings.clone())));
+            c.send(Command::Config(Box::new(new.clone())));
         }));
 
         let appbar = Arc::clone(&controller.appbar);
