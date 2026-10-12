@@ -17,9 +17,19 @@ Exit: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survi
 
 ## M1 — Framework
 
-Sensor registry and types (§8.1–8.2), zones and layout (§5.4), hint window and placement (§7.1, §7.3), context menus (§6.4), Lock/Popups, drag reordering (§6.2), floating mode (§5.1), rise animation and hover highlight (§5.5), Settings shell, PropertyForm, SensorPicker, Layout manager, sampler and `subscribe` (§4.4), sensor CRUD commands, Text/Image/Spacer sensors, browser mock backend for screenshots. On load, fill machine-derived props that are missing (e.g. Time `use24h` in the first-run layout, §11.2) and store them.
+Exit: Text, Image and Spacer can be added, configured, moved and removed; hints work; the layout persists. Sensor types that arrive in M2 (the first-run CPU Graph, Memory Meter, Network Graph, Date, Time) render as placeholders until then (§4.6).
 
-Carried over from the M0 review: a command that returns the current bar geometry (the first `bar-geometry` event fires before the bar page listens); run the AppBar sink's work via a posted message instead of inside the window procedure before hint/popup hiding hangs off it; `theme-changed` event so toggling OS transparency effects applies without a restart; clicks on the bar must not take focus (§5.3).
+- [ ] **S1 M0 carry-overs**: a command that returns the current bar geometry (the first `bar-geometry` event fires before the bar page listens); the AppBar sink's work runs via a posted message instead of inside the window procedure, before hint/popup hiding hangs off it; `theme-changed` event so toggling OS transparency effects applies without a restart; clicks on the bar do not take focus (§5.3)
+- [ ] **S2 Sensor framework**: `sensors/types.ts`, `registry.ts`, property schema with validation and defaults (§8.1–8.2), storage rules (only non-defaults; machine-derived props filled on load and stored, e.g. Time `use24h` in the first-run layout, §11.2), placeholders for unknown/unsupported types (§4.6)
+- [ ] **S3 Layout and rendering**: `layout.ts` (§5.4, pure and tested), zone/slot components measured with `ResizeObserver`, Text/Image/Spacer views (§9.1–9.3), browser mock backend for screenshots
+- [ ] **S4 Sensor commands**: `add_sensor`, `update_sensor`, `move_sensor`, `remove_sensor`, `set_sensor_state` (§4.5), move-index math (§6.2) with tests
+- [ ] **S5 Menus, Lock, Popups**: native bar and sensor context menus (§6.4), remove confirmation, Lock and `clicksWhenLocked` (§6.1)
+- [ ] **S6 Hint window**: pre-created non-activating, click-through `hint` window; `show_hint`/`update_hint`/`hide_hint`/`popup_ready`; placement (§7.3, pure and tested in Rust); show/hide delays, live updates and pointer triangle (§7.1)
+- [ ] **S7 Drag reordering**: 4 px threshold, placer, zone by thirds, Esc cancels, hints suppressed (§6.2)
+- [ ] **S8 Settings**: Settings shell (§10.7), SensorPicker (§6.6), PropertyForm with live preview and Cancel (§6.7), Layout manager, Sensors and Popups pages
+- [ ] **S9 Sampler**: scheduler thread, topics, `subscribe`/`unsubscribe` over Channels at the minimum requested interval (§4.4); `uptime` provider as the first topic
+- [ ] **S10 Floating mode and animation**: floating mode (§5.1, D3), rise animation and hover highlight (§5.5)
+- [ ] **S11 Close-out**: clean-context review, fixes, `docs/manual-test.md` M1 section, CI green
 
 ## M2 — System sensors
 
