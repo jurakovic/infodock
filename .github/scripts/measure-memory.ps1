@@ -86,13 +86,15 @@ try {
     Measure-Tree 'Settings open' $app.Id
     Save-Screenshot (Join-Path $OutDir 'settings.png')
 
-    $settings = [User32]::FindWindowW($null, 'Infodock Settings')
+    # [NullString]: PowerShell would pass $null to a string parameter as "".
+    $settings = [User32]::FindWindowW([NullString]::Value, 'Infodock Settings')
     if ($settings -eq [IntPtr]::Zero) {
         Write-Warning 'Settings window not found'
     } else {
         [User32]::PostMessageW($settings, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null # WM_CLOSE
     }
     Start-Sleep -Seconds 10
+    if ($app.HasExited) { throw 'Infodock quit when Settings was closed' }
     Measure-Tree 'Settings closed' $app.Id
 } finally {
     # Graceful quit: WM_CLOSE to the app's windows, as Restart Manager or a plain taskkill does.
