@@ -63,6 +63,10 @@ impl BarWindow for NoWindow {
 
     fn capture_pointer(&self, _capture: bool) {}
 
+    fn escape_down(&self) -> bool {
+        false
+    }
+
     fn confirm(&self, _message: &str, _action: &str) -> bool {
         false
     }

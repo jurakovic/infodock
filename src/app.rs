@@ -204,6 +204,12 @@ impl BarHost for AppHost {
             tracing::warn!("could not remove sensor {id}: {e}");
         }
     }
+
+    fn move_sensor(&self, id: &str, zone: Zone, index: usize) {
+        if let Err(e) = self.0.move_sensor(id, zone, index) {
+            tracing::warn!("could not move sensor {id}: {e}");
+        }
+    }
 }
 
 #[cfg(test)]

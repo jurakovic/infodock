@@ -215,6 +215,23 @@ impl BarSensors {
         true
     }
 
+    /// Each zone's sensors as `(x, width)`, logical px, in visual order.
+    pub fn spans(&self) -> [Vec<(f32, f32)>; 3] {
+        self.zones
+            .each_ref()
+            .map(|z| z.iter().map(|p| (p.x, p.width)).collect())
+    }
+
+    /// The zone and index of sensor `id`.
+    pub fn find(&self, id: &str) -> Option<(Zone, usize)> {
+        ZONES.into_iter().find_map(|zone| {
+            let index = self.zones[zone as usize]
+                .iter()
+                .position(|p| p.entry.id == id)?;
+            Some((zone, index))
+        })
+    }
+
     /// Where sensor `id` is: its x and width, logical px.
     pub fn place_of(&self, id: &str) -> Option<(f32, f32)> {
         self.zones

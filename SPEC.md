@@ -379,7 +379,8 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 * Over a sensor, a **placer** (2 px vertical line in the accent colour) shows the drop position: **left** of the target if the pointer is over its left half, otherwise right of it.
 * Over an empty area: the zone is chosen by the pointer's x in **thirds** of the bar width. The placer appears at that zone's insertion point: left zone → after its last sensor (or at `pad`); center → after its last sensor (or at the center); right zone → before its first sensor (or at `barWidth − pad`).
 * Drop → `move_sensor(id, zone, index)`. The index accounts for removing the source first: within the same zone, if the source is before the target, the target index shifts down by one.
-* Esc cancels the drag. The bar does not take focus, so Esc is read with `GetAsyncKeyState` while the drag runs (pointer captured).
+* Esc cancels the drag. The bar does not take focus, so Esc is read with `GetAsyncKeyState` while the drag runs (pointer captured), every 50 ms. Losing the pointer capture to another window cancels it too.
+* The dragged sensor stays dimmed in place during the drag. The placer is centred in the gap at the drop position: half a gap left of the target or right of it; in an empty zone at `pad`, the bar's centre or `barWidth − pad`. Dropping where the sensor already is (next to itself) moves nothing. A press that moves past 4 px while locked is neither a drag nor a click.
 
 ### 6.3 External drag & drop onto the bar
 

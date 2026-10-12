@@ -35,17 +35,17 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
-    VIRTUAL_KEY, VK_CONTROL, VK_MENU, VK_SHIFT,
+    GetAsyncKeyState, GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT,
+    TrackMouseEvent, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
     GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
     LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW,
-    SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE, WM_DPICHANGED,
-    WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMER,
+    SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMER,
     WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
@@ -70,12 +70,14 @@ const WM_WAKE: u32 = WM_APP + 1;
 /// Window timer ids: the bar logic's timers ([`BarWindow::set_timer`]) and the hint's fade.
 const WAKE_TIMER: usize = 1;
 const HINT_TIMER: usize = 2;
-const FADE_TIMER: usize = 3;
+const DRAG_TIMER: usize = 3;
+const FADE_TIMER: usize = 4;
 
 fn timer_id(id: TimerId) -> usize {
     match id {
         TimerId::Wake => WAKE_TIMER,
         TimerId::Hint => HINT_TIMER,
+        TimerId::Drag => DRAG_TIMER,
     }
 }
 
@@ -207,17 +209,20 @@ impl WindowState {
                 // Handled here, so no WM_CONTEXTMENU follows the right button.
                 return LRESULT(0);
             }
-            WM_TIMER if wparam.0 == WAKE_TIMER || wparam.0 == HINT_TIMER => {
+            WM_TIMER if matches!(wparam.0, WAKE_TIMER | HINT_TIMER | DRAG_TIMER) => {
                 // One-shot: the handler sets the next one.
                 // SAFETY: plain call on our own window.
                 let _ = unsafe { KillTimer(Some(hwnd), wparam.0) };
-                let id = if wparam.0 == WAKE_TIMER {
-                    TimerId::Wake
-                } else {
-                    TimerId::Hint
+                let id = match wparam.0 {
+                    WAKE_TIMER => TimerId::Wake,
+                    HINT_TIMER => TimerId::Hint,
+                    _ => TimerId::Drag,
                 };
                 self.dispatch(UiEvent::Timer(id));
                 return LRESULT(0);
+            }
+            WM_CAPTURECHANGED if lparam.0 != hwnd.0 as isize => {
+                self.dispatch(UiEvent::CaptureLost);
             }
             WM_TIMER if wparam.0 == FADE_TIMER => {
                 let going_on = matches!(self.hint.get(), Some(Ok(hint)) if hint.fade_step());
@@ -402,6 +407,11 @@ impl BarWindow for WindowState {
                 let _ = ReleaseCapture();
             }
         }
+    }
+
+    fn escape_down(&self) -> bool {
+        // SAFETY: plain key-state query; the high bit is set while the key is down.
+        unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) < 0 }
     }
 
     fn confirm(&self, message: &str, action: &str) -> bool {

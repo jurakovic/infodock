@@ -38,6 +38,8 @@ pub trait BarHost: Send + Sync {
     /// Adds a sensor of type `kind` with its defaults; returns its id (SPEC §4.5).
     fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String>;
     fn remove_sensor(&self, id: &str);
+    /// Moves a sensor; `index` counts with it already taken out (SPEC §6.2).
+    fn move_sensor(&self, id: &str, zone: Zone, index: usize);
 }
 
 /// Work for the bar thread, queued by [`BarController`].

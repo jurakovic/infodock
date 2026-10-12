@@ -9,7 +9,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use super::hint::{self, HintFrame, HintText, Hover, Step};
-use super::interact::{self, Press};
+use super::interact::{self, DropTarget, Press};
 use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
 use super::placement::Anchor;
@@ -25,8 +25,21 @@ use crate::platform::{
     BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
     PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent,
 };
+use crate::sensors::ops::index_after_removal;
 use crate::sensors::registry::registry;
 use crate::sensors::{ClickResult, HintContent, LayoutCtx, State};
+
+/// How often Esc is checked during a drag.
+const ESC_POLL: Duration = Duration::from_millis(50);
+
+/// A reorder drag in progress.
+struct Drag {
+    id: String,
+    /// Where the sensor is.
+    source: (Zone, usize),
+    /// Where it would go; none until the pointer moved.
+    target: Option<DropTarget>,
+}
 
 /// A zone as Settings routes name it.
 fn zone_id(zone: Zone) -> &'static str {
@@ -45,6 +58,8 @@ pub(super) struct BarLogic {
     previews: HashMap<String, SensorInstance>,
     /// The left button is down on a sensor.
     press: Option<Press>,
+    /// A reorder drag runs (SPEC §6.2).
+    drag: Option<Drag>,
     /// When the hover hint shows and hides.
     hover: Hover,
     /// Where the bar is; hints are placed from it.
@@ -77,6 +92,7 @@ impl BarLogic {
             state: config.state,
             previews: HashMap::new(),
             press: None,
+            drag: None,
             hover: Hover::default(),
             geometry: None,
             sensors: BarSensors::default(),
@@ -146,11 +162,32 @@ impl BarLogic {
     }
 
     fn pointer_moved(&mut self, window: &dyn BarWindow, at: PointF) {
-        // Past the threshold a reorder drag starts (M1 S8); until then the press just stops
-        // being a click.
-        if let Some(press) = &mut self.press {
-            if press.moved_to(at) && self.sensors.set_pressed(None) {
+        if let Some(drag) = &mut self.drag {
+            let target = interact::drop_target(
+                at.x,
+                &self.sensors.spans(),
+                self.sensors.bar_width(),
+                self.theme.pad,
+                self.theme.gap,
+            );
+            if drag.target != Some(target) {
+                drag.target = Some(target);
                 window.invalidate();
+            }
+            return;
+        }
+        if let Some(press) = &mut self.press {
+            // Past the threshold an unlocked press becomes a reorder drag; a locked one just
+            // stops being a click.
+            if press.moved_to(at) {
+                let id = press.id.clone();
+                match self.sensors.find(&id).filter(|_| !self.settings.locked) {
+                    Some(source) => self.start_drag(window, id, source, at),
+                    None => {
+                        self.sensors.set_pressed(None);
+                        window.invalidate();
+                    }
+                }
             }
             return;
         }
@@ -163,6 +200,37 @@ impl BarLogic {
             Duration::from_millis(u64::from(popups.hide_delay_ms)),
         );
         self.apply_hint(window, step);
+    }
+
+    /// Starts dragging `id` from `source`; the sensor stays dimmed in place and a placer shows
+    /// where it would go (SPEC §6.2). Hints stay closed meanwhile.
+    fn start_drag(
+        &mut self,
+        window: &dyn BarWindow,
+        id: String,
+        source: (Zone, usize),
+        at: PointF,
+    ) {
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
+        self.drag = Some(Drag {
+            id,
+            source,
+            target: None,
+        });
+        window.set_timer(TimerId::Drag, Some(ESC_POLL));
+        self.pointer_moved(window, at);
+    }
+
+    /// Ends a drag without moving anything (Esc, lost capture, a menu).
+    fn cancel_drag(&mut self, window: &dyn BarWindow) {
+        if self.drag.take().is_some() || self.press.is_some() {
+            self.press = None;
+            window.set_timer(TimerId::Drag, None);
+            window.capture_pointer(false);
+            self.sensors.set_pressed(None);
+            window.invalidate();
+        }
     }
 
     fn pointer_left(&mut self, window: &dyn BarWindow) {
@@ -259,6 +327,20 @@ impl BarLogic {
 
     /// Releasing over the pressed sensor without having moved is a click.
     fn pointer_up(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
+        if let Some(drag) = self.drag.take() {
+            self.press = None;
+            window.set_timer(TimerId::Drag, None);
+            window.capture_pointer(false);
+            self.sensors.set_pressed(None);
+            window.invalidate();
+            if let Some(target) = drag.target
+                && !interact::is_no_move(drag.source, &target)
+            {
+                let index = index_after_removal(drag.source, target.zone, target.insertion);
+                self.host.move_sensor(&drag.id, target.zone, index);
+            }
+            return;
+        }
         let Some(press) = self.press.take() else {
             return;
         };
@@ -288,11 +370,7 @@ impl BarLogic {
     fn context_menu(&mut self, window: &dyn BarWindow, at: PointF) {
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
-        if self.press.take().is_some() {
-            window.capture_pointer(false);
-            self.sensors.set_pressed(None);
-            window.invalidate();
-        }
+        self.cancel_drag(window);
         let caps = self.platform.capabilities();
         let hit = self.sensors.hit(at.x);
         let entries = match &hit {
@@ -423,6 +501,15 @@ impl BarLogic {
                 let step = self.hover.timer();
                 self.apply_hint(window, step);
             }
+            // Esc cancels a drag; the bar has no focus, so it is polled (SPEC §6.2).
+            TimerId::Drag if self.drag.is_some() => {
+                if window.escape_down() {
+                    self.cancel_drag(window);
+                } else {
+                    window.set_timer(TimerId::Drag, Some(ESC_POLL));
+                }
+            }
+            TimerId::Drag => {}
         }
     }
 }
@@ -485,6 +572,7 @@ impl BarHandler for BarLogic {
                 ..
             } => self.context_menu(window, at),
             UiEvent::PointerLeave => self.pointer_left(window),
+            UiEvent::CaptureLost => self.cancel_drag(window),
             // Middle clicks are reserved (SPEC §6.1).
             UiEvent::PointerDown { .. } | UiEvent::PointerUp { .. } => {}
             UiEvent::AppearanceChanged => {
@@ -522,6 +610,15 @@ impl BarHandler for BarLogic {
         self.sensors.update_layout(&cx, size.width);
         paint_bar(canvas, size, &self.theme, self.settings.bar.edge);
         self.sensors.draw(canvas, &self.theme, size.height);
+        // The placer: a 2 px line in the accent colour where the dragged sensor would go
+        // (SPEC §6.2, §12.2).
+        if let Some(target) = self.drag.as_ref().and_then(|d| d.target) {
+            let x = canvas.snap(target.placer_x - 1.0);
+            canvas.fill_rect(
+                RectF::new(x, 2.0, x + 2.0, size.height - 2.0),
+                self.theme.accent,
+            );
+        }
     }
 }
 
@@ -544,6 +641,7 @@ mod tests {
         captured: Cell<bool>,
         confirmed: RefCell<Vec<String>>,
         hint_timer: Cell<Option<std::time::Duration>>,
+        escape: Cell<bool>,
         /// The shown hint: where, and what it draws.
         hint: RefCell<Option<(Rect, String)>>,
     }
@@ -571,6 +669,9 @@ mod tests {
         }
         fn capture_pointer(&self, capture: bool) {
             self.captured.set(capture);
+        }
+        fn escape_down(&self) -> bool {
+            self.escape.get()
         }
         fn confirm(&self, message: &str, _action: &str) -> bool {
             self.confirmed.borrow_mut().push(message.to_owned());
@@ -617,6 +718,9 @@ mod tests {
         }
         fn remove_sensor(&self, id: &str) {
             self.log(format!("remove {id}"));
+        }
+        fn move_sensor(&self, id: &str, zone: Zone, index: usize) {
+            self.log(format!("move {id} {} {index}", zone_id(zone)));
         }
     }
 
@@ -718,14 +822,15 @@ mod tests {
         assert!(!window.captured.get());
         assert!(!dimmed(&mut logic));
 
-        // Moving away first: no longer dimmed, and releasing is no click.
+        // Moving starts a drag: the sensor stays dimmed until it is dropped.
         press(&mut logic, &window, LOGO, false);
         logic.on_event(
             &window,
             UiEvent::PointerMove(PointF::new(LOGO.x + 5.0, 14.0)),
         );
-        assert!(!dimmed(&mut logic));
+        assert!(dimmed(&mut logic));
         release(&mut logic, &window, LOGO);
+        assert!(!dimmed(&mut logic));
     }
 
     #[test]
@@ -906,5 +1011,77 @@ mod tests {
         );
         // Kept on screen: 7 px from the monitor's left edge, less the shadow margin.
         assert_eq!(hint.0.left, 1);
+    }
+
+    fn drag_to(logic: &mut BarLogic, window: &FakeWindow, from: PointF, to: PointF) -> bool {
+        press(logic, window, from, false);
+        logic.on_event(
+            window,
+            UiEvent::PointerMove(PointF::new(from.x + 6.0, from.y)),
+        );
+        logic.on_event(window, UiEvent::PointerMove(to));
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        let placer = canvas.dump().lines().any(|l| l.ends_with("#0078D4"));
+        release(logic, window, to);
+        placer
+    }
+
+    #[test]
+    fn dragging_moves_a_sensor() {
+        let (mut logic, window, host, config) = bar(Settings::default());
+        let logo = config.layout.center[0].id.clone();
+        // Drop the logo on the empty right part of the left third: after the left zone's last.
+        assert!(
+            drag_to(&mut logic, &window, LOGO, PointF::new(350.0, 14.0)),
+            "placer drawn"
+        );
+        assert_eq!(host.calls(), [format!("move {logo} left 3")]);
+        assert!(!window.captured.get());
+
+        // The first placeholder onto the right half of the third: after it, removal counted.
+        let cpu = config.layout.left[0].id.clone();
+        let third_x = {
+            let spans = logic.sensors.spans();
+            spans[0][2].0 + spans[0][2].1 - 2.0
+        };
+        drag_to(
+            &mut logic,
+            &window,
+            PointF::new(10.0, 14.0),
+            PointF::new(third_x, 14.0),
+        );
+        assert_eq!(host.calls()[1], format!("move {cpu} left 2"));
+    }
+
+    #[test]
+    fn dropping_in_place_or_pressing_esc_moves_nothing() {
+        let (mut logic, window, host, _) = bar(Settings::default());
+        drag_to(&mut logic, &window, LOGO, PointF::new(LOGO.x + 8.0, 14.0));
+        assert!(host.calls().is_empty());
+
+        press(&mut logic, &window, LOGO, false);
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(350.0, 14.0)));
+        window.escape.set(true);
+        logic.on_event(&window, UiEvent::Timer(TimerId::Drag));
+        assert!(!window.captured.get(), "cancelled");
+        release(&mut logic, &window, PointF::new(350.0, 14.0));
+        assert!(host.calls().is_empty());
+    }
+
+    #[test]
+    fn a_locked_bar_does_not_drag() {
+        let settings = Settings {
+            locked: true,
+            ..Settings::default()
+        };
+        let (mut logic, window, host, _) = bar(settings);
+        assert!(!drag_to(
+            &mut logic,
+            &window,
+            LOGO,
+            PointF::new(350.0, 14.0)
+        ));
+        assert!(host.calls().is_empty());
     }
 }

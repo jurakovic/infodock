@@ -86,8 +86,15 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Right-click the logo: *New sensor…*, *Properties…*, *Remove sensor*, *Tools ▸*, *Settings…*, *Lock*, *Popups*. On a placeholder (e.g. `cpu-graph`), *Properties…* is greyed out.
 - [ ] *Remove sensor* on the logo asks "Remove sensor “Image”?"; *Cancel* keeps it, *Remove* removes it at once (and from `config.json`).
 - [ ] Settings ▸ General ▸ *New sensor menu* is not there yet; set `"newSensorMenu": "submenu"` in `config.json` (Infodock closed): *New sensor* becomes a submenu *General ▸ Image, Spacer, Text*; choosing *Text* adds a "Text" sensor after the one you clicked (or in the zone under the pointer) and opens Settings.
-- [ ] Press and hold the left button on the logo: it dims; release: it is back. Press, move the pointer a few px away and release: no click (dragging arrives in S8).
+- [ ] Press and hold the left button on the logo: it dims; release: it is back.
 - [ ] *Lock* on and Settings ▸ General ▸ *Clicks while locked* → *Only while Alt is held*: pressing the logo no longer dims it; with Alt held it does.
+
+**Reordering** (since M1 S8)
+
+- [ ] Drag the logo (press, move more than a few px): it stays dimmed and a thin accent-coloured line shows where it would go: between sensors, or after the left zone's last sensor when over empty space in the left third, before the right zone's first sensor in the right third. Release: the logo moves there, and the order is kept after a restart.
+- [ ] Drag a placeholder onto the right half of its neighbour: they swap. Drop a sensor right next to itself: nothing changes.
+- [ ] While dragging, press Esc: the drag ends and nothing moves. No hint appears during a drag.
+- [ ] *Lock* on: dragging does nothing (and releasing elsewhere is no click).
 
 **Hints** (since M1 S7)
 

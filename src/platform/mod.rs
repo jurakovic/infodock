@@ -317,6 +317,8 @@ pub enum UiEvent {
         at: PointF,
         modifiers: Modifiers,
     },
+    /// Another window took the pointer capture.
+    CaptureLost,
 }
 
 /// The bar logic's timers; each runs independently.
@@ -326,6 +328,8 @@ pub enum TimerId {
     Wake,
     /// The hint's show or hide delay (SPEC §7.1).
     Hint,
+    /// Polls Esc while a reorder drag runs (SPEC §6.2).
+    Drag,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -421,6 +425,8 @@ pub trait BarWindow {
     fn hide_hint(&self);
     /// While captured, pointer events keep coming when the pointer leaves the window.
     fn capture_pointer(&self, capture: bool);
+    /// Whether Esc is held now, read without focus (the bar never takes it; SPEC §6.2).
+    fn escape_down(&self) -> bool;
     /// Asks a yes/no question in a native dialog (SPEC §6.4): `message` as the main text and
     /// `action` on the confirming button. Returns whether the user confirmed.
     fn confirm(&self, message: &str, action: &str) -> bool;
