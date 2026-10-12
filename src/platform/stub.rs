@@ -80,6 +80,8 @@ impl BarWindow for NoWindow {
     fn move_by(&self, _dx: i32, _dy: i32) -> Option<Rect> {
         None
     }
+
+    fn slide(&self, _dy: i32) {}
 }
 
 struct NoTray;

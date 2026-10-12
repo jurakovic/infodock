@@ -262,6 +262,16 @@ impl Shared {
         }
     }
 
+    /// Shows the bar `dy` px off its place (the rise animation, SPEC §5.5). The placement stays
+    /// as it is, so the next one puts the bar back.
+    pub(super) fn slide(&self, dy: i32) {
+        let Some((_, rect)) = self.ui(|u| u.applied.clone()) else {
+            return;
+        };
+        let rect = Rect::new(rect.left, rect.top + dy, rect.right, rect.bottom + dy);
+        self.set_window_pos(HWND_TOP, rect, SWP_NOACTIVATE | SWP_NOZORDER);
+    }
+
     /// Moves a floating bar by physical px while the user drags it (SPEC §5.1). The request
     /// follows, so a placement meanwhile (e.g. crossing to a monitor with another scale) keeps
     /// the new position; the caller stores it when the drag ends.

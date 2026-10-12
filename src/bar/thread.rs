@@ -20,7 +20,9 @@ use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
 use crate::config::Config;
 use crate::config::model::Zone;
-use crate::config::model::{BarMode, FloatingRect, Layout, Material, SensorInstance, Settings};
+use crate::config::model::{
+    BarMode, Edge, FloatingRect, Layout, Material, SensorInstance, Settings,
+};
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::platform::{
@@ -36,6 +38,8 @@ use crate::sensors::{ClickResult, HintContent, LayoutCtx, State};
 const ESC_POLL: Duration = Duration::from_millis(50);
 /// The hover highlight fades in and out over this long (SPEC §5.5).
 const HIGHLIGHT: Duration = Duration::from_millis(300);
+/// The bar rises into place, or slides out, over this long (SPEC §5.5).
+const RISE: Duration = Duration::from_millis(300);
 
 /// A reorder drag in progress.
 struct Drag {
@@ -89,6 +93,13 @@ pub(super) struct BarLogic {
     hovered: Option<String>,
     /// The hover highlight (SPEC §5.5), 0–1.
     highlight: Fade,
+    /// How far the bar has risen into place, 0–1: its content's opacity, and how far it is
+    /// off its place (SPEC §5.5).
+    shown: Fade,
+    /// The next placement starts the rise (start-up, and after sliding out).
+    rise_pending: bool,
+    /// Sliding out before an edge change; redocks when done.
+    sliding_out: bool,
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
@@ -129,7 +140,7 @@ impl BarLogic {
         host: Arc<dyn BarHost>,
     ) -> Self {
         let appearance = platform.appearance();
-        let config_animations = config.settings.bar.animations;
+        let animate = anim::enabled(config.settings.bar.animations, appearance.animations);
         Self {
             theme: Theme::resolve(&config.settings, appearance),
             settings: config.settings,
@@ -147,10 +158,14 @@ impl BarLogic {
             material: None,
             tray_shown: None,
             subscribed: HashMap::new(),
-            animate: anim::enabled(config_animations, appearance.animations),
+            animate,
             inside: false,
             hovered: None,
             highlight: Fade::at(0.0, Instant::now()),
+            // Hidden until it rises, if it does.
+            shown: Fade::at(if animate { 0.0 } else { 1.0 }, Instant::now()),
+            rise_pending: true,
+            sliding_out: false,
             platform,
             commands,
             host,
@@ -345,6 +360,79 @@ impl BarLogic {
             window.invalidate();
         }
         self.arm_timer(window);
+    }
+
+    /// Draws the next frame of the bar's animations and asks for another while one runs.
+    fn frame(&mut self, window: &dyn BarWindow, now: Instant) {
+        window.invalidate();
+        // A finished fade rests at its end, whatever the clock says when painting.
+        for fade in [&mut self.shown, &mut self.highlight] {
+            if !fade.running(now) {
+                *fade = Fade::at(fade.target(), now);
+            }
+        }
+        if let Some(g) = &self.geometry {
+            // A docked bar slides from its edge; a floating one only fades.
+            let off = 1.0 - self.shown.value(now);
+            let dy = if self.settings.bar.mode == BarMode::Docked {
+                let dy = (off * g.rect.height() as f32).round() as i32;
+                if g.edge == Edge::Top { -dy } else { dy }
+            } else {
+                0
+            };
+            window.slide(dy);
+        }
+        if self.sliding_out && !self.shown.running(now) {
+            self.sliding_out = false;
+            self.rise_pending = true;
+            self.host.redock();
+        }
+        if self.highlight.running(now) || self.shown.running(now) {
+            window.set_timer(TimerId::Frame, Some(anim::FRAME));
+        }
+    }
+
+    /// Starts the rise into place after a placement (SPEC §5.5).
+    fn rise(&mut self, window: &dyn BarWindow) {
+        if !std::mem::take(&mut self.rise_pending) || self.sliding_out {
+            return;
+        }
+        let now = Instant::now();
+        if self.animate {
+            self.shown = Fade::at(0.0, now);
+            self.shown.go(1.0, RISE, Easing::Out, now);
+        } else {
+            self.shown = Fade::at(1.0, now);
+        }
+        self.frame(window, now);
+    }
+
+    /// Takes a new config; returns whether the sensors need syncing.
+    fn apply_config(&mut self, window: &dyn BarWindow, config: Config) -> bool {
+        let (old, new) = (&self.settings.bar, &config.settings.bar);
+        if old.edge != new.edge || config.settings.sensor_spacing != self.settings.sensor_spacing {
+            window.invalidate();
+        }
+        // A docked bar changing edges slides out toward the old one first (SPEC §5.5); the
+        // controller left the redocking to us.
+        if old.edge != new.edge && old.mode == BarMode::Docked && new.mode == BarMode::Docked {
+            if self.animate && self.geometry.is_some() && self.host.bar_visible() {
+                if !self.sliding_out {
+                    let step = self.hover.dismiss();
+                    self.apply_hint(window, step);
+                    self.sliding_out = true;
+                    self.shown.go(0.0, RISE, Easing::In, Instant::now());
+                    window.set_timer(TimerId::Frame, Some(anim::FRAME));
+                }
+            } else {
+                self.host.redock();
+            }
+        }
+        let layout_changed = config.layout != self.layout || config.state != self.state;
+        self.settings = config.settings;
+        self.layout = config.layout;
+        self.state = config.state;
+        layout_changed
     }
 
     /// Fades the hover highlight in while the pointer is over the bar and the setting is on,
@@ -687,12 +775,7 @@ impl BarLogic {
                 }
             }
             TimerId::Drag => {}
-            TimerId::Frame => {
-                window.invalidate();
-                if self.highlight.running(Instant::now()) {
-                    window.set_timer(TimerId::Frame, Some(anim::FRAME));
-                }
-            }
+            TimerId::Frame => self.frame(window, Instant::now()),
         }
     }
 }
@@ -710,17 +793,7 @@ impl BarHandler for BarLogic {
                 while let Ok(command) = self.commands.try_recv() {
                     match command {
                         Command::Config(config) => {
-                            let config = *config;
-                            if config.settings.bar.edge != self.settings.bar.edge
-                                || config.settings.sensor_spacing != self.settings.sensor_spacing
-                            {
-                                window.invalidate();
-                            }
-                            layout_changed |=
-                                config.layout != self.layout || config.state != self.state;
-                            self.settings = config.settings;
-                            self.layout = config.layout;
-                            self.state = config.state;
+                            layout_changed |= self.apply_config(window, *config);
                         }
                         Command::Preview(sensor) => {
                             self.previews.insert(sensor.id.clone(), *sensor);
@@ -773,6 +846,7 @@ impl BarHandler for BarLogic {
             UiEvent::Placed(geometry) => {
                 self.geometry = Some(geometry);
                 window.invalidate();
+                self.rise(window);
                 self.refresh_hint(window);
             }
             // Full-screen apps hide the hint (SPEC §5.3); popups arrive in M3.
@@ -795,7 +869,13 @@ impl BarHandler for BarLogic {
             scale: canvas.scale(),
         };
         self.sensors.update_layout(&cx, size.width);
-        let highlight = self.highlight.value(Instant::now());
+        let now = Instant::now();
+        // The content fades in while the bar rises (SPEC §5.5).
+        let opacity = self.shown.value(now);
+        if opacity < 1.0 {
+            canvas.push_opacity(opacity);
+        }
+        let highlight = self.highlight.value(now);
         paint_bar(canvas, size, &self.theme, self.settings.bar.edge, highlight);
         self.sensors.draw(canvas, &self.theme, size.height);
         // The placer: a 2 px line in the accent colour where the dragged sensor would go
@@ -806,6 +886,9 @@ impl BarHandler for BarLogic {
                 RectF::new(x, 2.0, x + 2.0, size.height - 2.0),
                 self.theme.accent,
             );
+        }
+        if opacity < 1.0 {
+            canvas.pop();
         }
     }
 }
@@ -833,6 +916,8 @@ mod tests {
         frames: Cell<u32>,
         /// Where a floating bar is; `None` when docked.
         position: Cell<Option<Rect>>,
+        /// The rise animation's offsets.
+        slides: RefCell<Vec<i32>>,
         escape: Cell<bool>,
         /// The shown hint: where, and what it draws.
         hint: RefCell<Option<(Rect, String)>>,
@@ -863,6 +948,9 @@ mod tests {
         }
         fn capture_pointer(&self, capture: bool) {
             self.captured.set(capture);
+        }
+        fn slide(&self, dy: i32) {
+            self.slides.borrow_mut().push(dy);
         }
         fn move_by(&self, dx: i32, dy: i32) -> Option<Rect> {
             let mut rect = self.position.get()?;
@@ -933,12 +1021,25 @@ mod tests {
         fn subscribe(&self, id: &str, topics: Vec<TopicRequest>) {
             self.log(format!("subscribe {id} {topics:?}"));
         }
+        fn redock(&self) {
+            self.log("redock".into());
+        }
     }
 
     const WIDTH: f32 = 1200.0;
 
-    /// The bar logic with the first-run layout, laid out on a 1200 px bar.
+    /// The bar logic with the first-run layout, laid out on a 1200 px bar, in place.
     fn bar(settings: Settings) -> (BarLogic, FakeWindow, Arc<FakeHost>, Config) {
+        let (mut logic, window, host, config) = rising_bar(settings);
+        logic.frame(&window, Instant::now() + Duration::from_secs(1));
+        window.frames.set(0);
+        window.slides.borrow_mut().clear();
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        (logic, window, host, config)
+    }
+
+    /// The bar logic just placed, so it has started to rise (with animations).
+    fn rising_bar(settings: Settings) -> (BarLogic, FakeWindow, Arc<FakeHost>, Config) {
         let mut config = Config::first_run("1.0.0");
         config.settings = settings;
         let host = Arc::new(FakeHost::default());
@@ -1069,6 +1170,51 @@ mod tests {
         logic.on_event(&window, UiEvent::PointerMove(empty));
         assert_eq!(logic.highlight.target(), 0.0);
         assert_eq!(window.frames.get(), 0);
+    }
+
+    #[test]
+    fn rises_into_place_and_slides_out_before_changing_edges() {
+        let (mut logic, window, host, config) = rising_bar(Settings::default());
+        // Placed: 28 px below its place, transparent, then rising.
+        assert_eq!(window.slides.borrow().first(), Some(&28));
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        let dump = canvas.dump();
+        assert!(dump.starts_with("opacity 0"), "{dump}");
+        let done = Instant::now() + RISE;
+        logic.frame(&window, done);
+        assert_eq!(window.slides.borrow().last(), Some(&0));
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        assert!(!canvas.dump().starts_with("opacity"));
+
+        // To the top: it slides out downwards first, and only then is redocked.
+        let mut top = config.clone();
+        top.settings.bar.edge = Edge::Top;
+        logic.apply_config(&window, top);
+        assert!(!host.calls().contains(&"redock".to_owned()));
+        logic.frame(&window, Instant::now() + RISE);
+        assert_eq!(window.slides.borrow().last(), Some(&28));
+        assert!(host.calls().contains(&"redock".to_owned()));
+        // Placed at the top: it rises from above.
+        window.slides.borrow_mut().clear();
+        let mut geometry = logic.geometry.clone().expect("placed");
+        geometry.edge = Edge::Top;
+        geometry.rect = Rect::new(0, 0, 1200, 28);
+        logic.on_event(&window, UiEvent::Placed(geometry));
+        assert_eq!(window.slides.borrow().first(), Some(&-28));
+    }
+
+    #[test]
+    fn without_animations_the_bar_is_simply_there() {
+        let mut settings = Settings::default();
+        settings.bar.animations = crate::config::model::Animations::Off;
+        let (mut logic, window, host, config) = rising_bar(settings);
+        assert_eq!(*window.slides.borrow(), [0]);
+        let mut top = config;
+        top.settings.bar.edge = Edge::Top;
+        logic.apply_config(&window, top);
+        assert!(host.calls().contains(&"redock".to_owned()));
     }
 
     #[test]

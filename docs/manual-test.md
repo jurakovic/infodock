@@ -118,6 +118,10 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 **Highlight and fades** (since M1 S11)
 
+- [ ] Start Infodock: the bar slides up from below the screen edge while its content fades in (about a third of a second). With the bar at the top, it slides down from above.
+- [ ] Settings ▸ Bar ▸ *Screen edge* → *Top*: the bar slides down out of the screen, then slides in at the top. Back to *Bottom*: the same the other way. Maximised windows follow the reserved space.
+- [ ] *Animations* → *Off*, then change the edge or restart: the bar is simply there, without sliding or fading.
+
 - [ ] Settings ▸ Bar ▸ *Highlight on hover* on: moving the pointer onto the bar makes its background noticeably more opaque over about a third of a second; leaving fades it back.
 - [ ] Add a Spacer without divider (*New sensor… ▸ Spacer*): hovering it fades in a faint vertical line; leaving fades it out. With *Show divider* on, the line is always there.
 - [ ] *Animations* → *Off*: the highlight and the Spacer's line appear and disappear at once. *Like Windows* follows Settings ▸ Accessibility ▸ Visual effects ▸ *Animation effects* (after switching it, move the pointer over the bar again).

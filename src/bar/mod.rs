@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::Config;
 use crate::config::ConfigStore;
-use crate::config::model::{SensorInstance, Settings, Zone};
+use crate::config::model::{BarMode, SensorInstance, Settings, Zone};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use crate::sampler::{Delivery, TopicRequest};
 use thread::BarLogic;
@@ -44,6 +44,9 @@ pub trait BarHost: Send + Sync {
     fn move_sensor(&self, id: &str, zone: Zone, index: usize);
     /// Replaces the topics sensor `id` receives samples of; empty to stop (SPEC §4.4).
     fn subscribe(&self, id: &str, topics: Vec<TopicRequest>);
+    /// Docks the bar as the settings say now; after a docked bar's edge changed, the bar
+    /// thread calls this once it has slid out (SPEC §5.5).
+    fn redock(&self);
 }
 
 /// Work for the bar thread, queued by [`BarController`].
@@ -98,8 +101,12 @@ impl BarController {
                 return;
             };
             *c.settings.lock().unwrap_or_else(PoisonError::into_inner) = new.settings.clone();
-            if DockRequest::from_settings(&old.settings, true)
-                != DockRequest::from_settings(&new.settings, true)
+            // A docked bar slides out before it changes edges; the bar thread redocks it then.
+            let (o, n) = (&old.settings.bar, &new.settings.bar);
+            let slides = o.edge != n.edge && o.mode == BarMode::Docked && n.mode == BarMode::Docked;
+            if !slides
+                && DockRequest::from_settings(&old.settings, true)
+                    != DockRequest::from_settings(&new.settings, true)
             {
                 c.apply(&new.settings);
             }
@@ -162,6 +169,16 @@ impl BarController {
     /// Passes a sample to the sensors on the bar (sampler thread).
     pub fn deliver(&self, delivery: Delivery) {
         self.send(Command::Sample(delivery));
+    }
+
+    /// Docks the bar as the latest settings say.
+    pub fn redock(&self) {
+        let settings = self
+            .settings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        self.apply(&settings);
     }
 
     /// Releases the reserved screen space. Call on exit.

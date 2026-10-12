@@ -416,6 +416,12 @@ impl BarWindow for WindowState {
         self.appbar.get()?.move_by(dx, dy)
     }
 
+    fn slide(&self, dy: i32) {
+        if let Some(appbar) = self.appbar.get() {
+            appbar.slide(dy);
+        }
+    }
+
     fn escape_down(&self) -> bool {
         // SAFETY: plain key-state query; the high bit is set while the key is down.
         unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) < 0 }

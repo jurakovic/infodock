@@ -472,6 +472,9 @@ pub trait BarWindow {
     /// Moves a floating bar by physical px (SPEC §5.1) and returns where it is now; `None` when
     /// the bar is docked or not shown.
     fn move_by(&self, dx: i32, dy: i32) -> Option<Rect>;
+    /// Shows the bar `dy` physical px below (positive) or above its place, for the rise
+    /// animation (SPEC §5.5); 0 puts it back.
+    fn slide(&self, dy: i32);
 }
 
 /// Removes the tray icon from any thread, e.g. on exit.

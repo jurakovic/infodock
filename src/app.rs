@@ -238,6 +238,12 @@ impl BarHost for AppHost {
     fn subscribe(&self, id: &str, topics: Vec<TopicRequest>) {
         self.0.sampler.subscribe(id, topics);
     }
+
+    fn redock(&self) {
+        if let Some(bar) = self.0.bar.get() {
+            bar.redock();
+        }
+    }
 }
 
 #[cfg(test)]
