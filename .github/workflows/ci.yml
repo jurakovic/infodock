@@ -3,7 +3,36 @@ name: CI
 on:
   push:
     branches: [master]
+    # Only changes that can affect the build, lints or tests; docs-only commits skip CI.
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "tests/**"
+      - "eslint/**"
+      - ".cargo/**"
+      - "index.html"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - "svelte.config.js"
+      - "eslint.config.js"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "tests/**"
+      - "eslint/**"
+      - ".cargo/**"
+      - "index.html"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - "svelte.config.js"
+      - "eslint.config.js"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 concurrency:

@@ -37,7 +37,7 @@ Cloud sessions run on Linux. `check:win` compiles every `#[cfg(windows)]` path w
 ## Workflow
 
 - Commit straight to `master`, one logical change per commit, and **push after every commit**.
-- After pushing, check the CI run; if it is red, fixing it comes before anything else.
+- After pushing, check the CI run; if it is red, fixing it comes before anything else. CI runs only when build inputs change (paths in `ci.yml`); docs-only commits do not trigger it.
 - End commit messages with the `Co-Authored-By` trailer the session provides.
 
 ## Conventions
