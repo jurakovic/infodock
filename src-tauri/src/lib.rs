@@ -1,5 +1,6 @@
 //! Infodock core: app builder, windows and plugins (SPEC §4.2).
 
+mod bar;
 mod commands;
 pub mod config;
 mod error;
@@ -13,8 +14,8 @@ use std::sync::Arc;
 
 use tauri::{Emitter, Manager, RunEvent};
 
+use crate::bar::BarController;
 use crate::config::ConfigStore;
-use crate::windowing::bar::BarController;
 
 /// Event broadcast to all windows after every config change (SPEC §4.4 step 8).
 pub const EVENT_CONFIG_CHANGED: &str = "config-changed";
@@ -68,13 +69,17 @@ pub fn run() {
             commands::config::update_settings,
             commands::system::capabilities,
             commands::system::list_monitors,
-            commands::ui::open_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Infodock");
 
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app, event| match event {
+        // The bar is not a Tauri window, so closing Settings closes the last one; that must not
+        // quit the app. Only an explicit exit (tray, bar, `quit`) carries an exit code.
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } => api.prevent_exit(),
+        RunEvent::Exit => {
             if let Some(bar) = app.try_state::<Arc<BarController>>() {
                 bar.release();
             }
@@ -84,6 +89,7 @@ pub fn run() {
             tracing::info!("Infodock exiting");
             logging::shutdown();
         }
+        _ => {}
     });
 }
 

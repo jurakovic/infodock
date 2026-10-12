@@ -1,20 +1,18 @@
 //! The Windows AppBar: work-area reservation, z-order and full-screen handling (SPEC §5.2–5.3).
 //!
-//! The AppBar is registered for the bar window itself, and the bar window is subclassed
-//! (`SetWindowSubclass`) to receive the AppBar callback message and the broadcasts it needs
-//! (`TaskbarCreated`, `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`). A message-only window would not
-//! receive broadcasts, and registering a different window than the visible bar would decouple the
-//! shell's z-order handling from it.
+//! The AppBar is registered for the bar window itself. The bar window's procedure
+//! (`window.rs`) passes every message to [`Shared::handle`] first, which receives the AppBar
+//! callback message and the broadcasts it needs (`TaskbarCreated`, `WM_DISPLAYCHANGE`,
+//! `WM_SETTINGCHANGE`). A message-only window would not receive broadcasts, and registering a
+//! different window than the visible bar would decouple the shell's z-order handling from it.
 //!
-//! Threading: the subclass procedure runs on the UI thread. Other threads only store a request
+//! Threading: the window procedure runs on the bar thread. Other threads only store a request
 //! and post a message. State used by the window procedure is behind short-lived locks that are
 //! never held across a Win32 call, because `SetWindowPos` re-enters the procedure synchronously
 //! (`WM_WINDOWPOSCHANGING`).
 //!
-//! Ownership: this module owns the bar's geometry, z-order, visibility and tool-window style.
-//! The subclass enforces that, so a Tauri window setter called on the bar later (which re-applies
-//! tao's own idea of visibility and extended style) cannot hide the bar while it should be shown,
-//! bring it back into Alt+Tab, or move it. Do not call Tauri's show/hide/position setters on it.
+//! Ownership: this module owns the bar's geometry, z-order and visibility, and keeps other code
+//! (Aero Snap, Win+arrow keys) from moving the bar or lifting it out of its z-order.
 
 use std::ffi::c_void;
 use std::mem::size_of;
@@ -26,26 +24,24 @@ use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow}
 use windows::Win32::UI::Shell::{
     ABE_BOTTOM, ABE_TOP, ABM_ACTIVATE, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS,
     ABM_WINDOWPOSCHANGED, ABN_FULLSCREENAPP, ABN_POSCHANGED, ABN_STATECHANGE, APPBARDATA,
-    DefSubclassProc, RemoveWindowSubclass, SHAppBarMessage, SetWindowSubclass,
+    SHAppBarMessage,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChangeWindowMessageFilterEx, GWL_EXSTYLE, GWL_STYLE, GetForegroundWindow, GetWindowLongPtrW,
-    HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW, PostMessageW,
-    RegisterWindowMessageW, SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, STYLESTRUCT, SW_HIDE,
-    SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, WA_INACTIVE, WINDOWPOS,
-    WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE,
-    WM_STYLECHANGING, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_VISIBLE,
+    ChangeWindowMessageFilterEx, DefWindowProcW, GWL_EXSTYLE, GetForegroundWindow,
+    GetWindowLongPtrW, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW,
+    PostMessageW, RegisterWindowMessageW, SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow,
+    SetWindowPos, ShowWindow, WA_INACTIVE, WINDOWPOS, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED,
+    WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED,
+    WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
 };
 use windows::core::w;
 
 use super::monitors::{self, to_rect, to_win_rect};
 use crate::config::model::{BarMode, Edge, ZOrder};
 use crate::platform::geometry::{Rect, dock_strip, keep_height, select_monitor, to_physical};
-use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest, PlatformError};
+use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest};
 
-const SUBCLASS_ID: usize = 0x1D0C;
 /// `wParam` of the private "reposition" message when it asks to raise the bar instead.
 const RAISE: usize = 1;
 
@@ -73,7 +69,7 @@ fn messages() -> &'static Messages {
     })
 }
 
-struct Shared {
+pub(super) struct Shared {
     /// The bar window. Stored as an integer because `HWND` is not `Send`.
     hwnd: isize,
     /// Registered with the shell (`ABM_NEW` done, no `ABM_REMOVE` since). Atomic so the panic
@@ -109,6 +105,24 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Shared {
+    /// Prepares the AppBar for the bar window; nothing is registered until the first placement.
+    pub(super) fn new(hwnd: HWND, sink: AppBarSink) -> Arc<Self> {
+        let m = messages();
+        // SAFETY: plain calls on our own window. Let Explorer's messages through even if
+        // Infodock runs elevated (UIPI).
+        unsafe {
+            let _ = ChangeWindowMessageFilterEx(hwnd, m.taskbar_created, MSGFLT_ALLOW, None);
+            let _ = ChangeWindowMessageFilterEx(hwnd, m.callback, MSGFLT_ALLOW, None);
+        }
+        Arc::new(Self {
+            hwnd: hwnd.0 as isize,
+            registered: AtomicBool::new(false),
+            request: Mutex::new(None),
+            ui: Mutex::new(UiState::default()),
+            sink,
+        })
+    }
+
     fn hwnd(&self) -> HWND {
         HWND(self.hwnd as *mut c_void)
     }
@@ -347,14 +361,14 @@ impl Shared {
         }
     }
 
-    /// Keeps other code (Aero Snap, DPI changes, activation, tao re-applying its state) from
-    /// moving the bar, hiding it while it should be shown, or lifting it out of its z-order.
+    /// Keeps other code (Aero Snap, Win+arrow keys) from moving the bar or lifting it out of its
+    /// z-order.
     fn on_pos_changing(&self, pos: &mut WINDOWPOS) {
         let Ok(ui) = self.ui.try_lock() else {
             return;
         };
         if ui.positioning {
-            // Ours, or nested inside ours (tao's WM_DPICHANGED resize): keep our target geometry.
+            // Ours, or nested inside ours: keep our target geometry.
             let target = ui.target;
             drop(ui);
             if let Some(rect) = target {
@@ -369,26 +383,10 @@ impl Shared {
         let (fullscreen, raised) = (ui.fullscreen, ui.raised);
         drop(ui);
         pin_geometry(pos, rect);
-        if pos.flags.contains(SWP_HIDEWINDOW) {
-            pos.flags = SET_WINDOW_POS_FLAGS(pos.flags.0 & !SWP_HIDEWINDOW.0);
-        }
         let keep_low =
             (fullscreen && req.hide_on_fullscreen) || (req.z_order == ZOrder::Bottom && !raised);
         if keep_low && !pos.flags.contains(SWP_NOZORDER) {
             pos.hwndInsertAfter = HWND_BOTTOM;
-        }
-    }
-
-    /// Keeps the tool-window style (no Alt+Tab entry) and, while the bar should be shown,
-    /// `WS_VISIBLE`, whatever tao re-applies from its own state.
-    fn on_style_changing(&self, which: i32, style: &mut STYLESTRUCT) {
-        if which == GWL_EXSTYLE.0 {
-            style.styleNew |= WS_EX_TOOLWINDOW.0;
-        } else if which == GWL_STYLE.0 {
-            let shown = self.ui.try_lock().is_ok_and(|u| u.applied.is_some());
-            if shown {
-                style.styleNew |= WS_VISIBLE.0;
-            }
         }
     }
 
@@ -435,80 +433,64 @@ fn insert_after(req: &DockRequest, fullscreen: bool, raised: bool, topmost_now: 
     }
 }
 
-unsafe extern "system" fn subclass_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    _id: usize,
-    data: usize,
-) -> LRESULT {
-    // SAFETY: `data` is the `Arc<Shared>` leaked in `attach`; it stays alive until WM_NCDESTROY.
-    let shared = unsafe { &*(data as *const Shared) };
-    let m = messages();
-    if msg == m.reposition {
-        if wparam.0 == RAISE {
-            shared.raise_now();
-        } else {
-            shared.reposition();
-        }
-        return LRESULT(0);
-    }
-    if msg == m.callback {
-        shared.on_notification(wparam.0 as u32, lparam);
-        return LRESULT(0);
-    }
-    if msg == m.taskbar_created {
-        // Explorer restarted and forgot every appbar (SPEC §5.2 step 5). The new Explorer may
-        // never send the "full-screen closed" for an app the old one reported.
-        tracing::info!("taskbar re-created; registering again");
-        shared.unregister();
-        shared.ui(|u| u.fullscreen = false);
-        shared.post(0);
-    }
-    match msg {
-        WM_ACTIVATE => {
-            shared.appbar_notify(ABM_ACTIVATE);
-            if (wparam.0 & 0xFFFF) as u32 == WA_INACTIVE {
-                shared.on_deactivated();
+impl Shared {
+    /// Handles the messages the AppBar needs. `Some` means the message is fully handled;
+    /// `None` lets the window procedure continue with its own handling.
+    pub(super) fn handle(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
+        let m = messages();
+        if msg == m.reposition {
+            if wparam.0 == RAISE {
+                self.raise_now();
+            } else {
+                self.reposition();
             }
+            return Some(LRESULT(0));
         }
-        WM_WINDOWPOSCHANGING if lparam.0 != 0 => {
-            // SAFETY: for this message lParam points to a WINDOWPOS owned by the caller.
-            shared.on_pos_changing(unsafe { &mut *(lparam.0 as *mut WINDOWPOS) });
+        if msg == m.callback {
+            self.on_notification(wparam.0 as u32, lparam);
+            return Some(LRESULT(0));
         }
-        WM_WINDOWPOSCHANGED => shared.appbar_notify(ABM_WINDOWPOSCHANGED),
-        WM_STYLECHANGING if lparam.0 != 0 => {
-            // SAFETY: for this message lParam points to a STYLESTRUCT owned by the caller.
-            let style = unsafe { &mut *(lparam.0 as *mut STYLESTRUCT) };
-            shared.on_style_changing(wparam.0 as isize as i32, style);
+        if msg == m.taskbar_created {
+            // Explorer restarted and forgot every appbar (SPEC §5.2 step 5). The new Explorer may
+            // never send the "full-screen closed" for an app the old one reported.
+            tracing::info!("taskbar re-created; registering again");
+            self.unregister();
+            self.ui(|u| u.fullscreen = false);
+            self.post(0);
+            return Some(LRESULT(0));
         }
-        // Alt+F4 and the system menu's Close must not destroy the bar; quitting is a tray action.
-        // A plain WM_CLOSE (graceful taskkill, Restart Manager) still quits the app cleanly.
-        WM_SYSCOMMAND if (wparam.0 & 0xFFF0) == SC_CLOSE as usize => return LRESULT(0),
-        // Draw as active even when unfocused, so DWM keeps the Acrylic/Mica backdrop instead of
-        // its inactive fallback (the bar is almost never the active window).
-        // SAFETY: forwards with wParam = TRUE; the bar has no caption to repaint.
-        WM_NCACTIVATE => return unsafe { DefSubclassProc(hwnd, msg, WPARAM(1), lparam) },
-        WM_DISPLAYCHANGE | WM_DPICHANGED => shared.post(0),
-        WM_SETTINGCHANGE if wparam.0 == SPI_SETWORKAREA.0 as usize => shared.post(0),
-        WM_NCDESTROY => {
-            shared.unregister();
-            // SAFETY: undoes `attach`: remove the subclass, then release its reference.
-            unsafe {
-                let _ = RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID);
-                drop(Arc::from_raw(data as *const Shared));
-                return DefSubclassProc(hwnd, msg, wparam, lparam);
+        match msg {
+            WM_ACTIVATE => {
+                self.appbar_notify(ABM_ACTIVATE);
+                if (wparam.0 & 0xFFFF) as u32 == WA_INACTIVE {
+                    self.on_deactivated();
+                }
             }
+            WM_WINDOWPOSCHANGING if lparam.0 != 0 => {
+                // SAFETY: for this message lParam points to a WINDOWPOS owned by the caller.
+                self.on_pos_changing(unsafe { &mut *(lparam.0 as *mut WINDOWPOS) });
+            }
+            WM_WINDOWPOSCHANGED => self.appbar_notify(ABM_WINDOWPOSCHANGED),
+            // Alt+F4 and the system menu's Close must not destroy the bar; quitting is a tray
+            // action. A plain WM_CLOSE (graceful taskkill, Restart Manager) quits the app cleanly.
+            WM_SYSCOMMAND if (wparam.0 & 0xFFF0) == SC_CLOSE as usize => return Some(LRESULT(0)),
+            // Draw as active even when unfocused, so DWM keeps the Acrylic/Mica backdrop instead
+            // of its inactive fallback (the bar is almost never the active window).
+            // SAFETY: forwards with wParam = TRUE; the bar has no caption to repaint.
+            WM_NCACTIVATE => {
+                return Some(unsafe { DefWindowProcW(self.hwnd(), msg, WPARAM(1), lparam) });
+            }
+            WM_DISPLAYCHANGE | WM_DPICHANGED => self.post(0),
+            WM_SETTINGCHANGE if wparam.0 == SPI_SETWORKAREA.0 as usize => self.post(0),
+            WM_NCDESTROY => self.unregister(),
+            _ => {}
         }
-        _ => {}
+        None
     }
-    // SAFETY: forwards to the next procedure in the chain (Tauri's).
-    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
-pub struct WinAppBar {
-    shared: Arc<Shared>,
+pub(super) struct WinAppBar {
+    pub(super) shared: Arc<Shared>,
 }
 
 impl AppBar for WinAppBar {
@@ -528,37 +510,6 @@ impl AppBar for WinAppBar {
     fn release(&self) {
         self.shared.unregister();
     }
-}
-
-/// Subclasses the bar window. Must run on the window's UI thread.
-pub fn attach(
-    window: &tauri::WebviewWindow,
-    sink: AppBarSink,
-) -> Result<Arc<dyn AppBar>, PlatformError> {
-    let hwnd = window.hwnd()?;
-    let m = messages();
-    let shared = Arc::new(Shared {
-        hwnd: hwnd.0 as isize,
-        registered: AtomicBool::new(false),
-        request: Mutex::new(None),
-        ui: Mutex::new(UiState::default()),
-        sink,
-    });
-    // SAFETY: all calls target our own window on its UI thread.
-    unsafe {
-        // A tool window has no Alt+Tab entry (skip_taskbar already removed the taskbar button).
-        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_TOOLWINDOW.0 as isize);
-        // Let Explorer's messages through even if Infodock runs elevated (UIPI).
-        let _ = ChangeWindowMessageFilterEx(hwnd, m.taskbar_created, MSGFLT_ALLOW, None);
-        let _ = ChangeWindowMessageFilterEx(hwnd, m.callback, MSGFLT_ALLOW, None);
-        let raw = Arc::into_raw(Arc::clone(&shared));
-        if !SetWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID, raw as usize).as_bool() {
-            drop(Arc::from_raw(raw));
-            return Err(PlatformError::Os("SetWindowSubclass failed".into()));
-        }
-    }
-    Ok(Arc::new(WinAppBar { shared }))
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' icon: http://icon.localhost skin: http://skin.localhost data: blob:; style-src 'self' 'unsafe-inline'; media-src 'self'"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {

@@ -1,7 +1,6 @@
-//! App windows (SPEC §4.2 `windows/`; named `windowing` so it cannot be confused with the
-//! `windows` crate) and the tray.
+//! The Settings window and the tray (SPEC §4.2; named `windowing` so it cannot be confused with
+//! the `windows` crate). The bar lives in `crate::bar`.
 
-pub mod bar;
 pub mod settings;
 pub mod tray;
 
@@ -9,7 +8,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
-use bar::BarController;
+use crate::bar::BarController;
 
 /// Shows or hides the bar and updates the tray menu.
 pub fn toggle_bar(app: &AppHandle) {

@@ -1,0 +1,453 @@
+//! The bar thread and the native bar window (SPEC §4.1, §4.6): window class, window procedure,
+//! message loop, painting and material. The bar logic sees the window through [`BarWindow`] and
+//! receives its events through [`BarHandler`].
+//!
+//! Transparency: the window keeps its redirection surface and enables per-pixel alpha with
+//! `DwmEnableBlurBehindWindow` and an empty blur region (the same setup the M0 webview bar had
+//! through tao), so a DWM material set by `window-vibrancy` shows through wherever the bar is
+//! drawn translucent.
+//!
+//! Re-entrancy: Win32 calls made by the handler can dispatch messages to this window again
+//! (modal loops such as menus run their own message pumps). Events that arrive while the handler
+//! is busy are queued and delivered when it returns; a paint during that time is postponed.
+
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::VecDeque;
+use std::ffi::c_void;
+use std::mem::size_of;
+use std::num::NonZeroIsize;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
+
+use raw_window_handle::{
+    HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
+};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{
+    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DwmEnableBlurBehindWindow,
+};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, BitBlt, CreateRectRgn, DeleteObject, EndPaint, InvalidateRect, PAINTSTRUCT, SRCCOPY,
+};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect,
+    GetMessageW, GetWindowLongPtrW, IDC_ARROW, LoadCursorW, MA_NOACTIVATE, MSG, PostMessageW,
+    PostQuitMessage, RegisterClassExW, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE,
+    WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_MOUSEACTIVATE, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WNDCLASSEXW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+};
+use windows::core::{HSTRING, PCWSTR, w};
+
+use super::appbar::{Shared as AppBarState, WinAppBar};
+use super::render::Renderer;
+use crate::config::model::Material;
+use crate::i18n::t;
+use crate::platform::{
+    AppBarEvent, BarHandler, BarThread, BarWindow, HandlerFactory, PlatformError, SizeF, UiEvent,
+    UiWaker,
+};
+
+const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
+/// Private: [`UiWaker::wake`] was called.
+const WM_WAKE: u32 = WM_APP + 1;
+
+/// Per-window state, reached from the window procedure through `GWLP_USERDATA`. The bar window
+/// lives as long as the process, so its state is never freed.
+struct WindowState {
+    hwnd: Cell<isize>,
+    handler: RefCell<Option<Box<dyn BarHandler>>>,
+    appbar: OnceCell<Arc<AppBarState>>,
+    /// AppBar events raised while handling a message; delivered to the handler afterwards.
+    appbar_events: Arc<Mutex<Vec<AppBarEvent>>>,
+    /// Events that arrived while the handler was busy.
+    deferred: RefCell<VecDeque<UiEvent>>,
+    /// A paint arrived while the handler was busy.
+    repaint: Cell<bool>,
+    renderer: RefCell<Option<Renderer>>,
+    /// A wake message is queued and not yet handled.
+    wake_queued: Arc<AtomicBool>,
+    /// Rendering failed once; later failures are logged at debug level.
+    render_failed: Cell<bool>,
+}
+
+impl WindowState {
+    fn hwnd(&self) -> HWND {
+        HWND(self.hwnd.get() as *mut c_void)
+    }
+
+    fn handle(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        let hwnd = self.hwnd();
+        let handled = self
+            .appbar
+            .get()
+            .and_then(|appbar| appbar.handle(msg, wparam, lparam));
+        let events: Vec<AppBarEvent> = std::mem::take(
+            &mut *self
+                .appbar_events
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        for event in events {
+            self.dispatch(match event {
+                AppBarEvent::Placed(geometry) => UiEvent::Placed(geometry),
+                AppBarEvent::Fullscreen(on) => UiEvent::Fullscreen(on),
+            });
+        }
+        if let Some(result) = handled {
+            return result;
+        }
+        match msg {
+            WM_PAINT => {
+                self.paint();
+                return LRESULT(0);
+            }
+            WM_ERASEBKGND => return LRESULT(1),
+            // Clicks must not take focus from the user's window (SPEC §5.3).
+            WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
+            WM_WAKE => {
+                self.wake_queued.store(false, Ordering::SeqCst);
+                self.dispatch(UiEvent::Wake);
+                return LRESULT(0);
+            }
+            WM_CLOSE => {
+                self.dispatch(UiEvent::CloseRequested);
+                return LRESULT(0);
+            }
+            WM_SIZE | WM_DPICHANGED => self.invalidate(),
+            WM_SETTINGCHANGE if is_color_set_change(lparam) => {
+                self.dispatch(UiEvent::AppearanceChanged);
+            }
+            WM_THEMECHANGED | WM_DWMCOLORIZATIONCOLORCHANGED => {
+                self.dispatch(UiEvent::AppearanceChanged);
+            }
+            WM_NCDESTROY => {
+                // SAFETY: detaches this state from the dying window; it is intentionally leaked.
+                unsafe {
+                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                    PostQuitMessage(0);
+                }
+            }
+            _ => {}
+        }
+        // SAFETY: default processing for our own window.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    }
+
+    /// Delivers `event` now, or after the handler call in progress returns.
+    fn dispatch(&self, event: UiEvent) {
+        let Ok(mut slot) = self.handler.try_borrow_mut() else {
+            self.deferred.borrow_mut().push_back(event);
+            return;
+        };
+        let Some(handler) = slot.as_mut() else {
+            return;
+        };
+        handler.on_event(self, event);
+        loop {
+            // Separate statement: the queue must not stay borrowed while the handler runs.
+            let next = self.deferred.borrow_mut().pop_front();
+            let Some(event) = next else {
+                break;
+            };
+            handler.on_event(self, event);
+        }
+        drop(slot);
+        if self.repaint.take() {
+            self.invalidate();
+        }
+    }
+
+    fn paint(&self) {
+        let hwnd = self.hwnd();
+        let mut ps = PAINTSTRUCT::default();
+        // SAFETY: BeginPaint/EndPaint pair on our own window; the DC is used only in between.
+        let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
+        match self.handler.try_borrow_mut() {
+            Ok(mut slot) => {
+                if let Some(handler) = slot.as_mut() {
+                    self.render(hdc, handler.as_mut());
+                }
+            }
+            Err(_) => self.repaint.set(true),
+        }
+        // SAFETY: ends the paint started above.
+        unsafe {
+            let _ = EndPaint(hwnd, &ps);
+        }
+    }
+
+    fn render(&self, hdc: windows::Win32::Graphics::Gdi::HDC, handler: &mut dyn BarHandler) {
+        let hwnd = self.hwnd();
+        let mut client = RECT::default();
+        // SAFETY: reads our own window's client rect.
+        if unsafe { GetClientRect(hwnd, &mut client) }.is_err() {
+            return;
+        }
+        let (width, height) = (client.right - client.left, client.bottom - client.top);
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        // SAFETY: plain query on our own window.
+        let scale = unsafe { GetDpiForWindow(hwnd) }.max(96) as f32 / 96.0;
+        let mut renderer = self.renderer.borrow_mut();
+        if renderer.is_none() {
+            match Renderer::new() {
+                Ok(r) => *renderer = Some(r),
+                Err(e) => return self.report_render_error(&e),
+            }
+        }
+        let Some(renderer) = renderer.as_mut() else {
+            return;
+        };
+        let size = SizeF {
+            width: width as f32 / scale,
+            height: height as f32 / scale,
+        };
+        match renderer.draw(width, height, scale, |canvas| handler.paint(canvas, size)) {
+            // SAFETY: copies the finished frame, alpha included, into the window's surface.
+            Ok(frame) => unsafe {
+                if let Err(e) = BitBlt(hdc, 0, 0, width, height, Some(frame), 0, 0, SRCCOPY) {
+                    self.report_render_error(&e);
+                }
+            },
+            Err(e) => {
+                self.report_render_error(&e);
+                // A lost render target is re-created on the next frame.
+                self.repaint.set(true);
+            }
+        }
+    }
+
+    fn report_render_error(&self, e: &windows::core::Error) {
+        if self.render_failed.replace(true) {
+            tracing::debug!("bar rendering failed: {e}");
+        } else {
+            tracing::warn!("bar rendering failed: {e}");
+        }
+    }
+}
+
+impl BarWindow for WindowState {
+    fn invalidate(&self) {
+        // SAFETY: plain call on our own window.
+        unsafe {
+            let _ = InvalidateRect(Some(self.hwnd()), None, false);
+        }
+    }
+
+    fn set_material(&self, material: Material) {
+        let Some(handle) = NonZeroIsize::new(self.hwnd.get()).map(BarHandle) else {
+            return;
+        };
+        let _ = window_vibrancy::clear_acrylic(&handle);
+        let _ = window_vibrancy::clear_mica(&handle);
+        // The bar draws its own tint (SPEC §12.2), so the backdrop itself stays untinted.
+        let result = match material {
+            Material::None => Ok(()),
+            Material::Acrylic => window_vibrancy::apply_acrylic(&handle, Some((0, 0, 0, 0))),
+            Material::Mica => window_vibrancy::apply_mica(&handle, None),
+        };
+        match result {
+            Ok(()) => tracing::debug!("window material: {material:?}"),
+            Err(e) => tracing::warn!("window material {material:?} not available: {e}"),
+        }
+    }
+}
+
+/// The bar window as a raw window handle, for `window-vibrancy`.
+struct BarHandle(NonZeroIsize);
+
+impl HasWindowHandle for BarHandle {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+        let raw = RawWindowHandle::Win32(Win32WindowHandle::new(self.0));
+        // SAFETY: the bar window lives as long as the process.
+        Ok(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+}
+
+/// `WM_SETTINGCHANGE` for light/dark mode, accent colour or transparency effects.
+fn is_color_set_change(lparam: LPARAM) -> bool {
+    if lparam.0 == 0 {
+        return false;
+    }
+    // SAFETY: for WM_SETTINGCHANGE a non-null lParam points to a NUL-terminated string.
+    let area = unsafe { PCWSTR(lparam.0 as *const u16).to_string() };
+    area.is_ok_and(|a| a == "ImmersiveColorSet")
+}
+
+unsafe extern "system" fn window_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_NCCREATE && lparam.0 != 0 {
+        // SAFETY: for WM_NCCREATE lParam points to the CREATESTRUCTW whose lpCreateParams is
+        // the `WindowState` passed to CreateWindowExW.
+        unsafe {
+            let state = (*(lparam.0 as *const CREATESTRUCTW)).lpCreateParams as *const WindowState;
+            (*state).hwnd.set(hwnd.0 as isize);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
+        }
+    }
+    // SAFETY: GWLP_USERDATA is either 0 or the leaked `WindowState` set above.
+    let state = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const WindowState;
+    if state.is_null() {
+        // SAFETY: default processing before the state is attached or after it was detached.
+        return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
+    }
+    // SAFETY: the state is never freed while the window exists.
+    let state = unsafe { &*state };
+    // A panic must not cross the FFI boundary (it would abort); the panic hook has logged it.
+    match catch_unwind(AssertUnwindSafe(|| state.handle(msg, wparam, lparam))) {
+        Ok(result) => result,
+        // SAFETY: default processing for the message whose handling panicked.
+        Err(_) => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+fn os_error(what: &str, e: windows::core::Error) -> PlatformError {
+    PlatformError::Os(format!("{what}: {e}"))
+}
+
+/// Creates the bar window (hidden) on the calling thread.
+fn create_window() -> Result<&'static WindowState, PlatformError> {
+    // SAFETY: plain module and class registration calls.
+    let instance: HINSTANCE = unsafe { GetModuleHandleW(None) }
+        .map_err(|e| os_error("GetModuleHandleW", e))?
+        .into();
+    let class = WNDCLASSEXW {
+        cbSize: size_of::<WNDCLASSEXW>() as u32,
+        lpfnWndProc: Some(window_proc),
+        hInstance: instance,
+        // SAFETY: loads a system cursor.
+        hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }.unwrap_or_default(),
+        lpszClassName: CLASS_NAME,
+        ..Default::default()
+    };
+    // SAFETY: `class` is fully initialised; a second registration fails harmlessly.
+    unsafe { RegisterClassExW(&class) };
+
+    let state: &'static WindowState = Box::leak(Box::new(WindowState {
+        hwnd: Cell::new(0),
+        handler: RefCell::new(None),
+        appbar: OnceCell::new(),
+        appbar_events: Arc::new(Mutex::new(Vec::new())),
+        deferred: RefCell::new(VecDeque::new()),
+        repaint: Cell::new(false),
+        renderer: RefCell::new(None),
+        wake_queued: Arc::new(AtomicBool::new(false)),
+        render_failed: Cell::new(false),
+    }));
+    let title = HSTRING::from(t("app.name"));
+    // SAFETY: creates our own window; `state` outlives it.
+    let hwnd = unsafe {
+        CreateWindowExW(
+            // No taskbar button or Alt+Tab entry; clicks do not activate it (SPEC §4.1).
+            WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            CLASS_NAME,
+            &title,
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(instance),
+            Some(std::ptr::from_ref(state).cast()),
+        )
+    }
+    .map_err(|e| os_error("CreateWindowExW", e))?;
+
+    // Per-pixel alpha in the redirection surface: an empty blur region blurs nothing.
+    // SAFETY: plain calls on our own window; the region is deleted after use.
+    unsafe {
+        let region = CreateRectRgn(0, 0, -1, -1);
+        let blur = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+            fEnable: true.into(),
+            hRgnBlur: region,
+            fTransitionOnMaximized: false.into(),
+        };
+        if let Err(e) = DwmEnableBlurBehindWindow(hwnd, &blur) {
+            tracing::warn!("per-pixel alpha unavailable: {e}");
+        }
+        let _ = DeleteObject(region.into());
+    }
+
+    let events = Arc::clone(&state.appbar_events);
+    let sink = Box::new(move |event| {
+        events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(event);
+    });
+    let _ = state.appbar.set(AppBarState::new(hwnd, sink));
+    Ok(state)
+}
+
+fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, PlatformError>>) {
+    let state = match create_window() {
+        Ok(state) => state,
+        Err(e) => {
+            let _ = ready.send(Err(e));
+            return;
+        }
+    };
+    let Some(appbar) = state.appbar.get().cloned() else {
+        let _ = ready.send(Err(PlatformError::Os("AppBar missing".into())));
+        return;
+    };
+    *state.handler.borrow_mut() = Some(make_handler());
+    state.dispatch(UiEvent::Started);
+
+    let hwnd = state.hwnd.get();
+    let queued = Arc::clone(&state.wake_queued);
+    let waker = UiWaker::new(move || {
+        if !queued.swap(true, Ordering::SeqCst) {
+            // SAFETY: posting to the bar window, which lives as long as the process.
+            let posted = unsafe {
+                PostMessageW(
+                    Some(HWND(hwnd as *mut c_void)),
+                    WM_WAKE,
+                    WPARAM(0),
+                    LPARAM(0),
+                )
+            };
+            if posted.is_err() {
+                queued.store(false, Ordering::SeqCst);
+            }
+        }
+    });
+    let _ = ready.send(Ok(BarThread {
+        appbar: Arc::new(WinAppBar { shared: appbar }),
+        waker,
+    }));
+
+    let mut msg = MSG::default();
+    // SAFETY: the standard message loop for this thread's windows.
+    unsafe {
+        // 0 = WM_QUIT, -1 = error.
+        while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    tracing::info!("bar thread finished");
+}
+
+pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, PlatformError> {
+    let (ready, started) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("bar".into())
+        .spawn(move || run(make_handler, ready))
+        .map_err(|e| PlatformError::Os(format!("could not start the bar thread: {e}")))?;
+    started
+        .recv()
+        .map_err(|_| PlatformError::Os("the bar thread ended during start-up".into()))?
+}

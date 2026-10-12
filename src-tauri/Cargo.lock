@@ -1692,6 +1692,7 @@ name = "infodock"
 version = "0.1.0"
 dependencies = [
  "fastrand",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "sys-locale",

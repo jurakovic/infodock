@@ -5,7 +5,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 
-use super::bar::BarController;
+use crate::bar::BarController;
 use crate::config::ConfigStore;
 use crate::config::model::Settings;
 use crate::i18n::t;

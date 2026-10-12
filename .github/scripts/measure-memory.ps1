@@ -1,0 +1,118 @@
+# Measures Infodock's memory (SPEC §14.1, §16): the private working set (Task Manager's
+# "Memory" column) of infodock.exe and all its child processes, at idle, with Settings open,
+# and after Settings was closed. Also saves a screenshot, quits the app gracefully and prints
+# its log. Writes a summary table to the job summary.
+param(
+    [Parameter(Mandatory)] [string] $Exe,
+    [Parameter(Mandatory)] [string] $OutDir,
+    [int] $BudgetMb = 30,
+    # Fail the step when a measurement without Settings is over budget.
+    [switch] $Enforce
+)
+$ErrorActionPreference = 'Stop'
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class User32 {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowW(string cls, string title);
+    [DllImport("user32.dll")]
+    public static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+}
+'@
+
+function Get-ProcessTree([int] $RootId) {
+    $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name)
+    $ids = [System.Collections.Generic.List[int]]::new()
+    $ids.Add($RootId)
+    for ($i = 0; $i -lt $ids.Count; $i++) {
+        foreach ($child in $all | Where-Object { $_.ParentProcessId -eq $ids[$i] }) {
+            $ids.Add([int]$child.ProcessId)
+        }
+    }
+    $all | Where-Object { $ids.Contains([int]$_.ProcessId) }
+}
+
+$results = [System.Collections.Generic.List[object]]::new()
+
+function Measure-Tree([string] $Label, [int] $RootId) {
+    $rows = foreach ($p in Get-ProcessTree $RootId) {
+        $perf = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter "IDProcess = $($p.ProcessId)"
+        if ($perf) {
+            [pscustomobject]@{ Process = $p.Name; Id = $p.ProcessId; PrivateMb = [math]::Round($perf.WorkingSetPrivate / 1MB, 1) }
+        }
+    }
+    $total = [math]::Round((($rows | Measure-Object PrivateMb -Sum).Sum), 1)
+    Write-Host "== ${Label}: $total MB in $(@($rows).Count) process(es)"
+    $rows | Format-Table -AutoSize | Out-String | Write-Host
+    $results.Add([pscustomobject]@{ Stage = $Label; TotalMb = $total; Processes = @($rows).Count })
+}
+
+function Save-Screenshot([string] $Path) {
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    $graphics.Dispose()
+    $bitmap.Dispose()
+}
+
+function Show-Log {
+    $logs = Join-Path $env:LOCALAPPDATA 'app.infodock.desktop\logs'
+    if (Test-Path $logs) {
+        Get-ChildItem $logs -Filter 'infodock*.log' | ForEach-Object {
+            Write-Host "== $($_.Name)"
+            Get-Content $_.FullName | Write-Host
+            Copy-Item $_.FullName $OutDir
+        }
+    }
+}
+
+$app = Start-Process -FilePath $Exe -PassThru
+try {
+    Start-Sleep -Seconds 10
+    if ($app.HasExited) { throw "Infodock exited during start-up (code $($app.ExitCode))" }
+    Measure-Tree 'Idle' $app.Id
+    Save-Screenshot (Join-Path $OutDir 'bar.png')
+
+    # A second launch opens Settings in the running instance (SPEC §6.5).
+    $second = Start-Process -FilePath $Exe -PassThru
+    if (-not $second.WaitForExit(15000)) { Write-Warning 'The second instance did not exit' }
+    Start-Sleep -Seconds 10
+    Measure-Tree 'Settings open' $app.Id
+    Save-Screenshot (Join-Path $OutDir 'settings.png')
+
+    $settings = [User32]::FindWindowW($null, 'Infodock Settings')
+    if ($settings -eq [IntPtr]::Zero) {
+        Write-Warning 'Settings window not found'
+    } else {
+        [User32]::PostMessageW($settings, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null # WM_CLOSE
+    }
+    Start-Sleep -Seconds 10
+    Measure-Tree 'Settings closed' $app.Id
+} finally {
+    # Graceful quit: WM_CLOSE to the app's windows, as Restart Manager or a plain taskkill does.
+    if (-not $app.HasExited) {
+        & taskkill.exe /pid $app.Id | Out-Null
+        if (-not $app.WaitForExit(10000)) {
+            Write-Warning 'Infodock did not quit within 10 s; killing it'
+            & taskkill.exe /f /t /pid $app.Id | Out-Null
+        }
+    }
+    Show-Log
+}
+
+$summary = @("### Memory (private working set, budget $BudgetMb MB)", '', '| Stage | Total MB | Processes |', '|---|---:|---:|')
+$summary += $results | ForEach-Object { "| $($_.Stage) | $($_.TotalMb) | $($_.Processes) |" }
+if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
+$summary -join "`n" | Write-Host
+
+$over = $results | Where-Object { $_.Stage -ne 'Settings open' -and $_.TotalMb -gt $BudgetMb }
+if ($over) {
+    $message = "Over the $BudgetMb MB budget: " + (($over | ForEach-Object { "$($_.Stage) $($_.TotalMb) MB" }) -join ', ')
+    if ($Enforce) { throw $message } else { Write-Warning $message }
+}

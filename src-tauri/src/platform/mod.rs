@@ -2,9 +2,10 @@
 //! can be added without touching sensors. Windows lives in `windows/`; every other OS gets the
 //! portable stub in `stub.rs` (enough to develop and test on Linux).
 //!
-//! The spec's `Shell`, `Icons`, `Power` and `Devices` traits are added with the milestones that
-//! need them (M2–M3).
+//! The spec's `Shell`, `Icons`, `Power`, `Devices` and `Locale` traits are added with the
+//! milestones that need them (M2–M3).
 
+pub mod canvas;
 pub mod geometry;
 #[cfg(not(windows))]
 mod stub;
@@ -16,7 +17,8 @@ use std::sync::Arc;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::config::model::{BarMode, Edge, Settings, ZOrder};
+use crate::config::model::{BarMode, Edge, Material, Settings, ZOrder};
+pub use canvas::{Canvas, Color, RectF, SizeF};
 pub use geometry::{MonitorInfo, Rect};
 
 /// Which sensors and features exist on this system (SPEC §4.6). Flags turn on as their
@@ -35,12 +37,29 @@ pub struct Capabilities {
     pub per_core_cpu: bool,
 }
 
+/// The OS appearance settings the bar follows (SPEC §10.3, §12.2).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OsAppearance {
+    /// Apps use dark mode.
+    pub dark: bool,
+    /// "Transparency effects" is on; materials are disabled while it is off.
+    pub transparency: bool,
+}
+
+impl Default for OsAppearance {
+    fn default() -> Self {
+        Self {
+            dark: true,
+            transparency: true,
+        }
+    }
+}
+
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// All active monitors, physical pixels.
     fn monitors(&self) -> Vec<MonitorInfo>;
-    /// The OS "transparency effects" setting; materials are disabled while it is off (SPEC §10.3).
-    fn transparency_effects(&self) -> bool;
+    fn appearance(&self) -> OsAppearance;
 }
 
 /// Where and how the bar should sit (SPEC §5.1–5.3), derived from the settings.
@@ -73,10 +92,8 @@ impl DockRequest {
     }
 }
 
-/// The bar's geometry after placement, sent to the UI as `bar-geometry` (SPEC §4.5).
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+/// The bar's geometry after placement.
+#[derive(Debug, Clone, PartialEq)]
 pub struct BarGeometry {
     /// Physical pixels.
     pub rect: Rect,
@@ -92,7 +109,10 @@ pub enum AppBarEvent {
     Fullscreen(bool),
 }
 
-pub type AppBarSink = Box<dyn Fn(AppBarEvent) + Send + Sync>;
+/// Receives AppBar events on the bar thread. Platform-internal: the bar window forwards them to
+/// the handler as [`UiEvent`]s.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) type AppBarSink = Box<dyn Fn(AppBarEvent) + Send + Sync>;
 
 /// Docks the bar window and reserves screen space (SPEC §5.2). Implementations are thread-safe;
 /// changes are applied asynchronously on the window's UI thread.
@@ -112,8 +132,6 @@ pub trait AppBar: Send + Sync {
 pub enum PlatformError {
     #[error("{0}")]
     Os(String),
-    #[error("{0}")]
-    Tauri(#[from] tauri::Error),
 }
 
 /// The platform for this OS.
@@ -124,14 +142,72 @@ pub fn current() -> Arc<dyn Platform> {
     return Arc::new(stub::StubPlatform);
 }
 
-/// Takes over placement of the bar window. Call on the UI (main) thread, before the window is
-/// shown; the window becomes visible once the first placement is done.
-pub fn attach_appbar(
-    window: &tauri::WebviewWindow,
-    sink: AppBarSink,
-) -> Result<Arc<dyn AppBar>, PlatformError> {
+// ---------------------------------------------------------------------------------------------
+// The bar thread (SPEC §4.1)
+// ---------------------------------------------------------------------------------------------
+
+/// Events for the bar logic, delivered on the bar thread.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiEvent {
+    /// The bar window exists; sent once before any other event.
+    Started,
+    /// Work was queued for the bar thread ([`UiWaker::wake`]).
+    Wake,
+    /// The bar was placed or moved.
+    Placed(BarGeometry),
+    /// A full-screen app opened (`true`) or closed on the bar's monitor (SPEC §5.3).
+    Fullscreen(bool),
+    /// Light/dark mode, accent colour or transparency effects may have changed.
+    AppearanceChanged,
+    /// The OS asks the app to close (graceful `taskkill`, Restart Manager).
+    CloseRequested,
+}
+
+/// The bar logic. Called by the native bar window, always on the bar thread.
+pub trait BarHandler {
+    fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent);
+    /// Draws the bar into a cleared canvas of `size` logical px.
+    fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF);
+}
+
+/// The native bar window as the bar logic sees it (bar thread only).
+pub trait BarWindow {
+    /// Schedules a repaint.
+    fn invalidate(&self);
+    /// Applies a window material; [`Material::None`] removes it.
+    fn set_material(&self, material: Material);
+}
+
+/// Wakes the bar thread from any thread; its handler then receives [`UiEvent::Wake`]. Wakes
+/// that arrive before the handler ran are coalesced.
+#[derive(Clone)]
+pub struct UiWaker(Arc<dyn Fn() + Send + Sync>);
+
+impl UiWaker {
+    pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(wake))
+    }
+
+    pub fn wake(&self) {
+        (self.0)()
+    }
+}
+
+/// Builds the bar logic on the bar thread.
+pub type HandlerFactory = Box<dyn FnOnce() -> Box<dyn BarHandler> + Send>;
+
+/// Handles to a running bar thread, usable from any thread.
+pub struct BarThread {
+    pub appbar: Arc<dyn AppBar>,
+    pub waker: UiWaker,
+}
+
+/// Starts the bar thread: creates the bar window and its AppBar, builds the handler with
+/// `make_handler` on that thread and runs the message loop. Returns once the window exists; the
+/// window becomes visible with the first [`AppBar::configure`].
+pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, PlatformError> {
     #[cfg(windows)]
-    return windows::appbar::attach(window, sink);
+    return windows::window::start_bar_thread(make_handler);
     #[cfg(not(windows))]
-    return stub::attach_appbar(window, sink);
+    return stub::start_bar_thread(make_handler);
 }

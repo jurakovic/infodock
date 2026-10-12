@@ -18,6 +18,7 @@ on:
       - "svelte.config.js"
       - "eslint.config.js"
       - ".github/workflows/ci.yml"
+      - ".github/scripts/**"
   pull_request:
     paths:
       - "src/**"
@@ -33,6 +34,7 @@ on:
       - "svelte.config.js"
       - "eslint.config.js"
       - ".github/workflows/ci.yml"
+      - ".github/scripts/**"
   workflow_dispatch:
 
 concurrency:
@@ -109,3 +111,14 @@ jobs:
           path: src-tauri/target/release/infodock.exe
           if-no-files-found: error
           retention-days: 30
+      # Memory budget (SPEC §14.1): reported until M1 S12, enforced from then on.
+      - name: Memory check
+        shell: pwsh
+        run: .github/scripts/measure-memory.ps1 -Exe src-tauri/target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/memory-check"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: infodock-memory-check
+          path: ${{ runner.temp }}/memory-check
+          if-no-files-found: ignore
+          retention-days: 14

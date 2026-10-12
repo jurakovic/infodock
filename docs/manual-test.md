@@ -58,5 +58,15 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 
 **Appearance**
 
-- [ ] Windows ▸ Personalisation ▸ Colours ▸ *Transparency effects* off, then restart Infodock: the bar is plain (no blur). (Changes while running are picked up in a later milestone.)
-- [ ] Windows light mode: the bar turns light grey with dark text colour; dark mode: dark.
+- [ ] Windows ▸ Personalisation ▸ Colours ▸ *Transparency effects* off: the bar turns plain (no blur) without a restart. On again: the blur returns.
+- [ ] Windows ▸ Personalisation ▸ Colours ▸ *Choose your mode* → Light: the bar turns light grey; Dark: dark again. No restart needed.
+
+## M1 — Framework (in progress)
+
+The bar is drawn natively since M1 S1; WebView2 runs only while Settings is open (SPEC §4.1, §14.1). The M0 checks above still apply.
+
+**Memory**
+
+- [ ] Task Manager ▸ *Details*: with Settings closed, `infodock.exe` runs without any `msedgewebview2.exe` started by it, and its *Memory (active private working set)* is at most 30 MB.
+- [ ] Open Settings (tray → *Settings…*): `msedgewebview2.exe` processes appear. Close Settings: Infodock keeps running, and within about 10 s those processes are gone and memory is back near the idle value.
+- [ ] Hover and click the bar: the window you were working in keeps the focus.

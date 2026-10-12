@@ -189,6 +189,7 @@ src-tauri/src/
     <type>.rs               one module per sensor type (text.rs, image.rs, cpu_graph.rs …)
   platform/
     mod.rs                  traits (§4.6)
+    canvas.rs               colours, rectangles and the Canvas trait (§4.6)
     geometry.rs             pure placement math: docking strips, monitor selection
     windows/                window.rs (window classes, message loop, input → events), appbar.rs,
                             monitors.rs, render.rs (Direct2D/DirectWrite/WIC canvas), menu.rs

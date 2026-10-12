@@ -7,7 +7,6 @@ fn main() {
         "get_config",
         "hotkey_status",
         "list_monitors",
-        "open_settings",
         "quit",
         "update_settings",
     ]);

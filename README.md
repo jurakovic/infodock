@@ -6,16 +6,16 @@ Status: early development. See [SPEC.md](SPEC.md) for the full specification and
 
 ## Download
 
-Every push to `master` builds a Windows installer. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download the `infodock-windows-installer` artifact. The installer is per-user and does not need admin rights. For a build without installing, download `infodock-windows-portable` instead: it contains `infodock.exe`, which runs as is (it needs the WebView2 runtime, which Windows 10/11 normally has). Neither is code-signed yet, so SmartScreen may warn.
+Every push to `master` builds a Windows installer. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download the `infodock-windows-installer` artifact. The installer is per-user and does not need admin rights. For a build without installing, download `infodock-windows-portable` instead: it contains `infodock.exe`, which runs as is (the Settings window needs the WebView2 runtime, which Windows 10/11 normally has; the bar itself does not). Neither is code-signed yet, so SmartScreen may warn.
 
 ## Development
 
-Requirements: [Bun](https://bun.sh), Rust (stable), and on Windows the WebView2 runtime (preinstalled on Windows 11).
+Requirements: [Bun](https://bun.sh), Rust (stable), and on Windows the WebView2 runtime for the Settings window (preinstalled on Windows 11). The bar is drawn natively and only appears on Windows; on other systems the app runs without it.
 
 ```sh
 bun install
 bun run tauri dev      # run the app
-bun run test           # UI tests
+bun run test           # Settings UI tests
 bun run lint           # eslint, svelte-check, rustfmt, clippy
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
