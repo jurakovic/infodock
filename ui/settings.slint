@@ -1,11 +1,11 @@
-// The Settings window (SPEC §10.7): General and Bar pages. Rust fills `SettingsState` from the
-// config and handles its callbacks; controls bind to it two-way, and every change is saved
-// through a settings patch.
+// The Settings window (SPEC §10.7): General, Bar, Sensors and Popups pages. Rust fills
+// `SettingsState` from the config and handles its callbacks; controls bind to it two-way, and
+// every change is saved through a settings patch.
 import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
 
 export global SettingsState {
-    // 0 = General, 1 = Bar.
+    // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups.
     in-out property <int> page;
 
     // General (SPEC §10.1)
@@ -34,6 +34,36 @@ export global SettingsState {
     // The height differs from the theme default.
     in property <bool> height-customised;
 
+    // Sensors (SPEC §10.4)
+    in-out property <string> sensor-text-color;
+    // "Theme default (…)", then the installed families.
+    in property <[string]> fonts;
+    in-out property <int> sensor-font;
+    // "Theme default (…)", then the six styles.
+    in property <[string]> sensor-font-styles;
+    in-out property <int> sensor-font-style;
+    // 0 = fade, 1 = tint.
+    in-out property <int> inactive-mode;
+    in-out property <string> inactive-color;
+    in-out property <float> inactive-opacity;
+
+    // Popups (SPEC §10.5)
+    in-out property <string> popup-background;
+    in property <bool> popup-background-customised;
+    in property <string> popup-background-default;
+    in-out property <float> popup-opacity;
+    in property <bool> popup-opacity-customised;
+    in property <int> popup-opacity-default;
+    in-out property <string> popup-text-color;
+    in-out property <string> popup-strong-color;
+    in-out property <int> popup-font;
+    in property <[string]> popup-font-styles;
+    in-out property <int> popup-font-style;
+    in-out property <float> popup-font-size;
+    in-out property <bool> popup-shadow;
+    in-out property <float> show-delay;
+    in-out property <float> hide-delay;
+
     // The last save error other than a hotkey error; empty when the last save worked.
     in property <string> save-error;
 
@@ -44,6 +74,13 @@ export global SettingsState {
     callback set-monitor(index: int);
     // Back to the theme default.
     callback reset(path: string);
+    // A colour typed as #RRGGBB.
+    callback set-color(path: string, text: string);
+    // Index 0 is the theme default; then `fonts` or the font styles.
+    callback set-font(path: string, index: int);
+    callback set-font-style(path: string, index: int);
+    // The colour of a #RRGGBB text, for swatches; transparent if it is not one.
+    pure callback to-color(text: string) -> color;
 }
 
 // One setting, laid out like Windows Settings: label, help text and error on the left (they
@@ -100,11 +137,14 @@ component Row inherits VerticalLayout {
     }
 }
 
-// A slider with its value shown next to it, saved when released.
-component PxSlider inherits HorizontalLayout {
+// A slider with its value and unit shown next to it, saved when released. `unit` is a message
+// key with a `{value}` placeholder, e.g. "common.px".
+component ValueSlider inherits HorizontalLayout {
     in property <string> label;
     in property <float> minimum;
     in property <float> maximum;
+    in property <float> step: 1;
+    in property <string> unit: "common.px";
     in-out property <float> value;
     callback released(value: int);
 
@@ -113,20 +153,71 @@ component PxSlider inherits HorizontalLayout {
         width: 180px;
         minimum: root.minimum;
         maximum: root.maximum;
-        step: 1;
+        step: root.step;
         value <=> root.value;
         accessible-label: root.label;
         released(v) => {
-            root.released(Math.round(v));
+            root.released(Math.round(v / root.step) * root.step);
         }
     }
 
     Text {
-        width: 44px;
+        width: 64px;
         vertical-alignment: center;
         horizontal-alignment: right;
-        text: I18n.tr-with("common.px", "value", Math.round(root.value));
+        text: I18n.tr-with(root.unit, "value", Math.round(root.value));
         color: Palette.foreground;
+    }
+}
+
+// A colour as #RRGGBB with a swatch; saved on Enter or when the field loses focus.
+component ColorField inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> value;
+    callback accepted(text: string);
+
+    spacing: 8px;
+    alignment: end;
+    Rectangle {
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: SettingsState.to-color(root.value);
+    }
+
+    edit := LineEdit {
+        width: 120px;
+        text <=> root.value;
+        accessible-label: root.label;
+        accepted(text) => {
+            root.accepted(text);
+        }
+        changed has-focus => {
+            if !self.has-focus {
+                root.accepted(self.text);
+            }
+        }
+    }
+}
+
+// The control of a setting whose default comes from the theme, with a button back to it.
+component WithReset inherits VerticalLayout {
+    in property <bool> customised;
+    callback reset();
+
+    spacing: 8px;
+    @children
+    HorizontalLayout {
+        alignment: end;
+        Button {
+            text: I18n.tr("settings.reset");
+            enabled: root.customised;
+            clicked => {
+                root.reset();
+            }
+        }
     }
 }
 
@@ -216,7 +307,7 @@ component GeneralPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.general.sensorSpacing");
-        PxSlider {
+        ValueSlider {
             label: I18n.tr("settings.general.sensorSpacing");
             minimum: 1;
             maximum: 20;
@@ -303,7 +394,7 @@ component BarPage inherits VerticalLayout {
         help: I18n.tr-with("settings.bar.height.help", "height", SettingsState.theme-height);
         VerticalLayout {
             spacing: 8px;
-            PxSlider {
+            ValueSlider {
                 label: I18n.tr("settings.bar.height");
                 minimum: 22;
                 maximum: 40;
@@ -316,12 +407,242 @@ component BarPage inherits VerticalLayout {
             HorizontalLayout {
                 alignment: end;
                 Button {
-                    text: I18n.tr("settings.bar.height.reset");
+                    text: I18n.tr("settings.reset");
                     enabled: SettingsState.height-customised;
                     clicked => {
                         SettingsState.reset("bar.height");
                     }
                 }
+            }
+        }
+    }
+}
+
+component SensorsPage inherits VerticalLayout {
+    alignment: start;
+
+    Row {
+        label: I18n.tr("settings.sensors.textColor");
+        help: I18n.tr("settings.sensors.textColor.help");
+        ColorField {
+            label: I18n.tr("settings.sensors.textColor");
+            value <=> SettingsState.sensor-text-color;
+            accepted(text) => {
+                SettingsState.set-color("sensors.textColor", text);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.font");
+        ComboBox {
+            width: 280px;
+            model: SettingsState.fonts;
+            current-index <=> SettingsState.sensor-font;
+            accessible-label: I18n.tr("settings.font");
+            selected => {
+                SettingsState.set-font("sensors.font", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.fontStyle");
+        ComboBox {
+            width: 280px;
+            model: SettingsState.sensor-font-styles;
+            current-index <=> SettingsState.sensor-font-style;
+            accessible-label: I18n.tr("settings.fontStyle");
+            selected => {
+                SettingsState.set-font-style("sensors.fontStyle", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.sensors.inactiveMode");
+        help: I18n.tr("settings.sensors.inactiveMode.help");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.sensors.inactiveMode.opacity"),
+                I18n.tr("settings.sensors.inactiveMode.colorize"),
+            ];
+            current-index <=> SettingsState.inactive-mode;
+            accessible-label: I18n.tr("settings.sensors.inactiveMode");
+            selected => {
+                SettingsState.set-choice("sensors.inactiveMode", self.current-index);
+            }
+        }
+    }
+
+    if SettingsState.inactive-mode == 0: Row {
+        label: I18n.tr("settings.sensors.inactiveOpacity");
+        ValueSlider {
+            label: I18n.tr("settings.sensors.inactiveOpacity");
+            minimum: 0;
+            maximum: 100;
+            unit: "common.percent";
+            value <=> SettingsState.inactive-opacity;
+            released(v) => {
+                SettingsState.set-number("sensors.inactiveOpacity", v);
+            }
+        }
+    }
+
+    if SettingsState.inactive-mode == 1: Row {
+        label: I18n.tr("settings.sensors.inactiveColor");
+        ColorField {
+            label: I18n.tr("settings.sensors.inactiveColor");
+            value <=> SettingsState.inactive-color;
+            accepted(text) => {
+                SettingsState.set-color("sensors.inactiveColor", text);
+            }
+        }
+    }
+}
+
+component PopupsPage inherits VerticalLayout {
+    alignment: start;
+
+    Row {
+        label: I18n.tr("settings.popups.background");
+        help: I18n.tr-with("settings.popups.default", "value", SettingsState.popup-background-default);
+        WithReset {
+            customised: SettingsState.popup-background-customised;
+            reset => {
+                SettingsState.reset("popups.background");
+            }
+            ColorField {
+                label: I18n.tr("settings.popups.background");
+                value <=> SettingsState.popup-background;
+                accepted(text) => {
+                    SettingsState.set-color("popups.background", text);
+                }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.opacity");
+        help: I18n.tr-with("settings.popups.opacity.default", "value", SettingsState.popup-opacity-default);
+        WithReset {
+            customised: SettingsState.popup-opacity-customised;
+            reset => {
+                SettingsState.reset("popups.opacity");
+            }
+            ValueSlider {
+                label: I18n.tr("settings.popups.opacity");
+                minimum: 0;
+                maximum: 100;
+                unit: "common.percent";
+                value <=> SettingsState.popup-opacity;
+                released(v) => {
+                    SettingsState.set-number("popups.opacity", v);
+                }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.textColor");
+        ColorField {
+            label: I18n.tr("settings.popups.textColor");
+            value <=> SettingsState.popup-text-color;
+            accepted(text) => {
+                SettingsState.set-color("popups.textColor", text);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.strongTextColor");
+        help: I18n.tr("settings.popups.strongTextColor.help");
+        ColorField {
+            label: I18n.tr("settings.popups.strongTextColor");
+            value <=> SettingsState.popup-strong-color;
+            accepted(text) => {
+                SettingsState.set-color("popups.strongTextColor", text);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.font");
+        ComboBox {
+            width: 280px;
+            model: SettingsState.fonts;
+            current-index <=> SettingsState.popup-font;
+            accessible-label: I18n.tr("settings.font");
+            selected => {
+                SettingsState.set-font("popups.font", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.fontStyle");
+        ComboBox {
+            width: 280px;
+            model: SettingsState.popup-font-styles;
+            current-index <=> SettingsState.popup-font-style;
+            accessible-label: I18n.tr("settings.fontStyle");
+            selected => {
+                SettingsState.set-font-style("popups.fontStyle", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.fontSize");
+        ValueSlider {
+            label: I18n.tr("settings.popups.fontSize");
+            minimum: 9;
+            maximum: 15;
+            value <=> SettingsState.popup-font-size;
+            released(v) => {
+                SettingsState.set-number("popups.fontSize", v);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.shadow");
+        Switch {
+            checked <=> SettingsState.popup-shadow;
+            accessible-label: I18n.tr("settings.popups.shadow");
+            toggled => {
+                SettingsState.set-flag("popups.shadow", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.showDelay");
+        ValueSlider {
+            label: I18n.tr("settings.popups.showDelay");
+            minimum: 0;
+            maximum: 2000;
+            step: 50;
+            unit: "common.ms";
+            value <=> SettingsState.show-delay;
+            released(v) => {
+                SettingsState.set-number("popups.showDelayMs", v);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.popups.hideDelay");
+        ValueSlider {
+            label: I18n.tr("settings.popups.hideDelay");
+            minimum: 0;
+            maximum: 1000;
+            step: 50;
+            unit: "common.ms";
+            value <=> SettingsState.hide-delay;
+            released(v) => {
+                SettingsState.set-number("popups.hideDelayMs", v);
             }
         }
     }
@@ -344,6 +665,8 @@ export component SettingsWindow inherits Window {
                 model: [
                     { text: I18n.tr("settings.nav.general") },
                     { text: I18n.tr("settings.nav.bar") },
+                    { text: I18n.tr("settings.nav.sensors") },
+                    { text: I18n.tr("settings.nav.popups") },
                 ];
                 current-item <=> SettingsState.page;
                 accessible-label: I18n.tr("settings.nav.label");
@@ -361,7 +684,12 @@ export component SettingsWindow inherits Window {
             spacing: 8px;
 
             Text {
-                text: SettingsState.page == 1 ? I18n.tr("settings.nav.bar") : I18n.tr("settings.nav.general");
+                text: [
+                    I18n.tr("settings.nav.general"),
+                    I18n.tr("settings.nav.bar"),
+                    I18n.tr("settings.nav.sensors"),
+                    I18n.tr("settings.nav.popups"),
+                ][SettingsState.page];
                 font-size: 20px;
                 font-weight: 600;
                 color: Palette.foreground;
@@ -382,6 +710,8 @@ export component SettingsWindow inherits Window {
                     padding-bottom: 24px;
                     if SettingsState.page == 0: GeneralPage { }
                     if SettingsState.page == 1: BarPage { }
+                    if SettingsState.page == 2: SensorsPage { }
+                    if SettingsState.page == 3: PopupsPage { }
                 }
             }
         }

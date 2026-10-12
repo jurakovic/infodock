@@ -147,7 +147,7 @@ One process (single instance enforced). No browser engine runs at any time.
 | `bar` | native, bar thread | `WS_POPUP`; `WS_EX_TOOLWINDOW` (no taskbar button, no Alt+Tab); `WS_EX_NOACTIVATE` (clicks do not take focus, §5.3); per-pixel alpha composited by DWM, with an optional material (§5.5); z-order per settings | The bar |
 | `hint` | native, bar thread | layered (`UpdateLayeredWindow`, per-pixel alpha), topmost, non-activating, click-through (`WS_EX_TRANSPARENT`), tool window; created on first use and reused | Hover popups (text hints, calendar) |
 | `popup` | native, bar thread | layered, topmost, tool window, focusable; hides when it loses activation; created on first use and reused | Interactive popups (Folder Menu, Start Menu, Eject list) |
-| `settings` | Slint window, main thread | normal decorated window, opened on a route (`general`, `bar`, `sensor/<id>`, `new?zone=…`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
+| `settings` | Slint window, main thread | normal decorated window, opened on a route (a page such as `general`, `bar`, `sensors` or `popups`; `layout` for the Layout manager on the Sensors page; `sensor/<id>`; `new?zone=…&index=…` or `new?target=<id>`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
 
 Plus a **tray icon** (native, registered for the bar window, bar thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit. The menu is built from the current state each time it opens.
 
@@ -1157,6 +1157,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 
 Pages:
 * **General**, **Bar**, **Popups**, **Applications**.
+* Colours are typed as `#RRGGBB` next to a swatch and saved on Enter or when the field loses focus; anything else is refused with a message. Settings whose default comes from the theme (e.g. `popups.background`) show the theme value and a *Use theme default* button. Font lists start with *Theme default (…)* (stored as `null`), followed by the installed families (DirectWrite); a configured family that is not installed stays in the list.
 * **Appearance**: theme, skin gallery with previews, colours, material.
 * **Sensors**: global defaults, plus the **Layout manager** — three zone lists with drag reordering, edit, remove and add; an accessible alternative to dragging on the bar.
 * **Help**: getting started, drag & drop rules (§6.3), Folder Menu tips (§9.19).

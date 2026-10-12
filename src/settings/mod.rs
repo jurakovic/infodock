@@ -28,6 +28,10 @@ struct Open {
     window: ui::SettingsWindow,
     /// Monitor keys in the order of the monitor list.
     monitor_keys: Vec<String>,
+    /// The installed font families, read once per window.
+    families: Vec<String>,
+    /// The font list as shown; index 0 is the theme default.
+    fonts: Vec<String>,
 }
 
 /// Why a change was not saved.
@@ -40,7 +44,11 @@ enum SaveError {
 /// Opens Settings on `route` (e.g. `bar`), or switches the open window to it and brings it to
 /// the front. Main thread only.
 pub fn open(app: &Arc<App>, route: &str) {
-    let page = model::page_index(route);
+    let page = match model::route(route) {
+        model::Route::Page(index) => index as i32,
+        // The picker and the properties form arrive in later steps of M1 S9.
+        model::Route::New { .. } | model::Route::Sensor(_) => 2,
+    };
     let existing = WINDOW.with(|w| w.borrow().as_ref().map(|open| open.window.clone_strong()));
     let window = match existing {
         Some(window) => window,
@@ -79,9 +87,31 @@ pub fn watch(app: &Arc<App>) {
 fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     let window = ui::SettingsWindow::new()?;
     crate::install_i18n!(window);
-    let state = window.global::<ui::SettingsState>();
-
+    connect(&window, app);
     record_hotkey(&window, app);
+
+    window.window().on_close_requested(|| {
+        // Drop the window once it is hidden, which frees what it allocated.
+        let _ = slint::invoke_from_event_loop(|| {
+            WINDOW.with(|w| w.borrow_mut().take());
+        });
+        CloseRequestResponse::HideWindow
+    });
+
+    let mut open = Open {
+        window: window.clone_strong(),
+        monitor_keys: Vec::new(),
+        families: app.platform.font_families(),
+        fonts: Vec::new(),
+    };
+    fill(&mut open, app, &app.store.get().settings);
+    WINDOW.with(|w| *w.borrow_mut() = Some(open));
+    Ok(window)
+}
+
+/// Handles the window's callbacks: saving changes and converting colours.
+fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
+    let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_set_flag(move |path, value| save(&a, model::patch(&path, Value::Bool(value))));
     let a = Arc::clone(app);
@@ -96,6 +126,50 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
             save(&a, model::patch(&path, Value::from(*value)));
         }
     });
+    state.on_to_color(|text| {
+        crate::platform::Color::from_hex(text.trim()).map_or(slint::Color::default(), |c| {
+            slint::Color::from_argb_f32(1.0, c.r, c.g, c.b)
+        })
+    });
+    let a = Arc::clone(app);
+    state.on_set_color(move |path, text| {
+        match crate::config::model::normalize_color(text.trim().to_owned()) {
+            Some(color) => save(&a, model::patch(&path, Value::String(color))),
+            None => WINDOW.with(|w| {
+                if let Some(open) = w.borrow_mut().as_mut() {
+                    let state = open.window.global::<ui::SettingsState>();
+                    state.set_save_error(crate::i18n::t("settings.color.invalid").into());
+                    // Back to the saved colour.
+                    let settings = a.store.get().settings;
+                    fill(open, &a, &settings);
+                }
+            }),
+        }
+    });
+    let a = Arc::clone(app);
+    state.on_set_font(move |path, index| {
+        let family = WINDOW.with(|w| {
+            let w = w.borrow();
+            let open = w.as_ref()?;
+            let index = usize::try_from(index).ok().filter(|i| *i > 0)?;
+            open.fonts.get(index).cloned()
+        });
+        save(
+            &a,
+            model::patch(&path, family.map_or(Value::Null, Value::String)),
+        );
+    });
+    let a = Arc::clone(app);
+    state.on_set_font_style(move |path, index| {
+        let style = usize::try_from(index)
+            .ok()
+            .and_then(|i| i.checked_sub(1))
+            .and_then(|i| model::FONT_STYLES.get(i));
+        save(
+            &a,
+            model::patch(&path, style.map_or(Value::Null, |s| Value::from(*s))),
+        );
+    });
     let a = Arc::clone(app);
     state.on_set_monitor(move |index| {
         let key = WINDOW.with(|w| {
@@ -109,22 +183,6 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
             save(&a, model::patch("bar.monitor", Value::String(key)));
         }
     });
-
-    window.window().on_close_requested(|| {
-        // Drop the window once it is hidden, which frees what it allocated.
-        let _ = slint::invoke_from_event_loop(|| {
-            WINDOW.with(|w| w.borrow_mut().take());
-        });
-        CloseRequestResponse::HideWindow
-    });
-
-    let mut open = Open {
-        window: window.clone_strong(),
-        monitor_keys: Vec::new(),
-    };
-    fill(&mut open, app, &app.store.get().settings);
-    WINDOW.with(|w| *w.borrow_mut() = Some(open));
-    Ok(window)
 }
 
 /// Copies `settings` into the window.
@@ -156,6 +214,69 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
         crate::config::model::ThemeDefaults::of(settings.theme).bar_height as i32,
     );
     state.set_height_customised(settings.bar.height.is_some());
+
+    let defaults = crate::config::model::ThemeDefaults::of(settings.theme);
+    let strings = |items: &[String]| {
+        let items: Vec<SharedString> = items.iter().map(SharedString::from).collect();
+        ModelRc::new(VecModel::from(items))
+    };
+    let style_id = |style| {
+        serde_json::to_value(style)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default()
+    };
+
+    // Sensors (SPEC §10.4)
+    let sensors = &settings.sensors;
+    state.set_sensor_text_color(sensors.text_color.as_str().into());
+    // Both font settings share one list; a configured family that is not installed is added.
+    open.fonts = model::font_labels(
+        &defaults.sensor_font,
+        &open.families,
+        sensors.font.as_deref().or(settings.popups.font.as_deref()),
+    );
+    if let Some(popup_font) = settings.popups.font.as_deref()
+        && !open.fonts.iter().any(|f| f == popup_font)
+    {
+        open.fonts.push(popup_font.to_owned());
+    }
+    state.set_fonts(strings(&open.fonts));
+    state.set_sensor_font(model::font_index(&open.fonts, sensors.font.as_deref()));
+    state.set_sensor_font_styles(strings(&model::font_style_labels(&style_id(
+        defaults.sensor_font_style,
+    ))));
+    let current_style = |style: Option<crate::config::model::FontStyle>| {
+        model::font_style_index(style.map(style_id).as_deref())
+    };
+    state.set_sensor_font_style(current_style(sensors.font_style));
+    state.set_inactive_mode(choice("sensors.inactiveMode"));
+    state.set_inactive_color(sensors.inactive_color.as_str().into());
+    state.set_inactive_opacity(sensors.inactive_opacity as f32);
+
+    // Popups (SPEC §10.5)
+    let popups = &settings.popups;
+    let background = popups
+        .background
+        .as_deref()
+        .unwrap_or(&defaults.popup_background);
+    state.set_popup_background(background.into());
+    state.set_popup_background_customised(popups.background.is_some());
+    state.set_popup_background_default(defaults.popup_background.as_str().into());
+    state.set_popup_opacity(popups.opacity.unwrap_or(defaults.popup_opacity) as f32);
+    state.set_popup_opacity_customised(popups.opacity.is_some());
+    state.set_popup_opacity_default(defaults.popup_opacity as i32);
+    state.set_popup_text_color(popups.text_color.as_str().into());
+    state.set_popup_strong_color(popups.strong_text_color.as_str().into());
+    state.set_popup_font(model::font_index(&open.fonts, popups.font.as_deref()));
+    state.set_popup_font_styles(strings(&model::font_style_labels(&style_id(
+        defaults.popup_font_style,
+    ))));
+    state.set_popup_font_style(current_style(popups.font_style));
+    state.set_popup_font_size(popups.font_size as f32);
+    state.set_popup_shadow(popups.shadow);
+    state.set_show_delay(popups.show_delay_ms as f32);
+    state.set_hide_delay(popups.hide_delay_ms as f32);
 }
 
 /// Saves a settings patch and shows the outcome. A changed hotkey is registered first; if that
@@ -340,9 +461,12 @@ mod screenshots {
 
         let ui = ui::SettingsWindow::new().expect("the window builds");
         crate::install_i18n!(ui);
+        super::connect(&ui, &app);
         let mut open = Open {
             window: ui.clone_strong(),
             monitor_keys: Vec::new(),
+            families: vec!["Arial".into(), "Consolas".into(), "Segoe UI".into()],
+            fonts: Vec::new(),
         };
         fill(&mut open, &app, &app.store.get().settings);
         ui.show().expect("shown");

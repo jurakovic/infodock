@@ -202,3 +202,30 @@ impl TextEngine for DirectWrite {
         })
     }
 }
+
+/// The installed font families, sorted, by their English (or first) names.
+pub fn font_families() -> Result<Vec<String>> {
+    // SAFETY: plain DirectWrite queries; the buffers are sized from the reported lengths.
+    unsafe {
+        let factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+        let mut fonts = None;
+        factory.GetSystemFontCollection(&mut fonts, false)?;
+        let fonts = fonts.ok_or_else(|| windows::core::Error::from(E_FAIL))?;
+        let mut families = Vec::new();
+        for i in 0..fonts.GetFontFamilyCount() {
+            let names = fonts.GetFontFamily(i)?.GetFamilyNames()?;
+            let (mut index, mut exists) = (0, BOOL(0));
+            names.FindLocaleName(w!("en-us"), &mut index, &mut exists)?;
+            if !exists.as_bool() {
+                index = 0;
+            }
+            let mut name = vec![0u16; names.GetStringLength(index)? as usize + 1];
+            names.GetString(index, &mut name)?;
+            let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+            families.push(String::from_utf16_lossy(&name[..end]));
+        }
+        families.sort_by_key(|f| f.to_lowercase());
+        families.dedup();
+        Ok(families)
+    }
+}

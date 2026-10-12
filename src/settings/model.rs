@@ -3,20 +3,55 @@
 
 use serde_json::{Map, Value};
 
-use crate::config::model::PRIMARY_MONITOR;
+use crate::config::model::{PRIMARY_MONITOR, Zone};
 use crate::i18n::t_args;
 use crate::platform::MonitorInfo;
 
 /// Settings pages in navigation order (SPEC §10.7).
-pub const PAGES: [&str; 2] = ["general", "bar"];
+pub const PAGES: [&str; 4] = ["general", "bar", "sensors", "popups"];
 
-/// The page index for a route such as `bar` or `bar/height`; unknown routes open General.
-pub fn page_index(route: &str) -> i32 {
-    let page = route.split('/').next().unwrap_or_default();
-    PAGES
-        .iter()
-        .position(|p| *p == page)
-        .map_or(0, |i| i as i32)
+/// Where Settings opens (SPEC §4.1, §6.6, §6.7).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Route {
+    /// A page of the navigation, by index into [`PAGES`].
+    Page(usize),
+    /// The sensor picker: insert into `zone` at `index`, or next to `target`.
+    New {
+        zone: Option<Zone>,
+        index: Option<usize>,
+        target: Option<String>,
+    },
+    /// A sensor's properties.
+    Sensor(String),
+}
+
+/// Parses a route such as `bar`, `layout`, `sensor/s_1a2b3` or `new?zone=left&index=2`;
+/// anything unknown opens General.
+pub fn route(route: &str) -> Route {
+    let (path, query) = route.split_once('?').unwrap_or((route, ""));
+    let mut parts = path.split('/');
+    let first = parts.next().unwrap_or_default();
+    let param = |name: &str| {
+        query
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value.to_owned())
+    };
+    match first {
+        // The layout manager is on the Sensors page.
+        "layout" => Route::Page(2),
+        "sensor" => match parts.next() {
+            Some(id) if !id.is_empty() => Route::Sensor(id.to_owned()),
+            _ => Route::Page(2),
+        },
+        "new" => Route::New {
+            zone: param("zone").and_then(|z| serde_json::from_value(Value::String(z)).ok()),
+            index: param("index").and_then(|i| i.parse().ok()),
+            target: param("target").filter(|t| !t.is_empty()),
+        },
+        page => Route::Page(PAGES.iter().position(|p| *p == page).unwrap_or(0)),
+    }
 }
 
 /// A setting shown as a list of choices, in the order the window lists them.
@@ -44,7 +79,58 @@ pub const CHOICES: &[Choice] = &[
         path: "bar.zOrder",
         values: &["topmost", "normal", "bottom"],
     },
+    Choice {
+        path: "sensors.inactiveMode",
+        values: &["opacity", "colorize"],
+    },
 ];
+
+/// The font styles in the order Settings lists them, after "Theme default" (SPEC §8.2).
+pub const FONT_STYLES: [&str; 6] = [
+    "normal",
+    "semibold",
+    "bold",
+    "italic",
+    "semiboldItalic",
+    "boldItalic",
+];
+
+/// The font style list: "Theme default (…)" naming the theme's style, then every style.
+pub fn font_style_labels(theme_default: &str) -> Vec<String> {
+    let name = |id: &str| crate::i18n::t(&format!("fontStyle.{id}"));
+    std::iter::once(t_args(
+        "common.themeDefault",
+        &[("value", &name(theme_default))],
+    ))
+    .chain(FONT_STYLES.iter().map(|id| name(id)))
+    .collect()
+}
+
+/// The index of `style` (a font style id, or `None` for the theme default) in that list.
+pub fn font_style_index(style: Option<&str>) -> i32 {
+    style
+        .and_then(|s| FONT_STYLES.iter().position(|id| *id == s))
+        .map_or(0, |i| i as i32 + 1)
+}
+
+/// The font list: "Theme default (…)" naming the theme's family, then the installed families
+/// and a configured family that is not installed.
+pub fn font_labels(theme_default: &str, families: &[String], current: Option<&str>) -> Vec<String> {
+    let mut labels = vec![t_args("common.themeDefault", &[("value", theme_default)])];
+    labels.extend(families.iter().cloned());
+    if let Some(current) = current
+        && !families.iter().any(|f| f == current)
+    {
+        labels.push(current.to_owned());
+    }
+    labels
+}
+
+/// The index of `font` (`None` for the theme default) in [`font_labels`].
+pub fn font_index(labels: &[String], font: Option<&str>) -> i32 {
+    font.and_then(|f| labels.iter().skip(1).position(|l| l == f))
+        .map_or(0, |i| i as i32 + 1)
+}
 
 pub fn choice(path: &str) -> Option<&'static Choice> {
     CHOICES.iter().find(|c| c.path == path)
@@ -123,12 +209,32 @@ mod tests {
     use crate::platform::Rect;
 
     #[test]
-    fn routes_map_to_pages() {
-        assert_eq!(page_index("general"), 0);
-        assert_eq!(page_index("bar"), 1);
-        assert_eq!(page_index("bar/height"), 1);
-        assert_eq!(page_index("nope"), 0);
-        assert_eq!(page_index(""), 0);
+    fn routes() {
+        assert_eq!(route("general"), Route::Page(0));
+        assert_eq!(route("bar"), Route::Page(1));
+        assert_eq!(route("bar/height"), Route::Page(1));
+        assert_eq!(route("popups"), Route::Page(3));
+        assert_eq!(route("layout"), Route::Page(2));
+        assert_eq!(route("nope"), Route::Page(0));
+        assert_eq!(route(""), Route::Page(0));
+        assert_eq!(route("sensor/s_1a2b3"), Route::Sensor("s_1a2b3".into()));
+        assert_eq!(route("sensor/"), Route::Page(2));
+        assert_eq!(
+            route("new?zone=right&index=0"),
+            Route::New {
+                zone: Some(Zone::Right),
+                index: Some(0),
+                target: None
+            }
+        );
+        assert_eq!(
+            route("new?target=s_1&zone=middle"),
+            Route::New {
+                zone: None,
+                index: None,
+                target: Some("s_1".into())
+            }
+        );
     }
 
     #[test]
@@ -159,6 +265,30 @@ mod tests {
                 assert!(next.is_ok(), "{}={v}: {next:?}", c.path);
             }
         }
+    }
+
+    #[test]
+    fn font_lists_start_with_the_theme_default() {
+        let families = vec!["Arial".to_owned(), "Consolas".to_owned()];
+        let labels = font_labels("Segoe UI Variable Text", &families, Some("Gone"));
+        assert_eq!(
+            labels,
+            [
+                "Theme default (Segoe UI Variable Text)",
+                "Arial",
+                "Consolas",
+                "Gone"
+            ]
+        );
+        assert_eq!(font_index(&labels, None), 0);
+        assert_eq!(font_index(&labels, Some("Consolas")), 2);
+        assert_eq!(font_index(&labels, Some("Gone")), 3);
+
+        let styles = font_style_labels("semibold");
+        assert_eq!(styles[0], "Theme default (Semibold)");
+        assert_eq!(styles[6], "Bold italic");
+        assert_eq!(font_style_index(None), 0);
+        assert_eq!(font_style_index(Some("bold")), 3);
     }
 
     #[test]

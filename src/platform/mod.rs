@@ -93,6 +93,11 @@ pub trait Platform: Send + Sync {
     /// All active monitors, physical pixels.
     fn monitors(&self) -> Vec<MonitorInfo>;
     fn appearance(&self) -> OsAppearance;
+    /// The installed font families, sorted by name (SPEC §4.5: lists of fonts); none where
+    /// the platform cannot list them.
+    fn font_families(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Where and how the bar should sit (SPEC §5.1–5.3), derived from the settings.

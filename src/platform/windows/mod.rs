@@ -34,6 +34,13 @@ impl Platform for WindowsPlatform {
         monitors::list()
     }
 
+    fn font_families(&self) -> Vec<String> {
+        text::font_families().unwrap_or_else(|e| {
+            tracing::warn!("the font list is not available: {e}");
+            Vec::new()
+        })
+    }
+
     fn appearance(&self) -> OsAppearance {
         const PERSONALIZE: PCWSTR =
             w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
