@@ -2,7 +2,7 @@
 //! keeps the sensors, their wake-up timer and layout, and draws the bar. Interaction arrives in
 //! later M1 slices.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
@@ -14,7 +14,7 @@ use super::theme::Theme;
 use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
 use crate::config::Config;
-use crate::config::model::{Layout, Material, Settings};
+use crate::config::model::{Layout, Material, SensorInstance, Settings};
 use crate::platform::{
     BarHandler, BarWindow, Canvas, OsAppearance, Platform, SizeF, TextEngine, UiEvent,
 };
@@ -25,6 +25,8 @@ pub(super) struct BarLogic {
     settings: Settings,
     layout: Layout,
     state: BTreeMap<String, State>,
+    /// Entries shown instead of the saved ones while Settings previews them, by id.
+    previews: HashMap<String, SensorInstance>,
     sensors: BarSensors,
     text: Rc<dyn TextEngine>,
     appearance: OsAppearance,
@@ -51,6 +53,7 @@ impl BarLogic {
             settings: config.settings,
             layout: config.layout,
             state: config.state,
+            previews: HashMap::new(),
             sensors: BarSensors::default(),
             text: crate::platform::text_engine(),
             appearance,
@@ -105,13 +108,16 @@ impl BarLogic {
         }
     }
 
-    /// Creates sensors for new or changed layout entries.
+    /// Creates sensors for new or changed layout entries, showing previews where there are.
     fn sync_sensors(&mut self, window: &dyn BarWindow) {
         let caps = self.platform.capabilities();
-        if self
-            .sensors
-            .sync(&self.layout, &self.state, &caps, registry())
-        {
+        let mut shown = self.layout.clone();
+        for entry in shown.all_mut() {
+            if let Some(preview) = self.previews.get(&entry.id) {
+                *entry = preview.clone();
+            }
+        }
+        if self.sensors.sync(&shown, &self.state, &caps, registry()) {
             window.invalidate();
         }
         self.arm_timer(window);
@@ -164,6 +170,13 @@ impl BarHandler for BarLogic {
                             self.settings = config.settings;
                             self.layout = config.layout;
                             self.state = config.state;
+                        }
+                        Command::Preview(sensor) => {
+                            self.previews.insert(sensor.id.clone(), *sensor);
+                            layout_changed = true;
+                        }
+                        Command::EndPreview(id) => {
+                            layout_changed |= self.previews.remove(&id).is_some();
                         }
                     }
                 }

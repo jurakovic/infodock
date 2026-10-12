@@ -93,24 +93,29 @@ impl Registry {
     pub fn fill_machine_defaults(&self, layout: &mut Layout, ctx: &DefaultsCtx) -> bool {
         let mut changed = false;
         for instance in layout.all_mut() {
-            let Some(ty) = self.get(&instance.kind) else {
-                continue;
-            };
-            let missing = schema::missing_machine_fields(ty.schema(), &instance.props);
-            if missing.is_empty() {
-                continue;
-            }
-            let machine = ty.machine_defaults(ctx);
-            for field in missing {
-                let value = machine
-                    .get(field.key)
-                    .and_then(|v| schema::check(field, v))
-                    .unwrap_or_else(|| field.default.to_value());
-                instance.props.insert(field.key.to_owned(), value);
-                changed = true;
-            }
+            changed |= self.fill_machine_props(instance, ctx);
         }
         changed
+    }
+
+    /// Stores the machine-derived props `instance` lacks; returns whether it added any.
+    pub fn fill_machine_props(&self, instance: &mut SensorInstance, ctx: &DefaultsCtx) -> bool {
+        let Some(ty) = self.get(&instance.kind) else {
+            return false;
+        };
+        let missing = schema::missing_machine_fields(ty.schema(), &instance.props);
+        if missing.is_empty() {
+            return false;
+        }
+        let machine = ty.machine_defaults(ctx);
+        for field in missing {
+            let value = machine
+                .get(field.key)
+                .and_then(|v| schema::check(field, v))
+                .unwrap_or_else(|| field.default.to_value());
+            instance.props.insert(field.key.to_owned(), value);
+        }
+        true
     }
 
     /// Every type, sorted by category and then by localised name (SPEC §6.6).

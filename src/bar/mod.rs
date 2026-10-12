@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::Config;
 use crate::config::ConfigStore;
-use crate::config::model::Settings;
+use crate::config::model::{SensorInstance, Settings};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use thread::BarLogic;
 
@@ -36,6 +36,9 @@ pub trait BarHost: Send + Sync {
 enum Command {
     /// The config changed: settings, layout or sensor state.
     Config(Box<Config>),
+    /// Show a sensor with other props until the preview ends (SPEC §6.7).
+    Preview(Box<SensorInstance>),
+    EndPreview(String),
 }
 
 /// Cross-thread handle to the bar.
@@ -129,6 +132,15 @@ impl BarController {
     pub fn bring_to_front(&self) {
         self.set_visible(true);
         self.appbar.raise();
+    }
+
+    /// Shows `sensor` (matched by id) instead of its saved entry until [`Self::end_preview`].
+    pub fn preview(&self, sensor: SensorInstance) {
+        self.send(Command::Preview(Box::new(sensor)));
+    }
+
+    pub fn end_preview(&self, id: &str) {
+        self.send(Command::EndPreview(id.to_owned()));
     }
 
     /// Releases the reserved screen space. Call on exit.

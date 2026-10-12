@@ -483,6 +483,21 @@ impl Layout {
         }
     }
 
+    pub fn zone_mut(&mut self, zone: Zone) -> &mut Vec<SensorInstance> {
+        match zone {
+            Zone::Left => &mut self.left,
+            Zone::Center => &mut self.center,
+            Zone::Right => &mut self.right,
+        }
+    }
+
+    /// The zone and index of sensor `id`.
+    pub fn find(&self, id: &str) -> Option<(Zone, usize)> {
+        [Zone::Left, Zone::Center, Zone::Right]
+            .into_iter()
+            .find_map(|z| Some((z, self.zone(z).iter().position(|s| s.id == id)?)))
+    }
+
     pub fn all(&self) -> impl Iterator<Item = &SensorInstance> {
         self.left.iter().chain(&self.center).chain(&self.right)
     }

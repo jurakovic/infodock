@@ -247,6 +247,22 @@ pub fn check(field: &PropField, value: &Value) -> Option<Value> {
     }
 }
 
+/// [`check`], with an empty text of an `empty_is_default` field replaced by `default`.
+pub fn normalize(field: &PropField, raw: &Value, default: &Value) -> Option<Value> {
+    let value = check(field, raw)?;
+    let empty_means_default = matches!(
+        field.kind,
+        FieldKind::Text {
+            empty_is_default: true
+        }
+    ) && value.as_str() == Some("");
+    Some(if empty_means_default {
+        default.clone()
+    } else {
+        value
+    })
+}
+
 /// A stored value that was ignored, for the log.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ignored {
@@ -267,27 +283,13 @@ pub fn resolve(schema: &[PropField], stored: &Props, machine: &Props) -> (Props,
             .unwrap_or_else(|| field.default.to_value());
         let value = match stored.get(field.key) {
             None => default,
-            Some(raw) => match check(field, raw) {
-                Some(Value::String(s))
-                    if s.is_empty()
-                        && matches!(
-                            field.kind,
-                            FieldKind::Text {
-                                empty_is_default: true
-                            }
-                        ) =>
-                {
-                    default
-                }
-                Some(value) => value,
-                None => {
-                    ignored.push(Ignored {
-                        key: field.key.to_owned(),
-                        value: raw.clone(),
-                    });
-                    default
-                }
-            },
+            Some(raw) => normalize(field, raw, &default).unwrap_or_else(|| {
+                ignored.push(Ignored {
+                    key: field.key.to_owned(),
+                    value: raw.clone(),
+                });
+                default
+            }),
         };
         props.insert(field.key.to_owned(), value);
     }

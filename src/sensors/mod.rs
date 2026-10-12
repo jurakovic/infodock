@@ -8,6 +8,7 @@
 //! `from_legacy` with the legacy import (M4).
 
 pub mod image;
+pub mod ops;
 pub mod placeholder;
 pub mod registry;
 pub mod schema;

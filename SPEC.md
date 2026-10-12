@@ -239,7 +239,7 @@ Settings runs in the same process, on the main thread, and calls the core direct
 |---|---|---|
 | config | get config | |
 | | update settings | A deep partial of `Settings` (a JSON patch); unknown keys are rejected. A changed hotkey is registered first; if that fails nothing is saved (§6.5) |
-| | add / update / move / remove sensor | `update` validates against the schema |
+| | add / update / move / remove sensor | `add(type, zone, index, props)` validates the props (only values that differ from the defaults, e.g. from a drop), fills the machine-derived ones and returns the new id. `update(id, changes)` validates the changed keys against the schema and stores the result by §11.2. `move(id, zone, index)` takes the index counted with the sensor already removed (§6.2). `remove` also drops the sensor's `state`. Implemented in `sensors/ops.rs` |
 | | preview sensor | The bar shows these props without saving them; ending the preview restores the saved props (§6.7) |
 | | export / import config | `replace` or `merge` → `ImportReport` (§11.3) |
 | | import legacy layout | §11.4 |
