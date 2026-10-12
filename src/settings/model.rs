@@ -3,7 +3,8 @@
 
 use serde_json::{Map, Value};
 
-use crate::config::model::{FloatingRect, PRIMARY_MONITOR, Settings, Zone};
+use crate::config::model::{FloatingRect, PRIMARY_MONITOR, Settings, ThemeDefaults, Zone};
+use crate::config::patch::apply_settings_patch;
 use crate::i18n::t_args;
 use crate::platform::MonitorInfo;
 use crate::platform::geometry::{floating_rect, to_physical};
@@ -164,6 +165,41 @@ pub fn choice_index(settings: &Value, choice: &Choice) -> i32 {
         .map_or(0, |i| i as i32)
 }
 
+/// The value in effect at a dotted path: the stored one, or the theme's default for a
+/// theme-dependent setting stored as `null`; `None` for an unknown path.
+pub fn in_effect(settings: &Settings, path: &str) -> Option<Value> {
+    let json = serde_json::to_value(settings).ok()?;
+    let stored = value_at(&json, path)?;
+    if !stored.is_null() {
+        return Some(stored.clone());
+    }
+    let d = ThemeDefaults::of(settings.theme);
+    let default = match path {
+        "bar.height" => Value::from(d.bar_height),
+        "background.color" => Value::from(d.background_color),
+        "background.opacity" => Value::from(d.background_opacity),
+        "background.material" => serde_json::to_value(d.background_material).ok()?,
+        "sensors.font" => Value::from(d.sensor_font),
+        "sensors.fontStyle" => serde_json::to_value(d.sensor_font_style).ok()?,
+        "popups.background" => Value::from(d.popup_background),
+        "popups.opacity" => Value::from(d.popup_opacity),
+        "popups.font" => Value::from(d.popup_font),
+        "popups.fontStyle" => serde_json::to_value(d.popup_font_style).ok()?,
+        _ => Value::Null,
+    };
+    Some(default)
+}
+
+/// Whether setting `path` to `value` changes what is in effect. A theme-dependent setting left
+/// at the theme's value (a colour box losing the focus, a slider clicked without moving) stays
+/// `null` and keeps following the theme (SPEC §11.2). An invalid value counts as a change, so
+/// saving it reports why.
+pub fn changes(settings: &Settings, path: &str, value: &Value) -> bool {
+    apply_settings_patch(settings, &patch(path, value.clone())).map_or(true, |next| {
+        in_effect(&next, path) != in_effect(settings, path)
+    })
+}
+
 /// A settings patch that sets one dotted path: `bar.edge` → `{"bar": {"edge": value}}`.
 pub fn patch(path: &str, value: Value) -> Value {
     path.rsplit('.').fold(value, |inner, key| {
@@ -321,6 +357,84 @@ mod tests {
             patch("bar.height", Value::Null),
             json!({ "bar": { "height": null } })
         );
+    }
+
+    #[test]
+    fn theme_defaults_are_in_effect_until_set() {
+        let modern = Settings::default();
+        assert_eq!(
+            in_effect(&modern, "popups.background"),
+            Some(json!("#202024"))
+        );
+        assert_eq!(in_effect(&modern, "bar.height"), Some(json!(28)));
+        assert_eq!(
+            in_effect(&modern, "sensors.fontStyle"),
+            Some(json!("semibold"))
+        );
+        assert_eq!(
+            in_effect(&modern, "sensors.textColor"),
+            Some(json!("#FFFFFF"))
+        );
+        assert_eq!(in_effect(&modern, "bar.floating"), Some(Value::Null));
+        assert_eq!(in_effect(&modern, "bar.nope"), None);
+        let defaults = serde_json::to_value(&modern).expect("serializable");
+        for path in [
+            "bar.height",
+            "background.color",
+            "background.opacity",
+            "background.material",
+            "sensors.font",
+            "sensors.fontStyle",
+            "popups.background",
+            "popups.opacity",
+            "popups.font",
+            "popups.fontStyle",
+        ] {
+            assert_eq!(value_at(&defaults, path), Some(&Value::Null), "{path}");
+            let value = in_effect(&modern, path).unwrap_or_default();
+            assert!(!value.is_null(), "{path} has no theme default");
+            assert!(!changes(&modern, path, &value), "{path}");
+        }
+
+        let mut classic = Settings {
+            theme: crate::config::model::Theme::Classic,
+            ..Settings::default()
+        };
+        assert_eq!(
+            in_effect(&classic, "popups.background"),
+            Some(json!("#000000"))
+        );
+        classic.popups.background = Some("#202024".into());
+        assert_eq!(
+            in_effect(&classic, "popups.background"),
+            Some(json!("#202024"))
+        );
+    }
+
+    #[test]
+    fn only_a_different_value_is_a_change() {
+        let settings = Settings::default();
+        // The theme's values: nothing to save, the settings stay `null`.
+        assert!(!changes(&settings, "popups.background", &json!("#202024")));
+        assert!(!changes(&settings, "popups.opacity", &json!(92)));
+        assert!(!changes(&settings, "bar.height", &json!(28)));
+        assert!(!changes(&settings, "sensors.textColor", &json!("#FFFFFF")));
+        // Anything else is saved.
+        assert!(changes(&settings, "popups.background", &json!("#202025")));
+        assert!(changes(&settings, "popups.opacity", &json!(91)));
+        assert!(changes(&settings, "bar.height", &json!(30)));
+        // A value set explicitly is kept as it is.
+        let pinned = Settings {
+            popups: crate::config::model::PopupSettings {
+                background: Some("#202024".into()),
+                ..Default::default()
+            },
+            ..Settings::default()
+        };
+        assert!(!changes(&pinned, "popups.background", &json!("#202024")));
+        // Invalid: saving it reports the error.
+        assert!(changes(&settings, "popups.opacity", &json!("x")));
+        assert!(changes(&settings, "nope", &json!(1)));
     }
 
     #[test]

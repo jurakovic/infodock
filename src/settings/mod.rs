@@ -178,7 +178,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let a = Arc::clone(app);
     state.on_set_flag(move |path, value| save(&a, model::patch(&path, Value::Bool(value))));
     let a = Arc::clone(app);
-    state.on_set_number(move |path, value| save(&a, model::patch(&path, Value::from(value))));
+    state.on_set_number(move |path, value| save_change(&a, &path, Value::from(value)));
     let a = Arc::clone(app);
     state.on_reset(move |path| save(&a, model::patch(&path, Value::Null)));
     let a = Arc::clone(app);
@@ -209,7 +209,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let a = Arc::clone(app);
     state.on_set_color(move |path, text| {
         match crate::config::model::normalize_color(text.trim().to_owned()) {
-            Some(color) => save(&a, model::patch(&path, Value::String(color))),
+            Some(color) => save_change(&a, &path, Value::String(color)),
             None => WINDOW.with(|w| {
                 if let Some(open) = w.borrow_mut().as_mut() {
                     let state = open.window.global::<ui::SettingsState>();
@@ -386,6 +386,22 @@ fn save(app: &Arc<App>, patch: Value) {
             // Put the controls back to what is saved.
             let settings = app.store.get().settings;
             fill(open, app, &settings);
+        }
+    });
+}
+
+/// Saves `value` at `path` if that changes what is in effect, so a colour box losing the focus
+/// or a slider clicked without moving leaves a theme default `null` (SPEC §11.2).
+fn save_change(app: &Arc<App>, path: &str, value: Value) {
+    if model::changes(&app.store.get().settings, path, &value) {
+        save(app, model::patch(path, value));
+        return;
+    }
+    // Nothing to save; an error from an earlier attempt no longer applies.
+    WINDOW.with(|w| {
+        if let Some(open) = w.borrow().as_ref() {
+            let state = open.window.global::<ui::SettingsState>();
+            state.set_save_error(SharedString::new());
         }
     });
 }
@@ -693,6 +709,16 @@ mod screenshots {
         assert_eq!(state.get_popup_background(), "#20B7FF");
         assert_eq!(background().as_deref(), Some("#20B7FF"));
         state.invoke_reset("popups.background".into());
+        // Leaving the colour box and clicking the slider without changing them keep the theme
+        // defaults (SPEC §11.2).
+        nav(general);
+        nav(popups);
+        click(690.0, 76.0);
+        click(690.0, 258.0);
+        click(652.0, 168.0);
+        let popups_settings = app.store.get().settings.popups;
+        assert_eq!(popups_settings.background, None);
+        assert_eq!(popups_settings.opacity, None);
 
         // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
         super::properties::open_form(&app, &logo, false);
