@@ -20,13 +20,15 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 - [ ] Maximise any window: it stops at the bar instead of covering it.
 - [ ] Alt+Tab does not list Infodock. The taskbar shows no button for it.
 - [ ] Win+Left/Right, or dragging the bar: it does not move.
+- [ ] Click the bar, then press Alt+F4: nothing happens (the bar stays; quitting is in the tray menu).
+- [ ] With the bar unfocused (click another window), it still looks translucent rather than solid.
 
 **Settings ▸ Bar** (tray icon → *Settings…* → *Bar*)
 
 - [ ] *Screen edge* → Top: the bar moves to the top; maximised windows now start below it. Back to Bottom.
 - [ ] *Height* slider: the bar's height changes and maximised windows follow. *Use theme default* returns to 28.
 - [ ] *Reserve screen space* off: maximised windows extend under the bar (the bar stays on top). On again: they stop at the bar.
-- [ ] *Stacking* → *Like other windows*: clicking another window brings it in front of the bar where they overlap. → *Always behind other windows*: windows always cover the bar; the hotkey (Ctrl+Alt+Shift+I) brings it forward until you click elsewhere. Back to *Always on top*.
+- [ ] *Stacking* → *Like other windows*: clicking another window brings it in front of the bar where they overlap. → *Always behind other windows*: windows always cover the bar, but on an empty desktop the bar is still visible above the wallpaper; the hotkey (Ctrl+Alt+Shift+I) brings it forward until you click elsewhere. Back to *Always on top*.
 - [ ] Full-screen: play a video full-screen (or press F11 in a browser) on the bar's monitor: the bar steps behind it. Leave full-screen: the bar is back on top. With *Step back for full-screen apps* off, the bar stays on top.
 
 **Monitors and DPI** (two monitors, one at 100 % and one at 150 % if possible)
@@ -51,7 +53,8 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 - [ ] Hide the bar from the tray, then press Ctrl+Alt+Shift+I: the bar reappears.
 - [ ] *Hotkey action* → *Show or hide the bar*: the hotkey now toggles the bar.
 - [ ] Set the hotkey to something invalid (e.g. `Ctrl+`) and press Enter: an error appears under the field and the old hotkey keeps working. Set a combination another app already uses: an error appears too.
-- [ ] Start Infodock a second time (Start menu): no second bar; the existing bar shows and Settings opens.
+- [ ] Start Infodock a second time (Start menu): no second bar; the existing bar shows and Settings opens with keyboard focus.
+- [ ] `taskkill /im infodock.exe` (without `/f`): Infodock quits and the reserved space is released.
 
 **Appearance**
 

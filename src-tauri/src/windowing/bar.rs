@@ -3,7 +3,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+};
 
 use crate::config::ConfigStore;
 use crate::config::model::{Material, Settings, ThemeDefaults};
@@ -42,6 +44,16 @@ impl BarController {
             .visible(false)
             .inner_size(800.0, 28.0)
             .build()?;
+
+        // Closing the bar (graceful taskkill, Restart Manager) quits the app the normal way, so
+        // the reservation is released and the config flushed. Alt+F4 is blocked in the AppBar.
+        let quitter = app.clone();
+        window.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                quitter.exit(0);
+            }
+        });
 
         let emitter = app.clone();
         let appbar = platform::attach_appbar(
@@ -130,7 +142,7 @@ impl BarController {
         self.set_visible(!self.is_visible());
     }
 
-    /// Shows the bar if hidden and brings it to the front (hotkey, second launch).
+    /// Shows the bar if hidden and brings it to the front (hotkey).
     pub fn bring_to_front(&self) {
         self.set_visible(true);
         self.appbar.raise();

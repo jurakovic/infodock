@@ -25,7 +25,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         // Must be the first plugin: a second launch shows the bar and opens Settings (SPEC §6.5).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            windowing::bring_bar_to_front(app);
+            windowing::show_bar(app);
             if let Err(e) = windowing::settings::open(app, "general") {
                 tracing::warn!("could not open settings: {e}");
             }

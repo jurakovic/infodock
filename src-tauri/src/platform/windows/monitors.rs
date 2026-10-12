@@ -9,7 +9,7 @@ use windows::Win32::Devices::Display::{
     DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_TARGET_DEVICE_NAME, DisplayConfigGetDeviceInfo,
     GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
 };
-use windows::Win32::Foundation::{ERROR_SUCCESS, LPARAM, RECT};
+use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
 };
@@ -93,31 +93,9 @@ fn handles() -> Vec<HMONITOR> {
 /// configuration API. Empty if the API is unavailable (e.g. in some remote sessions).
 fn friendly_names() -> HashMap<String, String> {
     let mut names = HashMap::new();
-    let (mut path_count, mut mode_count) = (0u32, 0u32);
-    // SAFETY: out-parameters only.
-    if unsafe {
-        GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
-    } != ERROR_SUCCESS
-    {
+    let Some(paths) = active_paths() else {
         return names;
-    }
-    let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
-    let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); mode_count as usize];
-    // SAFETY: the buffers have the sizes reported above and the counts say so.
-    let status = unsafe {
-        QueryDisplayConfig(
-            QDC_ONLY_ACTIVE_PATHS,
-            &mut path_count,
-            paths.as_mut_ptr(),
-            &mut mode_count,
-            modes.as_mut_ptr(),
-            None,
-        )
     };
-    if status != ERROR_SUCCESS {
-        return names;
-    }
-    paths.truncate(path_count as usize);
     for path in &paths {
         let mut source = DISPLAYCONFIG_SOURCE_DEVICE_NAME {
             header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
@@ -148,6 +126,42 @@ fn friendly_names() -> HashMap<String, String> {
         }
     }
     names
+}
+
+/// The active display paths. Retries when the configuration changes between the size query and
+/// the query itself (`ERROR_INSUFFICIENT_BUFFER`), which is likely right after a re-plug.
+fn active_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
+    for _ in 0..3 {
+        let (mut path_count, mut mode_count) = (0u32, 0u32);
+        // SAFETY: out-parameters only.
+        let sized = unsafe {
+            GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
+        };
+        if sized != ERROR_SUCCESS {
+            return None;
+        }
+        let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
+        let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); mode_count as usize];
+        // SAFETY: the buffers have the sizes reported above and the counts say so.
+        let status = unsafe {
+            QueryDisplayConfig(
+                QDC_ONLY_ACTIVE_PATHS,
+                &mut path_count,
+                paths.as_mut_ptr(),
+                &mut mode_count,
+                modes.as_mut_ptr(),
+                None,
+            )
+        };
+        if status == ERROR_SUCCESS {
+            paths.truncate(path_count as usize);
+            return Some(paths);
+        }
+        if status != ERROR_INSUFFICIENT_BUFFER {
+            return None;
+        }
+    }
+    None
 }
 
 #[cfg(test)]

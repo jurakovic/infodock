@@ -1457,7 +1457,7 @@ Ordered by expected value; each item reuses the framework unchanged.
 | R1 | Browser URL drag & drop is not delivered by Tauri's handler | Milestone M3b (custom `IDropTarget`). Fallback if it proves brittle: file drops only, plus "Paste URL" in Shortcut properties |
 | R2 | WebView2 memory may exceed the 70 MB stretch goal | 100 MB is the hard budget; all windows share one browser process (Tauri default); keep DOMs small |
 | R3 | Wi-Fi SSID requires Location permission on Windows 11 24H2+ | Graceful degradation (§9.15) |
-| R4 | AppBar interaction with Tauri's window procedure | Message-only window for callbacks; integration tests on Windows 10 and 11 |
+| R4 | AppBar interaction with Tauri's window procedure | The bar window is subclassed (§5.2); the subclass owns geometry, z-order, visibility and the tool-window style, so Tauri's window setters must not be used on the bar. Integration tests on Windows 10 and 11 |
 | R5 | CPU % may differ from Task Manager | Use PDH `\Processor Information(_Total)\% Processor Utility` (clamped to 100) for the total, as Task Manager does; per-core via the same counter set; user/kernel split from `GetSystemTimes` |
 | R6 | Topmost transparent windows over full-screen games | `hideOnFullscreen` on by default |
 | O1 | Artwork (Appendix C) | To be produced; placeholders acceptable until M5 |

@@ -26,6 +26,7 @@ const RETRY_AFTER_ERROR: Duration = Duration::from_secs(5);
 
 /// Called after every change with the old and the new config.
 pub type Listener = Box<dyn Fn(&Config, &Config) + Send + Sync>;
+type SharedListener = Arc<dyn Fn(&Config, &Config) + Send + Sync>;
 
 /// What happened while loading, for logging and user notification.
 #[derive(Debug, Default)]
@@ -51,7 +52,7 @@ pub struct ConfigStore {
     shared: Arc<Shared>,
     tx: mpsc::Sender<Msg>,
     writer: Mutex<Option<JoinHandle<()>>>,
-    listeners: Mutex<Vec<Listener>>,
+    listeners: Mutex<Vec<SharedListener>>,
 }
 
 struct Shared {
@@ -111,9 +112,10 @@ impl ConfigStore {
         lock(&self.shared.config).clone()
     }
 
-    /// Registers a listener that runs after every change (outside the store lock).
+    /// Registers a listener that runs after every change, on the thread that made it, with no
+    /// store lock held.
     pub fn on_change(&self, listener: Listener) {
-        lock(&self.listeners).push(listener);
+        lock(&self.listeners).push(Arc::from(listener));
     }
 
     /// Applies `f` to a copy of the config. On success the copy replaces the config, a write is
@@ -131,7 +133,10 @@ impl ConfigStore {
         };
         if old != new {
             let _ = self.tx.send(Msg::Dirty);
-            for listener in lock(&self.listeners).iter() {
+            // Run outside the lock: listeners may block on the main thread (tray updates), which
+            // may itself be waiting to update the config.
+            let listeners: Vec<SharedListener> = lock(&self.listeners).clone();
+            for listener in &listeners {
                 listener(&old, &new);
             }
         }
@@ -429,6 +434,30 @@ mod tests {
         set_edge_top(&store);
         set_edge_top(&store); // no change the second time
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+        store.shutdown();
+    }
+
+    #[test]
+    fn listeners_run_without_the_lock_held() {
+        // A listener that updates the store (as the tray does via the main thread) must not
+        // deadlock on the listener list.
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = ConfigStore::open(dir.path(), "1.0.0");
+        let store = Arc::new(store);
+        let weak = Arc::downgrade(&store);
+        store.on_change(Box::new(move |_, new| {
+            if !new.settings.locked
+                && let Some(s) = weak.upgrade()
+            {
+                s.update(|c| {
+                    c.settings.locked = true;
+                    Ok(())
+                })
+                .unwrap();
+            }
+        }));
+        set_edge_top(&store);
+        assert!(store.get().settings.locked);
         store.shutdown();
     }
 

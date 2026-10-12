@@ -19,6 +19,8 @@ Exit: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survi
 
 Sensor registry and types (§8.1–8.2), zones and layout (§5.4), hint window and placement (§7.1, §7.3), context menus (§6.4), Lock/Popups, drag reordering (§6.2), floating mode (§5.1), rise animation and hover highlight (§5.5), Settings shell, PropertyForm, SensorPicker, Layout manager, sampler and `subscribe` (§4.4), sensor CRUD commands, Text/Image/Spacer sensors, browser mock backend for screenshots. On load, fill machine-derived props that are missing (e.g. Time `use24h` in the first-run layout, §11.2) and store them.
 
+Carried over from the M0 review: a command that returns the current bar geometry (the first `bar-geometry` event fires before the bar page listens); run the AppBar sink's work via a posted message instead of inside the window procedure before hint/popup hiding hangs off it; `theme-changed` event so toggling OS transparency effects applies without a restart; clicks on the bar must not take focus (§5.3).
+
 ## M2 — System sensors
 
 Date (calendar hint), Time (chime), Uptime, CPU meter/graph/dual, Memory meter/graph, Swap meter/graph, Disk Meter, Network Graph; providers and Appendix A sources; `format.ts`, `color.ts`, Meter/Graph/DualGraph; resume and time-change events.
@@ -53,3 +55,4 @@ Performance pass (§14.1), accessibility (§14.4), Help/About, final artwork (Ap
 | D8 | 2026-10-11 | App-window module is `windowing/` (spec said `windows/`, which clashes with the `windows` crate). `settings.bar.monitor` stores a monitor key `<device>\|<name>\|<w>x<h>` (§10.2). |
 | D9 | 2026-10-11 | A changed hotkey is registered before the setting is saved; failure returns error code `hotkey` and saves nothing. A hotkey taken at start-up is logged and shown in Settings ▸ General; the app still starts (§6.5). |
 | D10 | 2026-10-11 | Hiding the bar (tray, hotkey) also releases its reserved space; it is runtime state, not a setting. |
+| D11 | 2026-10-12 | M0 review fixes: Alt+F4/system Close blocked on the bar, any other close request quits cleanly; the AppBar subclass enforces visibility and `WS_EX_TOOLWINDOW` against tao re-applying its state; geometry pinned during our own moves (DPI change while crossing monitors); `ABM_QUERYPOS` proposes the whole monitor; z-order `normal` uses `HWND_TOP` when not topmost; `fullscreen` reset on `TaskbarCreated`; AppBar callback allowed through UIPI; display-config query retried; config listeners run without the store lock; second launch shows the bar without stealing focus; `WM_NCACTIVATE` forwarded as active so DWM keeps the backdrop on the unfocused bar (to verify on hardware). |

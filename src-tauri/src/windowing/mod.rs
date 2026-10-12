@@ -19,7 +19,15 @@ pub fn toggle_bar(app: &AppHandle) {
     tray::sync(app);
 }
 
-/// Shows the bar if needed and brings it to the front (hotkey, second launch).
+/// Shows the bar if it was hidden, without taking focus (second launch).
+pub fn show_bar(app: &AppHandle) {
+    if let Some(bar) = app.try_state::<Arc<BarController>>() {
+        bar.set_visible(true);
+    }
+    tray::sync(app);
+}
+
+/// Shows the bar if needed and brings it to the front (hotkey).
 pub fn bring_bar_to_front(app: &AppHandle) {
     if let Some(bar) = app.try_state::<Arc<BarController>>() {
         bar.bring_to_front();

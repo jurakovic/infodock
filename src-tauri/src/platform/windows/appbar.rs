@@ -10,6 +10,11 @@
 //! and post a message. State used by the window procedure is behind short-lived locks that are
 //! never held across a Win32 call, because `SetWindowPos` re-enters the procedure synchronously
 //! (`WM_WINDOWPOSCHANGING`).
+//!
+//! Ownership: this module owns the bar's geometry, z-order, visibility and tool-window style.
+//! The subclass enforces that, so a Tauri window setter called on the bar later (which re-applies
+//! tao's own idea of visibility and extended style) cannot hide the bar while it should be shown,
+//! bring it back into Alt+Tab, or move it. Do not call Tauri's show/hide/position setters on it.
 
 use std::ffi::c_void;
 use std::mem::size_of;
@@ -24,12 +29,14 @@ use windows::Win32::UI::Shell::{
     DefSubclassProc, RemoveWindowSubclass, SHAppBarMessage, SetWindowSubclass,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChangeWindowMessageFilterEx, GWL_EXSTYLE, GetForegroundWindow, GetWindowLongPtrW, HWND_BOTTOM,
-    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW, PostMessageW, RegisterWindowMessageW,
-    SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    WA_INACTIVE, WINDOWPOS, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCDESTROY,
-    WM_SETTINGCHANGE, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOOLWINDOW,
+    ChangeWindowMessageFilterEx, GWL_EXSTYLE, GWL_STYLE, GetForegroundWindow, GetWindowLongPtrW,
+    HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW, PostMessageW,
+    RegisterWindowMessageW, SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, STYLESTRUCT, SW_HIDE,
+    SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, WA_INACTIVE, WINDOWPOS,
+    WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE,
+    WM_STYLECHANGING, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_VISIBLE,
 };
 use windows::core::w;
 
@@ -87,8 +94,12 @@ struct UiState {
     fullscreen: bool,
     /// Brought to the front by the hotkey; cleared when the bar loses focus.
     raised: bool,
-    /// Our own `SetWindowPos` is in progress, so `WM_WINDOWPOSCHANGING` must not interfere.
+    /// Our own `SetWindowPos`/`ShowWindow` is in progress: `WM_WINDOWPOSCHANGING` leaves the
+    /// z-order and visibility alone.
     positioning: bool,
+    /// The rect our in-flight `SetWindowPos` moves to. Nested calls during it (tao's
+    /// `WM_DPICHANGED` resize when crossing monitors) are pinned to it.
+    target: Option<Rect>,
     /// A placement is running; a nested request is re-posted instead of run re-entrantly.
     busy: bool,
 }
@@ -166,9 +177,13 @@ impl Shared {
         let hwnd = self.hwnd();
         if !req.visible {
             self.unregister();
+            self.ui(|u| {
+                u.applied = None;
+                u.positioning = true;
+            });
             // SAFETY: hiding our own window.
             let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
-            self.ui(|u| u.applied = None);
+            self.ui(|u| u.positioning = false);
             return;
         }
         // Floating mode arrives in M1; until then it behaves like a docked bar without reservation.
@@ -191,7 +206,7 @@ impl Shared {
         };
 
         let (fullscreen, raised) = self.ui(|u| (u.fullscreen, u.raised));
-        let insert_after = insert_after(req, fullscreen, raised);
+        let insert_after = insert_after(req, fullscreen, raised, self.is_topmost());
         self.set_window_pos(insert_after, rect, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
         let changed = self.ui(|u| {
@@ -218,13 +233,17 @@ impl Shared {
     }
 
     /// `ABM_QUERYPOS` → adjust → `ABM_SETPOS`; returns the rect the shell granted.
+    ///
+    /// The proposal is the whole monitor: the shell trims it by the taskbar and other appbars on
+    /// our edge, then we cut our height from that edge. (A bare strip can become empty once the
+    /// taskbar is subtracted, which makes further adjustments unreliable.)
     fn negotiate(&self, bounds: Rect, edge: Edge, height: i32) -> Rect {
         let mut abd = self.appbar_data();
         abd.uEdge = match edge {
             Edge::Top => ABE_TOP,
             Edge::Bottom => ABE_BOTTOM,
         };
-        abd.rc = to_win_rect(dock_strip(bounds, edge, height));
+        abd.rc = to_win_rect(bounds);
         // SAFETY: `abd` is initialised for our registered window.
         unsafe { SHAppBarMessage(ABM_QUERYPOS, &mut abd) };
         abd.rc = to_win_rect(keep_height(to_rect(abd.rc), edge, height));
@@ -234,7 +253,11 @@ impl Shared {
     }
 
     fn set_window_pos(&self, insert_after: HWND, rect: Rect, flags: SET_WINDOW_POS_FLAGS) {
-        self.ui(|u| u.positioning = true);
+        let moves = !flags.contains(SWP_NOMOVE) && !flags.contains(SWP_NOSIZE);
+        self.ui(|u| {
+            u.positioning = true;
+            u.target = moves.then_some(rect);
+        });
         // SAFETY: moving our own window.
         let result = unsafe {
             SetWindowPos(
@@ -247,10 +270,19 @@ impl Shared {
                 flags,
             )
         };
-        self.ui(|u| u.positioning = false);
+        self.ui(|u| {
+            u.positioning = false;
+            u.target = None;
+        });
         if let Err(e) = result {
             tracing::warn!("SetWindowPos failed: {e}");
         }
+    }
+
+    fn is_topmost(&self) -> bool {
+        // SAFETY: reads our own window's extended style.
+        let ex_style = unsafe { GetWindowLongPtrW(self.hwnd(), GWL_EXSTYLE) };
+        ex_style & WS_EX_TOPMOST.0 as isize != 0
     }
 
     /// Re-applies only the z-order (full-screen changes, losing focus while raised).
@@ -260,7 +292,7 @@ impl Shared {
         };
         let (fullscreen, raised) = self.ui(|u| (u.fullscreen, u.raised));
         self.set_window_pos(
-            insert_after(&req, fullscreen, raised),
+            insert_after(&req, fullscreen, raised, self.is_topmost()),
             Rect::default(),
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
@@ -277,8 +309,16 @@ impl Shared {
             HWND_TOP
         };
         self.set_window_pos(z, Rect::default(), SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-        // SAFETY: plain call; may be refused by the foreground lock, which is harmless.
-        let _ = unsafe { SetForegroundWindow(self.hwnd()) };
+        // SAFETY: plain calls. The foreground lock may refuse; then the bar never gets the
+        // WA_INACTIVE that ends the raise, so end it now instead of leaving a bottom bar in front.
+        let focused = unsafe {
+            let _ = SetForegroundWindow(self.hwnd());
+            GetForegroundWindow() == self.hwnd()
+        };
+        if !focused {
+            self.ui(|u| u.raised = false);
+            self.restack();
+        }
     }
 
     /// ABN_* notifications (SPEC §5.2 step 3).
@@ -307,32 +347,48 @@ impl Shared {
         }
     }
 
-    /// Keeps other code (Aero Snap, DPI changes, activation) from moving the bar or lifting it
-    /// out of its z-order.
+    /// Keeps other code (Aero Snap, DPI changes, activation, tao re-applying its state) from
+    /// moving the bar, hiding it while it should be shown, or lifting it out of its z-order.
     fn on_pos_changing(&self, pos: &mut WINDOWPOS) {
         let Ok(ui) = self.ui.try_lock() else {
             return;
         };
         if ui.positioning {
+            // Ours, or nested inside ours (tao's WM_DPICHANGED resize): keep our target geometry.
+            let target = ui.target;
+            drop(ui);
+            if let Some(rect) = target {
+                pin_geometry(pos, rect);
+            }
             return;
         }
+        // `applied` is set only while the request is visible.
         let Some((req, rect)) = ui.applied.clone() else {
             return;
         };
         let (fullscreen, raised) = (ui.fullscreen, ui.raised);
         drop(ui);
-        if !pos.flags.contains(SWP_NOMOVE) {
-            pos.x = rect.left;
-            pos.y = rect.top;
-        }
-        if !pos.flags.contains(SWP_NOSIZE) {
-            pos.cx = rect.width();
-            pos.cy = rect.height();
+        pin_geometry(pos, rect);
+        if pos.flags.contains(SWP_HIDEWINDOW) {
+            pos.flags = SET_WINDOW_POS_FLAGS(pos.flags.0 & !SWP_HIDEWINDOW.0);
         }
         let keep_low =
             (fullscreen && req.hide_on_fullscreen) || (req.z_order == ZOrder::Bottom && !raised);
         if keep_low && !pos.flags.contains(SWP_NOZORDER) {
             pos.hwndInsertAfter = HWND_BOTTOM;
+        }
+    }
+
+    /// Keeps the tool-window style (no Alt+Tab entry) and, while the bar should be shown,
+    /// `WS_VISIBLE`, whatever tao re-applies from its own state.
+    fn on_style_changing(&self, which: i32, style: &mut STYLESTRUCT) {
+        if which == GWL_EXSTYLE.0 {
+            style.styleNew |= WS_EX_TOOLWINDOW.0;
+        } else if which == GWL_STYLE.0 {
+            let shown = self.ui.try_lock().is_ok_and(|u| u.applied.is_some());
+            if shown {
+                style.styleNew |= WS_VISIBLE.0;
+            }
         }
     }
 
@@ -351,14 +407,29 @@ impl Shared {
     }
 }
 
-/// Where the bar goes in the z-order (SPEC §5.3).
-fn insert_after(req: &DockRequest, fullscreen: bool, raised: bool) -> HWND {
+fn pin_geometry(pos: &mut WINDOWPOS, rect: Rect) {
+    if !pos.flags.contains(SWP_NOMOVE) {
+        pos.x = rect.left;
+        pos.y = rect.top;
+    }
+    if !pos.flags.contains(SWP_NOSIZE) {
+        pos.cx = rect.width();
+        pos.cy = rect.height();
+    }
+}
+
+/// Where the bar goes in the z-order (SPEC §5.3). `topmost_now` is the window's current
+/// `WS_EX_TOPMOST`: `HWND_NOTOPMOST` only has an effect on a topmost window, so a non-topmost
+/// bar that should behave like a normal window is brought up with `HWND_TOP` instead (e.g. after
+/// a full-screen app sent it to the bottom).
+fn insert_after(req: &DockRequest, fullscreen: bool, raised: bool, topmost_now: bool) -> HWND {
     if fullscreen && req.hide_on_fullscreen {
         return HWND_BOTTOM;
     }
     match req.z_order {
         ZOrder::Topmost => HWND_TOPMOST,
-        ZOrder::Normal => HWND_NOTOPMOST,
+        ZOrder::Normal if topmost_now => HWND_NOTOPMOST,
+        ZOrder::Normal => HWND_TOP,
         ZOrder::Bottom if raised => HWND_TOP,
         ZOrder::Bottom => HWND_BOTTOM,
     }
@@ -388,9 +459,11 @@ unsafe extern "system" fn subclass_proc(
         return LRESULT(0);
     }
     if msg == m.taskbar_created {
-        // Explorer restarted and forgot every appbar (SPEC §5.2 step 5).
+        // Explorer restarted and forgot every appbar (SPEC §5.2 step 5). The new Explorer may
+        // never send the "full-screen closed" for an app the old one reported.
         tracing::info!("taskbar re-created; registering again");
         shared.unregister();
+        shared.ui(|u| u.fullscreen = false);
         shared.post(0);
     }
     match msg {
@@ -405,6 +478,18 @@ unsafe extern "system" fn subclass_proc(
             shared.on_pos_changing(unsafe { &mut *(lparam.0 as *mut WINDOWPOS) });
         }
         WM_WINDOWPOSCHANGED => shared.appbar_notify(ABM_WINDOWPOSCHANGED),
+        WM_STYLECHANGING if lparam.0 != 0 => {
+            // SAFETY: for this message lParam points to a STYLESTRUCT owned by the caller.
+            let style = unsafe { &mut *(lparam.0 as *mut STYLESTRUCT) };
+            shared.on_style_changing(wparam.0 as isize as i32, style);
+        }
+        // Alt+F4 and the system menu's Close must not destroy the bar; quitting is a tray action.
+        // A plain WM_CLOSE (graceful taskkill, Restart Manager) still quits the app cleanly.
+        WM_SYSCOMMAND if (wparam.0 & 0xFFF0) == SC_CLOSE as usize => return LRESULT(0),
+        // Draw as active even when unfocused, so DWM keeps the Acrylic/Mica backdrop instead of
+        // its inactive fallback (the bar is almost never the active window).
+        // SAFETY: forwards with wParam = TRUE; the bar has no caption to repaint.
+        WM_NCACTIVATE => return unsafe { DefSubclassProc(hwnd, msg, WPARAM(1), lparam) },
         WM_DISPLAYCHANGE | WM_DPICHANGED => shared.post(0),
         WM_SETTINGCHANGE if wparam.0 == SPI_SETWORKAREA.0 as usize => shared.post(0),
         WM_NCDESTROY => {
@@ -464,8 +549,9 @@ pub fn attach(
         // A tool window has no Alt+Tab entry (skip_taskbar already removed the taskbar button).
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_TOOLWINDOW.0 as isize);
-        // Let Explorer's TaskbarCreated through even if Infodock runs elevated.
+        // Let Explorer's messages through even if Infodock runs elevated (UIPI).
         let _ = ChangeWindowMessageFilterEx(hwnd, m.taskbar_created, MSGFLT_ALLOW, None);
+        let _ = ChangeWindowMessageFilterEx(hwnd, m.callback, MSGFLT_ALLOW, None);
         let raw = Arc::into_raw(Arc::clone(&shared));
         if !SetWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID, raw as usize).as_bool() {
             drop(Arc::from_raw(raw));
@@ -494,29 +580,21 @@ mod tests {
 
     #[test]
     fn z_order_follows_settings_and_fullscreen() {
+        let top = |z, hide, fullscreen, raised, topmost_now| {
+            insert_after(&req(z, hide), fullscreen, raised, topmost_now)
+        };
         assert_eq!(
-            insert_after(&req(ZOrder::Topmost, true), false, false),
+            top(ZOrder::Topmost, true, false, false, false),
             HWND_TOPMOST
         );
         assert_eq!(
-            insert_after(&req(ZOrder::Normal, true), false, false),
+            top(ZOrder::Normal, true, false, false, true),
             HWND_NOTOPMOST
         );
-        assert_eq!(
-            insert_after(&req(ZOrder::Bottom, true), false, false),
-            HWND_BOTTOM
-        );
-        assert_eq!(
-            insert_after(&req(ZOrder::Bottom, true), false, true),
-            HWND_TOP
-        );
-        assert_eq!(
-            insert_after(&req(ZOrder::Topmost, true), true, false),
-            HWND_BOTTOM
-        );
-        assert_eq!(
-            insert_after(&req(ZOrder::Topmost, false), true, false),
-            HWND_TOPMOST
-        );
+        assert_eq!(top(ZOrder::Normal, true, false, false, false), HWND_TOP);
+        assert_eq!(top(ZOrder::Bottom, true, false, false, false), HWND_BOTTOM);
+        assert_eq!(top(ZOrder::Bottom, true, false, true, false), HWND_TOP);
+        assert_eq!(top(ZOrder::Topmost, true, true, false, true), HWND_BOTTOM);
+        assert_eq!(top(ZOrder::Topmost, false, true, false, true), HWND_TOPMOST);
     }
 }
