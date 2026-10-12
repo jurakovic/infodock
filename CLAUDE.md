@@ -30,11 +30,12 @@ tests/fixtures/      shared test fixtures (legacy XML)
 | Lint (clippy, warnings are errors) | `cargo lint` |
 | Tests | `cargo test` |
 | Render the Settings pages to `target/screenshots/*.png` | `cargo test render_settings_pages -- --ignored` |
+| Render the bar to `target/screenshots/bar-*.png` (Windows only) | `cargo test render_bar -- --ignored` |
 | Type-check the Windows code from Linux | `cargo check-win` |
 | Run the app | `cargo run` (Windows; elsewhere only Settings opens) |
 | Build the installer (Windows) | `cargo build --release` then `cargo packager --release` |
 
-Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs. Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings screenshots, NSIS installer and portable exe, memory check) and by the manual checklist in `docs/manual-test.md`.
+Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `infodock-screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, memory check) and by the manual checklist in `docs/manual-test.md`.
 
 ## Gate before every commit
 

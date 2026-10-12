@@ -302,7 +302,6 @@ fn focus(window: &ui::SettingsWindow) {
 
 #[cfg(test)]
 mod screenshots {
-    use std::path::Path;
     use std::rc::Rc;
     use std::sync::Arc;
 
@@ -315,6 +314,7 @@ mod screenshots {
     use super::{Open, fill};
     use crate::app::App;
     use crate::config::ConfigStore;
+    use crate::test_util::{screenshot_path, write_png};
     use crate::ui;
 
     struct Offscreen(Rc<MinimalSoftwareWindow>);
@@ -323,21 +323,6 @@ mod screenshots {
         fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
             Ok(self.0.clone())
         }
-    }
-
-    fn write_png(path: &Path, width: u32, height: u32, pixels: &[PremultipliedRgbaColor]) {
-        let file = std::fs::File::create(path).expect("screenshot file");
-        let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let bytes: Vec<u8> = pixels
-            .iter()
-            .flat_map(|p| [p.red, p.green, p.blue, p.alpha])
-            .collect();
-        encoder
-            .write_header()
-            .and_then(|mut w| w.write_image_data(&bytes))
-            .expect("PNG written");
     }
 
     /// Renders each Settings page with the software renderer, for reviewing the layout without
@@ -363,15 +348,18 @@ mod screenshots {
         ui.show().expect("shown");
         window.set_size(PhysicalSize::new(width, height));
 
-        let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/screenshots");
-        std::fs::create_dir_all(&out).expect("screenshot dir");
         let render = |name: &str| {
             window.request_redraw();
             let mut pixels = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
             window.draw_if_needed(|renderer| {
                 renderer.render(&mut pixels, width as usize);
             });
-            write_png(&out.join(format!("{name}.png")), width, height, &pixels);
+            // The window is opaque, so premultiplied and straight alpha agree.
+            let rgba: Vec<u8> = pixels
+                .iter()
+                .flat_map(|p| [p.red, p.green, p.blue, p.alpha])
+                .collect();
+            write_png(&screenshot_path(name), width, height, &rgba);
         };
         let state = ui.global::<ui::SettingsState>();
         for (index, page) in super::model::PAGES.iter().enumerate() {

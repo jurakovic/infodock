@@ -1,10 +1,12 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+pub mod image;
 pub mod instance;
 mod menu;
 mod monitors;
-mod render;
+pub mod render;
+pub mod text;
 mod tray;
 pub mod window;
 
@@ -14,7 +16,7 @@ use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::core::{PCWSTR, w};
 
-use super::{Capabilities, MonitorInfo, OsAppearance, Platform};
+use super::{Capabilities, Color, MonitorInfo, OsAppearance, Platform};
 
 pub struct WindowsPlatform;
 
@@ -33,10 +35,17 @@ impl Platform for WindowsPlatform {
     fn appearance(&self) -> OsAppearance {
         const PERSONALIZE: PCWSTR =
             w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        const DWM: PCWSTR = w!(r"Software\Microsoft\Windows\DWM");
+        let defaults = OsAppearance::default();
         OsAppearance {
             // Missing values: apps use light mode and transparency is on (the OS defaults).
             dark: read_dword(PERSONALIZE, w!("AppsUseLightTheme")).is_some_and(|v| v == 0),
             transparency: read_dword(PERSONALIZE, w!("EnableTransparency")).is_none_or(|v| v != 0),
+            // The accent colour as 0xAABBGGRR.
+            accent: read_dword(DWM, w!("AccentColor")).map_or(defaults.accent, |v| {
+                let [r, g, b, _] = v.to_le_bytes();
+                Color::rgba(r, g, b, 1.0)
+            }),
         }
     }
 }

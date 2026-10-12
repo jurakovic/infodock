@@ -2,39 +2,22 @@
 //! combined into the values all bar drawing reads.
 
 use crate::config::model::{
-    BackgroundColorMode, FontStyle, Material, Settings, Theme as ThemeId, ThemeDefaults,
+    BackgroundColorMode, InactiveMode, Material, Settings, Theme as ThemeId, ThemeDefaults,
 };
-use crate::platform::{Color, OsAppearance};
+use crate::platform::{Color, Font, OsAppearance};
 
 /// Modern theme in OS light mode, when the user has not customised colours (SPEC §12.2).
 const LIGHT_BAR_BACKGROUND: Color = Color::rgba(0xF3, 0xF3, 0xF3, 1.0);
 const LIGHT_SENSOR_TEXT: Color = Color::rgba(0x1A, 0x1A, 0x1A, 1.0);
 const DEFAULT_TEXT_COLOR: &str = "#FFFFFF";
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Font {
-    pub family: String,
-    /// CSS-style weight: 400 normal, 600 semibold, 700 bold.
-    pub weight: u16,
-    pub italic: bool,
-}
-
-impl Font {
-    fn new(family: &str, style: FontStyle) -> Self {
-        let (weight, italic) = match style {
-            FontStyle::Normal => (400, false),
-            FontStyle::Semibold => (600, false),
-            FontStyle::Bold => (700, false),
-            FontStyle::Italic => (400, true),
-            FontStyle::SemiboldItalic => (600, true),
-            FontStyle::BoldItalic => (700, true),
-        };
-        Self {
-            family: family.to_owned(),
-            weight,
-            italic,
-        }
-    }
+/// How inactive sensors draw their icon or graphic (SPEC §8.5).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Inactive {
+    /// Drawn with this opacity (0–1).
+    Opacity(f32),
+    /// Tinted with this colour.
+    Colorize(Color),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,8 +46,9 @@ pub struct Theme {
     pub popup_font_size: f32,
     pub popup_radius: f32,
     pub popup_shadow: bool,
-    pub inactive_opacity: f32,
-    pub inactive_color: Color,
+    /// Focus ring and drop placer (SPEC §6.2, §14.4).
+    pub accent: Color,
+    pub inactive: Inactive,
 }
 
 /// A configured `#RRGGBB`, or `fallback` if it does not parse (settings are sanitised on load).
@@ -88,13 +72,13 @@ impl Theme {
         let theme_background = if light {
             LIGHT_BAR_BACKGROUND
         } else {
-            color(&d.background_color, Color::rgba(0, 0, 0, 1.0))
+            color(&d.background_color, Color::BLACK)
         };
         let background = match (s.background.color_mode, &s.background.color) {
             (BackgroundColorMode::Custom, Some(c)) => color(c, theme_background),
             _ => theme_background,
         };
-        let white = Color::rgba(255, 255, 255, 1.0);
+        let white = Color::WHITE;
         let sensor_text = if light {
             LIGHT_SENSOR_TEXT
         } else {
@@ -136,7 +120,7 @@ impl Theme {
             small_size: if modern { 10.0 } else { 9.0 },
             medium_size: 11.0,
             large_size: 15.0,
-            popup_background: color(popup_background, Color::rgba(0, 0, 0, 1.0))
+            popup_background: color(popup_background, Color::BLACK)
                 .with_alpha(percent(s.popups.opacity.unwrap_or(d.popup_opacity))),
             popup_text: color(&s.popups.text_color, white),
             popup_strong_text: color(&s.popups.strong_text_color, white),
@@ -147,11 +131,14 @@ impl Theme {
             popup_font_size: s.popups.font_size as f32,
             popup_radius: if modern { 8.0 } else { 6.0 },
             popup_shadow: s.popups.shadow,
-            inactive_opacity: percent(s.sensors.inactive_opacity),
-            inactive_color: color(
-                &s.sensors.inactive_color,
-                Color::rgba(0x55, 0x55, 0x55, 1.0),
-            ),
+            accent: os.accent,
+            inactive: match s.sensors.inactive_mode {
+                InactiveMode::Opacity => Inactive::Opacity(percent(s.sensors.inactive_opacity)),
+                InactiveMode::Colorize => Inactive::Colorize(color(
+                    &s.sensors.inactive_color,
+                    Color::rgba(0x55, 0x55, 0x55, 1.0),
+                )),
+            },
         }
     }
 }
@@ -159,14 +146,18 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::model::FontStyle;
 
+    const ACCENT: Color = Color::rgba(0x00, 0x78, 0xD4, 1.0);
     const DARK: OsAppearance = OsAppearance {
         dark: true,
         transparency: true,
+        accent: ACCENT,
     };
     const LIGHT: OsAppearance = OsAppearance {
         dark: false,
         transparency: true,
+        accent: ACCENT,
     };
 
     fn hex(s: &str) -> Color {
@@ -190,7 +181,8 @@ mod tests {
         assert_eq!(t.popup_background, hex("#202024").with_alpha(0.92));
         assert_eq!(t.popup_radius, 8.0);
         assert_eq!(t.gap, 10.0);
-        assert_eq!(t.inactive_opacity, 0.78);
+        assert_eq!(t.accent, ACCENT);
+        assert_eq!(t.inactive, Inactive::Opacity(0.78));
     }
 
     #[test]
@@ -275,10 +267,33 @@ mod tests {
     }
 
     #[test]
+    fn inactive_style() {
+        let mut s = Settings::default();
+        s.sensors.inactive_mode = InactiveMode::Colorize;
+        s.sensors.inactive_color = "#123456".into();
+        assert_eq!(
+            Theme::resolve(&s, DARK).inactive,
+            Inactive::Colorize(hex("#123456"))
+        );
+    }
+
+    #[test]
+    fn follows_the_accent_colour() {
+        let os = OsAppearance {
+            accent: hex("#E81123"),
+            ..DARK
+        };
+        assert_eq!(
+            Theme::resolve(&Settings::default(), os).accent,
+            hex("#E81123")
+        );
+    }
+
+    #[test]
     fn no_material_without_transparency_effects() {
         let os = OsAppearance {
-            dark: true,
             transparency: false,
+            ..DARK
         };
         assert_eq!(
             Theme::resolve(&Settings::default(), os).material,

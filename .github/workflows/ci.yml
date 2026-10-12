@@ -72,7 +72,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Unit tests
         run: cargo test
-      # Includes rendering the Settings pages to target/screenshots.
+      # Includes rendering the Settings pages and the bar to target/screenshots.
       - name: Windows integration tests
         run: cargo test -- --ignored
       - name: Build release
@@ -97,7 +97,7 @@ jobs:
           retention-days: 30
       - uses: actions/upload-artifact@v6
         with:
-          name: infodock-settings-screenshots
+          name: infodock-screenshots
           path: target/screenshots
           if-no-files-found: ignore
           retention-days: 14

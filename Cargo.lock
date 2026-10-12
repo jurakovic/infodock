@@ -2196,6 +2196,7 @@ dependencies = [
  "global-hotkey",
  "png",
  "raw-window-handle",
+ "resvg",
  "serde",
  "serde_json",
  "slint",
@@ -2207,6 +2208,7 @@ dependencies = [
  "tracing-subscriber",
  "window-vibrancy",
  "windows",
+ "windows-numerics",
 ]
 
 [[package]]

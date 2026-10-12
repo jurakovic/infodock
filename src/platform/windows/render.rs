@@ -1,34 +1,53 @@
 //! The bar renderer (SPEC §4.6): Direct2D with a software render target, drawing into a
-//! premultiplied 32-bit DIB section. Software rendering keeps the GPU driver out of the process;
-//! a bar-sized frame is cheap to rasterise on the CPU. The caller presents the DIB: the bar
-//! copies it to its DWM-composited window, layered popups pass it to `UpdateLayeredWindow`.
+//! premultiplied 32-bit DIB section, with DirectWrite text in grayscale antialiasing (the
+//! background is transparent). Software rendering keeps the GPU driver out of the process; a
+//! bar-sized frame is cheap to rasterise on the CPU. The caller presents the DIB: the bar copies
+//! it to its DWM-composited window, layered popups pass it to `UpdateLayeredWindow`, and
+//! [`render_offscreen`] copies it into a [`Bitmap`].
 
+use std::cell::RefCell;
 use std::ffi::c_void;
-use std::mem::size_of;
+use std::mem::{ManuallyDrop, size_of};
+use std::sync::{Arc, Weak};
 
 use windows::Win32::Foundation::{D2DERR_RECREATE_TARGET, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
+    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE, D2D1CreateFactory,
-    ID2D1DCRenderTarget, ID2D1Factory, ID2D1SolidColorBrush,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+    D2D1_BITMAP_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAMMA_2_2,
+    D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap,
+    ID2D1Brush, ID2D1DCRenderTarget, ID2D1Factory, ID2D1Geometry, ID2D1Layer, ID2D1SolidColorBrush,
+    ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS,
-    DeleteDC, DeleteObject, HBITMAP, HDC, HGDIOBJ, SelectObject,
+    DeleteDC, DeleteObject, GdiFlush, HBITMAP, HDC, HGDIOBJ, SelectObject,
 };
 use windows::core::Result;
+use windows_numerics::{Matrix3x2, Vector2};
 
-use crate::platform::{Canvas, Color, RectF};
+use super::text::DwLayout;
+use crate::platform::{
+    Bitmap, Brush, Canvas, Color, PlatformError, PointF, RectF, Shape, TextLayout,
+};
+
+/// Bitmaps uploaded to a render target are kept for this many distinct bitmaps.
+const BITMAP_CACHE: usize = 64;
 
 /// A memory DC with a top-down 32-bit DIB selected into it.
 struct Surface {
     dc: HDC,
     bitmap: HBITMAP,
     previous: HGDIOBJ,
+    /// The DIB's pixels: premultiplied BGRA, top-down rows of `width` pixels.
+    bits: *const u8,
     width: i32,
     height: i32,
 }
@@ -65,10 +84,20 @@ impl Surface {
                 dc,
                 bitmap,
                 previous,
+                bits: bits.cast(),
                 width,
                 height,
             })
         }
+    }
+
+    /// The frame as premultiplied RGBA.
+    fn to_bitmap(&self) -> Option<Bitmap> {
+        let len = self.width as usize * self.height as usize * 4;
+        // SAFETY: the DIB holds `len` bytes while the surface lives; GDI has finished writing
+        // to it (the caller flushed).
+        let bgra = unsafe { std::slice::from_raw_parts(self.bits, len) };
+        Bitmap::from_premultiplied(self.width as u32, self.height as u32, swap_red_blue(bgra))
     }
 }
 
@@ -83,10 +112,26 @@ impl Drop for Surface {
     }
 }
 
+/// RGBA ↔ BGRA.
+fn swap_red_blue(pixels: &[u8]) -> Vec<u8> {
+    let mut out = pixels.to_vec();
+    for px in out.as_chunks_mut::<4>().0 {
+        px.swap(0, 2);
+    }
+    out
+}
+
+/// A bitmap uploaded to the render target, while its pixels are alive.
+struct CachedBitmap {
+    pixels: Weak<[u8]>,
+    bitmap: ID2D1Bitmap,
+}
+
 /// Device-dependent resources; re-created together when Direct2D asks for it.
 struct Target {
     target: ID2D1DCRenderTarget,
     brush: ID2D1SolidColorBrush,
+    bitmaps: RefCell<Vec<CachedBitmap>>,
 }
 
 impl Target {
@@ -105,8 +150,14 @@ impl Target {
         // SAFETY: plain COM calls with initialised arguments.
         unsafe {
             let target = factory.CreateDCRenderTarget(&properties)?;
+            // ClearType needs an opaque background; the bar's is translucent.
+            target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             let brush = target.CreateSolidColorBrush(&color_f(Color::TRANSPARENT), None)?;
-            Ok(Self { target, brush })
+            Ok(Self {
+                target,
+                brush,
+                bitmaps: RefCell::new(Vec::new()),
+            })
         }
     }
 }
@@ -154,6 +205,10 @@ impl Renderer {
             Some(target) => target,
             empty => empty.insert(Target::new(&self.factory)?),
         };
+        target
+            .bitmaps
+            .borrow_mut()
+            .retain(|cached| cached.pixels.strong_count() > 0);
         let rect = RECT {
             left: 0,
             top: 0,
@@ -167,10 +222,14 @@ impl Renderer {
             target.target.SetDpi(dpi, dpi);
             target.target.BeginDraw();
             target.target.Clear(Some(&color_f(Color::TRANSPARENT)));
-            paint(&mut D2dCanvas {
-                target: &target.target,
-                brush: &target.brush,
-            });
+            let mut canvas = D2dCanvas {
+                factory: &self.factory,
+                target,
+                scale,
+                stack: Vec::new(),
+            };
+            paint(&mut canvas);
+            canvas.pop_all();
             target.target.EndDraw(None, None)
         };
         match result {
@@ -183,6 +242,32 @@ impl Renderer {
             }
         }
     }
+}
+
+/// Renders `width`×`height` physical px at `scale` into a bitmap, e.g. for previews and the
+/// screenshots CI publishes (SPEC §12.4, §16).
+pub fn render_offscreen(
+    width: u32,
+    height: u32,
+    scale: f32,
+    paint: &mut dyn FnMut(&mut dyn Canvas),
+) -> std::result::Result<Bitmap, PlatformError> {
+    let os = |e: windows::core::Error| PlatformError::Os(format!("rendering failed: {e}"));
+    let (width, height) = (
+        i32::try_from(width).map_err(|_| PlatformError::Os("too wide".into()))?,
+        i32::try_from(height).map_err(|_| PlatformError::Os("too tall".into()))?,
+    );
+    let mut renderer = Renderer::new().map_err(os)?;
+    renderer
+        .draw(width, height, scale, |canvas| paint(canvas))
+        .map_err(os)?;
+    // SAFETY: waits for GDI to finish writing to the DIB.
+    let _ = unsafe { GdiFlush() };
+    renderer
+        .surface
+        .as_ref()
+        .and_then(Surface::to_bitmap)
+        .ok_or_else(|| PlatformError::Os("no frame was rendered".into()))
 }
 
 fn color_f(c: Color) -> D2D1_COLOR_F {
@@ -203,17 +288,282 @@ fn rect_f(r: RectF) -> D2D_RECT_F {
     }
 }
 
+fn point(p: PointF) -> Vector2 {
+    Vector2 { X: p.x, Y: p.y }
+}
+
+/// What [`Canvas::pop`] ends.
+enum Pushed {
+    Clip,
+    Layer,
+}
+
 struct D2dCanvas<'a> {
-    target: &'a ID2D1DCRenderTarget,
-    brush: &'a ID2D1SolidColorBrush,
+    factory: &'a ID2D1Factory,
+    target: &'a Target,
+    scale: f32,
+    stack: Vec<Pushed>,
+}
+
+impl D2dCanvas<'_> {
+    /// A Direct2D brush for `brush`; `None` if it cannot be created.
+    fn brush(&self, brush: &Brush) -> Option<ID2D1Brush> {
+        match brush {
+            Brush::Solid(color) => {
+                // SAFETY: plain setter on the target's own brush.
+                unsafe { self.target.brush.SetColor(&color_f(*color)) };
+                Some(self.target.brush.clone().into())
+            }
+            Brush::Linear { start, end, stops } => {
+                let stops: Vec<D2D1_GRADIENT_STOP> = stops
+                    .iter()
+                    .map(|s| D2D1_GRADIENT_STOP {
+                        position: s.offset,
+                        color: color_f(s.color),
+                    })
+                    .collect();
+                let properties = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+                    startPoint: point(*start),
+                    endPoint: point(*end),
+                };
+                // SAFETY: plain resource creation on the target in use.
+                let created = unsafe {
+                    self.target
+                        .target
+                        .CreateGradientStopCollection(
+                            &stops,
+                            D2D1_GAMMA_2_2,
+                            D2D1_EXTEND_MODE_CLAMP,
+                        )
+                        .and_then(|collection| {
+                            self.target.target.CreateLinearGradientBrush(
+                                &properties,
+                                None,
+                                &collection,
+                            )
+                        })
+                };
+                created.ok().map(Into::into)
+            }
+        }
+    }
+
+    fn polygon(&self, points: &[PointF]) -> Option<ID2D1Geometry> {
+        let (first, rest) = points.split_first()?;
+        let rest: Vec<Vector2> = rest.iter().copied().map(point).collect();
+        // SAFETY: plain geometry construction; the sink is closed before use.
+        let created = unsafe {
+            self.factory.CreatePathGeometry().and_then(|geometry| {
+                let sink = geometry.Open()?;
+                sink.BeginFigure(point(*first), D2D1_FIGURE_BEGIN_FILLED);
+                sink.AddLines(&rest);
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                sink.Close()?;
+                Ok(geometry)
+            })
+        };
+        created.ok().map(Into::into)
+    }
+
+    /// The Direct2D bitmap for `bitmap`, uploaded on first use.
+    fn upload(&self, bitmap: &Bitmap) -> Option<ID2D1Bitmap> {
+        let pixels = bitmap.shared_pixels();
+        let mut cache = self.target.bitmaps.borrow_mut();
+        if let Some(cached) = cache
+            .iter()
+            .find(|c| std::ptr::addr_eq(c.pixels.as_ptr(), Arc::as_ptr(pixels)))
+        {
+            return Some(cached.bitmap.clone());
+        }
+        let bgra = swap_red_blue(bitmap.pixels());
+        let properties = D2D1_BITMAP_PROPERTIES {
+            pixelFormat: D2D1_PIXEL_FORMAT {
+                format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+            },
+            dpiX: 96.0,
+            dpiY: 96.0,
+        };
+        let size = D2D_SIZE_U {
+            width: bitmap.width(),
+            height: bitmap.height(),
+        };
+        // SAFETY: `bgra` holds `height` rows of `width × 4` bytes for the duration of the call.
+        let uploaded = unsafe {
+            self.target.target.CreateBitmap(
+                size,
+                Some(bgra.as_ptr().cast()),
+                bitmap.width() * 4,
+                &properties,
+            )
+        }
+        .ok()?;
+        if cache.len() >= BITMAP_CACHE {
+            cache.remove(0);
+        }
+        cache.push(CachedBitmap {
+            pixels: Arc::downgrade(pixels),
+            bitmap: uploaded.clone(),
+        });
+        Some(uploaded)
+    }
+
+    fn pop_all(&mut self) {
+        while !self.stack.is_empty() {
+            self.pop();
+        }
+    }
 }
 
 impl Canvas for D2dCanvas<'_> {
-    fn fill_rect(&mut self, rect: RectF, color: Color) {
-        // SAFETY: called between BeginDraw and EndDraw on the target that owns the brush.
+    fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    fn fill(&mut self, shape: &Shape, brush: &Brush) {
+        let Some(brush) = self.brush(brush) else {
+            return;
+        };
+        let target = &self.target.target;
+        // SAFETY: drawing calls between BeginDraw and EndDraw with resources of this target.
         unsafe {
-            self.brush.SetColor(&color_f(color));
-            self.target.FillRectangle(&rect_f(rect), self.brush);
+            match shape {
+                Shape::Rect(rect) => target.FillRectangle(&rect_f(*rect), &brush),
+                Shape::RoundedRect { rect, radius } => target.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: rect_f(*rect),
+                        radiusX: *radius,
+                        radiusY: *radius,
+                    },
+                    &brush,
+                ),
+                Shape::Polygon(points) => {
+                    if let Some(geometry) = self.polygon(points) {
+                        target.FillGeometry(&geometry, &brush, None::<&ID2D1Brush>);
+                    }
+                }
+            }
+        }
+    }
+
+    fn stroke(&mut self, shape: &Shape, brush: &Brush, width: f32) {
+        let Some(brush) = self.brush(brush) else {
+            return;
+        };
+        let target = &self.target.target;
+        let plain = None::<&ID2D1StrokeStyle>;
+        // SAFETY: drawing calls between BeginDraw and EndDraw with resources of this target.
+        unsafe {
+            match shape {
+                Shape::Rect(rect) => target.DrawRectangle(&rect_f(*rect), &brush, width, plain),
+                Shape::RoundedRect { rect, radius } => target.DrawRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: rect_f(*rect),
+                        radiusX: *radius,
+                        radiusY: *radius,
+                    },
+                    &brush,
+                    width,
+                    plain,
+                ),
+                Shape::Polygon(points) => {
+                    if let Some(geometry) = self.polygon(points) {
+                        target.DrawGeometry(&geometry, &brush, width, plain);
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_line(&mut self, from: PointF, to: PointF, brush: &Brush, width: f32) {
+        if let Some(brush) = self.brush(brush) {
+            // SAFETY: a drawing call between BeginDraw and EndDraw.
+            unsafe {
+                self.target.target.DrawLine(
+                    point(from),
+                    point(to),
+                    &brush,
+                    width,
+                    None::<&ID2D1StrokeStyle>,
+                );
+            }
+        }
+    }
+
+    fn draw_text(&mut self, layout: &TextLayout, origin: PointF, color: Color) {
+        let Some(DwLayout(layout)) = layout.inner::<DwLayout>() else {
+            return;
+        };
+        // SAFETY: drawing calls between BeginDraw and EndDraw with this target's brush.
+        unsafe {
+            self.target.brush.SetColor(&color_f(color));
+            self.target.target.DrawTextLayout(
+                point(origin),
+                layout,
+                &self.target.brush,
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+            );
+        }
+    }
+
+    fn draw_bitmap(&mut self, bitmap: &Bitmap, dest: RectF, opacity: f32) {
+        if let Some(uploaded) = self.upload(bitmap) {
+            // SAFETY: a drawing call between BeginDraw and EndDraw with a bitmap of this target.
+            unsafe {
+                self.target.target.DrawBitmap(
+                    &uploaded,
+                    Some(&rect_f(dest)),
+                    opacity.clamp(0.0, 1.0),
+                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    None,
+                );
+            }
+        }
+    }
+
+    fn push_clip(&mut self, rect: RectF) {
+        // SAFETY: balanced by `pop`, or by `pop_all` at the end of the frame.
+        unsafe {
+            self.target
+                .target
+                .PushAxisAlignedClip(&rect_f(rect), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        }
+        self.stack.push(Pushed::Clip);
+    }
+
+    fn push_opacity(&mut self, opacity: f32) {
+        let parameters = D2D1_LAYER_PARAMETERS {
+            contentBounds: D2D_RECT_F {
+                left: f32::MIN,
+                top: f32::MIN,
+                right: f32::MAX,
+                bottom: f32::MAX,
+            },
+            geometricMask: ManuallyDrop::new(None),
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(),
+            opacity: opacity.clamp(0.0, 1.0),
+            opacityBrush: ManuallyDrop::new(None),
+            layerOptions: D2D1_LAYER_OPTIONS_NONE,
+        };
+        // SAFETY: balanced by `pop`, or by `pop_all` at the end of the frame. Without a layer
+        // object Direct2D manages one itself (Windows 8 and later).
+        unsafe {
+            self.target
+                .target
+                .PushLayer(&parameters, None::<&ID2D1Layer>)
+        };
+        self.stack.push(Pushed::Layer);
+    }
+
+    fn pop(&mut self) {
+        // SAFETY: undoes the matching push.
+        unsafe {
+            match self.stack.pop() {
+                Some(Pushed::Clip) => self.target.target.PopAxisAlignedClip(),
+                Some(Pushed::Layer) => self.target.target.PopLayer(),
+                None => {}
+            }
         }
     }
 }

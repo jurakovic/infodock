@@ -24,6 +24,8 @@ pub mod i18n;
 mod logging;
 pub mod platform;
 mod settings;
+#[cfg(test)]
+mod test_util;
 
 /// The Slint UI compiled from `ui/app.slint`.
 mod ui {

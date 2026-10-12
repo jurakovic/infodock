@@ -40,6 +40,8 @@ slint = { version = "1.18", default-features = false, features = [
     "unstable-winit-030",
 ] }
 global-hotkey = "0.8"
+# SVG icons and images (SPEC §3). Slint links the same version; its text feature is Slint's.
+resvg = { version = "0.48", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 fastrand = "2"
@@ -51,14 +53,18 @@ tracing-appender = "0.2"
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"
 window-vibrancy = "0.8"
+# Points and matrices of the Direct2D API; the version the `windows` crate uses.
+windows-numerics = "0.3"
 windows = { version = "0.62", features = [
     "Win32_Devices_Display",
     "Win32_Foundation",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
     "Win32_Security",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",

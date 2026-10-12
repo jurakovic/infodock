@@ -115,7 +115,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 |---|---|---|
 | Core language | **Rust** (stable, edition 2024) | |
 | Bar, hints, popups | **Native Win32 windows** owned by the core, drawn with **Direct2D** + **DirectWrite** (software render target, §4.6), images decoded with **WIC** | No browser engine. Everything is drawn by Infodock's own renderer (§8.3) |
-| SVG assets | `resvg` (rasterises the Infodock icon set and user SVG images to bitmaps, cached per size) | Built without its text feature |
+| SVG assets | `resvg` (rasterises the Infodock icon set and user SVG images to bitmaps, cached per size) | Infodock does not use its text feature (Slint, which links the same version, enables it); images referenced by path inside an SVG are not loaded |
 | Windows API | `windows` crate (Win32: Shell, UI.Shell, UI.WindowsAndMessaging, UI.Input.KeyboardAndMouse, UI.Accessibility, Graphics.Gdi, Graphics.Dwm, Graphics.Direct2D, Graphics.DirectWrite, Graphics.Imaging, System.Com, System.Ole, Media.Audio, Globalization, NetworkManagement.IpHelper, NetworkManagement.WiFi, System.Performance (PDH), System.Power, System.Shutdown, System.RemoteDesktop, Devices.DeviceAndDriverInstallation, Storage.FileSystem) | |
 | Settings window | **Slint 1.x** (winit backend, software renderer, Fluent style, AccessKit), UI in `.slint` files compiled by `build.rs`; pin exact versions in the lockfile | Event loop on the main thread. Settings is created when opened and dropped when closed. Licence: Slint Royalty-free 2.0, which requires the Slint attribution badge where the app is downloaded (README) or `AboutSlint` in the About page |
 | Global hotkey | `global-hotkey` | |
@@ -192,12 +192,16 @@ src/
     <type>.rs               one module per sensor type (text.rs, image.rs, cpu_graph.rs …)
   platform/
     mod.rs                  traits (§4.6)
-    canvas.rs               colours, rectangles and the Canvas trait (§4.6)
+    canvas.rs               colours, rectangles, brushes, shapes and the Canvas trait (§4.6)
+    text.rs                 fonts, text styles, TextLayout and the TextEngine trait
+    bitmap.rs               Bitmap (premultiplied RGBA), format sniffing, SVG via resvg, tint (§12.3)
+    recording.rs            recording canvas and fixed-metrics text engine (tests on every OS, stub)
     geometry.rs             pure placement math: docking strips, monitor selection
     windows/                window.rs (window classes, message loop, input → events), appbar.rs,
                             instance.rs (single-instance lock, known folders), tray.rs
                             (notification-area icon),
-                            monitors.rs, render.rs (Direct2D/DirectWrite/WIC canvas), menu.rs
+                            monitors.rs, render.rs (Direct2D canvas), text.rs (DirectWrite),
+                            image.rs (WIC decoding), menu.rs
                             (TrackPopupMenuEx), dialog.rs (TaskDialogIndirect), droptarget.rs
                             (IDropTarget), uia.rs (UI Automation provider), shell.rs (ShellExecuteEx,
                             IFileOperation, known folders, .lnk/.url), icons.rs (shell icons → bitmaps),
@@ -279,7 +283,12 @@ UI services, used only on the bar thread (not `Send`):
 * **AppBar**: attached to the bar window (`attach_appbar(window, sink) → AppBar`), because it needs that window and its thread.
 * **Accessibility**: a UI Automation provider for the bar (§14.4).
 
-On Windows the canvas is Direct2D with a **software** render target drawing into a premultiplied 32-bit bitmap, with DirectWrite text (grayscale antialiasing, since the background is transparent). A full 28 px bar is cheap to rasterise on the CPU, and no GPU driver is loaded into the process. Presentation: the bar copies the bitmap to its DWM-composited window; hint and popup use `UpdateLayeredWindow`. The stub platform records canvas calls with fixed text metrics, so layout and rendering are unit-testable on any OS.
+On Windows the canvas is Direct2D with a **software** render target drawing into a premultiplied 32-bit bitmap, with DirectWrite text (grayscale antialiasing, since the background is transparent). A full 28 px bar is cheap to rasterise on the CPU, and no GPU driver is loaded into the process. Presentation: the bar copies the bitmap to its DWM-composited window; hint and popup use `UpdateLayeredWindow`; `render_offscreen` returns it as a `Bitmap` (skin previews, CI screenshots). A recording canvas with a fixed-metrics text engine records draw calls, so layout and rendering are unit-testable on any OS; the stub platform uses it as its renderer.
+
+Implementation notes:
+* **Text** is laid out by a `TextEngine` (DirectWrite on Windows), separate from the canvas, because sensors measure (§8.1 `measure`) outside drawing. A `TextLayout` carries its size and first baseline and is drawn with `draw_text`. A font family that is not installed falls back to Segoe UI (Segoe UI Variable exists from Windows 11 on).
+* **Bitmaps** are premultiplied RGBA in shared memory, so worker threads can decode them. Only the formats above are decoded, recognised by their first bytes, so third-party WIC codecs never see Infodock's files; decoding to a requested height scales with high-quality filtering (an `.ico` picks its closest frame). The renderer uploads each bitmap once and keeps it while the bitmap lives.
+* **Clips and opacity layers** are pushed and popped; layers still open at the end of a frame are closed.
 
 `per_core_cpu` means per-processor counters can be read. It does not depend on the number of logical processors: a single-processor system still has it.
 
@@ -1258,13 +1267,13 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 
 ### 12.1 Theme model
 
-The bar thread resolves a `Theme` (`bar/theme.rs`) from the theme defaults (`ThemeDefaults`), the user's settings and the OS appearance (light/dark, accent colour, transparency effects), and re-resolves it when any of them changes. All drawing reads from it:
+The bar thread resolves a `Theme` (`bar/theme.rs`) from the theme defaults (`ThemeDefaults`), the user's settings and the OS appearance (light/dark, accent colour, transparency effects; on Windows from `HKCU\…\Themes\Personalize` and `HKCU\…\DWM\AccentColor`), and re-resolves it when any of them changes. All drawing reads from it:
 
 ```
 bar height, background colour and opacity, edge padding (7), gap,
 sensor text colour, sensor font family / weight / style, small (10|9), medium (11) and large (15) sizes,
 popup background / opacity / text colour / strong colour / font / size / radius (8|6) / shadow,
-accent colour, inactive opacity and colour, hairline colour
+accent colour, inactive style (opacity or colour, §8.5), hairline colour
 ```
 
 Settings has its own look (§4.3) and does not use the bar theme, except for skin previews rendered by the bar renderer (`skin_preview`).

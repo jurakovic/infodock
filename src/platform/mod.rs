@@ -5,21 +5,27 @@
 //! The spec's `Shell`, `Icons`, `Power`, `Devices` and `Locale` traits are added with the
 //! milestones that need them (M2–M3).
 
+pub mod bitmap;
 pub mod canvas;
 pub mod geometry;
+pub mod recording;
 #[cfg(not(windows))]
 mod stub;
+pub mod text;
 #[cfg(windows)]
 mod windows;
 
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use serde::Serialize;
 
 use crate::config::model::{BarMode, Edge, Material, Settings, ZOrder};
-pub use canvas::{Canvas, Color, RectF, SizeF};
+pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
+pub use canvas::{Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF};
 pub use geometry::{MonitorInfo, Rect};
+pub use text::{Font, TextEngine, TextLayout, TextStyle};
 
 /// Which sensors and features exist on this system (SPEC §4.6). Flags turn on as their
 /// implementations land.
@@ -36,13 +42,15 @@ pub struct Capabilities {
     pub per_core_cpu: bool,
 }
 
-/// The OS appearance settings the bar follows (SPEC §10.3, §12.2).
+/// The OS appearance settings the bar follows (SPEC §10.3, §12.1–12.2).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OsAppearance {
     /// Apps use dark mode.
     pub dark: bool,
     /// "Transparency effects" is on; materials are disabled while it is off.
     pub transparency: bool,
+    /// The user's accent colour.
+    pub accent: Color,
 }
 
 impl Default for OsAppearance {
@@ -50,6 +58,8 @@ impl Default for OsAppearance {
         Self {
             dark: true,
             transparency: true,
+            // The Windows default accent.
+            accent: Color::rgba(0x00, 0x78, 0xD4, 1.0),
         }
     }
 }
@@ -139,6 +149,52 @@ pub fn current() -> Arc<dyn Platform> {
     return Arc::new(windows::WindowsPlatform);
     #[cfg(not(windows))]
     return Arc::new(stub::StubPlatform);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Drawing: text and images (SPEC §4.6)
+// ---------------------------------------------------------------------------------------------
+
+/// The text engine for this thread's windows: DirectWrite on Windows, fixed metrics elsewhere.
+pub fn text_engine() -> Rc<dyn TextEngine> {
+    #[cfg(windows)]
+    match windows::text::DirectWrite::new() {
+        Ok(engine) => return Rc::new(engine),
+        Err(e) => tracing::error!("text rendering is unavailable: {e}"),
+    }
+    Rc::new(recording::FixedMetrics)
+}
+
+/// Decodes a raster image (everything but SVG); see [`decode_image`].
+fn decode_raster(
+    bytes: &[u8],
+    format: bitmap::ImageFormat,
+    height: Option<u32>,
+) -> Result<Bitmap, ImageError> {
+    #[cfg(windows)]
+    return windows::image::decode(bytes, format, height);
+    #[cfg(not(windows))]
+    {
+        let _ = (bytes, format, height);
+        Err(ImageError::Unsupported)
+    }
+}
+
+/// Renders `width`×`height` physical px at `scale` with the bar's renderer, e.g. for previews
+/// and the screenshots CI publishes (SPEC §12.4, §16). Windows only for now.
+pub fn render_offscreen(
+    width: u32,
+    height: u32,
+    scale: f32,
+    paint: &mut dyn FnMut(&mut dyn Canvas),
+) -> Result<Bitmap, PlatformError> {
+    #[cfg(windows)]
+    return windows::render::render_offscreen(width, height, scale, paint);
+    #[cfg(not(windows))]
+    {
+        let _ = (width, height, scale, paint);
+        Err(PlatformError::Os("no renderer on this OS".into()))
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

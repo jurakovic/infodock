@@ -4,13 +4,12 @@
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
+use super::paint::paint_bar;
 use super::theme::Theme;
 use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
-use crate::config::model::{Edge, Material, Settings};
-use crate::platform::{
-    BarHandler, BarWindow, Canvas, OsAppearance, Platform, RectF, SizeF, UiEvent,
-};
+use crate::config::model::{Material, Settings};
+use crate::platform::{BarHandler, BarWindow, Canvas, OsAppearance, Platform, SizeF, UiEvent};
 
 pub(super) struct BarLogic {
     settings: Settings,
@@ -129,14 +128,6 @@ impl BarHandler for BarLogic {
     }
 
     fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF) {
-        canvas.fill_rect(RectF::from_size(size), self.theme.bar_background);
-        if let Some(hairline) = self.theme.hairline {
-            // On the edge facing the screen centre (SPEC §12.2).
-            let top = match self.settings.bar.edge {
-                Edge::Bottom => 0.0,
-                Edge::Top => size.height - 1.0,
-            };
-            canvas.fill_rect(RectF::new(0.0, top, size.width, top + 1.0), hairline);
-        }
+        paint_bar(canvas, size, &self.theme, self.settings.bar.edge);
     }
 }

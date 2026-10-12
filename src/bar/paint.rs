@@ -1,0 +1,390 @@
+//! Drawing the bar (SPEC §5.5, §12). Sensors arrive in M1 S4; until then the bar is its
+//! background and hairline.
+
+use super::theme::Theme;
+use crate::config::model::Edge;
+use crate::platform::{Canvas, RectF, SizeF};
+
+/// Draws the bar's background into a cleared canvas of `size` logical px.
+pub(super) fn paint_bar(canvas: &mut dyn Canvas, size: SizeF, theme: &Theme, edge: Edge) {
+    canvas.fill_rect(RectF::from_size(size), theme.bar_background);
+    if let Some(hairline) = theme.hairline {
+        // One px on the edge facing the screen centre (SPEC §12.2), whole physical px thick.
+        let thickness = canvas.snap(1.0).max(1.0 / canvas.scale());
+        let top = match edge {
+            Edge::Bottom => 0.0,
+            Edge::Top => size.height - thickness,
+        };
+        canvas.fill_rect(RectF::new(0.0, top, size.width, top + thickness), hairline);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::model::{Settings, Theme as ThemeId};
+    use crate::platform::recording::RecordingCanvas;
+    use crate::platform::{Color, OsAppearance};
+
+    #[test]
+    fn modern_bar_has_a_hairline_towards_the_screen_centre() {
+        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let size = SizeF::new(800.0, 28.0);
+
+        let mut bottom = RecordingCanvas::new(1.0);
+        paint_bar(&mut bottom, size, &theme, Edge::Bottom);
+        assert_eq!(
+            bottom.dump(),
+            "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,0 800×1 #FFFFFF/8%\n"
+        );
+
+        // At 150 % the line is two physical px, so it stays crisp.
+        let mut top = RecordingCanvas::new(1.5);
+        paint_bar(&mut top, size, &theme, Edge::Top);
+        assert_eq!(
+            top.dump(),
+            "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,26.67 800×1.33 #FFFFFF/8%\n"
+        );
+    }
+
+    #[test]
+    fn classic_bar_has_no_hairline() {
+        let s = Settings {
+            theme: ThemeId::Classic,
+            ..Settings::default()
+        };
+        let theme = Theme::resolve(&s, OsAppearance::default());
+        let mut canvas = RecordingCanvas::new(1.0);
+        paint_bar(&mut canvas, SizeF::new(100.0, 25.0), &theme, Edge::Bottom);
+        assert_eq!(canvas.ops.len(), 1);
+        assert_eq!(theme.bar_background, Color::rgba(0x2A, 0x2A, 0x2E, 0.9));
+    }
+
+    #[test]
+    fn specimen_draws_everywhere() {
+        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let engine = crate::platform::recording::FixedMetrics;
+        let mut canvas = RecordingCanvas::new(1.0);
+        let images = specimen::images(28, 1.0, theme.accent);
+        specimen::paint(&mut canvas, &engine, &theme, &images);
+        let dump = canvas.dump();
+        assert!(dump.contains("text \"CPU\" Segoe UI Variable Text 600 10px"));
+        assert!(dump.contains("bitmap "), "{dump}");
+        let pushes = dump
+            .lines()
+            .filter(|l| l.starts_with("clip") || l.starts_with("opacity"));
+        assert_eq!(pushes.count(), dump.lines().filter(|l| *l == "pop").count());
+    }
+
+    /// A sample of every canvas operation in bar-sized pieces, for reviewing the renderer
+    /// (CI screenshots) until the sensors draw the bar.
+    pub(super) mod specimen {
+        use std::f32::consts::TAU;
+        use std::path::Path;
+
+        use crate::bar::theme::{Inactive, Theme};
+        use crate::platform::{
+            Bitmap, Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF, TextEngine,
+            TextStyle, load_image,
+        };
+
+        pub const WIDTH: f32 = 900.0;
+
+        /// The SVG app icon, also tinted with `tint` (SPEC §12.3), and the PNG icon where raster
+        /// decoding exists; two px less than `bar_height` logical px tall.
+        pub fn images(bar_height: u32, scale: f32, tint: Color) -> Vec<Bitmap> {
+            let icons = Path::new(env!("CARGO_MANIFEST_DIR")).join("icons");
+            let px = ((bar_height - 2) as f32 * scale).round() as u32;
+            let mut images = Vec::new();
+            if let Ok(svg) = load_image(&icons.join("app-icon.svg"), Some(px)) {
+                images.push(svg.tinted(tint));
+                images.push(svg);
+            }
+            if let Ok(png) = load_image(&icons.join("128x128.png"), Some(px)) {
+                images.push(png);
+            }
+            images
+        }
+
+        /// Draws the specimen on a desktop-like backdrop, `WIDTH` × bar height.
+        pub fn paint(
+            canvas: &mut dyn Canvas,
+            text: &dyn TextEngine,
+            theme: &Theme,
+            images: &[Bitmap],
+        ) {
+            let h = theme.bar_height as f32;
+            let stop = |offset, color| GradientStop { offset, color };
+            // The desktop behind the translucent bar.
+            canvas.fill(
+                &Shape::Rect(RectF::new(0.0, 0.0, WIDTH, h)),
+                &Brush::Linear {
+                    start: PointF::new(0.0, 0.0),
+                    end: PointF::new(WIDTH, 0.0),
+                    stops: vec![
+                        stop(0.0, Color::rgba(0x1F, 0x4E, 0x8C, 1.0)),
+                        stop(0.5, Color::rgba(0xD0, 0x7A, 0x3A, 1.0)),
+                        stop(1.0, Color::rgba(0x2E, 0x7D, 0x32, 1.0)),
+                    ],
+                },
+            );
+            super::super::paint_bar(
+                canvas,
+                SizeF::new(WIDTH, h),
+                theme,
+                crate::config::model::Edge::Bottom,
+            );
+            let fg = theme.sensor_text;
+            let small = TextStyle::new(&theme.sensor_font, theme.small_size).tabular();
+            let mut x = theme.pad;
+
+            // Two-line block: label above value, centred as a block (SPEC §8.3).
+            let line = theme.small_size + 1.0;
+            let top = canvas.snap((h - 2.0 * line) / 2.0);
+            let label = text.layout("CPU", &small);
+            let value = text.layout("37%", &small);
+            let baseline = |canvas: &dyn Canvas, row: f32, layout: &crate::platform::TextLayout| {
+                canvas.snap(top + row * line + theme.small_size) - layout.baseline()
+            };
+            // Meter (SPEC §8.3): 4 px bar, background 31 %, fill 59 %.
+            let meter = RectF::new(x, 3.0, x + 4.0, h - 3.0);
+            canvas.fill_rect(meter, fg.faded(0.31));
+            let fill_top = meter.bottom - 0.37 * meter.height();
+            canvas.fill_rect(
+                RectF::new(meter.left, fill_top, meter.right, meter.bottom),
+                fg.faded(0.59),
+            );
+            x += 8.0;
+            canvas.draw_text(&label, PointF::new(x, baseline(canvas, 0.0, &label)), fg);
+            let column = x + 24.0;
+            canvas.draw_text(
+                &value,
+                PointF::new(column - value.width(), baseline(canvas, 1.0, &value)),
+                fg,
+            );
+            x = column + theme.gap;
+
+            // Graph (SPEC §8.3): one column per px, dynamic colours, grid and background.
+            let plot = RectF::new(x, 2.0, x + 60.0, h - 2.0);
+            canvas.fill_rect(plot, Color::BLACK.faded(0.3));
+            let mut gx = plot.left;
+            while gx < plot.right {
+                canvas.draw_line(
+                    PointF::new(gx + 0.5, plot.top),
+                    PointF::new(gx + 0.5, plot.bottom),
+                    &Color::rgba(0xA0, 0xFF, 0x9B, 0.15).into(),
+                    1.0,
+                );
+                gx += 5.0;
+            }
+            for i in 0..60 {
+                let v = 0.5 + 0.45 * (i as f32 / 60.0 * TAU * 1.5).sin();
+                let color = if v < 0.5 {
+                    Color::rgba((v * 510.0).round() as u8, 255, 0, 0.55)
+                } else {
+                    Color::rgba(255, ((1.0 - v) * 510.0).round() as u8, 0, 0.55)
+                };
+                let left = plot.left + i as f32;
+                canvas.fill_rect(
+                    RectF::new(
+                        left,
+                        plot.bottom - v * plot.height(),
+                        left + 1.0,
+                        plot.bottom,
+                    ),
+                    color,
+                );
+            }
+            x = plot.right + theme.gap;
+
+            // Clock in the large size with tabular numerals, then medium.
+            let large = TextStyle::new(&theme.sensor_font, theme.large_size).tabular();
+            let clock = text.layout("12:45", &large);
+            let clock_y = canvas.snap((h - clock.height()) / 2.0);
+            canvas.draw_text(&clock, PointF::new(x, clock_y), fg);
+            x += clock.width() + 4.0;
+            let medium = TextStyle::new(&theme.sensor_font, theme.medium_size);
+            let date = text.layout("Mon 12 Oct", &medium);
+            canvas.draw_text(
+                &date,
+                PointF::new(x, canvas.snap((h - date.height()) / 2.0)),
+                fg,
+            );
+            x += date.width() + theme.gap;
+
+            // Ellipsis at a maximum width.
+            let cut = text.layout(
+                "A text sensor that is far too long",
+                &TextStyle::new(&theme.sensor_font, 12.0).max_width(90.0),
+            );
+            canvas.draw_text(
+                &cut,
+                PointF::new(x, canvas.snap((h - cut.height()) / 2.0)),
+                fg,
+            );
+            x += 90.0 + theme.gap;
+
+            // Images; the second at the inactive opacity (SPEC §8.5).
+            let inactive = match theme.inactive {
+                Inactive::Opacity(opacity) => opacity,
+                Inactive::Colorize(_) => 1.0,
+            };
+            for (i, image) in images.iter().enumerate() {
+                let size = (h - 2.0) * image.width() as f32 / image.height() as f32;
+                let dest = RectF::new(x, 1.0, x + size, h - 1.0);
+                canvas.draw_bitmap(image, dest, if i == 1 { inactive } else { 1.0 });
+                x += size + 4.0;
+            }
+            x += theme.gap - 4.0;
+
+            // Popup shapes: rounded rectangle with a pointer triangle, outlined.
+            let bubble = RectF::new(x, 2.0, x + 70.0, h - 9.0);
+            canvas.fill(
+                &Shape::RoundedRect {
+                    rect: bubble,
+                    radius: 6.0,
+                },
+                &theme.popup_background.into(),
+            );
+            let mid = bubble.left + 35.0;
+            canvas.fill(
+                &Shape::Polygon(vec![
+                    PointF::new(mid - 6.5, bubble.bottom),
+                    PointF::new(mid + 6.5, bubble.bottom),
+                    PointF::new(mid, bubble.bottom + 7.0),
+                ]),
+                &theme.popup_background.into(),
+            );
+            canvas.stroke(
+                &Shape::RoundedRect {
+                    rect: bubble.inset(0.5),
+                    radius: 6.0,
+                },
+                &theme.accent.into(),
+                1.0,
+            );
+            let popup = TextStyle::new(&theme.popup_font, theme.popup_font_size);
+            let hint = text.layout("Hint", &popup);
+            canvas.draw_text(
+                &hint,
+                PointF::new(
+                    bubble.left + 6.0,
+                    canvas.snap(bubble.top + (bubble.height() - hint.height()) / 2.0),
+                ),
+                theme.popup_strong_text,
+            );
+            x = bubble.right + theme.gap;
+
+            // Gloss skin piece: base colour, white gradient over the upper half (SPEC §12.4).
+            let gloss = RectF::new(x, 0.0, x + 60.0, h);
+            canvas.fill_rect(gloss, Color::rgba(0x2A, 0x2A, 0x2E, 1.0));
+            canvas.fill(
+                &Shape::Rect(RectF::new(gloss.left, 0.0, gloss.right, h / 2.0)),
+                &Brush::Linear {
+                    start: PointF::new(0.0, 0.0),
+                    end: PointF::new(0.0, h / 2.0),
+                    stops: vec![
+                        stop(0.0, Color::WHITE.with_alpha(0.30)),
+                        stop(1.0, Color::WHITE.with_alpha(0.05)),
+                    ],
+                },
+            );
+            x = gloss.right + theme.gap;
+
+            // Clipping: the text is cut at the clip's right edge.
+            let clipped = text.layout("Clipped", &small);
+            canvas.push_clip(RectF::new(x, 0.0, x + clipped.width() / 2.0, h));
+            canvas.draw_text(
+                &clipped,
+                PointF::new(x, canvas.snap((h - clipped.height()) / 2.0)),
+                fg,
+            );
+            canvas.pop();
+            x += clipped.width() + theme.gap;
+
+            // A layer at 40 %: overlapping shapes fade as one.
+            canvas.push_opacity(0.4);
+            canvas.fill_rect(RectF::new(x, 4.0, x + 16.0, h - 4.0), Color::WHITE);
+            canvas.fill(
+                &Shape::Polygon(vec![
+                    PointF::new(x + 8.0, 2.0),
+                    PointF::new(x + 24.0, h / 2.0),
+                    PointF::new(x + 8.0, h - 2.0),
+                ]),
+                &Color::rgba(0xFF, 0x40, 0x40, 1.0).into(),
+            );
+            canvas.pop();
+            x += 28.0;
+
+            // Accent line, like the drop placer (SPEC §12.2).
+            canvas.fill_rect(RectF::new(x, 2.0, x + 2.0, h - 2.0), theme.accent);
+        }
+    }
+
+    /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
+    /// them): plain bars per theme, and the canvas specimen at 100 % and 150 %.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes PNGs to target/screenshots; run with --ignored"]
+    fn render_bar() {
+        use crate::platform::{render_offscreen, text_engine};
+        use crate::test_util::{screenshot_path, write_png};
+
+        let save = |name: &str, bitmap: &crate::platform::Bitmap| {
+            write_png(
+                &screenshot_path(name),
+                bitmap.width(),
+                bitmap.height(),
+                &bitmap.to_rgba(),
+            );
+        };
+        let dark = OsAppearance::default();
+        let light = OsAppearance {
+            dark: false,
+            ..dark
+        };
+        let classic = Settings {
+            theme: ThemeId::Classic,
+            ..Settings::default()
+        };
+        let bars = [
+            ("bar-modern-dark", Settings::default(), dark, Edge::Bottom),
+            (
+                "bar-modern-light-top",
+                Settings::default(),
+                light,
+                Edge::Top,
+            ),
+            ("bar-classic", classic.clone(), dark, Edge::Bottom),
+        ];
+        for (name, settings, os, edge) in bars {
+            let theme = Theme::resolve(&settings, os);
+            let size = SizeF::new(400.0, theme.bar_height as f32);
+            let bitmap = render_offscreen(400, theme.bar_height, 1.0, &mut |canvas| {
+                paint_bar(canvas, size, &theme, edge)
+            })
+            .expect("rendered");
+            save(name, &bitmap);
+        }
+
+        let text = text_engine();
+        for (name, settings, os) in [
+            ("bar-specimen", Settings::default(), dark),
+            ("bar-specimen-light", Settings::default(), light),
+            ("bar-specimen-classic", classic, dark),
+        ] {
+            let theme = Theme::resolve(&settings, os);
+            for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
+                let images = specimen::images(theme.bar_height, scale, theme.accent);
+                assert_eq!(images.len(), 3, "SVG and PNG decoded");
+                let width = (specimen::WIDTH * scale).round() as u32;
+                let height = (theme.bar_height as f32 * scale).round() as u32;
+                let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
+                    specimen::paint(canvas, text.as_ref(), &theme, &images)
+                })
+                .expect("rendered");
+                save(&format!("{name}{suffix}"), &bitmap);
+            }
+        }
+    }
+}
