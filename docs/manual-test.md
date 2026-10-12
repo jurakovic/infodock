@@ -115,6 +115,14 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] *Cancel*: the logo is back as it was. Again with *Save*: the change stays, also after a restart.
 - [ ] Change something, then click *General* in the navigation, or close Settings: the change is dropped.
 
+**New sensor** (since M1 S9)
+
+- [ ] Right-click the logo → *New sensor…*: Settings opens "New sensor" with the search box focused, *Insert After the “Image” sensor*, and *General ▸ Image, Spacer, Text*, each with its description. *Add* is greyed out until a type is selected.
+- [ ] Type `line`: only *Text* (and *Spacer*, whose description mentions a line) remain; type `xyz`: "No sensor matches the search."
+- [ ] Choose *Before*, double-click *Text*: "Text properties" opens and a "Text" sensor appears left of the logo. *Cancel*: it is gone again. Again with *Save*: it stays.
+- [ ] Right-click empty space in the right third → *New sensor…*: there is no Insert choice; *Add* puts the sensor at the start of the right zone (next to the centre). In the left third, at the end of the left zone.
+- [ ] Open the picker, then click *Sensors* in the navigation: nothing is added.
+
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.

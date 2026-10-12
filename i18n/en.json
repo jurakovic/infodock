@@ -144,5 +144,14 @@
   "settings.props.pickFile": "Choose a file",
   "settings.props.pickFolder": "Choose a folder",
   "settings.props.allFiles": "All files",
-  "settings.props.supportedFiles": "Supported files"
+  "settings.props.supportedFiles": "Supported files",
+  "settings.picker.title": "New sensor",
+  "settings.picker.search": "Search sensors",
+  "settings.picker.none": "No sensor matches the search.",
+  "settings.picker.insert": "Insert",
+  "settings.picker.before": "Before",
+  "settings.picker.after": "After",
+  "settings.picker.target": "the “{name}” sensor",
+  "settings.picker.add": "Add",
+  "settings.picker.cancel": "Cancel"
 }

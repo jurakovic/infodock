@@ -1,6 +1,6 @@
-// The Settings window (SPEC §10.7): General, Bar, Sensors and Popups pages. Rust fills
-// `SettingsState` from the config and handles its callbacks; controls bind to it two-way, and
-// every change is saved through a settings patch.
+// The Settings window (SPEC §10.7): General, Bar, Sensors and Popups pages, a sensor's
+// properties and the sensor picker. Rust fills `SettingsState` from the config and handles its
+// callbacks; controls bind to it two-way, and every change is saved through a settings patch.
 import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
 
@@ -25,8 +25,17 @@ export struct PropRow {
     color: string,
 }
 
+// One line of the sensor picker (SPEC §6.6): a category heading or a sensor type.
+export struct PickerRow {
+    heading: bool,
+    name: string,
+    description: string,
+    // The type's index, for `picker-selected`; -1 for a heading.
+    entry: int,
+}
+
 export global SettingsState {
-    // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups; 4 = a sensor's properties.
+    // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups; 4 = a sensor's properties, 5 = the picker.
     in-out property <int> page;
 
     // General (SPEC §10.1)
@@ -90,6 +99,16 @@ export global SettingsState {
     in property <string> props-title;
     in property <string> props-error;
 
+    // The sensor picker (SPEC §6.6)
+    in property <[PickerRow]> picker-rows;
+    in-out property <string> picker-search;
+    // The selected type's `entry`; -1 for none.
+    in-out property <int> picker-selected;
+    // With a target sensor: 0 = insert before it, 1 = after it.
+    in-out property <int> picker-after;
+    // The target sensor's type name; empty without a target.
+    in property <string> picker-target;
+
     // The last save error other than a hotkey error; empty when the last save worked.
     in property <string> save-error;
 
@@ -119,6 +138,11 @@ export global SettingsState {
     callback prop-browse(key: string);
     callback props-save();
     callback props-cancel();
+    // The picker's search text changed.
+    callback picker-searched(text: string);
+    // Adds the selected type and opens its properties.
+    callback picker-add();
+    callback picker-cancel();
 }
 
 // One setting, laid out like Windows Settings: label, help text and error on the left (they
@@ -815,6 +839,133 @@ component PropertiesPage inherits VerticalLayout {
     }
 }
 
+// The sensor picker (SPEC §6.6): types by category, a search box, and for a target sensor
+// where to insert.
+component PickerPage inherits VerticalLayout {
+    alignment: start;
+    spacing: 8px;
+
+    LineEdit {
+        placeholder-text: I18n.tr("settings.picker.search");
+        text <=> SettingsState.picker-search;
+        accessible-label: I18n.tr("settings.picker.search");
+        init => {
+            self.focus();
+        }
+        edited(text) => {
+            SettingsState.picker-searched(text);
+        }
+        accepted => {
+            if SettingsState.picker-selected >= 0 {
+                SettingsState.picker-add();
+            }
+        }
+    }
+
+    if SettingsState.picker-target != "": HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        Text {
+            text: I18n.tr("settings.picker.insert");
+            vertical-alignment: center;
+            color: Palette.foreground;
+        }
+
+        ComboBox {
+            width: 120px;
+            model: [I18n.tr("settings.picker.before"), I18n.tr("settings.picker.after")];
+            current-index <=> SettingsState.picker-after;
+            accessible-label: I18n.tr("settings.picker.insert");
+        }
+
+        Text {
+            text: I18n.tr-with("settings.picker.target", "name", SettingsState.picker-target);
+            vertical-alignment: center;
+            wrap: word-wrap;
+            color: Palette.foreground;
+        }
+    }
+
+    if SettingsState.picker-rows.length == 0: Text {
+        text: I18n.tr("settings.picker.none");
+        wrap: word-wrap;
+        color: Palette.foreground;
+    }
+
+    VerticalLayout {
+        for row in SettingsState.picker-rows: VerticalLayout {
+            if row.heading: Text {
+                text: row.name;
+                font-weight: 600;
+                color: Palette.foreground;
+                accessible-role: text;
+            }
+            if !row.heading: item := Rectangle {
+                property <bool> selected: SettingsState.picker-selected == row.entry;
+                border-radius: 4px;
+                background: self.selected ? Palette.selection-background
+                    : touch.has-hover ? Palette.alternate-background : transparent;
+                accessible-role: list-item;
+                accessible-label: row.name;
+                accessible-description: row.description;
+                accessible-item-selectable: true;
+                accessible-item-selected: self.selected;
+                accessible-action-default => {
+                    SettingsState.picker-selected = row.entry;
+                }
+
+                touch := TouchArea {
+                    clicked => {
+                        SettingsState.picker-selected = row.entry;
+                    }
+                    double-clicked => {
+                        SettingsState.picker-selected = row.entry;
+                        SettingsState.picker-add();
+                    }
+                }
+
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 2px;
+                    Text {
+                        text: row.name;
+                        color: item.selected ? Palette.selection-foreground : Palette.foreground;
+                    }
+
+                    Text {
+                        text: row.description;
+                        wrap: word-wrap;
+                        font-size: 12px;
+                        color: item.selected ? Palette.selection-foreground : Palette.foreground;
+                        opacity: 0.7;
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        padding-top: 16px;
+        Button {
+            text: I18n.tr("settings.picker.cancel");
+            clicked => {
+                SettingsState.picker-cancel();
+            }
+        }
+
+        Button {
+            text: I18n.tr("settings.picker.add");
+            primary: true;
+            enabled: SettingsState.picker-selected >= 0;
+            clicked => {
+                SettingsState.picker-add();
+            }
+        }
+    }
+}
+
 export component SettingsWindow inherits Window {
     title: I18n.tr("settings.title");
     icon: @image-url("../icons/32x32.png");
@@ -854,7 +1005,8 @@ export component SettingsWindow inherits Window {
             spacing: 8px;
 
             Text {
-                text: SettingsState.page == 4 ? SettingsState.props-title : [
+                text: SettingsState.page == 4 ? SettingsState.props-title
+                    : SettingsState.page == 5 ? I18n.tr("settings.picker.title") : [
                     I18n.tr("settings.nav.general"),
                     I18n.tr("settings.nav.bar"),
                     I18n.tr("settings.nav.sensors"),
@@ -883,6 +1035,7 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == 2: SensorsPage { }
                     if SettingsState.page == 3: PopupsPage { }
                     if SettingsState.page == 4: PropertiesPage { }
+                    if SettingsState.page == 5: PickerPage { }
                 }
             }
         }

@@ -453,6 +453,7 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 * With a target sensor: an **Insert: Before / After** selector (default After) and the text "… the '{target name}' sensor".
 * **Add** (or double-click) → `add_sensor` with defaults → immediately opens **Properties** for the new instance. **Cancel** in Properties for a *newly created* sensor removes it again. Sensors created by drop skip this step.
 * Insertion point when not targeting a sensor: the zone under the right-click position (thirds). Left and center zones append at the end; the right zone inserts at its **start** (next to the center).
+* Implementation (`settings/picker.rs`): a click selects, Enter in the search box adds the selection. A search keeps the selection while it is still listed. A route without a zone uses the left zone; without an index, the insertion point above. A target that has been removed meanwhile inserts at the end of the left zone. Leaving the page by the navigation drops it.
 
 ### 6.7 Properties dialog
 

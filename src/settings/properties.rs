@@ -306,17 +306,4 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
             }
         });
     });
-    let a = Arc::clone(app);
-    state.on_page_changed(move |page| {
-        // Leaving the form by the navigation drops it.
-        if page != PAGE {
-            WINDOW.with(|w| {
-                if let Ok(mut w) = w.try_borrow_mut()
-                    && let Some(open) = w.as_mut()
-                {
-                    cancel(open, &a);
-                }
-            });
-        }
-    });
 }

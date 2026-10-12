@@ -7,6 +7,7 @@
 
 mod form;
 mod model;
+mod picker;
 mod properties;
 
 use std::cell::RefCell;
@@ -36,6 +37,8 @@ struct Open {
     fonts: Vec<String>,
     /// A sensor's properties being edited.
     form: Option<properties::FormState>,
+    /// The sensor picker, while it is shown.
+    picker: Option<picker::PickerState>,
 }
 
 /// Why a change was not saved.
@@ -51,8 +54,7 @@ pub fn open(app: &Arc<App>, route: &str) {
     let route = model::route(route);
     let page = match &route {
         model::Route::Page(index) => *index as i32,
-        // The picker arrives in the next part of M1 S9.
-        model::Route::New { .. } => 2,
+        model::Route::New { .. } => picker::PAGE,
         model::Route::Sensor(_) => properties::PAGE,
     };
     let existing = WINDOW.with(|w| w.borrow().as_ref().map(|open| open.window.clone_strong()));
@@ -66,9 +68,17 @@ pub fn open(app: &Arc<App>, route: &str) {
             }
         },
     };
-    match &route {
-        model::Route::Sensor(id) => properties::open_form(app, id, false),
-        _ => window.global::<ui::SettingsState>().set_page(page),
+    match route {
+        model::Route::Sensor(id) => properties::open_form(app, &id, false),
+        model::Route::New {
+            zone,
+            index,
+            target,
+        } => {
+            let place = picker::place(&app.store.get().layout, zone, index, target);
+            picker::open_picker(app, place);
+        }
+        model::Route::Page(_) => window.global::<ui::SettingsState>().set_page(page),
     }
     if let Err(e) = window.show() {
         tracing::warn!("could not show settings: {e}");
@@ -122,6 +132,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         families: app.platform.font_families(),
         fonts: Vec::new(),
         form: None,
+        picker: None,
     };
     fill(&mut open, app, &app.store.get().settings);
     WINDOW.with(|w| *w.borrow_mut() = Some(open));
@@ -131,7 +142,24 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
 /// Handles the window's callbacks: saving changes and converting colours.
 fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     properties::connect(window, app);
+    picker::connect(window, app);
     let state = window.global::<ui::SettingsState>();
+    let a = Arc::clone(app);
+    state.on_page_changed(move |page| {
+        // Leaving the form or the picker by the navigation drops it.
+        WINDOW.with(|w| {
+            if let Ok(mut w) = w.try_borrow_mut()
+                && let Some(open) = w.as_mut()
+            {
+                if page != properties::PAGE {
+                    properties::cancel(open, &a);
+                }
+                if page != picker::PAGE {
+                    open.picker = None;
+                }
+            }
+        });
+    });
     let a = Arc::clone(app);
     state.on_set_flag(move |path, value| save(&a, model::patch(&path, Value::Bool(value))));
     let a = Arc::clone(app);
@@ -488,12 +516,16 @@ mod screenshots {
             families: vec!["Arial".into(), "Consolas".into(), "Segoe UI".into()],
             fonts: Vec::new(),
             form: None,
+            picker: None,
         };
         fill(&mut open, &app, &app.store.get().settings);
         ui.show().expect("shown");
         window.set_size(PhysicalSize::new(width, height));
 
         let render = |name: &str| {
+            // Let state animations (e.g. a button becoming disabled) finish.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            slint::platform::update_timers_and_animations();
             window.request_redraw();
             let mut pixels = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
             window.draw_if_needed(|renderer| {
@@ -542,6 +574,25 @@ mod screenshots {
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&text).is_none());
         assert_eq!(state.get_page(), 2);
+
+        // The picker (SPEC §6.6): next to the logo, with Text selected; then a search.
+        let place = super::picker::Place::Next(logo.clone());
+        super::picker::open_picker(&app, place);
+        state.set_picker_selected(2);
+        render("settings-picker");
+        state.set_picker_search("time".into());
+        state.invoke_picker_searched("time".into());
+        assert_eq!(state.get_picker_selected(), -1);
+        render("settings-picker-search");
+        // Add opens the new sensor's properties, after the logo.
+        state.invoke_picker_searched(SharedString::new());
+        state.set_picker_selected(2);
+        state.invoke_picker_add();
+        assert_eq!(state.get_page(), super::properties::PAGE);
+        let layout = app.store.get().layout;
+        assert_eq!(layout.center[1].kind, "text");
+        state.invoke_props_cancel();
+        assert_eq!(app.store.get().layout.center.len(), 1);
         super::WINDOW.with(|w| w.borrow_mut().take());
         app.store.shutdown();
     }
