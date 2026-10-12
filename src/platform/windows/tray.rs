@@ -5,10 +5,12 @@
 use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{LIM_SMALL, LoadIconMetric};
+use windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime;
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION,
     NIN_SELECT, NOTIFY_ICON_MESSAGE, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, NOTIFYICONDATAW_0,
@@ -49,10 +51,31 @@ fn icon() -> HICON {
     HICON(raw as *mut _)
 }
 
+/// Explorer reports Enter on the icon as two keyboard selections (Space as one). A keyboard
+/// selection that follows an accepted one within `window` is taken as its duplicate and dropped.
+#[derive(Default)]
+struct KeySelectFilter {
+    /// When the last accepted keyboard selection arrived, until its duplicate is seen.
+    pending: Option<Instant>,
+}
+
+impl KeySelectFilter {
+    fn accept(&mut self, now: Instant, window: Duration) -> bool {
+        match self.pending.take() {
+            Some(last) if now.saturating_duration_since(last) <= window => false,
+            _ => {
+                self.pending = Some(now);
+                true
+            }
+        }
+    }
+}
+
 pub(super) struct Tray {
     hwnd: isize,
     shown: AtomicBool,
     tooltip: Mutex<String>,
+    key_select: Mutex<KeySelectFilter>,
 }
 
 impl Tray {
@@ -61,6 +84,7 @@ impl Tray {
             hwnd: hwnd.0 as isize,
             shown: AtomicBool::new(false),
             tooltip: Mutex::new(String::new()),
+            key_select: Mutex::new(KeySelectFilter::default()),
         }
     }
 
@@ -126,9 +150,20 @@ impl Tray {
     }
 
     /// Maps the callback message's `lParam` to an event.
-    pub(super) fn event(lparam: LPARAM) -> Option<UiEvent> {
+    pub(super) fn event(&self, lparam: LPARAM) -> Option<UiEvent> {
         match (lparam.0 & 0xFFFF) as u32 {
-            NIN_SELECT | NIN_KEYSELECT => Some(UiEvent::TrayClick),
+            NIN_SELECT => Some(UiEvent::TrayClick),
+            NIN_KEYSELECT => {
+                // SAFETY: plain call without arguments.
+                let window = Duration::from_millis(unsafe { GetDoubleClickTime() }.into());
+                let mut filter = self
+                    .key_select
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                filter
+                    .accept(Instant::now(), window)
+                    .then_some(UiEvent::TrayClick)
+            }
             WM_CONTEXTMENU => Some(UiEvent::TrayMenu),
             _ => None,
         }
@@ -138,5 +173,27 @@ impl Tray {
 impl TrayIcon for Tray {
     fn remove(&self) {
         self.hide();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_duplicate_keyboard_selection_is_dropped() {
+        let window = Duration::from_millis(500);
+        let mut filter = KeySelectFilter::default();
+        let t0 = Instant::now();
+        // Enter: two selections at once, one toggle.
+        assert!(filter.accept(t0, window));
+        assert!(!filter.accept(t0 + Duration::from_millis(5), window));
+        // The next press is accepted again, with its own duplicate dropped.
+        let t1 = t0 + Duration::from_millis(300);
+        assert!(filter.accept(t1, window));
+        assert!(!filter.accept(t1 + Duration::from_millis(5), window));
+        // Space: one selection per press, far enough apart.
+        assert!(filter.accept(t1 + Duration::from_secs(1), window));
+        assert!(filter.accept(t1 + Duration::from_secs(2), window));
     }
 }

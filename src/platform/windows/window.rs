@@ -87,7 +87,7 @@ impl WindowState {
     fn handle(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let hwnd = self.hwnd();
         if msg == WM_TRAY {
-            if let Some(event) = Tray::event(lparam) {
+            if let Some(event) = self.tray.get().and_then(|tray| tray.event(lparam)) {
                 self.dispatch(event);
             }
             return LRESULT(0);

@@ -82,7 +82,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 **Tray (native)**
 
 - [ ] Right-click the tray icon: the menu opens above the pointer; *Lock* and *Popups* show check marks matching Settings ▸ General. Toggle each: the mark flips the next time the menu opens, and Settings follows.
-- [ ] The menu closes when clicking elsewhere or pressing Esc. Keyboard: Win+B, arrow to the icon; Enter or Space toggles the bar exactly once, Shift+F10 or the menu key opens the menu.
+- [ ] The menu closes when clicking elsewhere or pressing Esc. Keyboard: Win+B, arrow to the icon; Enter or Space toggles the bar exactly once (Explorer reports Enter twice; the duplicate is dropped), Shift+F10 or the menu key opens the menu.
 - [ ] Hover the icon: the tooltip reads *Infodock*.
 - [ ] Restart Explorer (Task Manager ▸ *Windows Explorer* ▸ Restart): the tray icon comes back.
 - [ ] Quit from the tray: the icon disappears at once (no ghost icon until hovered).
