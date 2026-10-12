@@ -60,4 +60,4 @@ Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path w
 - Coordinates are logical (DIP) in layout and drawing; platform code converts to physical pixels with the monitor scale.
 - Threads: the bar thread owns the bar, hint and popup windows, the tray icon and native menus; other threads talk to it through `BarController`, which queues a command and wakes the thread. The main thread runs Slint's event loop and owns the Settings window and the hotkey; other threads reach it with `slint::invoke_from_event_loop`. Never touch either thread's UI from another thread.
 - Slint: Fluent style; controls bind two-way to a global (`SettingsState`), and Rust saves changes through settings patches. Every component instance needs `install_i18n!`.
-- Memory budget: ≤ 30 MB with Settings closed (SPEC §14.1). CI's memory check reports it on every Windows build; keep an eye on it when adding dependencies or caches.
+- Memory budget: ≤ 30 MB with Settings closed (SPEC §14.1). CI's memory check enforces it on every Windows build (the step fails when idle or after closing Settings is over); keep an eye on it when adding dependencies or caches.
