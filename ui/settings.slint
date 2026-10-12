@@ -157,6 +157,8 @@ export global SettingsState {
     callback set-font-style(path: string, index: int);
     // The colour of a #RRGGBB text, for swatches; transparent if it is not one.
     pure callback to-color(text: string) -> color;
+    // The text is a colour as #RRGGBB.
+    pure callback is-color(text: string) -> bool;
 
     // The navigation moved to another page (leaving the properties form cancels it).
     callback page-changed(page: int);
@@ -270,7 +272,9 @@ component ValueSlider inherits HorizontalLayout {
     }
 }
 
-// A colour as #RRGGBB with a swatch; saved on Enter or when the field loses focus.
+// A colour as #RRGGBB with a swatch. It is accepted as soon as the typed text is a colour, so
+// a click that does not take the focus (Save, the navigation) finds it saved; on Enter or when
+// the field loses focus it is accepted whatever it is, and an invalid one shows an error.
 component ColorField inherits HorizontalLayout {
     in property <string> label;
     in-out property <string> value;
@@ -291,6 +295,11 @@ component ColorField inherits HorizontalLayout {
         width: 120px;
         text <=> root.value;
         accessible-label: root.label;
+        edited(text) => {
+            if SettingsState.is-color(text) {
+                root.accepted(text);
+            }
+        }
         accepted(text) => {
             root.accepted(text);
         }
@@ -1136,17 +1145,14 @@ component PropertiesPage inherits VerticalLayout {
             }
             if row.kind == 6 || row.kind == 7: HorizontalLayout {
                 spacing: 8px;
+                // Every edit counts, as in a text row: clicking Save does not take the focus, so
+                // the box cannot wait for focus-out.
                 LineEdit {
                     width: 280px;
                     text: row.text;
                     accessible-label: row.label;
-                    accepted(text) => {
+                    edited(text) => {
                         SettingsState.prop-text(row.key, text);
-                    }
-                    changed has-focus => {
-                        if !self.has-focus {
-                            SettingsState.prop-text(row.key, self.text);
-                        }
                     }
                 }
                 Button {

@@ -24,6 +24,9 @@ use crate::config::{Config, ConfigError};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::{hotkey, ui};
 
+/// The page with the hotkey.
+const GENERAL_PAGE: i32 = 0;
+
 thread_local! {
     static WINDOW: RefCell<Option<Open>> = const { RefCell::new(None) };
 }
@@ -163,6 +166,12 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
                 if page != picker::PAGE {
                     open.picker = None;
                 }
+                // Keys typed on another page are not a hotkey: recording ends with the page.
+                let state = open.window.global::<ui::SettingsState>();
+                state.set_recording_hotkey(false);
+                // Text that was typed but not saved (an incomplete colour) is not shown again.
+                let settings = a.store.get().settings;
+                fill(open, &a, &settings);
             }
         });
     });
@@ -193,6 +202,9 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
         crate::platform::Color::from_hex(text.trim()).map_or(slint::Color::default(), |c| {
             slint::Color::from_argb_f32(1.0, c.r, c.g, c.b)
         })
+    });
+    state.on_is_color(|text| {
+        crate::config::model::normalize_color(text.trim().to_owned()).is_some()
     });
     let a = Arc::clone(app);
     state.on_set_color(move |path, text| {
@@ -394,8 +406,9 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
 }
 
 /// While `recording-hotkey` is set, the next key pressed with its modifiers becomes the hotkey
-/// (SPEC §6.5); Esc or leaving the window cancels. The keys are read from winit as physical keys,
-/// so the keyboard layout does not matter (Ctrl+Alt is AltGr on many layouts).
+/// (SPEC §6.5); Esc, leaving the window or the General page cancels. The keys are read from
+/// winit as physical keys, so the keyboard layout does not matter (Ctrl+Alt is AltGr on many
+/// layouts).
 fn record_hotkey(window: &ui::SettingsWindow, app: &Arc<App>) {
     use slint::winit_030::winit::event::{ElementState, WindowEvent};
     use slint::winit_030::winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -420,7 +433,7 @@ fn record_hotkey(window: &ui::SettingsWindow, app: &Arc<App>) {
                 event,
                 is_synthetic: false,
                 ..
-            } if state.get_recording_hotkey() => {
+            } if state.get_recording_hotkey() && state.get_page() == GENERAL_PAGE => {
                 let pressed = event.state == ElementState::Pressed && !event.repeat;
                 match event.physical_key {
                     PhysicalKey::Code(_) if !pressed => {}
@@ -499,10 +512,11 @@ mod screenshots {
     use std::rc::Rc;
     use std::sync::Arc;
 
+    use serde_json::json;
     use slint::platform::software_renderer::{
         MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
     };
-    use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
+    use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
     use slint::{ComponentHandle, LogicalPosition, PhysicalSize, SharedString};
 
     use super::{Open, fill};
@@ -625,12 +639,81 @@ mod screenshots {
         state.set_recording_hotkey(false);
         state.set_hotkey_error(SharedString::new());
 
-        // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
+        // From here on the callbacks find the window, as in the app.
         super::WINDOW.with(|w| *w.borrow_mut() = Some(open));
+        // Clicks and keys as the user gives them. Neither the navigation nor a button takes the
+        // focus, so no input may wait for its field to lose it.
+        let settle = || {
+            slint::platform::update_timers_and_animations();
+            window.request_redraw();
+            let size = window.size();
+            let mut pixels =
+                vec![PremultipliedRgbaColor::default(); (size.width * size.height) as usize];
+            window.draw_if_needed(|renderer| {
+                renderer.render(&mut pixels, size.width as usize);
+            });
+        };
+        let click = |x: f32, y: f32| {
+            let position = LogicalPosition::new(x, y);
+            let button = PointerEventButton::Left;
+            window.dispatch_event(WindowEvent::PointerPressed { position, button });
+            window.dispatch_event(WindowEvent::PointerReleased { position, button });
+            settle();
+        };
+        let key = |text: SharedString| {
+            window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            window.dispatch_event(WindowEvent::KeyReleased { text });
+        };
+        let retype = |x: f32, y: f32, text: &str| {
+            click(x, y);
+            key(Key::End.into());
+            for _ in 0..16 {
+                key(Key::Backspace.into());
+            }
+            text.chars().for_each(|c| key(c.into()));
+            settle();
+        };
+        let (general, bar, popups) = (27.0, 67.0, 147.0);
+        let nav = |y: f32| click(49.0, y);
+
+        // Leaving General ends recording the hotkey.
+        state.set_recording_hotkey(true);
+        nav(bar);
+        assert_eq!(state.get_page(), 1);
+        assert!(!state.get_recording_hotkey());
+
+        // A colour is saved as soon as it is valid; one left incomplete is not shown again.
+        nav(popups);
+        retype(690.0, 76.0, "#20b7ff");
+        let background = || app.store.get().settings.popups.background;
+        assert_eq!(background().as_deref(), Some("#20B7FF"));
+        key("f".into());
+        nav(general);
+        nav(popups);
+        assert_eq!(state.get_popup_background(), "#20B7FF");
+        assert_eq!(background().as_deref(), Some("#20B7FF"));
+        state.invoke_reset("popups.background".into());
+
+        // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
         super::properties::open_form(&app, &logo, false);
         render("settings-properties-image");
         state.invoke_prop_color_mode("color".into(), 1, "#20B7FF".into());
         render("settings-properties-image-custom");
+        // A typed path and colour are what Save stores.
+        retype(690.0, 203.0, "#123abc");
+        retype(525.0, 92.0, r"C:\Pictures\logo.png");
+        click(723.0, 380.0);
+        assert_eq!(state.get_page(), 2);
+        let config = app.store.get();
+        let props = &config
+            .layout
+            .all()
+            .find(|s| s.id == logo)
+            .expect("logo")
+            .props;
+        assert_eq!(props.get("image"), Some(&json!(r"C:\Pictures\logo.png")));
+        let color = json!({ "mode": "custom", "color": "#123ABC" });
+        assert_eq!(props.get("color"), Some(&color));
         let text = app
             .add_sensor(
                 "text",
