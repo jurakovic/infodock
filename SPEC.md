@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Status | Draft 3 — ready for implementation |
-| Date | 2026-10-11 |
+| Status | Draft 4 — native bar; ready for implementation |
+| Date | 2026-10-12 |
 | Product | **Infodock** — a compact system-information and launcher bar for the desktop |
 | Target | Windows 10/11 first; macOS/Linux later |
-| Stack | **Tauri 2** (Rust core) + **TypeScript / Svelte 5** UI |
+| Stack | **Rust** core with a **native bar** (Win32 + Direct2D/DirectWrite); **Tauri 2** + **TypeScript / Svelte 5** for the Settings window only |
 | Licence | **MIT** |
 
 ---
@@ -76,12 +76,12 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 
 ### 2.1 Goals
 
-* G1 — A **single, standalone, always-on desktop bar app**; no host engine or runtime besides the OS WebView.
+* G1 — A **single, standalone, always-on desktop bar app**; no host engine or runtime. The OS WebView2 is used only by the Settings window.
 * G2 — The full v1 sensor set (§1.2) with the behaviour defined in §9.
-* G3 — **Light footprint**: idle CPU ≤ 0.5 %; private memory ≤ 100 MB including WebView2 (stretch goal 70 MB).
+* G3 — **Light footprint**: idle CPU ≤ 0.5 %; private memory ≤ 30 MB while Settings is closed (stretch goal 20 MB). No browser engine runs while only the bar is visible (§14.1).
 * G4 — **Correct Windows integration**: AppBar work-area reservation, multi-monitor, per-monitor DPI, Explorer restarts, sleep/resume, full-screen apps.
 * G5 — **Modern default theme**, plus a compact **Classic** theme with skins (§12).
-* G6 — **Data-driven sensors**: adding a sensor type means adding one TS module (plus a Rust provider if it needs new system data).
+* G6 — **Data-driven sensors**: adding a sensor type means adding one Rust module in `sensors/` (plus a provider if it needs new system data). Settings needs no changes: its forms are generated from the property schema each type exports (§8.2).
 * G7 — **Portability seam**: every OS-specific call goes through a platform trait, so macOS/Linux can be added without touching sensors.
 
 ### 2.2 Non-goals (v1)
@@ -100,7 +100,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Name | **Infodock**. Identifier `app.infodock.desktop`, executable `infodock.exe`, Cargo crate `infodock`. A trademark search (WIPO Global Brand Database) found only two marks, both expired about 10 years ago |
 | Licence | MIT |
 | Platforms | Windows first; platform code behind interfaces for later macOS/Linux |
-| Stack | Tauri 2 (Rust + TypeScript UI) |
+| Stack | Rust. The bar, hints and popups are native windows drawn with Direct2D/DirectWrite. Tauri 2 (WebView2 + Svelte) hosts only the Settings window, created on demand (§3, §4.1) |
 | v1 sensors | §1.2 |
 | Look | Modern default theme + Classic theme with skins |
 | Assets | All artwork and sounds are produced for Infodock (Appendix C). No third-party artwork is bundled except permissively licensed icon sets (e.g. Fluent UI System Icons, MIT) with attribution |
@@ -113,169 +113,165 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 
 | Layer | Choice | Notes |
 |---|---|---|
-| App shell | **Tauri 2.x** (latest stable 2.x at implementation start; pin exact versions in the lockfiles) | System WebView2 (Evergreen) on Windows |
-| Core language | **Rust** (stable, edition 2021+) | |
-| Windows API | `windows` crate (Win32: Shell, UI.Shell, NetworkManagement.IpHelper, NetworkManagement.WiFi, System.Performance (PDH), System.Power, System.Shutdown, System.RemoteDesktop, Devices.DeviceAndDriverInstallation, Storage.FileSystem, Graphics.Gdi, UI.WindowsAndMessaging) | |
+| Core language | **Rust** (stable, edition 2024) | |
+| Bar, hints, popups | **Native Win32 windows** owned by the core, drawn with **Direct2D** + **DirectWrite** (software render target, §4.6), images decoded with **WIC** | No browser engine. Everything is drawn by Infodock's own renderer (§8.3) |
+| SVG assets | `resvg` (rasterises the Infodock icon set and user SVG images to bitmaps, cached per size) | Built without its text feature |
+| Windows API | `windows` crate (Win32: Shell, UI.Shell, UI.WindowsAndMessaging, UI.Input.KeyboardAndMouse, UI.Accessibility, Graphics.Gdi, Graphics.Dwm, Graphics.Direct2D, Graphics.DirectWrite, Graphics.Imaging, System.Com, System.Ole, Media.Audio, Globalization, NetworkManagement.IpHelper, NetworkManagement.WiFi, System.Performance (PDH), System.Power, System.Shutdown, System.RemoteDesktop, Devices.DeviceAndDriverInstallation, Storage.FileSystem) | |
+| App shell | **Tauri 2.x** (latest stable 2.x at implementation start; pin exact versions in the lockfiles) | Event loop, tray icon, plugins, and the Settings window |
+| Settings window | **WebView2** (Evergreen) via Tauri, created on demand and destroyed on close | The only webview; its processes exist only while Settings is open |
 | System info helpers | `sysinfo` (fallback/cross-platform), `starship-battery`, `wmi` (page-file sizes only) | |
-| Async/runtime | `tokio` (Tauri's runtime) + a dedicated **sampler thread** for polling | |
-| Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import) | |
+| Async/runtime | `tokio` (Tauri's runtime) for slow work (directory listings, file operations); a dedicated **bar thread** (§4.1) and **sampler thread** (§4.4) | |
+| Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import); `ts-rs` (TypeScript bindings for Settings) | |
 | Logging | `tracing` + `tracing-appender` (rolling files) | |
-| Tauri plugins | `global-shortcut`, `notification`, `autostart`, `single-instance`, `dialog`, `opener` (URLs only; files go through the platform layer) | |
-| Window effects | `window-vibrancy` (Acrylic/Mica) | Optional per theme |
-| UI language | **TypeScript** (strict) | |
-| UI framework | **Svelte 5** (runes) + Vite | Small runtime; fine-grained reactivity suits many small live sensors |
-| UI tests | Vitest (+ @testing-library/svelte) | |
-| JS toolchain | **Bun** as package manager and script runner (`bun install`, `bun run tauri dev`) | Bun is not a runtime here; the WebView runs the UI |
+| Tauri plugins | `global-shortcut`, `notification`, `autostart`, `single-instance`, `dialog` (Settings file pickers), `opener` (URLs from Settings) | The bar launches files and URLs through the platform layer |
+| Window effects | `window-vibrancy` (Acrylic/Mica on the bar window) | Optional per theme |
+| Settings UI | **TypeScript** (strict), **Svelte 5** (runes) + Vite | |
+| UI tests | Vitest (+ @testing-library/svelte) for Settings; Rust unit tests for the bar (§16) | |
+| JS toolchain | **Bun** as package manager and script runner (`bun install`, `bun run tauri dev`) | Bun is not a runtime here; Settings runs in WebView2 |
 | Packaging | Tauri bundler → **NSIS per-user installer** (no admin) + optional MSI | |
 
-**Why not Electron or Node/Bun alone:** Node and Bun cannot create desktop windows on their own. Electron would idle at about 150 MB+ for a 25 px bar and would still need native addons for the AppBar and system counters. **Why not a pure Rust UI:** popups, calendars, animations, theming and skins are much cheaper to build in HTML/CSS. The native parts stay in Rust either way.
+**Why a native bar.** The bar is visible all the time; Settings is opened now and then. A WebView2 bar costs a browser process tree for as long as the app runs: the M0 build (an empty webview bar) used about 360 MB across `infodock.exe` and six `msedgewebview2.exe` processes, and Settings added a seventh (about 65 MB). Comparable native bars use about 30 MB. The bar's content is small and regular (text, meters, graphs, icons, a calendar, a list popup), so drawing it directly is affordable, and it removes the IPC between bar and core. Settings is form-heavy and rarely open, so it keeps HTML/CSS and pays for WebView2 only while it is shown.
+
+**Why not Electron, WPF or WinUI:** they idle at 50–150 MB or more and would still need native code for the AppBar and system counters. **Why not a cross-platform Rust GUI toolkit for the bar:** the bar needs DWM materials, AppBar integration, layered popups, OLE drag & drop and UI Automation, which are Win32-level anyway; a toolkit would sit between Infodock and those APIs without saving much code.
 
 ---
 
 ## 4. Architecture
 
-### 4.1 Process and windows
+### 4.1 Process, threads and windows
 
-One process (single instance enforced). Four Tauri windows (webviews), all loading the same Vite app with different routes:
+One process (single instance enforced). No browser engine runs unless Settings is open.
 
-| Window label | Route | Properties | Purpose |
+| Window | Kind | Properties | Purpose |
 |---|---|---|---|
-| `bar` | `/bar` | undecorated, transparent, skip taskbar, not resizable, no shadow (unless the theme enables one), z-order per settings | The bar |
-| `hint` | `/hint` | undecorated, transparent, topmost, **non-activating**, **click-through** (`set_ignore_cursor_events(true)`), skip taskbar, created hidden at startup | Hover popups (text hints, calendar) |
-| `popup` | `/popup` | undecorated, transparent, topmost, focusable, skip taskbar, hides on blur, created hidden at startup | Interactive popups (Folder Menu, Eject list) |
-| `settings` | `/settings/*` | normal decorated window, created on demand, single instance | Settings, sensor properties, sensor picker, layout manager, help, about |
+| `bar` | native, bar thread | `WS_POPUP`; `WS_EX_TOOLWINDOW` (no taskbar button, no Alt+Tab); `WS_EX_NOACTIVATE` (clicks do not take focus, §5.3); per-pixel alpha composited by DWM, with an optional material (§5.5); z-order per settings | The bar |
+| `hint` | native, bar thread | layered (`UpdateLayeredWindow`, per-pixel alpha), topmost, non-activating, click-through (`WS_EX_TRANSPARENT`), tool window; created on first use and reused | Hover popups (text hints, calendar) |
+| `popup` | native, bar thread | layered, topmost, tool window, focusable; hides when it loses activation; created on first use and reused | Interactive popups (Folder Menu, Start Menu, Eject list) |
+| `settings` | Tauri webview (WebView2), main thread | normal decorated window, route `/settings/*`, created on demand, single instance, **destroyed on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
 
-Plus a **tray icon** (Rust side), menu: Show/Hide bar · Lock · Popups · Settings… · Quit.
+Plus a **tray icon** (Tauri, main thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit.
 
-> Non-activating hint window: use the Tauri builder's `focusable(false)` if available in the pinned version. Otherwise the platform layer sets `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` on the HWND and shows it with `SW_SHOWNOACTIVATE`.
+Threads:
+* **main**: Tauri's event loop — tray, global hotkey, single instance, the Settings window and the commands it calls (§4.5).
+* **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint and popup windows, the sensor instances, layout, rendering, context menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
+* **sampler thread**: polls the providers and delivers samples to the bar thread's queue (§4.4).
+* **tokio workers**: slow work (directory listings, file operations, icon extraction); results go back to the bar thread's queue.
 
-### 4.2 Rust core modules
+The bar does not depend on WebView2: if the runtime is missing, the bar works and only Settings reports an error.
+
+### 4.2 Rust modules
 
 ```
 src-tauri/src/
-  main.rs / lib.rs          app builder, plugin registration, window creation, tray
+  main.rs / lib.rs          app builder, plugins, tray; starts the sampler and the bar thread
   config/                   model.rs (typed config), store.rs (load/save/atomic write/debounce),
-                            migrate.rs (schema versions), legacy.rs (legacy XML layout import)
-  sampler/                  scheduler.rs (topic subscriptions, intervals, fan-out to Channels),
-                            topics.rs (topic ids & payload types)
+                            migrate.rs (schema versions), patch.rs, legacy.rs (legacy XML layout import)
+  i18n.rs                   message catalogs (shared with Settings), plural rules, t()
+  sampler/                  scheduler.rs (topic subscriptions, intervals, fan-out), topics.rs (ids, payloads)
   providers/                cpu.rs, memory.rs, swap.rs, disk.rs, volumes.rs, network.rs,
                             battery.rs, wifi.rs, uptime.rs, recycle_bin.rs
-  platform/
-    mod.rs                  traits: Platform, AppBar, Shell, Power, Devices, Icons, Monitors
-    geometry.rs             pure placement math: docking strips, monitor selection
-    windows/                appbar.rs, monitors.rs, shell.rs (ShellExecuteEx, IFileOperation,
-                            known folders, .lnk/.url), icons.rs (shell icon → PNG),
-                            power.rs, eject.rs, wlan.rs, pdh.rs, msgwnd.rs (hidden top-level
-                            window for WM_DEVICECHANGE, WM_POWERBROADCAST, WM_TIMECHANGE; not
-                            message-only, because message-only windows receive no broadcasts),
-                            keys.rs (GetAsyncKeyState), droptarget.rs (M3b)
-    stub.rs                 portable fallback for other OSes (development only)
-  windowing/                bar.rs (placement, appbar glue, rise animation), hint.rs,
-                            popup.rs (placement), settings.rs  (not `windows/`, which would
-                            clash with the `windows` crate)
-  commands/                 Tauri command handlers: config, data, shell, system, ui, app
-  protocol/                 icon.rs (shell icons), skin.rs (user skin packs)
-```
-
-### 4.3 Frontend modules
-
-```
-src/
-  main.ts                   route by window label → BarApp / HintApp / PopupApp / SettingsApp
-  lib/ipc.ts                typed wrappers for all commands/events; subscribe() helper over Channels
-  lib/config.ts             reactive config store mirrored from Rust ("config-changed" events)
-  lib/i18n.ts               message catalogs, plural rules, t()
-  lib/format.ts             bytes, rates, durations, percent, dates
-  lib/color.ts              hex parsing, luminance, dynamic gradient, tint
-  lib/theme.ts              applies theme tokens and skin to :root
-  bar/                      BarApp.svelte, Zone.svelte, SensorSlot.svelte (hover/click/drag glue),
-                            layout.ts (zone alignment), dnd.ts (reorder + external drop),
-                            menus.ts (native context menus)
-  hint/                     HintApp.svelte (text hint, rich hint host)
-  popup/                    PopupApp.svelte (hosts sensor popup components)
-  settings/                 SettingsApp.svelte, pages/*, PropertyForm.svelte (schema → form),
-                            SensorPicker.svelte, LayoutManager.svelte
+  bar/                      platform-neutral bar logic; runs on the bar thread
+    mod.rs                  BarController: the cross-thread handle
+    thread.rs               bar thread: event dispatch, sensor instances, timers, redraw scheduling
+    layout.rs               zone layout (§5.4), pure
+    interact.rs             hover, clicks and Lock rules, reorder drag, drop routing (§6)
+    hint.rs, popup.rs       hover hint (§7.1) and interactive popup host (§7.2)
+    placement.rs            hint/popup placement (§7.3), pure
+    menus.rs                context menus (§6.4)
+    theme.rs, skins.rs      resolved theme (§12.1), built-in skins, skin packs and tint (§12.3–12.4)
+    anim.rs                 rise animation, hover highlight, fades (§5.5)
   sensors/
-    registry.ts             all SensorType definitions
-    types.ts                SensorType, PropSchema, HintContent, SensorCtx …
-    common/                 Meter.svelte, Graph.svelte (canvas), DualGraph.svelte,
-                            TwoLine.svelte, IconLabel.svelte, history.ts (ring buffer)
-    <type>/index.ts         one folder per sensor type (+ View.svelte, optional Popup.svelte)
-  themes/                   modern.css, classic.css, skins/*.css (built-in classic skins)
-  assets/                   icons/*.svg, sounds/chime.ogg, logo.svg
-  i18n/                     en.json
+    mod.rs                  SensorType and Sensor traits, SensorCtx (§8.1)
+    schema.rs               property schema, validation, defaults and storage rules (§8.2, §11.2)
+    registry.rs             all sensor types
+    format.rs, color.rs     formatting (§8.6), colours and the dynamic gradient (§8.4)
+    common/                 two_line.rs, meter.rs, graph.rs, dual_graph.rs, icon_label.rs, history.rs (§8.3)
+    <type>.rs               one module per sensor type (text.rs, image.rs, cpu_graph.rs …)
+  platform/
+    mod.rs                  traits (§4.6)
+    geometry.rs             pure placement math: docking strips, monitor selection
+    windows/                window.rs (window classes, message loop, input → events), appbar.rs,
+                            monitors.rs, render.rs (Direct2D/DirectWrite/WIC canvas), menu.rs
+                            (TrackPopupMenuEx), dialog.rs (TaskDialogIndirect), droptarget.rs
+                            (IDropTarget), uia.rs (UI Automation provider), shell.rs (ShellExecuteEx,
+                            IFileOperation, known folders, .lnk/.url), icons.rs (shell icons → bitmaps),
+                            power.rs, eject.rs, wlan.rs, pdh.rs, locale.rs (NLS), sound.rs (PlaySound)
+    stub.rs                 portable fallback for other OSes (development and tests only)
+  windowing/                settings.rs (the Settings webview window), tray.rs
+  commands/                 Tauri commands for Settings: config, sensors, system, shell, app
+```
+
+### 4.3 Settings UI modules
+
+```
+src/                        Settings window only (Svelte 5)
+  main.ts                   mounts SettingsApp
+  lib/ipc.ts                typed wrappers for the commands and events of §4.5
+  lib/config.svelte.ts      reactive config store mirrored from Rust ("config-changed" events)
+  lib/i18n.ts               message catalogs, plural rules, t()
+  lib/theme.ts              Settings' own look (light/dark, high contrast)
+  lib/bindings/             TypeScript types generated from Rust (ts-rs)
+  settings/                 SettingsApp.svelte, pages/*, PropertyForm.svelte (schema → form),
+                            SensorPicker.svelte, LayoutManager.svelte, Welcome.svelte
+  i18n/                     en.json (shared with Rust)
 ```
 
 ### 4.4 Data flow
 
-1. On start, Rust loads the config and creates the windows. The bar UI calls `get_config`.
-2. For each placed sensor, the UI asks its sensor type for **topic requests** (`topics(props)`), e.g. `{ topic: "cpu", intervalMs: 1000 }`.
-3. The UI calls `subscribe(topic, intervalMs, channel)` once per *(sensor, topic)*. The Rust **scheduler** keeps the subscriber set per topic and samples at the **minimum** requested interval. Each sample goes to every subscriber's `Channel`; slower subscribers simply use the newest sample.
-4. Providers are **shared**: ten CPU sensors cost one CPU sample per tick.
-5. Event-driven topics (`volumes`, `battery`, `wifi`, `recycle-bin` after actions) push immediately when the OS notifies.
-6. Pure-UI sensors (Text, Image, Spacer, Date, Time) need no topics and run their own timers in the UI.
-7. Graph **history lives in the UI**: a ring buffer per sensor instance holding raw values (not pixels). It is not persisted.
-8. Config changes always go through Rust commands. Rust persists them and broadcasts `config-changed` to all windows.
+1. On start, Rust loads the config, starts the sampler thread and the bar thread, and creates the tray. The bar thread creates the bar window and instantiates one sensor per layout entry through the registry.
+2. For each sensor, the bar thread asks its type for **topic requests** (`topics(props)`), e.g. `{ topic: "cpu", interval_ms: 1000 }`, and subscribes once per *(sensor, topic)*. The **scheduler** keeps the subscriber set per topic and samples at the **minimum** requested interval. Every sample goes to the bar thread's queue; slower subscribers simply use the newest sample.
+3. Providers are **shared**: ten CPU sensors cost one CPU sample per tick.
+4. Event-driven topics (`volumes`, `battery`, `wifi`, `recycle-bin` after actions) push immediately when the OS notifies.
+5. Sensors that need no system data (Text, Image, Spacer, Date, Time) ask for a **wake-up time** instead (e.g. the next minute boundary). The bar thread keeps one timer for the earliest wake-up of all sensors.
+6. When a sample or wake-up changes what a sensor shows, it marks itself dirty. The bar thread re-measures dirty sensors, re-runs the layout only if a width changed, and redraws, coalescing to at most one frame per 16 ms. An open hint updates from the same sensor.
+7. Graph **history lives in the sensor instance**: a ring buffer of raw values (not pixels). It is not persisted.
+8. Config changes always go through the config store, whether they come from Settings commands, the tray, the hotkey or bar actions (drag, drop, remove). The store persists them and notifies its listeners: the bar thread re-creates changed sensors (matched by id) and re-lays out; Settings receives `config-changed`.
 
-### 4.5 IPC surface
+### 4.5 Settings IPC surface
 
-Commands (all `async`; errors as `{ code, message }`):
+The bar calls the core directly. Tauri commands exist only for the Settings window (all `async`; errors as `{ code, message }`):
 
 | Group | Command | Signature (TS view) |
 |---|---|---|
 | config | `get_config` | `() → Config` |
 | | `update_settings` | `(patch: DeepPartial<Settings>) → Config` |
 | | `add_sensor` | `(zone, index, type, props?) → SensorInstance` |
-| | `update_sensor` | `(id, props: Partial<Props>) → SensorInstance` |
-| | `set_sensor_state` | `(id, state: object) → void` (runtime state, e.g. uptime record, popup size) |
+| | `update_sensor` | `(id, props: Partial<Props>) → SensorInstance` (validated against the schema) |
+| | `preview_sensor` | `(id, props: Partial<Props> \| null) → void` — the bar shows these props without saving them; `null` ends the preview (§6.7) |
 | | `move_sensor` | `(id, zone, index) → void` |
 | | `remove_sensor` | `(id) → void` |
 | | `export_config` / `import_config` | `(path, mode: "replace"\|"merge") → ImportReport` |
 | | `import_legacy` | `(path, mode) → ImportReport` (§11.4) |
-| data | `subscribe` | `(topic, intervalMs, channel: Channel<Sample>) → subId` |
-| | `unsubscribe` | `(subId) → void` |
+| sensors | `sensor_types` | `() → SensorTypeInfo[]` — id, category, localised name and description, `requires`, property schema (§8.2) and this machine's derived defaults |
 | system | `capabilities` | `() → Capabilities` (§4.6) |
 | | `list_volumes` / `list_net_adapters` / `list_batteries` / `list_monitors` / `list_fonts` / `list_skins` | `() → …[]` |
 | | `install_skin` | `(path) → SkinInfo` (folder or `.zip`; validated, then copied into the skins folder, §12.4) |
 | | `remove_skin` | `(id) → void` |
-| shell | `shell_open` | `(target, { args?, cwd?, verb? }) → void` (ShellExecuteEx) |
-| | `shell_reveal` | `(path) → void` (Explorer with the item selected) |
-| | `resolve_link` | `(path) → { target, args, cwd, iconPath? }` (.lnk/.url) |
-| | `path_info` | `(paths[]) → { path, exists, kind: "file"\|"folder"\|"drive", volume? }[]` (`volume` = volume root; used to classify drops §6.3, check Shortcut targets §9.17, and choose move vs copy §9.19) |
-| | `list_dir` | `(path, { showHidden }) → DirEntry[]` |
-| | `known_folder` | `("programs"\|"commonPrograms"\|"desktop"\|…) → path` |
-| | `file_op` | `(op: "move"\|"copy"\|"link", paths[], destDir) → void` (IFileOperation with native progress/conflict UI) |
-| | `create_url_shortcut` | `(url, destDir, title?) → path` |
-| | `recycle_bin` | `(action: "open"\|"empty"\|"info") → RecycleBinInfo?` |
-| | `move_to_recycle_bin` | `(paths[]) → void` |
-| | `eject_volume` | `(path) → void` |
-| | `open_safely_remove` | `() → void` |
-| | `power_action` | `(mode, { force }) → void` |
-| | `get_modifier_keys` | `() → { ctrl, shift, alt, win }` |
-| ui | `show_hint` / `update_hint` / `hide_hint` | `(anchor: Rect, content: HintPayload)` |
-| | `show_popup` / `hide_popup` / `popup_ready` | `(kind, anchor, payload)`; `popup_ready(w, h)` reports the measured size |
-| | `open_settings` | `(route: string)` |
-| | `bar_focus` | `()` |
+| | `skin_preview` | `(id, edge) → string` (PNG data URL rendered by the bar renderer, for the gallery) |
+| shell | `shell_open` / `shell_reveal` | `(path)` — logs and skins folders |
 | app | `app_info` | `() → { version, locale, dataDir, logDir, skinsDir }` |
+| | `hotkey_status` | `() → HotkeyStatus` |
 | | `set_autostart` / `quit` | |
 
-Events (Rust → windows): `config-changed`, `bar-geometry` (bar rect, edge, monitor, scale), `popup-payload`, `hint-payload`, `system-resume`, `theme-changed` (OS light/dark, accent, transparency changes), `drop` (M3b).
+Events (Rust → Settings): `config-changed`, `settings-navigate` (switch page when Settings is already open).
 
-Custom protocols:
-* `icon://localhost/<urlencoded path>?size=<px>` (WebView2 sees `http://icon.localhost/…`). Returns a PNG of the shell icon at the requested **physical** size, LRU-cached (default 256 entries).
-* `skin://localhost/<pack>/<file>` serves files of installed skin packs (§12.4), restricted to files listed in each pack's `skin.json`.
+The bar opens Settings on a route (e.g. `sensor/<id>`, `new?zone=left&index=2`) by calling the core directly.
 
 ### 4.6 Platform abstraction
 
+Thread-safe services (`Send + Sync`), shared by all threads:
+
 ```rust
 pub trait Platform: Send + Sync {
-    fn capabilities(&self) -> Capabilities;           // which sensors/features exist here
-    fn appbar(&self) -> &dyn AppBar;                   // reserve edge, notifications
-    fn monitors(&self) -> Vec<MonitorInfo>;            // id, name, bounds, work area, scale, primary
-    fn shell(&self) -> &dyn Shell;                     // open, reveal, list_dir, file ops, links, recycle bin
-    fn icons(&self) -> &dyn Icons;                     // file/drive icon → RGBA
-    fn power(&self) -> &dyn Power;                     // lock/sign out/switch/sleep/hibernate/shut down/restart
-    fn devices(&self) -> &dyn Devices;                 // volumes, eject
+    fn capabilities(&self) -> Capabilities;      // which sensors/features exist here
+    fn monitors(&self) -> Vec<MonitorInfo>;      // id, name, bounds, work area, scale, primary
+    fn appearance(&self) -> OsAppearance;        // light/dark, accent colour, transparency effects, animations
+    fn locale(&self) -> &dyn Locale;             // weekday/month names, date patterns, hour cycle,
+                                                 // first day of week, decimal separator, collation
+    fn shell(&self) -> &dyn Shell;               // open, reveal, list_dir, file ops, links, recycle bin
+    fn icons(&self) -> &dyn Icons;               // file/drive icon → RGBA bitmap
+    fn power(&self) -> &dyn Power;               // lock/sign out/switch/sleep/hibernate/shut down/restart
+    fn devices(&self) -> &dyn Devices;           // volumes, eject
     fn keys(&self) -> Modifiers;
 }
 pub struct Capabilities {
@@ -284,11 +280,19 @@ pub struct Capabilities {
 }
 ```
 
+UI services, used only on the bar thread (not `Send`):
+
+* **Windows**: create a native window of a kind (§4.1) with an event handler; set geometry (physical px), show/hide, global alpha (fades), capture the pointer, invalidate, read its scale. Input arrives as platform-neutral events: pointer move/leave/down/up (button, modifiers), wheel, key, DPI change, timer, drag-enter/over/leave/drop (§6.3), and the OS broadcasts the bar cares about (resume, time change, device change, appearance change).
+* **Canvas**: drawing in logical px at the window's scale: filled and stroked rectangles, rounded rectangles, lines and polygons, linear gradients, text layouts, bitmaps (with opacity), clipping and layer opacity. **Text**: layout and measurement with a font family, size, weight and style, optional maximum width with an end ellipsis, tabular numerals. **Bitmaps**: decode files (PNG, JPEG, GIF, BMP, ICO; SVG through `resvg`) and wrap RGBA buffers.
+* **Menus** and **dialogs**: native popup menus at the cursor and confirmation dialogs.
+* **AppBar**: attached to the bar window (`attach_appbar(window, sink) → AppBar`), because it needs that window and its thread.
+* **Accessibility**: a UI Automation provider for the bar (§14.4).
+
+On Windows the canvas is Direct2D with a **software** render target drawing into a premultiplied 32-bit bitmap, with DirectWrite text (grayscale antialiasing, since the background is transparent). A full 28 px bar is cheap to rasterise on the CPU, and no GPU driver is loaded into the process. Presentation: the bar copies the bitmap to its DWM-composited window; hint and popup use `UpdateLayeredWindow`. The stub platform records canvas calls with fixed text metrics, so layout and rendering are unit-testable on any OS.
+
 `per_core_cpu` means per-processor counters can be read. It does not depend on the number of logical processors: a single-processor system still has it.
 
-The AppBar needs the bar's window handle and its UI thread, so it is attached to the bar window when that window is created (`platform::attach_appbar(window, sink) → AppBar`) instead of being reached through `Platform::appbar()`.
-
-Sensor types declare `requires: (keyof Capabilities)[]`. The picker hides types whose capabilities are missing. Configured sensors that are unsupported on the current platform render as a dimmed placeholder with the hint "Not available on this system".
+Sensor types declare `requires: &[Capability]`. The picker hides types whose capabilities are missing. Configured sensors that are unsupported on the current platform render as a dimmed placeholder with the hint "Not available on this system".
 
 ---
 
@@ -318,7 +322,7 @@ When `reserveSpace = true` (default) and docked:
 
 When `reserveSpace = false`: place the window at the edge without registering; maximised windows may overlap it.
 
-Implementation note: the AppBar is registered for the bar window itself, and the bar window is subclassed with `SetWindowSubclass` to receive the callback message, `WM_ACTIVATE`/`WM_WINDOWPOSCHANGED` (forwarded as `ABM_ACTIVATE`/`ABM_WINDOWPOSCHANGED`) and the broadcasts above. A hidden message-only window does not work: message-only windows receive no broadcasts (`TaskbarCreated`, `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`), and an appbar registered under a different window than the visible bar loses the shell's z-order coupling. The subclass also keeps other code (Aero Snap, DPI-change resizes, activation) from moving the bar or lifting it out of its z-order.
+Implementation note: the AppBar is registered for the bar window itself. Infodock creates that window and owns its window procedure, which receives the callback message, `WM_ACTIVATE`/`WM_WINDOWPOSCHANGED` (forwarded as `ABM_ACTIVATE`/`ABM_WINDOWPOSCHANGED`) and the broadcasts above. A hidden message-only window does not work: message-only windows receive no broadcasts (`TaskbarCreated`, `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`), and an appbar registered under a different window than the visible bar loses the shell's z-order coupling. The window procedure also keeps other code (Aero Snap, DPI-change resizes) from moving the bar or lifting it out of its z-order.
 
 ### 5.3 Z-order, full-screen, focus, power
 
@@ -326,7 +330,7 @@ Implementation note: the AppBar is registered for the bar window itself, and the
 * **Full-screen apps** (`hideOnFullscreen`, default true): on `ABN_FULLSCREENAPP(true)` for our monitor → drop topmost and hide the hint/popup windows; restore on `false`.
 * **Sleep/resume**: `WM_POWERBROADCAST / PBT_APMRESUMEAUTOMATIC` → emit `system-resume`. Providers reset delta baselines (CPU, network); the UI re-renders Date/Time/Uptime immediately.
 * **Time or time-zone changes** (`WM_TIMECHANGE`) → Date/Time refresh.
-* Clicking a sensor MUST NOT steal focus from the user's window, except for actions that open UI.
+* Clicking a sensor MUST NOT steal focus from the user's window, except for actions that open UI. The bar window has `WS_EX_NOACTIVATE`; the hotkey still focuses it explicitly (`SetForegroundWindow`) for keyboard use (§14.4).
 
 ### 5.4 Zones and layout algorithm
 
@@ -345,13 +349,13 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 
 * Sensor width is **intrinsic** (content), except for sensors with a width property (Spacer, graphs).
 * Zones MAY overlap when content exceeds the bar width; the center zone is drawn on top. The layout SHOULD then shrink text sensors with an ellipsis, center zone first, then left, then right.
-* Implementation: absolute positioning computed by `layout.ts` (a pure, tested function). Widths are measured with `ResizeObserver`. Values use `font-variant-numeric: tabular-nums` and per-sensor reserved minimum widths (§9) so changing numbers do not shift the bar.
+* Implementation: positions computed by `bar/layout.rs` (a pure, tested function) from the widths each sensor measures (`measure()`, §8.1). Values use tabular numerals (DirectWrite `tnum`) and per-sensor reserved minimum widths (§9) so changing numbers do not shift the bar.
 
 ### 5.5 Appearance
 
 * **Background**: theme/skin (§12) + `background.color` (tint), `background.opacity`, optional material (Acrylic/Mica), optional `shadow`.
 * **Highlight on hover** (`highlightOnHover`, default false): on pointer enter, background opacity → min(100 %, opacity × 1.7) with a 300 ms ease-in; back with a 300 ms ease-out on leave.
-* **Rise animation**: on startup and after an edge change, the bar slides in from off-screen on its edge and fades 0→1 over **300 ms, ease-out**. After an edge change, the bar first slides out toward the old edge (300 ms). If the OS "animation effects" setting is off (`SPI_GETCLIENTAREAANIMATION`), there is no animation.
+* **Rise animation**: on startup and after an edge change, the bar slides in from off-screen on its edge while its content fades 0→1 over **300 ms, ease-out**. After an edge change, the bar first slides out toward the old edge (300 ms). If the OS "animation effects" setting is off (`SPI_GETCLIENTAREAANIMATION`), there is no animation. The material (if any) moves with the window; only the drawn content fades.
 * **Sensor text colour**: `settings.sensors.textColor` (default `#FFFFFF`) applies to all labels and to icons in "standard" colour mode.
 
 ---
@@ -374,7 +378,7 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 * Over a sensor, a **placer** (2 px vertical line in the accent colour) shows the drop position: **left** of the target if the pointer is over its left half, otherwise right of it.
 * Over an empty area: the zone is chosen by the pointer's x in **thirds** of the bar width. The placer appears at that zone's insertion point: left zone → after its last sensor (or at `pad`); center → after its last sensor (or at the center); right zone → before its first sensor (or at `barWidth − pad`).
 * Drop → `move_sensor(id, zone, index)`. The index accounts for removing the source first: within the same zone, if the source is before the target, the target index shifts down by one.
-* Esc cancels the drag.
+* Esc cancels the drag. The bar does not take focus, so Esc is read with `GetAsyncKeyState` while the drag runs (pointer captured).
 
 ### 6.3 External drag & drop onto the bar
 
@@ -391,12 +395,11 @@ Sources: Explorer items (paths) and browser links (URLs).
 
 * Sensors created by a drop are added **without** opening the Properties dialog.
 * Zone and index come from the drop position, using the rules of §6.2.
-* **Implementation (v1)**: Tauri's webview drag-drop events (`onDragDropEvent`: `enter/over/drop/leave` with `paths` and physical `position`) for file paths. Each path is classified (file, folder or drive) with `path_info`. Modifier keys for file operations come from `get_modifier_keys` at drop time.
-* **URL drops (milestone M3b)**: Tauri's handler only delivers file paths (`CF_HDROP`); browsers offer links as `UniformResourceLocatorW` / `CFSTR_INETURLW`. M3b replaces the drop target with a custom `IDropTarget` registered on the WebView2 child HWNDs (revoke and re-register). It handles `CF_HDROP`, `CFSTR_INETURLW` and `CFSTR_SHELLIDLIST`, reads `grfKeyState`, and forwards a `drop` event to the UI.
+* **Implementation**: an `IDropTarget` registered on the bar window (`RegisterDragDrop`, bar thread). It reads `CF_HDROP` (paths), `CFSTR_INETURLW` / `UniformResourceLocatorW` (URLs, with the link text from `FileGroupDescriptorW` or the HTML fragment when offered) and `CFSTR_SHELLIDLIST` (drives and virtual items that have a file-system path), and takes modifier keys from `grfKeyState`. Each path is classified (file, folder or drive, and its volume) through the platform shell. The drop effect shown by the cursor follows the target (§9.16, §9.19); the Explorer drag image is kept with `IDropTargetHelper`.
 
 ### 6.4 Context menus
 
-Native menus (Tauri `Menu` API, `popup()` at the cursor).
+Native menus (`TrackPopupMenuEx` on the bar thread, at the cursor). Confirmations use native dialogs (`TaskDialogIndirect`).
 
 **Bar background menu**
 
@@ -442,7 +445,7 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 
 ### 6.6 Sensor picker and creation flow
 
-* Modal page in the Settings window (`/settings/new?zone=&index=&target=`).
+* Modal page in the Settings window (`/settings/new?zone=&index=&target=`); the bar's "New sensor…" opens Settings on that route.
 * Sensor types grouped by **category**, sorted alphabetically by localised name; each item shows name and description. A search box filters by name or description.
 * With a target sensor: an **Insert: Before / After** selector (default After) and the text "… the '{target name}' sensor".
 * **Add** (or double-click) → `add_sensor` with defaults → immediately opens **Properties** for the new instance. **Cancel** in Properties for a *newly created* sensor removes it again. Sensors created by drop skip this step.
@@ -451,7 +454,7 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 ### 6.7 Properties dialog
 
 * Route `/settings/sensor/<id>`. The form is generated from the sensor's `props` schema (§8.2); `hidden` fields are not shown.
-* Changes **preview live** on the bar (debounced 150 ms). **Save** persists; **Cancel** restores the snapshot taken when the dialog opened.
+* Changes **preview live** on the bar (debounced 150 ms, `preview_sensor`). **Save** persists (`update_sensor`) and ends the preview; **Cancel**, or closing Settings, ends the preview, which restores the saved props.
 * Validation per field type; invalid fields show inline errors and disable Save.
 * Each field shows its description as helper text.
 
@@ -464,13 +467,13 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 * Trigger: the pointer enters a sensor, `popupsEnabled` is true, no drag is in progress, and the sensor returns a non-empty hint.
 * **Show delay** 600 ms (`popups.showDelayMs`); **hide delay** 100 ms after the pointer leaves (`popups.hideDelayMs`). Moving to another sensor within the hide delay swaps the content immediately, without a new show delay.
 * While visible, the hint **updates live** when the sensor's data changes (CPU %, battery time…).
-* Content (`HintContent`): `{ kind: "text", text }` (multi-line plain text; `\n` line breaks; tab-aligned "label: value" columns) or `{ kind: "component", component, props }` for rich hints (Date calendar).
-* Visuals: rounded rectangle (modern radius 8 px, classic 6 px); background `popups.background` at `popups.opacity`; text `popups.textColor`; font `popups.font` / `popups.fontStyle` / `popups.fontSize` (9–15, default 12); optional shadow (`popups.shadow`); padding 6 px; minimum size 30×20. A **pointer triangle** 13×7 points at the sensor (downward when the bar is at the bottom, upward at the top).
+* Content (`HintContent`): `Text(String)` (multi-line plain text; `\n` line breaks; tab-aligned "label: value" columns) or `Rich(Box<dyn RichHint>)` for hints that measure and draw themselves (Date calendar).
+* Visuals: rounded rectangle (modern radius 8 px, classic 6 px); background `popups.background` at `popups.opacity`; text `popups.textColor`; font `popups.font` / `popups.fontStyle` / `popups.fontSize` (9–15, default 12); optional shadow (`popups.shadow`: a soft shadow drawn into the layered window's margin); padding 6 px; minimum size 30×20. A **pointer triangle** 13×7 points at the sensor (downward when the bar is at the bottom, upward at the top).
 * The hint is click-through. It closes when the pointer leaves the sensor, on any click, when a menu opens and when a drag starts.
 
 ### 7.2 Interactive popups
 
-* Opened by a sensor click (Folder Menu, Start Menu, Eject USB). Popup kinds are registered by sensor types.
+* Opened by a sensor click (Folder Menu, Start Menu, Eject USB). Popup kinds are provided by sensor types: a popup measures, draws and handles its own input inside the shared `popup` window.
 * Focusable. Closes on **blur**, **Esc**, a second click on the same sensor, or after an action that opens something.
 * A sensor whose popup has just closed ignores clicks for 500 ms, so the click that caused the blur does not reopen it.
 * While open, the sensor shows an **active** state (subtle highlight behind it).
@@ -488,7 +491,7 @@ else:              y = barRect.bottom         (popup below the bar, pointer at i
 pointerX = clamp(anchor.centerX − x − pointerW/2, radius + 1, w − radius − 1 − pointerW)
 ```
 
-Flow: the bar calls `show_hint` / `show_popup` with the anchor and payload. Rust forwards the payload to the hint/popup window, which renders invisibly (opacity 0), measures itself and calls `popup_ready(w, h)`. Rust then sizes and positions the window (physical px) and shows it, without activation for hints and with focus for popups, using a 120 ms fade.
+Flow (all on the bar thread): measure the content, compute the placement (`bar/placement.rs`, pure), render into the window's bitmap, then size, position (physical px) and show the window, without activation for hints and with focus for popups, fading in over 120 ms (layered-window alpha). A live hint update re-measures and re-renders in place; the window moves only if its size changed.
 
 ### 7.4 Notifications
 
@@ -500,40 +503,54 @@ Flow: the bar calls `show_hint` / `show_popup` with the anchor and payload. Rust
 
 ## 8. Sensor framework
 
-### 8.1 Sensor type contract (TypeScript)
+### 8.1 Sensor type contract (Rust)
 
-```ts
-export type Zone = "left" | "center" | "right";
-export type Category = "general" | "info" | "system" | "network" | "launchers";
+```rust
+pub enum Zone { Left, Center, Right }
+pub enum Category { General, Info, System, Network, Launchers }
 
-export interface SensorType<P extends object, S extends object = {}> {
-  type: string;                         // stable id, e.g. "cpu-graph"
-  legacyTypes?: string[];               // legacy XML type ids handled by this type (§11.4)
-  category: Category;
-  name: MsgKey;                         // localised display name
-  description: MsgKey;
-  requires?: (keyof Capabilities)[];
-  props: PropSchema<P>;                 // ordered fields: drives the form and validation
-  defaults(ctx: DefaultsCtx): P;        // ctx: locale, volumes, CPU count; storage rules in §11.2
-  topics?(p: P): TopicRequest[];        // system data needed (none for pure-UI sensors)
-  view: Component<ViewProps<P, S>>;     // rendered in the bar slot (height = bar content height)
-  hint?(c: SensorCtx<P, S>): HintContent | null;
-  popup?: { kind: string; component: Component<PopupProps<P, S>> };  // click popup
-  onClick?(c: SensorCtx<P, S>): void | Promise<void>;
-  menu?(c: SensorCtx<P, S>): MenuItemSpec[];
-  drop?: { accepts(d: DropPayload, c): boolean; onDrop(d: DropPayload, c): Promise<void> };
-  initialState?(): S;                   // persisted runtime state (e.g. uptime record)
-  inactive?(c: SensorCtx<P, S>): boolean; // drives inactive rendering (§8.5)
-  fromLegacy?(raw: Record<string, string>, legacyType: string): Partial<P>;  // §11.4
+/// One per sensor module; registered in `sensors/registry.rs`. Static and thread-safe.
+pub trait SensorType: Send + Sync {
+    fn id(&self) -> &'static str;                         // stable id, e.g. "cpu-graph"
+    fn legacy_types(&self) -> &'static [&'static str];    // legacy XML type ids handled (§11.4)
+    fn category(&self) -> Category;
+    fn name(&self) -> MsgKey;                             // localised display name
+    fn description(&self) -> MsgKey;
+    fn requires(&self) -> &'static [Capability];
+    fn schema(&self) -> &'static [PropField];             // ordered fields: drives the Settings form,
+                                                          // validation and static defaults (§8.2)
+    fn machine_defaults(&self, ctx: &DefaultsCtx) -> Props;  // ctx: locale, volumes, CPU count (§11.2)
+    fn from_legacy(&self, raw: &LegacyProps, legacy_type: &str, report: &mut ImportReport) -> Props;
+    fn create(&self, props: &Props, state: &State) -> Box<dyn Sensor>;
 }
 
-export interface SensorCtx<P, S> {
-  id: string; props: P; state: S; data: Record<string, Sample | undefined>;
-  settings: Settings; locked: boolean; altKey: boolean;
-  setState(patch: Partial<S>): void;  updateProps(patch: Partial<P>): void;
-  ipc: Ipc;  t: (k: MsgKey, ...args: unknown[]) => string;  notify(title: string, body: string): void;
+/// A placed instance. Lives on the bar thread; re-created when its props change.
+pub trait Sensor {
+    fn topics(&self) -> Vec<TopicRequest>;                // system data needed (none for UI-only sensors)
+    fn on_sample(&mut self, topic: &Topic, sample: &Sample, cx: &mut SensorCtx) -> Dirty;
+    fn wake_at(&self, now: Instant) -> Option<Instant>;   // timer-driven sensors (clock, uptime)
+    fn on_wake(&mut self, cx: &mut SensorCtx) -> Dirty;
+    fn measure(&self, cx: &LayoutCtx) -> f32;             // width in logical px; height = bar content height
+    fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
+    fn hint(&self, cx: &SensorCtx) -> Option<HintContent>;
+    fn click(&mut self, cx: &mut SensorCtx) -> ClickResult;  // None, Handled, or OpenPopup(Box<dyn Popup>)
+    fn menu(&self, cx: &SensorCtx) -> Vec<MenuItem>;      // sensor-specific items (§6.4)
+    fn on_menu(&mut self, item: MenuId, cx: &mut SensorCtx);
+    fn drop_effect(&self, d: &DropPayload, cx: &SensorCtx) -> Option<DropEffect>;  // accepts? (§6.3)
+    fn on_drop(&mut self, d: DropPayload, cx: &mut SensorCtx);
+    fn inactive(&self) -> bool;                           // drives inactive rendering (§8.5)
+    fn accessible_value(&self, cx: &SensorCtx) -> String; // §14.4
+}
+
+/// What a sensor may use; built by the bar thread for each call.
+pub struct SensorCtx<'a> {
+    pub id: &'a str, pub settings: &'a Settings, pub theme: &'a Theme,
+    pub locked: bool, pub alt: bool, pub platform: &'a dyn Platform,
+    /* set_state(patch), update_props(patch), notify(title, body), open_settings(route), t(key, args) */
 }
 ```
+
+All trait methods except the identity ones have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. `sensor_types` (§4.5) exports the schemas to Settings.
 
 ### 8.2 Property field types
 
@@ -550,21 +567,21 @@ export interface SensorCtx<P, S> {
 | `file` | path + Browse… (extension filter) | string | Existence is checked when used, not on save |
 | `folder` | path + Browse… | string | |
 | `font` | dropdown of system font families | string | In sensor properties, a first **Default** entry (stored as `""`) follows the global sensor font (§10.4) |
-| `fontStyle` | Normal / Semibold / Bold / Italic / Semibold Italic / Bold Italic | string: `normal`, `semibold`, `bold`, `italic`, `semiboldItalic`, `boldItalic` | Semibold = CSS weight 600; fonts without a semibold face render bold |
+| `fontStyle` | Normal / Semibold / Bold / Italic / Semibold Italic / Bold Italic | string: `normal`, `semibold`, `bold`, `italic`, `semiboldItalic`, `boldItalic` | Semibold = weight 600; fonts without a semibold face render bold |
 | `drive` | dropdown from `list_volumes` (live) | `X:\` | option `hideOptical` |
 | `netAdapter` | dropdown from `list_net_adapters` (live) + "Automatic" | `{ id, name }` | |
 | `battery` | dropdown from `list_batteries` | index | |
 | `hidden` | — | any | internal values (e.g. popup size) |
 
-Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf?(p) }`.
+Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf? }`. `visibleIf` is declarative so Settings can evaluate it: `{ key, in: [values] }` (shown while another field has one of these values).
 
 `default` is normally a static value. A **machine-derived** field (`machineDefault: true`) instead gets its default from `defaults(ctx)`, e.g. the first fixed drive or the locale's clock format. §11.2 defines how this affects what is stored.
 
 ### 8.3 Reusable building blocks
 
-**Two-line block** (`TwoLine.svelte`) — the core visual idiom: a small **label** line above a **value** line, both in the sensor font (modern: 10 px semibold; classic: Arial 9 px bold). In a 25 px bar the classic text baselines are y = 11 and y = 21. Modern: a two-row CSS grid centred vertically; line height = font size + 1.
+**Two-line block** (`common/two_line.rs`) — the core visual idiom: a small **label** line above a **value** line, both in the sensor font (modern: 10 px semibold; classic: Arial 9 px bold). In a 25 px bar the classic text baselines are y = 11 and y = 21. Modern: two rows centred vertically as a block; line height = font size + 1.
 
-**Meter** (`Meter.svelte`) — CPU, Memory, Swap and Disk meters:
+**Meter** (`common/meter.rs`) — CPU, Memory, Swap and Disk meters:
 ```
 [▮] LABEL
     value
@@ -574,21 +591,21 @@ Field definition: `{ key, type, label, description?, default, machineDefault?, .
 * Fill: height = value × bar height, anchored at the bottom. Colour by `colorMode`: Standard → sensor text colour at **59 %**; Custom → the colour at 100 %; Dynamic → gradient(value) at 100 % (§8.4).
 * Label at x = 8. Value right-aligned to x = 32 (classic geometry), i.e. a minimum column that fits "100%".
 
-**Graph** (`Graph.svelte`, canvas) — CPU, Memory and Swap graphs:
+**Graph** (`common/graph.rs`) — CPU, Memory and Swap graphs:
 * Plot area: `width` logical px (50–150, step 5, default 50) × (bar height − 4), at y = 2.
 * **One sample per logical px column**, newest at the **right edge**, scrolling left. Each column is a bar from the bottom with height = value × plot height. History length = width.
-* Layers: background (`bkColor` standard = black; `bkOpacity` default **0 %**) → grid (pattern of 5 px cells drawn on the canvas; `gridColor` standard = `#A0FF9B`; `gridOpacity` default **0 %**) → columns (`graphColor` default **Custom `#00FF00`**; `graphOpacity` default **55 %**, min 20 %). With Dynamic colour, each column takes the colour of its own value.
+* Layers: background (`bkColor` standard = black; `bkOpacity` default **0 %**) → grid (pattern of 5 px cells; `gridColor` standard = `#A0FF9B`; `gridOpacity` default **0 %**) → columns (`graphColor` default **Custom `#00FF00`**; `graphOpacity` default **55 %**, min 20 %). With Dynamic colour, each column takes the colour of its own value.
 * Two-line block to the right of the plot (gap 5 px): label (e.g. "CPU") and value (e.g. "37%") right-aligned in a reserved column (fits "100%" or the sensor-specific reserve).
-* DPR-aware canvas (backing store = logical size × devicePixelRatio), fully redrawn per sample (cheap at ≤ 150 columns).
+* Drawn at the window's scale (one logical column = `scale` physical px, snapped to whole pixels), fully redrawn per sample (cheap at ≤ 150 columns).
 
-**Dual graph** (`DualGraph.svelte`) — CPU dual, Network:
+**Dual graph** (`common/dual_graph.rs`) — CPU dual, Network:
 * The plot is split into two halves of (plotHeight − 1)/2 with a 1 px gap. The **top** series grows upward from the middle line. The **bottom** series grows **downward** from the middle (`flipBottom = true`, default) or upward from the bottom edge (`false`).
 * Colour and opacity per series (`topColor`/`topOpacity`, `bottomColor`/`bottomOpacity`).
 * Values are normalised to 0..1 per series by the owning sensor.
 
-**Icon + two-line** (`IconLabel.svelte`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap.
+**Icon + two-line** (`common/icon_label.rs`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap.
 
-**History** (`history.ts`): fixed-capacity ring buffer (`Float32Array`); resizing keeps the newest samples.
+**History** (`common/history.rs`): fixed-capacity ring buffer of `f32`; resizing keeps the newest samples.
 
 ### 8.4 Colour modes and the dynamic gradient
 
@@ -609,13 +626,13 @@ When `inactive()` returns true, the sensor's icon or graphic is rendered as:
 
 Labels stay readable; only the icon/graphic dims. v1 uses it for: Disk (drive absent), Wi-Fi (disconnected), Battery (no battery), Shortcut (target missing), Swap (no page file).
 
-### 8.6 Formatting helpers (`format.ts`)
+### 8.6 Formatting helpers (`sensors/format.rs`)
 
 * **Bytes** (`formatBytes(n, digits = auto)`), base **1024**, units `TB, GB, MB, KB, bytes` (singular `1 byte`). Auto digits: `0` → "0"; `< 10` → 2 decimals; `< 100` → 1 decimal; otherwise 0. Plain bytes always use 0 decimals. Examples: `0 bytes`, `512 bytes`, `1.50 KB`, `12.3 MB`, `431 GB`.
 * **Rates** (`formatRate`): same scaling, units `TB/s … KB/s, B/s`.
 * **Durations**: compact `3d 04h 12m` (uptime); long `3 days, 4 hours, 12 minutes` with plural rules; battery `h:mm`.
-* **Percent**: integer, `37%` (locale-specific spacing allowed).
-* **Dates**: `Intl.DateTimeFormat`; ISO 8601 week numbers.
+* **Percent**: integer, `37%` (locale-specific spacing allowed). Decimal separator from the locale.
+* **Dates**: weekday and month names, date patterns and the hour cycle from the platform `Locale` (Windows NLS: `GetLocaleInfoEx`, `GetDateFormatEx`, `GetTimeFormatEx`) for `settings.dateLocale`; ISO 8601 week numbers computed in Rust.
 
 ---
 
@@ -671,7 +688,7 @@ View: a transparent hit area `width` × bar height. A 1 px divider is centred (x
 
 **View**
 * **Year shown**: on the left, the **day line** in large text (15 px bold), e.g. `Saturday, 11` / `Sat, 11` / `11`. To its right (3 px gap), two small stacked lines (11 px): **month** in lower case (`october`, `oct` or `10`) and **year** (`2026`). The year is on the top line for `top`, on the bottom line for `bottom`. With month = none, the month line is hidden.
-* **Year = none**: a single large line combining weekday and month, e.g. `Saturday, October 11`, `Sat, Oct 11`, `Saturday, 10/11`, `11`. Use `Intl.DateTimeFormat` parts so that ordering follows the locale.
+* **Year = none**: a single large line combining weekday and month, e.g. `Saturday, October 11`, `Sat, Oct 11`, `Saturday, 10/11`, `11`. Build it from the locale's date patterns (§8.6) so that ordering follows the locale.
 * Re-render when the local date changes: a timer to the next local midnight, plus `WM_TIMECHANGE`, resume, and a 60 s safety tick.
 
 **Hint (rich)**: when calendar ≠ none, a **month calendar**: a header row of short weekday names starting at the chosen week start, then 4–6 week rows with right-aligned day numbers in columns ≥ 29 px wide. Weekend columns (Sat, Sun) use `popups.strongTextColor`. **Today** is a filled rounded rect in the text colour (strong colour on weekends) with the number in the popup background colour. Below the calendar: `Week {isoWeek}, Day {dayOfYear}`. With calendar = none, only that line.
@@ -690,9 +707,9 @@ View: a transparent hit area `width` × bar height. A 1 px divider is centred (x
 **View**
 * Without seconds: the **hour** in large text (15 px bold, no leading zero: `9`, `21`). To its right (2 px gap), the **minutes** in small text (11 px), raised like a superscript. In 12 h mode, a small `am`/`pm` (9 px) sits under the minutes. The minutes column has a fixed width = max(width("00"), width("am"), width("pm")) so the bar does not shift. Updates when the minute changes (timer aligned to the minute boundary, plus `WM_TIMECHANGE`).
 * With seconds: `H:MM` in large text, and the **seconds** small and raised (am/pm under them in 12 h mode). Updates at second boundaries (aligned timer, no polling).
-* **Chime**: when the minute changes and `minute % chime == 0`, play the bundled chime sound (`assets/sounds/chime.ogg`) via `<audio>`. No chime within 2 s after app start or resume.
+* **Chime**: when the minute changes and `minute % chime == 0`, play the bundled chime sound (`assets/sounds/chime.wav`, embedded in the binary) with `PlaySound(SND_MEMORY | SND_ASYNC)`. No chime within 2 s after app start or resume.
 
-**Hint**: the long date, e.g. `Saturday, October 11, 2026` (Intl `dateStyle: "full"`).
+**Hint**: the long date, e.g. `Saturday, October 11, 2026` (the locale's long date format).
 **Click**: `ms-settings:dateandtime`.
 
 ### 9.6 `uptime` — Uptime  (Info; `DockUpTime`)
@@ -702,7 +719,7 @@ View: a transparent hit area `width` × bar height. A 1 px divider is centred (x
 | text | `text` | text | "Uptime:" — prefix; an empty value means no prefix (no `emptyIsDefault`) |
 | font / fontStyle / fontSize / shadow | as Text | | style bold, size 12 |
 
-State (persisted via `set_sensor_state`): `longestSecs` (XML key `max-uptime`, format `d:h:m:s`; empty = none).
+State (persisted in the config's `state`, §11.2): `longestSecs` (XML key `max-uptime`, format `d:h:m:s`; empty = none).
 
 Topic `uptime`. Rust takes the boot time from `GetTickCount64()`; the UI counts locally between samples (resample every 60 s and on resume).
 
@@ -823,7 +840,7 @@ Click: open the drive in Explorer. Drive absent: value `n/a`, inactive.
 
 Topic `net/<adapter>` → `{ rxRate, txRate, rxTotal, txTotal, up, linkRx, linkTx, name, alias }`.
 
-**Scaling** per series: `scale = max(configured max (if any), max of the visible history, 1 KB/s)`, recomputed every tick. The canvas redraws from raw history values, so rescaling is lossless.
+**Scaling** per series: `scale = max(configured max (if any), max of the visible history, 1 KB/s)`, recomputed every tick. The graph redraws from raw history values, so rescaling is lossless.
 
 **View**: Dual graph. The text column shows **two right-aligned lines**: receive rate on top (e.g. `1.24 MB/s`) and send rate below (`86.0 KB/s`). The column is wide enough for `1023 MB/s`.
 
@@ -928,7 +945,7 @@ Recycle Bin
 ```
 **Click**: open the Recycle Bin (`shell:RecycleBinFolder`).
 **Menu**: `Open Recycle Bin`; `Empty Recycle Bin` (`SHEmptyRecycleBinW` with the OS default confirmation and sound).
-**Drop**: files/folders → `move_to_recycle_bin` (IFileOperation with `FOFX_RECYCLEONDELETE`; confirmation per OS settings). While dragging over it, show the floating drop hint "Delete {n} items" (§9.19).
+**Drop**: files/folders → moved to the Recycle Bin (IFileOperation with `FOFX_RECYCLEONDELETE`; confirmation per OS settings). While dragging over it, show the floating drop hint "Delete {n} items" (§9.19).
 
 ### 9.17 `shortcut` — Shortcut  (Launchers; `DockShortcut`)
 
@@ -944,11 +961,11 @@ Recycle Bin
 | color | `colorize` | colorMode (standard/custom) | standard | |
 | opacity | `opacity` | opacity, min 20 % | 100 % | |
 
-* **Icon**: the custom image; otherwise the shell icon of the target via `icon://` (`.lnk` shows its target's icon); for URLs, the built-in globe icon. Size: bar height − 4, centred.
+* **Icon**: the custom image; otherwise the shell icon of the target (platform `Icons`, requested at physical size; `.lnk` shows its target's icon); for URLs, the built-in globe icon. Size: bar height − 4, centred.
 * **Automatic title**: URL → the URL, middle-truncated to 150 characters (first 75 + `…` + last 75). File → file name without extension. Folder → folder name.
 * **Hint**: the title if set; otherwise `Open '{title}'` (only `{title}` when clicks need Alt, §6.1).
 * **Click**: URL → open with the default handler. Folder → open in Explorer. File → `ShellExecuteExW(verb = runAs ? "runas" : "open", file = target, params = args, dir = workDir)`.
-* **Inactive** while the target does not exist (checked with `path_info` when properties change and every 60 s).
+* **Inactive** while the target does not exist (checked when properties change and every 60 s).
 * Created by dropping a file or URL onto the bar (§6.3).
 
 ### 9.18 `disk` — Disk  (Launchers; `DockDisk`)
@@ -961,7 +978,7 @@ Recycle Bin
 | color / opacity | `colorize` / `opacity` | | standard / 100 % |
 
 Topic `volumes` (event-driven list). View: the drive icon only.
-Hint: `Open '{display name}'` (or the title). Click: open the drive. Menu: **Eject** for removable and optical drives (`eject_volume`; on success the toast "{name} can be safely removed", on failure a toast with the reason, e.g. "in use by {app}"). Inactive while the drive is absent; an optical drive without media stays active, with the hint `{name} — no media`.
+Hint: `Open '{display name}'` (or the title). Click: open the drive. Menu: **Eject** for removable and optical drives (§9.22; on success the toast "{name} can be safely removed", on failure a toast with the reason, e.g. "in use by {app}"). Inactive while the drive is absent; an optical drive without media stays active, with the hint `{name} — no media`.
 
 ### 9.19 `folder-menu` — Folder Menu  (Launchers; `TurboFolder`)
 
@@ -979,16 +996,16 @@ Hint: `Open '{display name}'` (or the title). Click: open the drive. Menu: **Eje
 
 **Click** → interactive popup (§7.2), kind `folder-browser`:
 * **Header**: the current folder's title (truncated at the end). Click → open the current folder in Explorer; Alt+click → reveal it. Below it, a 2 px line in `popups.strongTextColor`. A **Back** button on the right appears after navigating into a subfolder.
-* **List**: 20 px rows with a 16 px shell icon and the name (truncated at the end). **Folders first**, then files; each group sorted case-insensitively with natural number order (`Intl.Collator(locale, { numeric: true, sensitivity: "base" })`). `.lnk` and `.url` extensions are hidden in names. `desktop.ini` is always skipped; hidden/system items are skipped unless `showHidden`. Hovered rows are highlighted (dark popup background: `#A9DFFF` at 40 %; light: `#00649E` at 55 %). An empty folder shows a centred "no items". Slow folders show a loading indicator; listing runs asynchronously in Rust.
+* **List**: 20 px rows with a 16 px shell icon and the name (truncated at the end). **Folders first**, then files; each group sorted case-insensitively with natural number order (`CompareStringEx` with `LINGUISTIC_IGNORECASE | SORT_DIGITSASNUMBERS`, as Explorer sorts). `.lnk` and `.url` extensions are hidden in names. `desktop.ini` is always skipped; hidden/system items are skipped unless `showHidden`. Hovered rows are highlighted (dark popup background: `#A9DFFF` at 40 %; light: `#00649E` at 55 %). An empty folder shows a centred "no items". Slow folders show a loading indicator; listing runs asynchronously in Rust.
 * **Item click**: folder → navigate in place (the list slides left, 250 ms ease-out; Back slides right). File → open it (ShellExecute) and close the popup. **Alt+click** → reveal in Explorer.
 * **Keyboard**: ↑/↓ select; Enter opens; → or Enter on a folder navigates into it; ← or Backspace goes back; Esc closes; typing jumps to the first name with that prefix.
-* **Mouse wheel**: native scrolling.
+* **Mouse wheel**: smooth scrolling (the system's wheel scroll lines, animated over 100 ms).
 * **Resize**: a grip on the popup's free vertical edge (width) and on the edge away from the bar (height). The new size is saved to popupWidth/popupHeight.
 * **Placement**: as §7.3, but the popup's left edge aligns with the sensor's left edge. If that would overflow the monitor, its right edge aligns with the sensor's right edge instead.
 * **Menu**: `Open folder`.
 * **Drop onto the sensor**:
-  * Files/folders follow the **Explorer convention**: same volume → move, other volume → copy (volumes from `path_info`). Ctrl forces copy, Shift forces move, Alt creates shortcuts (`.lnk`).
-  * URLs → `create_url_shortcut`: a `.url` file named after the page title, or after the URL with the characters `:/\&+?*=.` replaced by `-`.
+  * Files/folders follow the **Explorer convention**: same volume → move, other volume → copy (volumes from the platform shell). Ctrl forces copy, Shift forces move, Alt creates shortcuts (`.lnk`).
+  * URLs → a `.url` file named after the page title, or after the URL with the characters `:/\&+?*=.` replaced by `-`.
   * Executed with `IFileOperation` (native progress and conflict dialogs).
   * While dragging over the sensor: its background is highlighted (black at 78 %) and a **floating drop hint** appears above it, e.g. `Move 'report.pdf' to 'Downloads'`, `Copy 3 items to 'Downloads'`, `Create shortcut to 'https://…' in 'Downloads'` (source text truncated to 100 characters).
 * Created by dropping a folder onto the bar.
@@ -1011,7 +1028,7 @@ Properties: title (default "Start Menu"), image (default: built-in Start Menu ic
 | opacity | `opacity` | opacity, min 20 % | 100 % | |
 
 View: the mode's icon (SVG), 21 px.
-Hint: the mode name. Click: if `confirm`, a native dialog ("Do you really want to {lock|sign out of|…} this computer?"), then `power_action`:
+Hint: the mode name. Click: if `confirm`, a native dialog ("Do you really want to {lock|sign out of|…} this computer?"), then the platform power action:
 
 | Mode | Win32 |
 |---|---|
@@ -1029,7 +1046,7 @@ Hint: the mode name. Click: if `confirm`, a native dialog ("Do you really want t
 | opacity | `opacity` | opacity, min 20 % | 100 % |
 
 View: USB icon (30×21, SVG). Hint: `Eject USB`, plus `{n} removable drives` when n > 0.
-Click → interactive popup, kind `eject-list`: one row per ejectable volume (removable USB drives, USB-attached disks, optical media) with icon, display name, letter, size and an **Eject** button. Footer button "Safely Remove Hardware…" opens the system dialog (`rundll32.exe shell32.dll,Control_RunDLL hotplug.dll`). Eject → `eject_volume` → toast with the result; the list refreshes on `volumes` events. With nothing to eject: "Nothing to eject".
+Click → interactive popup, kind `eject-list`: one row per ejectable volume (removable USB drives, USB-attached disks, optical media) with icon, display name, letter, size and an **Eject** button. Footer button "Safely Remove Hardware…" opens the system dialog (`rundll32.exe shell32.dll,Control_RunDLL hotplug.dll`). Eject → toast with the result; the list refreshes on `volumes` events. With nothing to eject: "Nothing to eject".
 
 **Eject implementation** (`platform/windows/eject.rs`):
 1. Volume → device: `GetVolumeNameForVolumeMountPoint` → `IOCTL_STORAGE_GET_DEVICE_NUMBER` → match the disk interface (`GUID_DEVINTERFACE_DISK` via SetupAPI) → `CM_Get_Parent` up to the removable USB device node.
@@ -1235,7 +1252,7 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 | `DockRSSSensor`, `DockStandardMail`, `DockGMail`, `DockGMailForDomains`, `DockYMail`, `DockSpeedFan`, `DockRadio` | — | Stored in `legacy.unsupported` with their properties (any `password` property is **dropped**). Listed in the report as "not supported yet". Kept for future feed/mail/hardware/radio sensors |
 | anything else | — | Skipped, with a warning |
 
-Each sensor type converts its own properties in `fromLegacy(raw, legacyType)`. An example file with its expected result is in Appendix B; it MUST be part of the importer's test suite.
+`config/legacy.rs` parses the XML and the shared value encodings; each sensor type converts its own properties in `from_legacy(raw, legacy_type, report)` (§8.1). An example file with its expected result is in Appendix B; it MUST be part of the importer's test suite.
 
 ### 11.5 First run
 
@@ -1246,22 +1263,24 @@ Each sensor type converts its own properties in `fromLegacy(raw, legacyType)`. A
 
 ## 12. Theming
 
-### 12.1 Token model
+### 12.1 Theme model
 
-All styling uses CSS custom properties on `:root`, set by `theme.ts` from theme defaults and user settings:
+The bar thread resolves a `Theme` (`bar/theme.rs`) from the theme defaults (`ThemeDefaults`), the user's settings and the OS appearance (light/dark, accent colour, transparency effects), and re-resolves it when any of them changes. All drawing reads from it:
 
 ```
---bar-height, --bar-bg, --bar-bg-opacity, --bar-radius, --bar-pad (7px), --gap,
---sensor-fg, --sensor-font, --sensor-weight, --sensor-small (10px|9px), --sensor-medium (11px),
---sensor-large (15px), --popup-bg, --popup-opacity, --popup-fg, --popup-strong, --popup-font,
---popup-size, --popup-radius (8px|6px), --accent (OS accent), --inactive-opacity, --inactive-color
+bar height, background colour and opacity, edge padding (7), gap,
+sensor text colour, sensor font family / weight / style, small (10|9), medium (11) and large (15) sizes,
+popup background / opacity / text colour / strong colour / font / size / radius (8|6) / shadow,
+accent colour, inactive opacity and colour, hairline colour
 ```
+
+Settings has its own look (§4.3) and does not use the bar theme, except for skin previews rendered by the bar renderer (`skin_preview`).
 
 ### 12.2 Modern theme (default)
 
 * Bar: `#1C1C1F` at 80 % over **Acrylic** (DWM via `window-vibrancy`; Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28.
 * Typography: Segoe UI Variable; small 10 px, medium 11 px, large 15 px; semibold labels; tabular numerals.
-* Icons: the Infodock SVG set (Appendix C), monochrome, tinted with `--sensor-fg`.
+* Icons: the Infodock SVG set (Appendix C), monochrome, rasterised at the physical size and tinted with the sensor text colour.
 * Popups: radius 8 px, `#202024` at 92 %, soft shadow, 12 px text.
 * Follows the OS **light/dark** mode: in light mode (if the user has not customised colours) the bar is `#F3F3F3` at 80 % with sensor text `#1A1A1A`.
 * Placer: 2 px line in the accent colour.
@@ -1270,15 +1289,15 @@ All styling uses CSS custom properties on `:root`, set by `theme.ts` from theme 
 
 A compact, denser look:
 * Height 25; Arial; label/value 9 px bold; day/hour 15 px bold; month/minutes 11 px.
-* Popups: radius 6 px, 13×7 pointer triangle, all drawn in CSS.
+* Popups: radius 6 px, 13×7 pointer triangle.
 * No material (opaque or plain-alpha background), so skins render predictably.
 * The background is a **skin** (§12.4), tinted with `background.color` when `background.colorMode = custom`.
-* **Tint algorithm** (skins, and icons with a custom colour): per pixel `L = (0.299R + 0.587G + 0.114B) / 255`; output RGB = `L × tintRGB`; alpha preserved. Implemented on an `OffscreenCanvas` and cached as an object URL keyed by `(src, tint)`. CSS-drawn skins apply the tint by using `background.color` as their base colour.
+* **Tint algorithm** (skins, and icons with a custom colour): per pixel `L = (0.299R + 0.587G + 0.114B) / 255`; output RGB = `L × tintRGB`; alpha preserved. Applied on the CPU to the decoded RGBA and cached keyed by `(source, tint, size)`. Built-in skins apply the tint by using `background.color` as their base colour.
 * Background opacity applies to the skin layer only, not to sensors.
 
 ### 12.4 Skins
 
-**Built-in skins** (pure CSS in `themes/skins/*.css`, base colour = `background.color`):
+**Built-in skins** (procedural, drawn by `bar/skins.rs`; base colour = `background.color`):
 
 | Id | Name | Look |
 |---|---|---|
@@ -1304,21 +1323,21 @@ A compact, denser look:
 ```
 
 * Tiles are never stretched horizontally. A tile is `height + shadowBand` px tall (± 1 px tolerance).
-* When the configured bar height (§5.1) differs from `height`, the bar part of the tile is scaled vertically to the bar height; the shadow band keeps its size. This is pre-rendered on the same canvas as the tint (§12.3). Sensors always use the full configured bar height.
+* When the configured bar height (§5.1) differs from `height`, the bar part of the tile is scaled vertically to the bar height; the shadow band keeps its size. This is pre-rendered together with the tint (§12.3) and cached. Sensors always use the full configured bar height.
 * Validation on load: PNG/JPEG magic bytes, ≤ 1 MB per file, ≤ 512 px per side, only files named in `skin.json`. Invalid packs are listed in Settings with the reason.
-* Settings ▸ Appearance: "Install skin pack…" (pick a folder or `.zip`; `install_skin`), "Open skins folder" (`shell_open` on `skinsDir`), "Remove" (`remove_skin`).
+* Settings ▸ Appearance: a gallery of the built-in skins and installed packs with previews (`skin_preview`), "Install skin pack…" (pick a folder or `.zip`; `install_skin`), "Open skins folder" (`shell_open` on `skinsDir`), "Remove" (`remove_skin`).
 * A configured skin that is missing on this machine falls back to Gloss, with a one-line notice in Settings ▸ Appearance.
 
 ---
 
 ## 13. Localisation
 
-* Infrastructure from day one: all user-visible strings go through `t(key, …args)`. Catalogs live in `src/i18n/<lang>.json`, with stable keys (e.g. `sensor.cpu.hint.activity`); `en.json` is the source.
+* Infrastructure from day one: all user-visible strings go through `t(key, …args)` — `i18n::t` in Rust (bar, menus, dialogs, tray, notifications) and `t()` in Settings. Both read the same catalogs, `src/i18n/<lang>.json` (embedded in the binary), with stable keys (e.g. `sensor.cpu.hint.activity`); `en.json` is the source.
 * **v1 ships English only.** The language selector is hidden while only one catalog exists.
 * A missing key in a future catalog falls back to English and is logged once.
-* Plurals via `Intl.PluralRules` (catalog entries support `one/few/many/other`).
-* Weekday and month names, date order and number formatting come from `Intl` using `settings.dateLocale` (default `system` = the OS regional format), never from catalogs.
-* String externalisation is verified by a lint rule (no bare string literals in Svelte markup).
+* Plurals: catalog entries support the CLDR categories `one/few/many/other`. Settings uses `Intl.PluralRules`; Rust selects the category with CLDR plural rules for the UI language.
+* Weekday and month names, date order and number formatting come from the platform locale (§8.6) using `settings.dateLocale` (default `system` = the OS regional format), never from catalogs.
+* String externalisation is verified by a lint rule in Settings (no bare string literals in Svelte markup); in Rust by review (no string literals passed to drawing, menu or dialog calls).
 
 ---
 
@@ -1329,45 +1348,40 @@ A compact, denser look:
 | Metric | Budget |
 |---|---|
 | Idle CPU (4-core laptop) | ≤ 0.5 % average over 60 s |
-| Private memory, all processes incl. WebView2 | ≤ 100 MB (stretch 70 MB) |
-| Cold start → bar visible | ≤ 1.5 s; warm ≤ 0.8 s |
+| Memory, Settings closed: private working set (Task Manager's *Memory* column) of `infodock.exe` plus any child processes | ≤ 30 MB (stretch 20 MB) |
+| Memory after Settings was opened and closed | back within the budget above 10 s after closing (no WebView2 process left running) |
+| Cold start → bar visible | ≤ 0.5 s; warm ≤ 0.3 s |
+| Full bar redraw (2560 px wide, first-run layout) | ≤ 2 ms |
 | Sampler cost per tick | ≤ 2 ms total |
-| Hint shown after its delay | ≤ 50 ms |
+| Hint shown after its delay | ≤ 30 ms |
 | Folder Menu popup, folder with 500 items | ≤ 200 ms to first paint |
 
-Techniques: one sampler thread; PDH query handles opened once and reused; no WMI on hot paths (page-file sizes cached for 60 s); Channels instead of global events; only changed sensors re-render; canvas graphs; no CSS `backdrop-filter` (blur is done by DWM); hint/popup windows pre-created and reused; icon LRU cache.
+Techniques: one sampler thread; PDH query handles opened once and reused; no WMI on hot paths (page-file sizes cached for 60 s); only dirty sensors are re-measured, and a frame is drawn only when something changed (at most one per 16 ms); software Direct2D (no GPU device in the process); text layouts and decoded bitmaps cached per sensor and invalidated on change; hint and popup windows created on first use and reused; icon LRU cache (256 entries); Settings' WebView2 destroyed on close. CI measures memory on every Windows build (§16).
 
 ### 14.2 Reliability
 
 * The AppBar is removed on normal exit and on panic; Explorer restarts are handled (§5.2).
 * Provider errors never crash the app. A failing provider sends `{ error }` samples; sensors show `n/a`, become inactive and show the error in their hint. The provider retries with backoff (1 s → 30 s).
 * Resume, display, DPI and time changes are handled (§5.3).
-* If a webview crashes, its route reloads automatically.
+* If the Settings webview crashes, it reloads its route. A panic on the bar thread is logged, releases the AppBar (panic hook) and restarts the bar thread with the current config.
 
 ### 14.3 Security
 
-* Tauri **capabilities** per window (`src-tauri/capabilities/<window>.json`), least privilege. Every window also gets the core permissions needed to listen for events.
-
-  | Window | Commands (§4.5) and plugins |
-  |---|---|
-  | `bar` | config, data, system, shell, ui; `app_info`, `quit`; plugins: dialog (file pickers, confirmations), notification |
-  | `hint` | `get_config`, `popup_ready` |
-  | `popup` | `get_config`, `update_sensor` (popup size), `subscribe` / `unsubscribe`, `popup_ready`, `hide_popup`, `list_dir`, `known_folder`, `shell_open`, `shell_reveal`, `list_volumes`, `eject_volume`, `open_safely_remove`; plugin: notification (eject results) |
-  | `settings` | config, system, app; `shell_open` / `shell_reveal` (logs and skins folders); plugin: dialog |
-* Strict CSP: no remote scripts or content; `img-src 'self' icon: skin: data: blob:`.
+* Tauri **capabilities** (`src-tauri/capabilities/settings.json`), least privilege: the Settings window gets the commands of §4.5, the core permissions needed to listen for events, and the dialog plugin. The bar, hint and popup are not webviews and expose no IPC.
+* Strict CSP for Settings: no remote scripts or content; `img-src 'self' data: blob:`.
 * No `eval`. No shell-string execution: launching uses `ShellExecuteExW` with target and parameters as separate fields.
-* `shell_open` validates URIs (`http`, `https`, `ftp`, `mailto`, `ms-settings`, and other registered schemes the user configured).
+* Launching from the bar (Shortcut, Date/Time click, Wi-Fi hint) validates URIs (`http`, `https`, `ftp`, `mailto`, `ms-settings`, and other registered schemes the user configured). Settings' `shell_open` only opens Infodock's own folders.
 * No secrets in v1. Future mail sensors MUST store credentials in Windows Credential Manager (`keyring` crate), never in the config.
 
 ### 14.4 Accessibility and UX
 
 * The Settings window is fully keyboard-accessible and respects OS text scaling and high-contrast mode (system colours, no transparency).
 * The Layout manager provides reordering without dragging.
-* Sensors expose `aria-label` = name + current value. The hotkey focuses the bar; Tab moves between sensors, Enter = click, Shift+F10 = context menu.
+* The bar is a UI Automation provider (`platform/windows/uia.rs`): one element per sensor with name = sensor name and value = `accessible_value()`. The hotkey focuses the bar; Tab moves between sensors (focus ring in the accent colour), Enter = click, Shift+F10 or the Menu key = context menu, Esc returns focus to the previous window.
 
 ### 14.5 DPI and multi-monitor
 
-* Per-monitor DPI v2 (Tauri default). Layout is in logical px; Rust converts with the target monitor's scale. Moving the bar to a monitor with another scale repeats the AppBar negotiation after `WM_DPICHANGED`.
+* Per-monitor DPI v2 (application manifest). Layout and drawing are in logical px; the bar and popup windows render at their monitor's scale and convert geometry to physical px. Moving the bar to a monitor with another scale repeats the AppBar negotiation and re-renders after `WM_DPICHANGED`.
 * Icons are requested at physical size (`size × scale`, rounded to 16/20/24/32/48).
 
 ---
@@ -1380,11 +1394,12 @@ Techniques: one sampler thread; PDH query handles opened once and reused; no WMI
 infodock/
   SPEC.md  LICENSE (MIT)  README.md
   package.json  bun.lock  vite.config.ts  tsconfig.json  svelte.config.js
-  src/                        UI (§4.3)
+  src/                        Settings UI (§4.3)
   src-tauri/
     Cargo.toml  tauri.conf.json  build.rs
-    capabilities/{bar.json,hint.json,popup.json,settings.json}
+    capabilities/settings.json
     icons/                    app icons (Appendix C)
+    assets/                   icons/*.svg, logo.svg, sounds/chime.wav (embedded)
     src/                      Rust (§4.2)
   tests/fixtures/legacy/      legacy XML samples (Appendix B and more)
   docs/manual-test.md         manual test checklist (§16)
@@ -1398,7 +1413,7 @@ infodock/
 
 * NSIS installer, **per-user** (`installMode: "currentUser"`), WebView2 bootstrapper (`webviewInstallMode: downloadBootstrapper`), Start Menu shortcut, optional autostart.
 * MSI MAY be built for managed environments.
-* **Portable build**: the bare `infodock.exe` from the same release build (the UI is embedded in the binary). It needs no install but still requires the WebView2 runtime and stores config, skins and logs in the same per-user folders as the installed app (§11.1); no Start Menu shortcut.
+* **Portable build**: the bare `infodock.exe` from the same release build (Settings' UI is embedded in the binary). It needs no install. Settings needs the WebView2 runtime (part of Windows 10/11); the bar does not. It stores config, skins and logs in the same per-user folders as the installed app (§11.1); no Start Menu shortcut.
 
 ### 15.4 Later
 
@@ -1411,12 +1426,12 @@ infodock/
 
 | Level | What | How |
 |---|---|---|
-| Rust unit | CPU % from `GetSystemTimes` deltas; network rates (counter reset, first sample, resume); battery estimators (time-to-full smoothing, moving average); AppBar rect negotiation (pure geometry); popup placement (§7.3); config migrations; legacy XML import (Appendix B → expected JSON) | `cargo test` |
-| Rust integration (Windows) | Providers return sane values on a real machine; `list_dir`, `resolve_link`, icon protocol, skin-pack validation | `cargo test -- --ignored` on a Windows runner |
-| TS unit | Zone layout (§5.4); move index math; formatters (bytes, rates, durations, plurals); dynamic gradient; property schema validation and defaults; each sensor's `hint()` against sample fixtures (snapshot); each sensor's `fromLegacy`; Date/Time formats (all weekday/month/year combinations × several locales) | Vitest |
-| Component | Meter/Graph/DualGraph rendering; PropertyForm generation for every sensor schema | Vitest + @testing-library/svelte |
-| E2E smoke | App starts, bar visible, add/remove/move a sensor, settings survive a restart | `tauri-driver` + WebdriverIO on Windows (optional in CI) |
-| Manual | Top/bottom; reserve space on/off; two monitors with different DPI; Explorer restart (`taskkill /f /im explorer.exe`); sleep/resume; full-screen video; Wi-Fi with location access off/on; laptop on and off AC; USB stick eject; drag & drop from Explorer and (M3b) browsers; legacy import of real files | `docs/manual-test.md`, on Windows 10 and 11 test hardware |
+| Rust unit | Zone layout (§5.4); move index math (§6.2); hint/popup placement (§7.3); formatters (bytes, rates, durations, plurals); dynamic gradient and tint; property schema validation, defaults and storage rules; each sensor's `hint()` against sample fixtures (snapshot); each sensor's drawing against a recording canvas with fixed text metrics (snapshot of draw calls); each sensor's `from_legacy`; Date/Time formats (all weekday/month/year combinations) against fixed locale data; CPU % from `GetSystemTimes` deltas; network rates (counter reset, first sample, resume); battery estimators (time-to-full smoothing, moving average); AppBar rect negotiation (pure geometry); config migrations; legacy XML import (Appendix B → expected JSON) | `cargo test` (Linux and Windows) |
+| Rust integration (Windows) | Providers return sane values on a real machine; locale data; `list_dir`, link resolution, shell icons, skin-pack validation; the Direct2D renderer draws the first-run layout and each sensor type to PNG (uploaded as a CI artifact for review) | `cargo test -- --ignored` on a Windows runner |
+| Memory | Start the release build, wait 10 s, sum the private working set of `infodock.exe` and its children; same after opening and closing Settings. Fails above the §14.1 budget | CI, Windows runner |
+| Settings | PropertyForm generation for every exported sensor schema; `visibleIf`; validation messages; i18n | Vitest + @testing-library/svelte |
+| E2E smoke | App starts, bar visible, add/remove/move a sensor, settings survive a restart | Optional, Windows |
+| Manual | Top/bottom; reserve space on/off; two monitors with different DPI; Explorer restart (`taskkill /f /im explorer.exe`); sleep/resume; full-screen video; Wi-Fi with location access off/on; laptop on and off AC; USB stick eject; drag & drop from Explorer and browsers; legacy import of real files; Narrator on the bar | `docs/manual-test.md`, on Windows 10 and 11 test hardware |
 
 ---
 
@@ -1424,13 +1439,12 @@ infodock/
 
 | # | Scope | Exit criteria |
 |---|---|---|
-| **M0** Skeleton | Tauri app, single instance, tray, `bar` window with AppBar (top/bottom, monitor, reserve space, Explorer restart), config load/save with atomic writes, modern theme tokens, logging, i18n plumbing | Bar reserves space correctly on 1–2 monitors at 100/150 % DPI; survives an Explorer restart; clean exit restores the work area |
-| **M1** Framework | Sensor registry, zones and layout, `hint` window and placement, context menus, Lock/Popups, drag reordering, Settings window shell, PropertyForm, SensorPicker, Layout manager, sampler and `subscribe` | Text/Image/Spacer can be added, configured, moved and removed; hints work; the layout persists |
+| **M0** Skeleton | Tauri app, single instance, tray, bar window with AppBar (top/bottom, monitor, reserve space, Explorer restart), config load/save with atomic writes, modern theme defaults, logging, i18n plumbing. (M0 drew the bar in a webview; M1 replaces it with the native bar.) | Bar reserves space correctly on 1–2 monitors at 100/150 % DPI; survives an Explorer restart; clean exit restores the work area |
+| **M1** Framework | Native bar window and renderer, theme, sensor framework and registry, zones and layout, `hint` window and placement, context menus, Lock/Popups, drag reordering, floating mode, animations, Settings window shell, PropertyForm, SensorPicker, Layout manager, sampler | Text/Image/Spacer can be added, configured, moved and removed; hints work; the layout persists; the memory budget (§14.1) holds in CI |
 | **M2** System sensors | Date (calendar hint), Time (chime), Uptime, CPU meter/graph/dual, Memory meter/graph, Swap meter/graph, Disk Meter, Network Graph | Values match Task Manager within ±3 % (CPU, memory) and ±1 % (disk); network rates match Resource Monitor; idle CPU budget met |
-| **M3** Launchers & hardware | Battery, Wi-Fi, Recycle Bin, Shortcut, Disk, Folder Menu, Start Menu, Power, Eject USB; `icon://` protocol; `popup` window; file drops onto the bar and onto sensors | All §9.14–9.22 behaviours pass the manual checklist |
-| **M3b** URL drag & drop | Custom `IDropTarget` for URLs with key state | Dragging a link from Edge/Chrome creates a web Shortcut, or a `.url` file in a Folder Menu |
+| **M3** Launchers & hardware | Battery, Wi-Fi, Recycle Bin, Shortcut, Disk, Folder Menu, Start Menu, Power, Eject USB; shell icons; `popup` window; drag & drop of files, folders, drives and URLs onto the bar and onto sensors | All §9.14–9.22 behaviours pass the manual checklist; dragging a link from Edge/Chrome creates a web Shortcut, or a `.url` file in a Folder Menu |
 | **M4** Classic, import, packaging | Classic theme, built-in skins, skin packs, tint; JSON export/import; legacy XML import; first-run welcome; autostart; installer | Appendix B imports exactly as specified; installer works per user without admin rights |
-| **M5** Polish | Performance pass against §14.1, accessibility pass, Help/About, docs | All budgets met; no clippy warnings; all test suites green |
+| **M5** Polish | Performance pass against §14.1, accessibility pass (UI Automation, keyboard), Help/About, docs | All budgets met; no clippy warnings; all test suites green |
 
 ---
 
@@ -1455,12 +1469,13 @@ Ordered by expected value; each item reuses the framework unchanged.
 
 | # | Item | Mitigation / status |
 |---|---|---|
-| R1 | Browser URL drag & drop is not delivered by Tauri's handler | Milestone M3b (custom `IDropTarget`). Fallback if it proves brittle: file drops only, plus "Paste URL" in Shortcut properties |
-| R2 | WebView2 memory may exceed the 70 MB stretch goal | 100 MB is the hard budget; all windows share one browser process (Tauri default); keep DOMs small |
+| R1 | Browsers offer links in different clipboard formats | The bar's own `IDropTarget` reads `CFSTR_INETURLW`, `UniformResourceLocatorW` and the HTML fragment (§6.3). Fallback: "Paste URL" in Shortcut properties |
+| R2 | Per-pixel alpha with a DWM material on a natively drawn window | Validated first in M1 (same window setup as the M0 webview bar: DWM blur-behind for alpha, `window-vibrancy` for the material). Fallback: a layered window (`UpdateLayeredWindow`) with the accent-policy blur |
 | R3 | Wi-Fi SSID requires Location permission on Windows 11 24H2+ | Graceful degradation (§9.15) |
-| R4 | AppBar interaction with Tauri's window procedure | The bar window is subclassed (§5.2); the subclass owns geometry, z-order, visibility and the tool-window style, so Tauri's window setters must not be used on the bar. Integration tests on Windows 10 and 11 |
+| R4 | Custom drawing costs more code than HTML/CSS (text layout, the Folder Menu popup, the calendar, accessibility) | Shared building blocks (§8.3), a small canvas API (§4.6), snapshot tests against a recording canvas, rendered PNGs from CI for review. UI Automation is scoped to name/value/invoke per sensor |
 | R5 | CPU % may differ from Task Manager | Use PDH `\Processor Information(_Total)\% Processor Utility` (clamped to 100) for the total, as Task Manager does; per-core via the same counter set; user/kernel split from `GetSystemTimes` |
 | R6 | Topmost transparent windows over full-screen games | `hideOnFullscreen` on by default |
+| R7 | WebView2 processes may outlive the Settings window | The memory check in CI opens and closes Settings (§16); if processes linger, release the webview environment explicitly |
 | O1 | Artwork (Appendix C) | To be produced; placeholders acceptable until M5 |
 | O2 | Code signing | Deferred until after v1 (§15.4) |
 | O3 | Domain name | Optional; not needed for v1 |
@@ -1629,5 +1644,5 @@ All artwork is created for Infodock (or from MIT-licensed icon sets, credited on
 | Folder, Start Menu | SVG | Folder Menu, Start Menu |
 | Globe, generic app | SVG | Shortcut fallbacks |
 | Popup UI | SVG back arrow; row icons (folder, file, web) | Folder Menu popup |
-| Chime | `chime.ogg`, ≤ 2 s, gentle, normalised to −16 LUFS | Time |
+| Chime | `chime.wav` (16-bit PCM, 44.1 kHz), ≤ 2 s, gentle, normalised to −16 LUFS | Time |
 | Installer graphics | NSIS header/sidebar images | Installer |
