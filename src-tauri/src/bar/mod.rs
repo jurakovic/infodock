@@ -4,43 +4,50 @@
 pub mod theme;
 mod thread;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
-
-use tauri::{AppHandle, Manager};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::ConfigStore;
 use crate::config::model::Settings;
-use crate::platform::{self, AppBar, DockRequest, Platform, UiWaker};
+use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, UiWaker};
 use thread::BarLogic;
+
+/// What the bar asks of the rest of the app. Called on the bar thread.
+pub trait BarHost: Send + Sync {
+    /// The OS asked the app to close (graceful `taskkill`, Restart Manager).
+    fn quit(&self);
+    /// A second launch asked this instance to show itself (SPEC §6.5).
+    fn activate(&self);
+}
 
 /// Work for the bar thread, queued by [`BarController`].
 enum Command {
     Settings(Box<Settings>),
 }
 
-/// Cross-thread handle to the bar. Managed as Tauri state.
+/// Cross-thread handle to the bar.
 pub struct BarController {
     appbar: Arc<dyn AppBar>,
     waker: UiWaker,
     commands: Sender<Command>,
     visible: AtomicBool,
-    app: AppHandle,
+    /// The latest settings, for re-docking when visibility changes.
+    settings: Mutex<Settings>,
 }
 
 impl BarController {
-    /// Starts the bar thread and docks the bar. Call after the [`ConfigStore`] and the platform
-    /// are managed.
-    pub fn create(app: &AppHandle) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
-        let store = app.state::<ConfigStore>();
+    /// Starts the bar thread and docks the bar; follows `store` from then on.
+    pub fn create(
+        store: &ConfigStore,
+        platform: Arc<dyn Platform>,
+        host: Arc<dyn BarHost>,
+    ) -> Result<Arc<Self>, PlatformError> {
         let settings = store.get().settings;
-        let platform = Arc::clone(app.state::<Arc<dyn Platform>>().inner());
         let (commands, queue) = mpsc::channel();
         let initial = settings.clone();
-        let handle = app.clone();
         let thread = platform::start_bar_thread(Box::new(move || {
-            Box::new(BarLogic::new(initial, platform, queue, handle))
+            Box::new(BarLogic::new(initial, platform, queue, host))
         }))?;
 
         let controller = Arc::new(Self {
@@ -48,7 +55,7 @@ impl BarController {
             waker: thread.waker,
             commands,
             visible: AtomicBool::new(true),
-            app: app.clone(),
+            settings: Mutex::new(settings.clone()),
         });
         controller.apply(&settings);
 
@@ -57,6 +64,7 @@ impl BarController {
             let Some(c) = weak.upgrade() else {
                 return;
             };
+            *c.settings.lock().unwrap_or_else(PoisonError::into_inner) = new.settings.clone();
             if DockRequest::from_settings(&old.settings, true)
                 != DockRequest::from_settings(&new.settings, true)
             {
@@ -90,7 +98,12 @@ impl BarController {
     /// Shows or hides the bar; a hidden bar reserves no space.
     pub fn set_visible(&self, visible: bool) {
         if self.visible.swap(visible, Ordering::SeqCst) != visible {
-            self.apply(&self.app.state::<ConfigStore>().get().settings);
+            let settings = self
+                .settings
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            self.apply(&settings);
         }
     }
 

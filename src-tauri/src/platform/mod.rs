@@ -12,10 +12,10 @@ mod stub;
 #[cfg(windows)]
 mod windows;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Serialize;
-use ts_rs::TS;
 
 use crate::config::model::{BarMode, Edge, Material, Settings, ZOrder};
 pub use canvas::{Canvas, Color, RectF, SizeF};
@@ -23,9 +23,8 @@ pub use geometry::{MonitorInfo, Rect};
 
 /// Which sensors and features exist on this system (SPEC §4.6). Flags turn on as their
 /// implementations land.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct Capabilities {
     pub appbar: bool,
     pub recycle_bin: bool,
@@ -146,6 +145,60 @@ pub fn current() -> Arc<dyn Platform> {
 // The bar thread (SPEC §4.1)
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// App start-up: data folders and the single-instance lock (SPEC §11.1, §6.5)
+// ---------------------------------------------------------------------------------------------
+
+/// Where the app keeps its files (SPEC §11.1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppDirs {
+    /// Config and skin packs: `%APPDATA%\<identifier>` on Windows.
+    pub config: PathBuf,
+    /// Log files: `%LOCALAPPDATA%\<identifier>\logs` on Windows.
+    pub logs: PathBuf,
+}
+
+/// The per-user folders for the app with this identifier.
+pub fn app_dirs(identifier: &str) -> AppDirs {
+    #[cfg(windows)]
+    return windows::instance::app_dirs(identifier);
+    #[cfg(not(windows))]
+    return stub::app_dirs(identifier);
+}
+
+/// Held for the app's lifetime; dropping it lets another instance start.
+pub struct InstanceGuard(#[allow(dead_code)] Box<dyn Send>);
+
+impl InstanceGuard {
+    fn new(inner: impl Send + 'static) -> Self {
+        Self(Box::new(inner))
+    }
+}
+
+/// The result of claiming the single-instance lock.
+pub enum Instance {
+    /// This is the only instance.
+    Primary(InstanceGuard),
+    /// Another instance runs already; ask it to show itself with [`activate_running_instance`].
+    Secondary,
+}
+
+/// Claims the per-user single-instance lock. If the lock cannot be created, this instance runs
+/// as the primary one.
+pub fn single_instance(identifier: &str) -> Instance {
+    #[cfg(windows)]
+    return windows::instance::single_instance(identifier);
+    #[cfg(not(windows))]
+    return stub::single_instance(identifier);
+}
+
+/// Asks the running instance to show the bar and open Settings (SPEC §6.5). Waits up to a few
+/// seconds for its bar window to exist.
+pub fn activate_running_instance() {
+    #[cfg(windows)]
+    windows::instance::activate_running_instance();
+}
+
 /// Events for the bar logic, delivered on the bar thread.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiEvent {
@@ -161,6 +214,8 @@ pub enum UiEvent {
     AppearanceChanged,
     /// The OS asks the app to close (graceful `taskkill`, Restart Manager).
     CloseRequested,
+    /// A second launch asked this instance to show itself (SPEC §6.5).
+    Activate,
 }
 
 /// The bar logic. Called by the native bar window, always on the bar thread.

@@ -6,20 +6,27 @@ Status: early development. See [SPEC.md](SPEC.md) for the full specification and
 
 ## Download
 
-Every push to `master` builds a Windows installer. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download the `infodock-windows-installer` artifact. The installer is per-user and does not need admin rights. For a build without installing, download `infodock-windows-portable` instead: it contains `infodock.exe`, which runs as is (the Settings window needs the WebView2 runtime, which Windows 10/11 normally has; the bar itself does not). Neither is code-signed yet, so SmartScreen may warn.
+Every push to `master` builds Windows downloads. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download:
+
+- `infodock-windows-installer`: contains `infodock_<version>_x64-setup.exe`, a per-user installer that does not need admin rights;
+- `infodock-windows-portable`: contains `infodock.exe`, which runs as is, without installing.
+
+Neither is code-signed yet, so SmartScreen may warn.
 
 ## Development
 
-Requirements: [Bun](https://bun.sh), Rust (stable), and on Windows the WebView2 runtime for the Settings window (preinstalled on Windows 11). The bar is drawn natively and only appears on Windows; on other systems the app runs without it.
+Requirements: Rust (stable). On Linux, `libfontconfig-dev` for the UI toolkit. The bar only appears on Windows; on other systems the app opens Settings only.
 
 ```sh
-bun install
-bun run tauri dev      # run the app
-bun run test           # Settings UI tests
-bun run lint           # eslint, svelte-check, rustfmt, clippy
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo run --manifest-path src-tauri/Cargo.toml   # run the app
+cargo test --manifest-path src-tauri/Cargo.toml  # tests
+cargo lint                                       # clippy
 ```
 
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
+
+The Settings window and the tray icon are built with [Slint](https://slint.dev), used under the Slint Royalty-free License 2.0:
+
+[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)

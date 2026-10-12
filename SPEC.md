@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Status | Draft 4 — native bar; ready for implementation |
+| Status | Draft 5 — native bar, Slint Settings; ready for implementation |
 | Date | 2026-10-12 |
 | Product | **Infodock** — a compact system-information and launcher bar for the desktop |
 | Target | Windows 10/11 first; macOS/Linux later |
-| Stack | **Rust** core with a **native bar** (Win32 + Direct2D/DirectWrite); **Tauri 2** + **TypeScript / Svelte 5** for the Settings window only |
+| Stack | **Rust**: a **native bar** (Win32 + Direct2D/DirectWrite) and **Slint** for the Settings window and the tray |
 | Licence | **MIT** |
 
 ---
@@ -76,7 +76,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 
 ### 2.1 Goals
 
-* G1 — A **single, standalone, always-on desktop bar app**; no host engine or runtime. The OS WebView2 is used only by the Settings window.
+* G1 — A **single, standalone, always-on desktop bar app**: one exe, no host engine, runtime or browser engine.
 * G2 — The full v1 sensor set (§1.2) with the behaviour defined in §9.
 * G3 — **Light footprint**: idle CPU ≤ 0.5 %; private memory ≤ 30 MB while Settings is closed (stretch goal 20 MB). No browser engine runs while only the bar is visible (§14.1).
 * G4 — **Correct Windows integration**: AppBar work-area reservation, multi-monitor, per-monitor DPI, Explorer restarts, sleep/resume, full-screen apps.
@@ -100,7 +100,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Name | **Infodock**. Identifier `app.infodock.desktop`, executable `infodock.exe`, Cargo crate `infodock`. A trademark search (WIPO Global Brand Database) found only two marks, both expired about 10 years ago |
 | Licence | MIT |
 | Platforms | Windows first; platform code behind interfaces for later macOS/Linux |
-| Stack | Rust. The bar, hints and popups are native windows drawn with Direct2D/DirectWrite. Tauri 2 (WebView2 + Svelte) hosts only the Settings window, created on demand (§3, §4.1) |
+| Stack | Rust. The bar, hints and popups are native windows drawn with Direct2D/DirectWrite. The Settings window and the tray use Slint, created on demand (§3, §4.1) |
 | v1 sensors | §1.2 |
 | Look | Modern default theme + Classic theme with skins |
 | Assets | All artwork and sounds are produced for Infodock (Appendix C). No third-party artwork is bundled except permissively licensed icon sets (e.g. Fluent UI System Icons, MIT) with attribution |
@@ -117,20 +117,19 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Bar, hints, popups | **Native Win32 windows** owned by the core, drawn with **Direct2D** + **DirectWrite** (software render target, §4.6), images decoded with **WIC** | No browser engine. Everything is drawn by Infodock's own renderer (§8.3) |
 | SVG assets | `resvg` (rasterises the Infodock icon set and user SVG images to bitmaps, cached per size) | Built without its text feature |
 | Windows API | `windows` crate (Win32: Shell, UI.Shell, UI.WindowsAndMessaging, UI.Input.KeyboardAndMouse, UI.Accessibility, Graphics.Gdi, Graphics.Dwm, Graphics.Direct2D, Graphics.DirectWrite, Graphics.Imaging, System.Com, System.Ole, Media.Audio, Globalization, NetworkManagement.IpHelper, NetworkManagement.WiFi, System.Performance (PDH), System.Power, System.Shutdown, System.RemoteDesktop, Devices.DeviceAndDriverInstallation, Storage.FileSystem) | |
-| App shell | **Tauri 2.x** (latest stable 2.x at implementation start; pin exact versions in the lockfiles) | Event loop, tray icon, plugins, and the Settings window |
-| Settings window | **WebView2** (Evergreen) via Tauri, created on demand and destroyed on close | The only webview; its processes exist only while Settings is open |
+| Settings window, tray | **Slint 1.x** (winit backend, software renderer, Fluent style, AccessKit), UI in `.slint` files compiled by `build.rs`; pin exact versions in the lockfile | Event loop on the main thread. Settings is created when opened and dropped when closed. The tray is Slint's `SystemTrayIcon`. Licence: Slint Royalty-free 2.0, which requires the Slint attribution badge where the app is downloaded (README) or `AboutSlint` in the About page |
+| Global hotkey | `global-hotkey` | |
 | System info helpers | `sysinfo` (fallback/cross-platform), `starship-battery`, `wmi` (page-file sizes only) | |
-| Async/runtime | `tokio` (Tauri's runtime) for slow work (directory listings, file operations); a dedicated **bar thread** (§4.1) and **sampler thread** (§4.4) | |
-| Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import); `ts-rs` (TypeScript bindings for Settings) | |
+| Threads | A dedicated **bar thread** (§4.1), a **sampler thread** (§4.4), and worker threads for slow work (directory listings, file operations, icon extraction) | |
+| Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import) | |
 | Logging | `tracing` + `tracing-appender` (rolling files) | |
-| Tauri plugins | `global-shortcut`, `notification`, `autostart`, `single-instance`, `dialog` (Settings file pickers), `opener` (URLs from Settings) | The bar launches files and URLs through the platform layer |
+| Other OS services | Through the platform layer (§4.6): single-instance lock, known folders, launching files and URLs, file pickers (`IFileOpenDialog`), toast notifications (WinRT), autostart (the per-user `Run` key) | |
 | Window effects | `window-vibrancy` (Acrylic/Mica on the bar window) | Optional per theme |
-| Settings UI | **TypeScript** (strict), **Svelte 5** (runes) + Vite | |
-| UI tests | Vitest (+ @testing-library/svelte) for Settings; Rust unit tests for the bar (§16) | |
-| JS toolchain | **Bun** as package manager and script runner (`bun install`, `bun run tauri dev`) | Bun is not a runtime here; Settings runs in WebView2 |
-| Packaging | Tauri bundler → **NSIS per-user installer** (no admin) + optional MSI | |
+| Windows resources | `embed-resource`: exe icon, application manifest (per-monitor DPI v2, common controls 6), version information | |
+| UI tests | Rust unit tests for the bar and the Settings mapping; offscreen rendering of the Settings pages to PNG (§16) | |
+| Packaging | `cargo-packager` → **NSIS per-user installer** (no admin); the portable exe needs nothing else | |
 
-**Why a native bar.** The bar is visible all the time; Settings is opened now and then. A WebView2 bar costs a browser process tree for as long as the app runs: the M0 build (an empty webview bar) used about 360 MB across `infodock.exe` and six `msedgewebview2.exe` processes, and Settings added a seventh (about 65 MB). Comparable native bars use about 30 MB. The bar's content is small and regular (text, meters, graphs, icons, a calendar, a list popup), so drawing it directly is affordable, and it removes the IPC between bar and core. Settings is form-heavy and rarely open, so it keeps HTML/CSS and pays for WebView2 only while it is shown.
+**Why a native bar.** The bar is visible all the time; Settings is opened now and then. A WebView2 bar costs a browser process tree for as long as the app runs: the M0 build (an empty webview bar) used about 360 MB across `infodock.exe` and six `msedgewebview2.exe` processes, and Settings added a seventh (about 65 MB). Comparable native bars use about 30 MB. The bar's content is small and regular (text, meters, graphs, icons, a calendar, a list popup), so drawing it directly is affordable, and it removes the IPC between bar and core. Settings and the tray use Slint: declarative markup, Fluent widgets that follow light/dark mode, accessibility through AccessKit, and no browser engine, so Settings costs a few MB while it is open instead of WebView2's ~65 MB, and the toolchain is Rust only (plan D16).
 
 **Why not Electron, WPF or WinUI:** they idle at 50–150 MB or more and would still need native code for the AppBar and system counters. **Why not a cross-platform Rust GUI toolkit for the bar:** the bar needs DWM materials, AppBar integration, layered popups, OLE drag & drop and UI Automation, which are Win32-level anyway; a toolkit would sit between Infodock and those APIs without saving much code.
 
@@ -140,30 +139,33 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 
 ### 4.1 Process, threads and windows
 
-One process (single instance enforced). No browser engine runs unless Settings is open.
+One process (single instance enforced). No browser engine runs at any time.
 
 | Window | Kind | Properties | Purpose |
 |---|---|---|---|
 | `bar` | native, bar thread | `WS_POPUP`; `WS_EX_TOOLWINDOW` (no taskbar button, no Alt+Tab); `WS_EX_NOACTIVATE` (clicks do not take focus, §5.3); per-pixel alpha composited by DWM, with an optional material (§5.5); z-order per settings | The bar |
 | `hint` | native, bar thread | layered (`UpdateLayeredWindow`, per-pixel alpha), topmost, non-activating, click-through (`WS_EX_TRANSPARENT`), tool window; created on first use and reused | Hover popups (text hints, calendar) |
 | `popup` | native, bar thread | layered, topmost, tool window, focusable; hides when it loses activation; created on first use and reused | Interactive popups (Folder Menu, Start Menu, Eject list) |
-| `settings` | Tauri webview (WebView2), main thread | normal decorated window, route `/settings/*`, created on demand, single instance, **destroyed on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
+| `settings` | Slint window, main thread | normal decorated window, opened on a route (`general`, `bar`, `sensor/<id>`, `new?zone=…`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
 
-Plus a **tray icon** (Tauri, main thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit.
+Plus a **tray icon** (Slint `SystemTrayIcon`, main thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit.
 
 Threads:
-* **main**: Tauri's event loop — tray, global hotkey, single instance, the Settings window and the commands it calls (§4.5).
+* **main**: Slint's event loop — the Settings window, the tray and the global hotkey. Other threads reach it with `slint::invoke_from_event_loop`.
 * **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint and popup windows, the sensor instances, layout, rendering, context menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
 * **sampler thread**: polls the providers and delivers samples to the bar thread's queue (§4.4).
 * **tokio workers**: slow work (directory listings, file operations, icon extraction); results go back to the bar thread's queue.
 
-The bar does not depend on WebView2: if the runtime is missing, the bar works and only Settings reports an error.
+**Single instance**: a named mutex (`Local\\app.infodock.desktop`). A second launch finds the running bar window by its class, allows it to take the foreground and posts it a registered activation message; the running instance shows the bar and opens Settings (§6.5), and the second launch exits.
 
 ### 4.2 Rust modules
 
 ```
 src-tauri/src/
-  main.rs / lib.rs          app builder, plugins, tray; starts the sampler and the bar thread
+  main.rs / lib.rs          start-up and shutdown; starts the bar thread, the sampler and the main event loop
+  app.rs                    App (state shared by all threads), bar visibility, quitting
+  hotkey.rs, tray.rs        global hotkey and tray icon (main thread)
+  settings/                 Settings window glue: fills and saves the Slint state; mapping helpers
   config/                   model.rs (typed config), store.rs (load/save/atomic write/debounce),
                             migrate.rs (schema versions), patch.rs, legacy.rs (legacy XML layout import)
   i18n.rs                   message catalogs (shared with Settings), plural rules, t()
@@ -192,30 +194,27 @@ src-tauri/src/
     canvas.rs               colours, rectangles and the Canvas trait (§4.6)
     geometry.rs             pure placement math: docking strips, monitor selection
     windows/                window.rs (window classes, message loop, input → events), appbar.rs,
+                            instance.rs (single-instance lock, known folders),
                             monitors.rs, render.rs (Direct2D/DirectWrite/WIC canvas), menu.rs
                             (TrackPopupMenuEx), dialog.rs (TaskDialogIndirect), droptarget.rs
                             (IDropTarget), uia.rs (UI Automation provider), shell.rs (ShellExecuteEx,
                             IFileOperation, known folders, .lnk/.url), icons.rs (shell icons → bitmaps),
                             power.rs, eject.rs, wlan.rs, pdh.rs, locale.rs (NLS), sound.rs (PlaySound)
     stub.rs                 portable fallback for other OSes (development and tests only)
-  windowing/                settings.rs (the Settings webview window), tray.rs
-  commands/                 Tauri commands for Settings: config, sensors, system, shell, app
+  ui/                       (next to src/) Slint markup: app.slint, settings.slint, tray.slint, i18n.slint
 ```
 
-### 4.3 Settings UI modules
+### 4.3 Settings UI
 
 ```
-src/                        Settings window only (Svelte 5)
-  main.ts                   mounts SettingsApp
-  lib/ipc.ts                typed wrappers for the commands and events of §4.5
-  lib/config.svelte.ts      reactive config store mirrored from Rust ("config-changed" events)
-  lib/i18n.ts               message catalogs, plural rules, t()
-  lib/theme.ts              Settings' own look (light/dark, high contrast)
-  lib/bindings/             TypeScript types generated from Rust (ts-rs)
-  settings/                 SettingsApp.svelte, pages/*, PropertyForm.svelte (schema → form),
-                            SensorPicker.svelte, LayoutManager.svelte, Welcome.svelte
-  i18n/                     en.json (shared with Rust)
+ui/
+  app.slint                 exports the components Rust uses
+  i18n.slint                global I18n { tr(key), tr-with(key, name, value) }, backed by i18n::t
+  settings.slint            SettingsWindow and the SettingsState global (pages, rows, controls)
+  tray.slint                Tray (SystemTrayIcon with its menu)
 ```
+
+Controls bind two-way to the `SettingsState` global. Rust fills it from the config, saves each change as a settings patch (§4.5) and refreshes it from the config store's change listener, so changes made elsewhere (tray, hotkey) show up at once. Generated forms (PropertyForm, §6.7) are `for` loops over the field schemas with one control per field type (§8.2).
 
 ### 4.4 Data flow
 
@@ -228,33 +227,23 @@ src/                        Settings window only (Svelte 5)
 7. Graph **history lives in the sensor instance**: a ring buffer of raw values (not pixels). It is not persisted.
 8. Config changes always go through the config store, whether they come from Settings commands, the tray, the hotkey or bar actions (drag, drop, remove). The store persists them and notifies its listeners: the bar thread re-creates changed sensors (matched by id) and re-lays out; Settings receives `config-changed`.
 
-### 4.5 Settings IPC surface
+### 4.5 Operations used by Settings
 
-The bar calls the core directly. Tauri commands exist only for the Settings window (all `async`; errors as `{ code, message }`):
+Settings runs in the same process, on the main thread, and calls the core directly; there is no IPC. Errors carry a stable code and a message (e.g. `hotkey`, `invalid`, `io`).
 
-| Group | Command | Signature (TS view) |
+| Group | Operation | Notes |
 |---|---|---|
-| config | `get_config` | `() → Config` |
-| | `update_settings` | `(patch: DeepPartial<Settings>) → Config` |
-| | `add_sensor` | `(zone, index, type, props?) → SensorInstance` |
-| | `update_sensor` | `(id, props: Partial<Props>) → SensorInstance` (validated against the schema) |
-| | `preview_sensor` | `(id, props: Partial<Props> \| null) → void` — the bar shows these props without saving them; `null` ends the preview (§6.7) |
-| | `move_sensor` | `(id, zone, index) → void` |
-| | `remove_sensor` | `(id) → void` |
-| | `export_config` / `import_config` | `(path, mode: "replace"\|"merge") → ImportReport` |
-| | `import_legacy` | `(path, mode) → ImportReport` (§11.4) |
-| sensors | `sensor_types` | `() → SensorTypeInfo[]` — id, category, localised name and description, `requires`, property schema (§8.2) and this machine's derived defaults |
-| system | `capabilities` | `() → Capabilities` (§4.6) |
-| | `list_volumes` / `list_net_adapters` / `list_batteries` / `list_monitors` / `list_fonts` / `list_skins` | `() → …[]` |
-| | `install_skin` | `(path) → SkinInfo` (folder or `.zip`; validated, then copied into the skins folder, §12.4) |
-| | `remove_skin` | `(id) → void` |
-| | `skin_preview` | `(id, edge) → string` (PNG data URL rendered by the bar renderer, for the gallery) |
-| shell | `shell_open` / `shell_reveal` | `(path)` — logs and skins folders |
-| app | `app_info` | `() → { version, locale, dataDir, logDir, skinsDir }` |
-| | `hotkey_status` | `() → HotkeyStatus` |
-| | `set_autostart` / `quit` | |
-
-Events (Rust → Settings): `config-changed`, `settings-navigate` (switch page when Settings is already open).
+| config | get config | |
+| | update settings | A deep partial of `Settings` (a JSON patch); unknown keys are rejected. A changed hotkey is registered first; if that fails nothing is saved (§6.5) |
+| | add / update / move / remove sensor | `update` validates against the schema |
+| | preview sensor | The bar shows these props without saving them; ending the preview restores the saved props (§6.7) |
+| | export / import config | `replace` or `merge` → `ImportReport` (§11.3) |
+| | import legacy layout | §11.4 |
+| sensors | sensor types | Id, category, localised name and description, `requires`, field schema (§8.2) and this machine's derived defaults |
+| system | capabilities; lists of volumes, network adapters, batteries, monitors, fonts, skins | |
+| | install / remove skin pack; skin preview | Previews are rendered by the bar renderer (§12.4) |
+| shell | open the logs or skins folder | |
+| app | version, hotkey status, autostart, quit | |
 
 The bar opens Settings on a route (e.g. `sensor/<id>`, `new?zone=left&index=2`) by calling the core directly.
 
@@ -496,7 +485,7 @@ Flow (all on the bar thread): measure the content, compute the placement (`bar/p
 
 ### 7.4 Notifications
 
-* Windows toast notifications via `tauri-plugin-notification`; app name "Infodock", toast title = sensor title.
+* Windows toast notifications (WinRT `ToastNotificationManager` through the platform layer); app name "Infodock", toast title = sensor title. The installer's Start Menu shortcut carries the AppUserModelID `app.infodock.desktop`.
 * v1 producers: Battery charge alert (§9.14), Eject results (§9.22), layout import summary.
 * Sound and placement follow the Windows notification settings.
 
@@ -551,7 +540,7 @@ pub struct SensorCtx<'a> {
 }
 ```
 
-All trait methods except the identity ones have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. `sensor_types` (§4.5) exports the schemas to Settings.
+All trait methods except the identity ones have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. Settings reads the schemas through the sensor types operation (§4.5).
 
 ### 8.2 Property field types
 
@@ -1146,7 +1135,7 @@ Pages:
 * **Appearance**: theme, skin gallery with previews, colours, material.
 * **Sensors**: global defaults, plus the **Layout manager** — three zone lists with drag reordering, edit, remove and add; an accessible alternative to dragging on the bar.
 * **Help**: getting started, drag & drop rules (§6.3), Folder Menu tips (§9.19).
-* **About**: version, MIT licence, third-party licences (crates, npm packages, icon sets), "Open logs folder".
+* **About**: version, MIT licence, third-party licences (crates, icon sets), the `AboutSlint` widget (Slint licence attribution), "Open logs folder".
 
 ---
 
@@ -1154,7 +1143,7 @@ Pages:
 
 ### 11.1 Locations
 
-* Config: `%APPDATA%\app.infodock.desktop\config.json` (Tauri `app_config_dir`).
+* Config: `%APPDATA%\app.infodock.desktop\config.json` (known folder `RoamingAppData`).
 * Skin packs: `%APPDATA%\app.infodock.desktop\skins\` (§12.4).
 * Logs: `%LOCALAPPDATA%\app.infodock.desktop\logs\infodock.YYYY-MM-DD.log` (kept 7 days).
 * Icon cache: in memory only.
@@ -1333,12 +1322,12 @@ A compact, denser look:
 
 ## 13. Localisation
 
-* Infrastructure from day one: all user-visible strings go through `t(key, …args)` — `i18n::t` in Rust (bar, menus, dialogs, tray, notifications) and `t()` in Settings. Both read the same catalogs, `src/i18n/<lang>.json` (embedded in the binary), with stable keys (e.g. `sensor.cpu.hint.activity`); `en.json` is the source.
+* Infrastructure from day one: all user-visible strings go through `i18n::t(key, …args)` — directly in Rust (bar, menus, dialogs, notifications) and through the `I18n` global in `.slint` files (Settings, tray). The catalogs are `i18n/<lang>.json`, embedded in the binary, with stable keys (e.g. `sensor.cpu.hint.activity`); `en.json` is the source.
 * **v1 ships English only.** The language selector is hidden while only one catalog exists.
 * A missing key in a future catalog falls back to English and is logged once.
-* Plurals: catalog entries support the CLDR categories `one/few/many/other`. Settings uses `Intl.PluralRules`; Rust selects the category with CLDR plural rules for the UI language.
+* Plurals: catalog entries support the CLDR categories `one/few/many/other`; Rust selects the category with CLDR plural rules for the UI language.
 * Weekday and month names, date order and number formatting come from the platform locale (§8.6) using `settings.dateLocale` (default `system` = the OS regional format), never from catalogs.
-* String externalisation is verified by a lint rule in Settings (no bare string literals in Svelte markup); in Rust by review (no string literals passed to drawing, menu or dialog calls).
+* String externalisation: a test checks that every key used in `.slint` files exists in `en.json`; `.slint` text comes only from `I18n`, and Rust passes no string literals to drawing, menu or dialog calls (review).
 
 ---
 
@@ -1350,33 +1339,33 @@ A compact, denser look:
 |---|---|
 | Idle CPU (4-core laptop) | ≤ 0.5 % average over 60 s |
 | Memory, Settings closed: private working set (Task Manager's *Memory* column) of `infodock.exe` plus any child processes | ≤ 30 MB (stretch 20 MB) |
-| Memory after Settings was opened and closed | back within the budget above 10 s after closing (no WebView2 process left running) |
+| Memory with Settings open | reported by CI; no browser engine is involved |
+| Memory after Settings was opened and closed | back within the budget above 10 s after closing |
 | Cold start → bar visible | ≤ 0.5 s; warm ≤ 0.3 s |
 | Full bar redraw (2560 px wide, first-run layout) | ≤ 2 ms |
 | Sampler cost per tick | ≤ 2 ms total |
 | Hint shown after its delay | ≤ 30 ms |
 | Folder Menu popup, folder with 500 items | ≤ 200 ms to first paint |
 
-Techniques: one sampler thread; PDH query handles opened once and reused; no WMI on hot paths (page-file sizes cached for 60 s); only dirty sensors are re-measured, and a frame is drawn only when something changed (at most one per 16 ms); software Direct2D (no GPU device in the process); text layouts and decoded bitmaps cached per sensor and invalidated on change; hint and popup windows created on first use and reused; icon LRU cache (256 entries); Settings' WebView2 destroyed on close. CI measures memory on every Windows build (§16).
+Techniques: one sampler thread; PDH query handles opened once and reused; no WMI on hot paths (page-file sizes cached for 60 s); only dirty sensors are re-measured, and a frame is drawn only when something changed (at most one per 16 ms); software Direct2D (no GPU device in the process); text layouts and decoded bitmaps cached per sensor and invalidated on change; hint and popup windows created on first use and reused; icon LRU cache (256 entries); the Settings window dropped on close. CI measures memory on every Windows build (§16).
 
 ### 14.2 Reliability
 
 * The AppBar is removed on normal exit and on panic; Explorer restarts are handled (§5.2).
 * Provider errors never crash the app. A failing provider sends `{ error }` samples; sensors show `n/a`, become inactive and show the error in their hint. The provider retries with backoff (1 s → 30 s).
 * Resume, display, DPI and time changes are handled (§5.3).
-* If the Settings webview crashes, it reloads its route. A panic on the bar thread is logged, releases the AppBar (panic hook) and restarts the bar thread with the current config.
+* A panic on the bar thread is logged, releases the AppBar (panic hook) and restarts the bar thread with the current config.
 
 ### 14.3 Security
 
-* Tauri **capabilities** (`src-tauri/capabilities/settings.json`), least privilege: the Settings window gets the commands of §4.5, the core permissions needed to listen for events, and the dialog plugin. The bar, hint and popup are not webviews and expose no IPC.
-* Strict CSP for Settings: no remote scripts or content; `img-src 'self' data: blob:`.
-* No `eval`. No shell-string execution: launching uses `ShellExecuteExW` with target and parameters as separate fields.
-* Launching from the bar (Shortcut, Date/Time click, Wi-Fi hint) validates URIs (`http`, `https`, `ftp`, `mailto`, `ms-settings`, and other registered schemes the user configured). Settings' `shell_open` only opens Infodock's own folders.
+* No IPC surface: Settings is part of the process. The only cross-process input is the single-instance activation message, which carries no data and only shows the bar and Settings.
+* No shell-string execution: launching uses `ShellExecuteExW` with target and parameters as separate fields.
+* Launching from the bar (Shortcut, Date/Time click, Wi-Fi hint) validates URIs (`http`, `https`, `ftp`, `mailto`, `ms-settings`, and other registered schemes the user configured). Settings only opens Infodock's own folders.
 * No secrets in v1. Future mail sensors MUST store credentials in Windows Credential Manager (`keyring` crate), never in the config.
 
 ### 14.4 Accessibility and UX
 
-* The Settings window is fully keyboard-accessible and respects OS text scaling and high-contrast mode (system colours, no transparency).
+* The Settings window is fully keyboard-accessible and exposes its controls to screen readers (Slint with AccessKit, which implements UI Automation). It follows light/dark mode and the display scale. High-contrast themes and the separate *Text size* setting are not followed yet (§19 R8).
 * The Layout manager provides reordering without dragging.
 * The bar is a UI Automation provider (`platform/windows/uia.rs`): one element per sensor with name = sensor name and value = `accessible_value()`. The hotkey focuses the bar; Tab moves between sensors (focus ring in the accent colour), Enter = click, Shift+F10 or the Menu key = context menu, Esc returns focus to the previous window.
 
@@ -1394,32 +1383,32 @@ Techniques: one sampler thread; PDH query handles opened once and reused; no WMI
 ```
 infodock/
   SPEC.md  LICENSE (MIT)  README.md
-  package.json  bun.lock  vite.config.ts  tsconfig.json  svelte.config.js
-  src/                        Settings UI (§4.3)
-  src-tauri/
-    Cargo.toml  tauri.conf.json  build.rs
-    capabilities/settings.json
+  src-tauri/                  the Rust crate
+    Cargo.toml  build.rs      build.rs compiles the Slint UI and the Windows resources
+    src/                      Rust (§4.2)
+    ui/                       Slint markup (§4.3)
+    i18n/                     message catalogs (§13)
     icons/                    app icons (Appendix C)
     assets/                   icons/*.svg, logo.svg, sounds/chime.wav (embedded)
-    src/                      Rust (§4.2)
+    resources/                Windows application manifest
   tests/fixtures/legacy/      legacy XML samples (Appendix B and more)
   docs/manual-test.md         manual test checklist (§16)
 ```
 
 ### 15.2 Commands
 
-`bun install` · `bun run tauri dev` · `bun run tauri build` · `bun run test` (Vitest) · `cargo test` (in `src-tauri`) · `bun run lint` (eslint + svelte-check + `cargo clippy -D warnings` + `cargo fmt --check`).
+`cargo run` · `cargo test` · `cargo fmt --check` · `cargo lint` (clippy, warnings are errors) · `cargo check-win` (clippy for the Windows target, from Linux) · `cargo packager --release` (installer). From the repository root they take `--manifest-path src-tauri/Cargo.toml`; `lint` and `check-win` are aliases in `.cargo/config.toml`.
 
 ### 15.3 Packaging
 
-* NSIS installer, **per-user** (`installMode: "currentUser"`), WebView2 bootstrapper (`webviewInstallMode: downloadBootstrapper`), Start Menu shortcut, optional autostart.
+* NSIS installer built with `cargo-packager`, **per-user** (`installMode: "currentUser"`, no admin rights), Start Menu shortcut, optional autostart. Configured in `[package.metadata.packager]`.
 * MSI MAY be built for managed environments.
-* **Portable build**: the bare `infodock.exe` from the same release build (Settings' UI is embedded in the binary). It needs no install. Settings needs the WebView2 runtime (part of Windows 10/11); the bar does not. It stores config, skins and logs in the same per-user folders as the installed app (§11.1); no Start Menu shortcut.
+* **Portable build**: the bare `infodock.exe` from the same release build; it needs nothing else. It stores config, skins and logs in the same per-user folders as the installed app (§11.1); no Start Menu shortcut.
 
 ### 15.4 Later
 
 * **Code signing** (to avoid SmartScreen warnings) — after v1.
-* **Auto-update** with `tauri-plugin-updater` and signed manifests on GitHub Releases — after v1.
+* **Auto-update** with signed manifests on GitHub Releases (`cargo-packager`'s updater) — after v1.
 
 ---
 
@@ -1430,7 +1419,7 @@ infodock/
 | Rust unit | Zone layout (§5.4); move index math (§6.2); hint/popup placement (§7.3); formatters (bytes, rates, durations, plurals); dynamic gradient and tint; property schema validation, defaults and storage rules; each sensor's `hint()` against sample fixtures (snapshot); each sensor's drawing against a recording canvas with fixed text metrics (snapshot of draw calls); each sensor's `from_legacy`; Date/Time formats (all weekday/month/year combinations) against fixed locale data; CPU % from `GetSystemTimes` deltas; network rates (counter reset, first sample, resume); battery estimators (time-to-full smoothing, moving average); AppBar rect negotiation (pure geometry); config migrations; legacy XML import (Appendix B → expected JSON) | `cargo test` (Linux and Windows) |
 | Rust integration (Windows) | Providers return sane values on a real machine; locale data; `list_dir`, link resolution, shell icons, skin-pack validation; the Direct2D renderer draws the first-run layout and each sensor type to PNG (uploaded as a CI artifact for review) | `cargo test -- --ignored` on a Windows runner |
 | Memory | Start the release build, wait 10 s, sum the private working set of `infodock.exe` and its children; same after opening and closing Settings. Fails above the §14.1 budget | CI, Windows runner |
-| Settings | PropertyForm generation for every exported sensor schema; `visibleIf`; validation messages; i18n | Vitest + @testing-library/svelte |
+| Settings | Settings mapping (pages, choices, patches, monitor list) and every sensor schema's form; `visibleIf`; validation messages; every key used in `.slint` exists in `en.json`; every Settings page rendered offscreen to PNG (uploaded by CI for review) | `cargo test` (the rendering with `--ignored`) |
 | E2E smoke | App starts, bar visible, add/remove/move a sensor, settings survive a restart | Optional, Windows |
 | Manual | Top/bottom; reserve space on/off; two monitors with different DPI; Explorer restart (`taskkill /f /im explorer.exe`); sleep/resume; full-screen video; Wi-Fi with location access off/on; laptop on and off AC; USB stick eject; drag & drop from Explorer and browsers; legacy import of real files; Narrator on the bar | `docs/manual-test.md`, on Windows 10 and 11 test hardware |
 
@@ -1440,12 +1429,12 @@ infodock/
 
 | # | Scope | Exit criteria |
 |---|---|---|
-| **M0** Skeleton | Tauri app, single instance, tray, bar window with AppBar (top/bottom, monitor, reserve space, Explorer restart), config load/save with atomic writes, modern theme defaults, logging, i18n plumbing. (M0 drew the bar in a webview; M1 replaces it with the native bar.) | Bar reserves space correctly on 1–2 monitors at 100/150 % DPI; survives an Explorer restart; clean exit restores the work area |
+| **M0** Skeleton | App shell, single instance, tray, bar window with AppBar (top/bottom, monitor, reserve space, Explorer restart), config load/save with atomic writes, modern theme defaults, logging, i18n plumbing. (M0 used Tauri with webviews for the bar and Settings; M1 replaced both, plan D13 and D16.) | Bar reserves space correctly on 1–2 monitors at 100/150 % DPI; survives an Explorer restart; clean exit restores the work area |
 | **M1** Framework | Native bar window and renderer, theme, sensor framework and registry, zones and layout, `hint` window and placement, context menus, Lock/Popups, drag reordering, floating mode, animations, Settings window shell, PropertyForm, SensorPicker, Layout manager, sampler | Text/Image/Spacer can be added, configured, moved and removed; hints work; the layout persists; the memory budget (§14.1) holds in CI |
 | **M2** System sensors | Date (calendar hint), Time (chime), Uptime, CPU meter/graph/dual, Memory meter/graph, Swap meter/graph, Disk Meter, Network Graph | Values match Task Manager within ±3 % (CPU, memory) and ±1 % (disk); network rates match Resource Monitor; idle CPU budget met |
 | **M3** Launchers & hardware | Battery, Wi-Fi, Recycle Bin, Shortcut, Disk, Folder Menu, Start Menu, Power, Eject USB; shell icons; `popup` window; drag & drop of files, folders, drives and URLs onto the bar and onto sensors | All §9.14–9.22 behaviours pass the manual checklist; dragging a link from Edge/Chrome creates a web Shortcut, or a `.url` file in a Folder Menu |
 | **M4** Classic, import, packaging | Classic theme, built-in skins, skin packs, tint; JSON export/import; legacy XML import; first-run welcome; autostart; installer | Appendix B imports exactly as specified; installer works per user without admin rights |
-| **M5** Polish | Performance pass against §14.1, accessibility pass (UI Automation, keyboard), Help/About, docs | All budgets met; no clippy warnings; all test suites green |
+| **M5** Polish | Performance pass against §14.1, accessibility pass (UI Automation, keyboard), Help/About (with `AboutSlint`), docs | All budgets met; no clippy warnings; all test suites green |
 
 ---
 
@@ -1476,7 +1465,8 @@ Ordered by expected value; each item reuses the framework unchanged.
 | R4 | Custom drawing costs more code than HTML/CSS (text layout, the Folder Menu popup, the calendar, accessibility) | Shared building blocks (§8.3), a small canvas API (§4.6), snapshot tests against a recording canvas, rendered PNGs from CI for review. UI Automation is scoped to name/value/invoke per sensor |
 | R5 | CPU % may differ from Task Manager | Use PDH `\Processor Information(_Total)\% Processor Utility` (clamped to 100) for the total, as Task Manager does; per-core via the same counter set; user/kernel split from `GetSystemTimes` |
 | R6 | Topmost transparent windows over full-screen games | `hideOnFullscreen` on by default |
-| R7 | WebView2 processes may outlive the Settings window | Resolved: the CI memory check (§16) shows all WebView2 processes gone within 10 s of closing Settings (plan D15) |
+| R7 | WebView2 processes may outlive the Settings window | Resolved, then moot: Settings no longer uses WebView2 (plan D15, D16) |
+| R8 | Slint does not follow Windows high-contrast themes or the separate *Text size* setting, and its 1.x API still changes between minor versions | Follow Slint releases (the lockfile pins the version); revisit for the M5 accessibility pass. Licence attribution: badge in the README, `AboutSlint` in About |
 | O1 | Artwork (Appendix C) | To be produced; placeholders acceptable until M5 |
 | O2 | Code signing | Deferred until after v1 (§15.4) |
 | O3 | Domain name | Optional; not needed for v1 |

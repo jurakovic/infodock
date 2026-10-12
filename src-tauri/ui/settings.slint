@@ -1,0 +1,386 @@
+// The Settings window (SPEC §10.7): General and Bar pages. Rust fills `SettingsState` from the
+// config and handles its callbacks; controls bind to it two-way, and every change is saved
+// through a settings patch.
+import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
+import { I18n } from "i18n.slint";
+
+export global SettingsState {
+    // 0 = General, 1 = Bar.
+    in-out property <int> page;
+
+    // General (SPEC §10.1)
+    in-out property <string> hotkey;
+    // Why the hotkey could not be registered; empty when it works.
+    in property <string> hotkey-error;
+    in-out property <int> hotkey-action;
+    in-out property <bool> show-tray-icon;
+    in-out property <bool> locked;
+    in-out property <bool> popups-enabled;
+    in-out property <int> clicks-when-locked;
+    in-out property <float> sensor-spacing;
+
+    // Bar (SPEC §10.2)
+    in-out property <int> edge;
+    in property <[string]> monitors;
+    in-out property <int> monitor;
+    in-out property <bool> reserve-space;
+    in-out property <int> z-order;
+    in-out property <bool> hide-on-fullscreen;
+    in-out property <float> height;
+    in property <int> theme-height;
+    // The height differs from the theme default.
+    in property <bool> height-customised;
+
+    // The last save error other than a hotkey error; empty when the last save worked.
+    in property <string> save-error;
+
+    callback apply-hotkey(text: string);
+    // `path` is the dotted settings key, e.g. "bar.reserveSpace".
+    callback set-flag(path: string, value: bool);
+    callback set-choice(path: string, index: int);
+    callback set-number(path: string, value: int);
+    callback set-monitor(index: int);
+    // Back to the theme default.
+    callback reset(path: string);
+}
+
+// One setting, laid out like Windows Settings: label, help text and error on the left (they
+// wrap), the control on the right.
+component Row inherits VerticalLayout {
+    in property <string> label;
+    in property <string> help;
+    in property <string> error;
+
+    line := HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 24px;
+
+        VerticalLayout {
+            width: line.width - controls.preferred-width - line.spacing;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                wrap: word-wrap;
+                // Wrapped text is measured at its own width (the layout would measure it at the
+                // row's width and leave too little height).
+                height: self.preferred-height;
+                color: Palette.foreground;
+            }
+
+            if root.help != "": Text {
+                text: root.help;
+                wrap: word-wrap;
+                height: self.preferred-height;
+                font-size: 12px;
+                color: Palette.foreground;
+                opacity: 0.7;
+            }
+            if root.error != "": Text {
+                text: root.error;
+                wrap: word-wrap;
+                height: self.preferred-height;
+                font-size: 12px;
+                color: #d13438;
+            }
+        }
+
+        controls := VerticalLayout {
+            alignment: center;
+            @children
+        }
+    }
+
+    Rectangle {
+        height: 1px;
+        background: Palette.border;
+    }
+}
+
+// A slider with its value shown next to it, saved when released.
+component PxSlider inherits HorizontalLayout {
+    in property <string> label;
+    in property <float> minimum;
+    in property <float> maximum;
+    in-out property <float> value;
+    callback released(value: int);
+
+    spacing: 10px;
+    Slider {
+        width: 180px;
+        minimum: root.minimum;
+        maximum: root.maximum;
+        step: 1;
+        value <=> root.value;
+        accessible-label: root.label;
+        released(v) => {
+            root.released(Math.round(v));
+        }
+    }
+
+    Text {
+        width: 44px;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        text: I18n.tr-with("common.px", "value", Math.round(root.value));
+        color: Palette.foreground;
+    }
+}
+
+component GeneralPage inherits VerticalLayout {
+    alignment: start;
+
+    Row {
+        label: I18n.tr("settings.general.hotkey");
+        help: I18n.tr("settings.general.hotkey.help");
+        error: SettingsState.hotkey-error == "" ? "" : I18n.tr-with("settings.general.hotkey.error", "error", SettingsState.hotkey-error);
+        LineEdit {
+            width: 200px;
+            text <=> SettingsState.hotkey;
+            accessible-label: I18n.tr("settings.general.hotkey");
+            accepted(text) => {
+                SettingsState.apply-hotkey(text);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.hotkeyAction");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.general.hotkeyAction.bringToFront"),
+                I18n.tr("settings.general.hotkeyAction.toggleVisibility"),
+            ];
+            current-index <=> SettingsState.hotkey-action;
+            accessible-label: I18n.tr("settings.general.hotkeyAction");
+            selected => {
+                SettingsState.set-choice("hotkeyAction", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.showTrayIcon");
+        Switch {
+            checked <=> SettingsState.show-tray-icon;
+            accessible-label: I18n.tr("settings.general.showTrayIcon");
+            toggled => {
+                SettingsState.set-flag("showTrayIcon", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.locked");
+        help: I18n.tr("settings.general.locked.help");
+        Switch {
+            checked <=> SettingsState.locked;
+            accessible-label: I18n.tr("settings.general.locked");
+            toggled => {
+                SettingsState.set-flag("locked", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.popupsEnabled");
+        Switch {
+            checked <=> SettingsState.popups-enabled;
+            accessible-label: I18n.tr("settings.general.popupsEnabled");
+            toggled => {
+                SettingsState.set-flag("popupsEnabled", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.clicksWhenLocked");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.general.clicksWhenLocked.always"),
+                I18n.tr("settings.general.clicksWhenLocked.altOnly"),
+            ];
+            current-index <=> SettingsState.clicks-when-locked;
+            accessible-label: I18n.tr("settings.general.clicksWhenLocked");
+            selected => {
+                SettingsState.set-choice("clicksWhenLocked", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.sensorSpacing");
+        PxSlider {
+            label: I18n.tr("settings.general.sensorSpacing");
+            minimum: 1;
+            maximum: 20;
+            value <=> SettingsState.sensor-spacing;
+            released(v) => {
+                SettingsState.set-number("sensorSpacing", v);
+            }
+        }
+    }
+}
+
+component BarPage inherits VerticalLayout {
+    alignment: start;
+
+    Row {
+        label: I18n.tr("settings.bar.edge");
+        ComboBox {
+            width: 240px;
+            model: [I18n.tr("settings.bar.edge.top"), I18n.tr("settings.bar.edge.bottom")];
+            current-index <=> SettingsState.edge;
+            accessible-label: I18n.tr("settings.bar.edge");
+            selected => {
+                SettingsState.set-choice("bar.edge", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.monitor");
+        ComboBox {
+            width: 240px;
+            model: SettingsState.monitors;
+            current-index <=> SettingsState.monitor;
+            accessible-label: I18n.tr("settings.bar.monitor");
+            selected => {
+                SettingsState.set-monitor(self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.reserveSpace");
+        help: I18n.tr("settings.bar.reserveSpace.help");
+        Switch {
+            checked <=> SettingsState.reserve-space;
+            accessible-label: I18n.tr("settings.bar.reserveSpace");
+            toggled => {
+                SettingsState.set-flag("bar.reserveSpace", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.zOrder");
+        help: I18n.tr("settings.bar.zOrder.help");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.bar.zOrder.topmost"),
+                I18n.tr("settings.bar.zOrder.normal"),
+                I18n.tr("settings.bar.zOrder.bottom"),
+            ];
+            current-index <=> SettingsState.z-order;
+            accessible-label: I18n.tr("settings.bar.zOrder");
+            selected => {
+                SettingsState.set-choice("bar.zOrder", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.hideOnFullscreen");
+        Switch {
+            checked <=> SettingsState.hide-on-fullscreen;
+            accessible-label: I18n.tr("settings.bar.hideOnFullscreen");
+            toggled => {
+                SettingsState.set-flag("bar.hideOnFullscreen", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.height");
+        help: I18n.tr-with("settings.bar.height.help", "height", SettingsState.theme-height);
+        VerticalLayout {
+            spacing: 8px;
+            PxSlider {
+                label: I18n.tr("settings.bar.height");
+                minimum: 22;
+                maximum: 40;
+                value <=> SettingsState.height;
+                released(v) => {
+                    SettingsState.set-number("bar.height", v);
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                Button {
+                    text: I18n.tr("settings.bar.height.reset");
+                    enabled: SettingsState.height-customised;
+                    clicked => {
+                        SettingsState.reset("bar.height");
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component SettingsWindow inherits Window {
+    title: I18n.tr("settings.title");
+    icon: @image-url("../icons/32x32.png");
+    preferred-width: 760px;
+    preferred-height: 560px;
+    min-width: 560px;
+    min-height: 420px;
+    background: Palette.background;
+
+    HorizontalLayout {
+        VerticalLayout {
+            width: 180px;
+            padding: 8px;
+            StandardListView {
+                model: [
+                    { text: I18n.tr("settings.nav.general") },
+                    { text: I18n.tr("settings.nav.bar") },
+                ];
+                current-item <=> SettingsState.page;
+                accessible-label: I18n.tr("settings.nav.label");
+            }
+        }
+
+        Rectangle {
+            width: 1px;
+            background: Palette.border;
+        }
+
+        VerticalLayout {
+            padding-left: 24px;
+            padding-top: 16px;
+            spacing: 8px;
+
+            Text {
+                text: SettingsState.page == 1 ? I18n.tr("settings.nav.bar") : I18n.tr("settings.nav.general");
+                font-size: 20px;
+                font-weight: 600;
+                color: Palette.foreground;
+            }
+
+            if SettingsState.save-error != "": Text {
+                text: I18n.tr-with("settings.saveError", "error", SettingsState.save-error);
+                wrap: word-wrap;
+                color: #d13438;
+            }
+
+            scroll := ScrollView {
+                horizontal-scrollbar-policy: always-off;
+                content-width: self.visible-width;
+                content-height: content.preferred-height;
+                content := VerticalLayout {
+                    width: scroll.visible-width - 20px;
+                    padding-bottom: 24px;
+                    if SettingsState.page == 0: GeneralPage { }
+                    if SettingsState.page == 1: BarPage { }
+                }
+            }
+        }
+    }
+}

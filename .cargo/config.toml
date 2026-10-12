@@ -1,3 +1,4 @@
-[env]
-# ts-rs writes TypeScript bindings for Rust types here when `cargo test` runs.
-TS_RS_EXPORT_DIR = { value = "src/lib/bindings", relative = true }
+# Shortcuts for the commit gate (CLAUDE.md), run from the repository root.
+[alias]
+lint = "clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings"
+check-win = "clippy --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --all-targets -- -D warnings"

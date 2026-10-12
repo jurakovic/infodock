@@ -2,13 +2,11 @@
 //! monitor selection (SPEC §5.1–5.2). No OS calls, fully unit-tested.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::config::model::{Edge, PRIMARY_MONITOR};
 
 /// A rectangle in physical pixels, right/bottom exclusive (like Win32 `RECT`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Rect {
     pub left: i32,
     pub top: i32,
@@ -34,9 +32,8 @@ impl Rect {
 }
 
 /// A monitor as reported by the platform (SPEC §4.6 `monitors()`).
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct MonitorInfo {
     /// Stable selection key stored in `settings.bar.monitor`: `<device>|<name>|<width>x<height>`.
     pub key: String,

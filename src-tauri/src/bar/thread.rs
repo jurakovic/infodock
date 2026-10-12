@@ -4,10 +4,8 @@
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
-use tauri::AppHandle;
-
-use super::Command;
 use super::theme::Theme;
+use super::{BarHost, Command};
 use crate::config::model::{Edge, Material, Settings};
 use crate::platform::{
     BarHandler, BarWindow, Canvas, OsAppearance, Platform, RectF, SizeF, UiEvent,
@@ -21,7 +19,7 @@ pub(super) struct BarLogic {
     material: Option<Material>,
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
-    app: AppHandle,
+    host: Arc<dyn BarHost>,
 }
 
 impl BarLogic {
@@ -29,7 +27,7 @@ impl BarLogic {
         settings: Settings,
         platform: Arc<dyn Platform>,
         commands: Receiver<Command>,
-        app: AppHandle,
+        host: Arc<dyn BarHost>,
     ) -> Self {
         let appearance = platform.appearance();
         Self {
@@ -39,7 +37,7 @@ impl BarLogic {
             material: None,
             platform,
             commands,
-            app,
+            host,
         }
     }
 
@@ -86,7 +84,8 @@ impl BarHandler for BarLogic {
             UiEvent::Placed(_) => window.invalidate(),
             // Hint and popup windows arrive later in M1; they hide here (SPEC §5.3).
             UiEvent::Fullscreen(_) => {}
-            UiEvent::CloseRequested => self.app.exit(0),
+            UiEvent::CloseRequested => self.host.quit(),
+            UiEvent::Activate => self.host.activate(),
         }
     }
 

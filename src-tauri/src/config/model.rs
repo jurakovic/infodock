@@ -8,21 +8,18 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use ts_rs::TS;
 
 /// Current config schema version (SPEC §11.2). Bump together with a step in `migrate.rs`.
 pub const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct Config {
     pub schema: u32,
     pub meta: Meta,
     pub settings: Settings,
     pub layout: Layout,
     /// Runtime state per sensor id, e.g. the uptime record (`set_sensor_state`).
-    #[ts(type = "Record<string, Record<string, unknown>>")]
     pub state: BTreeMap<String, Map<String, Value>>,
     pub legacy: Legacy,
 }
@@ -75,9 +72,8 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct Meta {
     pub created_with: String,
     pub last_written_with: String,
@@ -88,9 +84,8 @@ pub struct Meta {
 // Settings (SPEC §10)
 // ---------------------------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct Settings {
     // §10.1 General
     /// `"auto"` or a catalog id.
@@ -146,9 +141,8 @@ impl Default for Settings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct BarSettings {
     pub edge: Edge,
     pub mode: BarMode,
@@ -186,18 +180,16 @@ impl Default for BarSettings {
 /// Value of [`BarSettings::monitor`] that selects the primary monitor.
 pub const PRIMARY_MONITOR: &str = "primary";
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct FloatingRect {
     pub x: i32,
     pub y: i32,
     pub width: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct BackgroundSettings {
     pub color_mode: BackgroundColorMode,
     /// `#RRGGBB`; `None` = theme default.
@@ -219,9 +211,8 @@ impl Default for BackgroundSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct ClassicSettings {
     pub skin: String,
     pub custom_skin: String,
@@ -236,9 +227,8 @@ impl Default for ClassicSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct SensorDefaults {
     pub text_color: String,
     /// `None` = theme default.
@@ -264,9 +254,8 @@ impl Default for SensorDefaults {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct PopupSettings {
     /// `None` = theme default.
     pub background: Option<String>,
@@ -304,9 +293,8 @@ impl Default for PopupSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct AppSettings {
     /// File path or URI; empty = `ms-settings:dateandtime`.
     pub calendar: String,
@@ -315,9 +303,8 @@ pub struct AppSettings {
 macro_rules! string_enum {
     ($(#[$m:meta])* $name:ident { $($variant:ident),+ $(,)? }) => {
         $(#[$m])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(rename_all = "camelCase")]
-        #[ts(export)]
         pub enum $name { $($variant),+ }
     };
 }
@@ -363,11 +350,9 @@ string_enum!(Zone {
 // Theme defaults (SPEC §10.2–10.5, §12.2–12.3)
 // ---------------------------------------------------------------------------------------------
 
-/// Values used when the matching setting is `None`. Exported to the UI as
-/// `src/lib/bindings/themeDefaults.json` so both sides share one table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+/// Values used when the matching setting is `None`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct ThemeDefaults {
     pub bar_height: u32,
     pub background_color: String,
@@ -481,9 +466,8 @@ pub fn normalize_color(s: String) -> Option<String> {
 // ---------------------------------------------------------------------------------------------
 
 /// Sensors per zone, each in visual left→right order.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct Layout {
     pub left: Vec<SensorInstance>,
     pub center: Vec<SensorInstance>,
@@ -504,9 +488,8 @@ impl Layout {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct SensorInstance {
     pub id: String,
     /// Sensor type id, e.g. `cpu-graph`. Unknown types are kept and shown as placeholders.
@@ -514,21 +497,18 @@ pub struct SensorInstance {
     pub kind: String,
     /// Only values that differ from the type's static defaults (SPEC §11.2).
     #[serde(default)]
-    #[ts(type = "Record<string, unknown>")]
     pub props: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-#[ts(export)]
 pub struct Legacy {
     /// Legacy sensors without an Infodock equivalent yet (SPEC §11.4), kept for later versions.
     pub unsupported: Vec<LegacyUnsupported>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct LegacyUnsupported {
     #[serde(rename = "type")]
     pub kind: String,
@@ -656,22 +636,5 @@ mod tests {
             let id = g.fresh();
             assert!(c.layout.all().all(|s| s.id != id));
         }
-    }
-
-    /// Writes the theme defaults and default settings for the UI next to the ts-rs bindings
-    /// (checked in CI), so UI code and tests never hand-copy Rust defaults.
-    #[test]
-    fn export_defaults_json() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/lib/bindings");
-        std::fs::create_dir_all(&dir).unwrap();
-        let table: BTreeMap<&str, ThemeDefaults> = [
-            ("modern", ThemeDefaults::of(Theme::Modern)),
-            ("classic", ThemeDefaults::of(Theme::Classic)),
-        ]
-        .into();
-        let json = serde_json::to_string_pretty(&table).unwrap() + "\n";
-        std::fs::write(dir.join("themeDefaults.json"), json).unwrap();
-        let settings = serde_json::to_string_pretty(&Settings::default()).unwrap() + "\n";
-        std::fs::write(dir.join("defaultSettings.json"), settings).unwrap();
     }
 }

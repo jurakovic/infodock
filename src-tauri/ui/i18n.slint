@@ -1,0 +1,18 @@
+// Translated strings come from the shared catalog in Rust (`i18n::t`, SPEC §13). Every component
+// instance gets its own copy of this global; Rust installs the lookups on each one and then bumps
+// `revision`, which re-evaluates every binding that translates (also when the language changes).
+export global I18n {
+    in property <int> revision;
+
+    pure callback lookup(key: string, revision: int) -> string;
+    pure callback lookup-with(key: string, name: string, value: string, revision: int) -> string;
+
+    public pure function tr(key: string) -> string {
+        return root.lookup(key, root.revision);
+    }
+
+    // `{name}` in the message is replaced by `value`.
+    public pure function tr-with(key: string, name: string, value: string) -> string {
+        return root.lookup-with(key, name, value, root.revision);
+    }
+}

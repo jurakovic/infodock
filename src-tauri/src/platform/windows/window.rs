@@ -33,16 +33,18 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect,
-    GetMessageW, GetWindowLongPtrW, IDC_ARROW, LoadCursorW, MA_NOACTIVATE, MSG, PostMessageW,
-    PostQuitMessage, RegisterClassExW, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE,
-    WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_MOUSEACTIVATE, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WNDCLASSEXW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
+    GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, LoadCursorW,
+    MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW,
+    SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CLOSE, WM_DPICHANGED,
+    WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_MOUSEACTIVATE, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WNDCLASSEXW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
 use super::appbar::{Shared as AppBarState, WinAppBar};
+use super::instance::activate_message;
 use super::render::Renderer;
 use crate::config::model::Material;
 use crate::i18n::t;
@@ -51,7 +53,7 @@ use crate::platform::{
     UiWaker,
 };
 
-const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
+pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
 /// Private: [`UiWaker::wake`] was called.
 const WM_WAKE: u32 = WM_APP + 1;
 
@@ -99,6 +101,10 @@ impl WindowState {
         }
         if let Some(result) = handled {
             return result;
+        }
+        if msg == activate_message() {
+            self.dispatch(UiEvent::Activate);
+            return LRESULT(0);
         }
         match msg {
             WM_PAINT => {
@@ -378,6 +384,12 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
             tracing::warn!("per-pixel alpha unavailable: {e}");
         }
         let _ = DeleteObject(region.into());
+    }
+
+    // A second launch may run with different integrity; let its activation through (UIPI).
+    // SAFETY: plain call on our own window.
+    unsafe {
+        let _ = ChangeWindowMessageFilterEx(hwnd, activate_message(), MSGFLT_ALLOW, None);
     }
 
     let events = Arc::clone(&state.appbar_events);

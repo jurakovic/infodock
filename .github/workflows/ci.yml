@@ -5,34 +5,16 @@ on:
     branches: [master]
     # Only changes that can affect the build, lints or tests; docs-only commits skip CI.
     paths:
-      - "src/**"
       - "src-tauri/**"
       - "tests/**"
-      - "eslint/**"
       - ".cargo/**"
-      - "index.html"
-      - "package.json"
-      - "bun.lock"
-      - "tsconfig.json"
-      - "vite.config.ts"
-      - "svelte.config.js"
-      - "eslint.config.js"
       - ".github/workflows/ci.yml"
       - ".github/scripts/**"
   pull_request:
     paths:
-      - "src/**"
       - "src-tauri/**"
       - "tests/**"
-      - "eslint/**"
       - ".cargo/**"
-      - "index.html"
-      - "package.json"
-      - "bun.lock"
-      - "tsconfig.json"
-      - "vite.config.ts"
-      - "svelte.config.js"
-      - "eslint.config.js"
       - ".github/workflows/ci.yml"
       - ".github/scripts/**"
   workflow_dispatch:
@@ -50,67 +32,65 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-      - name: Install Tauri system dependencies
+      # Slint's font lookup links fontconfig on Linux.
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libfontconfig-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - run: bun run lint
-      - run: bun run test
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
-      - name: Generated TypeScript bindings are up to date
-        shell: bash
-        run: |
-          changes="$(git status --porcelain -- src/lib/bindings)"
-          if [ -n "$changes" ]; then echo "$changes"; echo "Run cargo test and commit src/lib/bindings"; exit 1; fi
 
   windows:
     name: Build & test (Windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: bun install --frozen-lockfile
-      - run: bun run build
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Unit tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
+      # Includes rendering the Settings pages to src-tauri/target/screenshots.
       - name: Windows integration tests
         run: cargo test --manifest-path src-tauri/Cargo.toml -- --ignored
+      - name: Build release
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-packager
       - name: Build installer
-        run: bun run tauri build --bundles nsis
+        run: cargo packager --manifest-path src-tauri/Cargo.toml --release --formats nsis
       - uses: actions/upload-artifact@v6
         with:
           name: infodock-windows-installer
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: src-tauri/target/release/*-setup.exe
           if-no-files-found: error
           retention-days: 30
-      # Portable build (SPEC §15.3): the frontend is embedded, so the exe runs on its own.
+      # Portable build (SPEC §15.3): a single self-contained exe.
       - uses: actions/upload-artifact@v6
         with:
           name: infodock-windows-portable
           path: src-tauri/target/release/infodock.exe
           if-no-files-found: error
           retention-days: 30
+      - uses: actions/upload-artifact@v6
+        with:
+          name: infodock-settings-screenshots
+          path: src-tauri/target/screenshots
+          if-no-files-found: ignore
+          retention-days: 14
       # Memory budget (SPEC §14.1): reported until M1 S12, enforced from then on.
       - name: Memory check
         shell: pwsh

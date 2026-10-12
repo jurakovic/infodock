@@ -11,22 +11,43 @@ publish = false
 # Distinct from the binary name: on Windows equal names collide on .pdb files (cargo#8519).
 name = "infodock_lib"
 
+# Installer (SPEC §15.3), built with `cargo packager --release --formats nsis`.
+[package.metadata.packager]
+productName = "Infodock"
+identifier = "app.infodock.desktop"
+publisher = "jurakovic"
+copyright = "Copyright (c) 2026 jurakovic"
+category = "Utility"
+icons = ["icons/icon.ico"]
+formats = ["nsis"]
+
+[package.metadata.packager.nsis]
+installMode = "currentUser"
+
 [build-dependencies]
-tauri-build = { version = "2.7", features = [] }
+slint-build = "1.18"
+# Windows resources (icon, manifest, version); only used when the target is Windows.
+embed-resource = "3"
 
 [dependencies]
-tauri = { version = "2.12", features = ["tray-icon"] }
+# Settings window and tray (SPEC §3): winit backend with the software renderer only.
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-software",
+    "accessibility",
+    "system-tray",
+    "unstable-winit-030",
+] }
+global-hotkey = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ts-rs = { version = "12", features = ["serde-json-impl"] }
 fastrand = "2"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
-sys-locale = "0.3"
-tauri-plugin-single-instance = "2.5"
-tauri-plugin-global-shortcut = "2.4"
 
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"
@@ -39,8 +60,11 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Com",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
+    "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
@@ -54,4 +78,5 @@ panic = "unwind"
 strip = true
 
 [dev-dependencies]
+png = "0.18"
 tempfile = "3"

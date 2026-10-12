@@ -8,9 +8,9 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
-# Tauri's Linux system libraries (needed to compile the crate for tests and clippy)
-# plus llvm-rc, which the Windows resource step needs when cross-checking.
-APT_PACKAGES=(libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev llvm build-essential)
+# fontconfig for Slint's font lookup on Linux, plus llvm-rc, which the Windows resource step
+# needs when cross-checking.
+APT_PACKAGES=(libfontconfig-dev pkg-config llvm build-essential)
 missing=()
 for p in "${APT_PACKAGES[@]}"; do
   dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p")
@@ -22,13 +22,9 @@ if [ ${#missing[@]} -gt 0 ]; then
   DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq "${missing[@]}"
 fi
 
-# Rust: components for lint, and the MSVC target for `bun run check:win`.
+# Rust: components for lint, and the MSVC target for `cargo check-win`.
 rustup component add clippy rustfmt >/dev/null
 rustup target add x86_64-pc-windows-msvc >/dev/null
-
-# JS dependencies, and the frontend build that `tauri::generate_context!` expects in dist/.
-bun install
-bun run build
 
 # Download crates for both targets so the first build does not wait on the network.
 cargo fetch --manifest-path src-tauri/Cargo.toml

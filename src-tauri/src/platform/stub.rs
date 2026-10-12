@@ -2,11 +2,12 @@
 //! ships in v1). There is no bar window: the bar thread runs the handler for queued work, so the
 //! rest of the app (tray, Settings, config) can be developed and tested on Linux.
 
+use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 
 use super::{
-    AppBar, BarHandler, BarThread, BarWindow, Capabilities, DockRequest, HandlerFactory,
-    MonitorInfo, OsAppearance, Platform, PlatformError, UiEvent, UiWaker,
+    AppBar, AppDirs, BarHandler, BarThread, BarWindow, Capabilities, DockRequest, HandlerFactory,
+    Instance, InstanceGuard, MonitorInfo, OsAppearance, Platform, PlatformError, UiEvent, UiWaker,
 };
 use crate::config::model::Material;
 
@@ -67,4 +68,28 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
             let _ = wake_tx.send(());
         }),
     })
+}
+
+/// XDG base directories, falling back to `~/.config` and `~/.local/share`.
+pub fn app_dirs(identifier: &str) -> AppDirs {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let base = |var: &str, fallback: &str| {
+        std::env::var_os(var)
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| home.join(fallback))
+    };
+    AppDirs {
+        config: base("XDG_CONFIG_HOME", ".config").join(identifier),
+        logs: base("XDG_DATA_HOME", ".local/share")
+            .join(identifier)
+            .join("logs"),
+    }
+}
+
+/// No lock: development builds may run side by side.
+pub fn single_instance(_identifier: &str) -> Instance {
+    Instance::Primary(InstanceGuard::new(()))
 }

@@ -1,6 +1,7 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+pub mod instance;
 mod monitors;
 mod render;
 pub mod window;

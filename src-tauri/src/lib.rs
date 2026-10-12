@@ -1,96 +1,108 @@
-//! Infodock core: app builder, windows and plugins (SPEC §4.2).
+//! Infodock core (SPEC §4): start-up, the main-thread UI (Settings window, tray, hotkey) and
+//! shutdown. The bar runs on its own thread (`bar`).
 
-mod bar;
-mod commands;
+/// Connects a Slint component's `I18n` global to the shared catalog (SPEC §13). Every component
+/// instance has its own copy of the global.
+macro_rules! install_i18n {
+    ($component:expr) => {{
+        let i18n = $component.global::<$crate::ui::I18n>();
+        i18n.on_lookup(|key, _| $crate::i18n::t(&key).into());
+        i18n.on_lookup_with(|key, name, value, _| {
+            $crate::i18n::t_args(&key, &[(&name, &value)]).into()
+        });
+        // Bindings evaluated before the lookups existed (e.g. the tray menu) translate again.
+        i18n.set_revision(i18n.get_revision() + 1);
+    }};
+}
+pub(crate) use install_i18n;
+
+mod app;
+pub mod bar;
 pub mod config;
-mod error;
 mod hotkey;
 pub mod i18n;
 mod logging;
 pub mod platform;
-mod windowing;
+mod settings;
+mod tray;
+
+/// The Slint UI compiled from `ui/app.slint`.
+mod ui {
+    slint::include_modules!();
+}
 
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager, RunEvent};
+use app::{App, AppHost};
+use bar::BarController;
+use config::ConfigStore;
+use platform::Instance;
 
-use crate::bar::BarController;
-use crate::config::ConfigStore;
-
-/// Event broadcast to all windows after every config change (SPEC §4.4 step 8).
-pub const EVENT_CONFIG_CHANGED: &str = "config-changed";
+/// Names the app's data folders and its single-instance lock (SPEC §2.3).
+pub const IDENTIFIER: &str = "app.infodock.desktop";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn run() {
     logging::install_panic_hook();
 
-    let app = tauri::Builder::default()
-        // Must be the first plugin: a second launch shows the bar and opens Settings (SPEC §6.5).
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            windowing::show_bar(app);
-            if let Err(e) = windowing::settings::open(app, "general") {
-                tracing::warn!("could not open settings: {e}");
-            }
-        }))
-        .plugin(hotkey::plugin())
-        .manage(hotkey::HotkeyState::default())
-        .setup(|app| {
-            let log_dir = app.path().app_log_dir()?;
-            if let Err(e) = logging::init(&log_dir) {
-                eprintln!("logging unavailable: {e}");
-            }
-            let version = app.package_info().version.to_string();
-            tracing::info!("Infodock {version} starting");
-
-            let (store, report) = ConfigStore::open(app.path().app_config_dir()?, &version);
-            log_load_report(&report);
-            let handle = app.handle().clone();
-            store.on_change(Box::new(move |_, new| {
-                if let Err(e) = handle.emit(EVENT_CONFIG_CHANGED, new) {
-                    tracing::warn!("could not broadcast config change: {e}");
-                }
-            }));
-            app.manage(store);
-            app.manage(platform::current());
-
-            let bar = BarController::create(app.handle())?;
-            app.manage(bar);
-            windowing::tray::create(app.handle())?;
-
-            // A taken hotkey must not stop the app; Settings shows the error (SPEC §6.5).
-            let accelerator = app.state::<ConfigStore>().get().settings.hotkey;
-            let _ = hotkey::set(app.handle(), &accelerator);
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::app::app_info,
-            commands::app::hotkey_status,
-            commands::app::quit,
-            commands::config::get_config,
-            commands::config::update_settings,
-            commands::system::capabilities,
-            commands::system::list_monitors,
-        ])
-        .build(tauri::generate_context!())
-        .expect("error while building Infodock");
-
-    app.run(|app, event| match event {
-        // The bar is not a Tauri window, so closing Settings closes the last one; that must not
-        // quit the app. Only an explicit exit (tray, bar, `quit`) carries an exit code.
-        RunEvent::ExitRequested {
-            code: None, api, ..
-        } => api.prevent_exit(),
-        RunEvent::Exit => {
-            if let Some(bar) = app.try_state::<Arc<BarController>>() {
-                bar.release();
-            }
-            if let Some(store) = app.try_state::<ConfigStore>() {
-                store.shutdown();
-            }
-            tracing::info!("Infodock exiting");
-            logging::shutdown();
+    // Held until the process ends; a second launch hands over to this instance (SPEC §6.5).
+    let _instance = match platform::single_instance(IDENTIFIER) {
+        Instance::Primary(guard) => guard,
+        Instance::Secondary => {
+            platform::activate_running_instance();
+            return;
         }
-        _ => {}
-    });
+    };
+
+    let dirs = platform::app_dirs(IDENTIFIER);
+    if let Err(e) = logging::init(&dirs.logs) {
+        eprintln!("logging unavailable: {e}");
+    }
+    tracing::info!("Infodock {VERSION} starting");
+
+    let (store, report) = ConfigStore::open(&dirs.config, VERSION);
+    log_load_report(&report);
+
+    // The Settings window and the tray use Slint's winit backend on this thread; software
+    // rendering keeps GPU drivers out of the process (SPEC §3, §14.1).
+    if let Err(e) = slint::BackendSelector::new()
+        .backend_name("winit".into())
+        .renderer_name("software".into())
+        .select()
+    {
+        tracing::error!("the UI toolkit could not start: {e}");
+        return;
+    }
+
+    let app = Arc::new(App::new(store, platform::current()));
+    let bar = match BarController::create(
+        &app.store,
+        Arc::clone(&app.platform),
+        Arc::new(AppHost(Arc::clone(&app))),
+    ) {
+        Ok(bar) => bar,
+        Err(e) => {
+            tracing::error!("the bar could not start: {e}");
+            app.shutdown();
+            return;
+        }
+    };
+    app.set_bar(bar);
+
+    tray::create(&app);
+    hotkey::init(&app);
+    settings::watch(&app);
+    if !app.platform.capabilities().appbar {
+        // No bar on this OS (development builds): open Settings so something is visible.
+        settings::open(&app, "general");
+    }
+
+    if let Err(e) = slint::run_event_loop_until_quit() {
+        tracing::error!("the event loop failed: {e}");
+    }
+    // Removes the tray icon before the process ends.
+    tray::destroy();
+    app.shutdown();
 }
 
 fn log_load_report(report: &config::store::LoadReport) {

@@ -5,7 +5,7 @@ Run on real Windows 10 and Windows 11 machines (SPEC §16). Each milestone adds 
 ## Getting a build
 
 1. Open the latest green run of [CI](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) for `master`.
-2. Download the `infodock-windows-installer` artifact, unzip it and run the `Infodock_*_x64-setup.exe` inside. It installs per user, without admin rights. It is not signed yet, so SmartScreen may ask: *More info → Run anyway*.
+2. Download the `infodock-windows-installer` artifact, unzip it and run the `infodock_*_x64-setup.exe` inside. It installs per user, without admin rights. It is not signed yet, so SmartScreen may ask: *More info → Run anyway*.
 3. Files: config `%APPDATA%\app.infodock.desktop\config.json`, logs `%LOCALAPPDATA%\app.infodock.desktop\logs\`.
 
 To start over from first run, quit Infodock and delete `%APPDATA%\app.infodock.desktop`.
@@ -63,10 +63,18 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 
 ## M1 — Framework (in progress)
 
-The bar is drawn natively since M1 S1; WebView2 runs only while Settings is open (SPEC §4.1, §14.1). The M0 checks above still apply.
+The bar is drawn natively since M1 S1, and Settings and the tray use Slint (plan D16); no browser engine runs at all (SPEC §4.1, §14.1). The M0 checks above still apply.
 
 **Memory**
 
-- [ ] Task Manager ▸ *Details*: with Settings closed, `infodock.exe` runs without any `msedgewebview2.exe` started by it, and its *Memory (active private working set)* is at most 30 MB.
-- [ ] Open Settings (tray → *Settings…*): `msedgewebview2.exe` processes appear. Close Settings: Infodock keeps running, and within about 10 s those processes are gone and memory is back near the idle value.
+- [ ] Task Manager ▸ *Details*: `infodock.exe` is the only process (no `msedgewebview2.exe`), and its *Memory (active private working set)* is at most 30 MB.
+- [ ] Open Settings (tray → *Settings…*), then close it: Infodock keeps running, and memory is back near the idle value.
 - [ ] Hover and click the bar: the window you were working in keeps the focus.
+
+**Settings window (Slint)**
+
+- [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.
+- [ ] Every control from the M0 checks works the same (hotkey with Enter, choices, switches, sliders save when released, *Use theme default*). A tray toggle of *Lock* or *Popups* shows up in Settings at once.
+- [ ] Keyboard: Tab moves through the controls, Space toggles switches, arrow keys change choices and sliders. Narrator reads each control with its label.
+- [ ] Resize the window down to its minimum: labels and help texts wrap, nothing overlaps or is cut off.
+- [ ] With Settings open behind other windows, start Infodock again: Settings comes to the front.
