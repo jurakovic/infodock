@@ -3,6 +3,7 @@
 
 pub mod theme;
 mod thread;
+mod tray;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
@@ -10,7 +11,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::ConfigStore;
 use crate::config::model::Settings;
-use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, UiWaker};
+use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use thread::BarLogic;
 
 /// What the bar asks of the rest of the app. Called on the bar thread.
@@ -19,6 +20,12 @@ pub trait BarHost: Send + Sync {
     fn quit(&self);
     /// A second launch asked this instance to show itself (SPEC §6.5).
     fn activate(&self);
+    fn bar_visible(&self) -> bool;
+    /// Shows or hides the bar (tray click, tray menu).
+    fn toggle_bar(&self);
+    fn open_settings(&self);
+    /// Changes and saves settings (tray menu: Lock, Popups).
+    fn change_settings(&self, change: Box<dyn FnOnce(&mut Settings) + Send>);
 }
 
 /// Work for the bar thread, queued by [`BarController`].
@@ -29,6 +36,7 @@ enum Command {
 /// Cross-thread handle to the bar.
 pub struct BarController {
     appbar: Arc<dyn AppBar>,
+    tray: Arc<dyn TrayIcon>,
     waker: UiWaker,
     commands: Sender<Command>,
     visible: AtomicBool,
@@ -52,6 +60,7 @@ impl BarController {
 
         let controller = Arc::new(Self {
             appbar: thread.appbar,
+            tray: thread.tray,
             waker: thread.waker,
             commands,
             visible: AtomicBool::new(true),
@@ -120,5 +129,6 @@ impl BarController {
     /// Releases the reserved screen space. Call on exit.
     pub fn release(&self) {
         self.appbar.release();
+        self.tray.remove();
     }
 }

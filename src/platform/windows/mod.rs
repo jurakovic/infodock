@@ -2,8 +2,10 @@
 
 pub mod appbar;
 pub mod instance;
+mod menu;
 mod monitors;
 mod render;
+mod tray;
 pub mod window;
 
 use std::mem::size_of;

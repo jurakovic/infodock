@@ -63,7 +63,7 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 
 ## M1 — Framework (in progress)
 
-The bar is drawn natively since M1 S1, and Settings and the tray use Slint (plan D16); no browser engine runs at all (SPEC §4.1, §14.1). The M0 checks above still apply.
+The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tray is native (D17); no browser engine runs at all (SPEC §4.1, §14.1). The M0 checks above still apply.
 
 **Memory**
 
@@ -78,3 +78,11 @@ The bar is drawn natively since M1 S1, and Settings and the tray use Slint (plan
 - [ ] Keyboard: Tab moves through the controls, Space toggles switches, arrow keys change choices and sliders. Narrator reads each control with its label.
 - [ ] Resize the window down to its minimum: labels and help texts wrap, nothing overlaps or is cut off.
 - [ ] With Settings open behind other windows, start Infodock again: Settings comes to the front.
+
+**Tray (native)**
+
+- [ ] Right-click the tray icon: the menu opens above the pointer; *Lock* and *Popups* show check marks matching Settings ▸ General. Toggle each: the mark flips the next time the menu opens, and Settings follows.
+- [ ] The menu closes when clicking elsewhere or pressing Esc. Keyboard: Win+B, arrow to the icon; Enter or Space toggles the bar exactly once, Shift+F10 or the menu key opens the menu.
+- [ ] Hover the icon: the tooltip reads *Infodock*.
+- [ ] Restart Explorer (Task Manager ▸ *Windows Explorer* ▸ Restart): the tray icon comes back.
+- [ ] Quit from the tray: the icon disappears at once (no ghost icon until hovered).

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 use super::theme::Theme;
+use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
 use crate::config::model::{Edge, Material, Settings};
 use crate::platform::{
@@ -17,6 +18,8 @@ pub(super) struct BarLogic {
     theme: Theme,
     /// The material last applied to the window; `None` until the first application.
     material: Option<Material>,
+    /// Whether the tray icon is shown; `None` until first applied.
+    tray_shown: Option<bool>,
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
@@ -35,9 +38,39 @@ impl BarLogic {
             settings,
             appearance,
             material: None,
+            tray_shown: None,
             platform,
             commands,
             host,
+        }
+    }
+
+    /// Shows or hides the tray icon as configured (SPEC §6.5).
+    fn refresh_tray(&mut self, window: &dyn BarWindow) {
+        let show = self.settings.show_tray_icon;
+        if self.tray_shown != Some(show) {
+            let tooltip = crate::i18n::t("tray.tooltip");
+            window.set_tray_icon(show.then_some(tooltip.as_str()));
+            self.tray_shown = Some(show);
+        }
+    }
+
+    fn tray_menu(&mut self, window: &dyn BarWindow) {
+        let entries = tray::menu(&self.settings, self.host.bar_visible());
+        let Some(command) = window.show_menu(&entries).and_then(TrayCommand::from_id) else {
+            return;
+        };
+        match command {
+            TrayCommand::ToggleBar => self.host.toggle_bar(),
+            TrayCommand::ToggleLock => self
+                .host
+                .change_settings(Box::new(|s| s.locked = !s.locked)),
+            TrayCommand::TogglePopups => {
+                self.host
+                    .change_settings(Box::new(|s| s.popups_enabled = !s.popups_enabled));
+            }
+            TrayCommand::OpenSettings => self.host.open_settings(),
+            TrayCommand::Quit => self.host.quit(),
         }
     }
 
@@ -58,7 +91,10 @@ impl BarLogic {
 impl BarHandler for BarLogic {
     fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent) {
         match event {
-            UiEvent::Started => self.refresh_theme(window),
+            UiEvent::Started => {
+                self.refresh_theme(window);
+                self.refresh_tray(window);
+            }
             UiEvent::Wake => {
                 while let Ok(command) = self.commands.try_recv() {
                     match command {
@@ -72,6 +108,7 @@ impl BarHandler for BarLogic {
                     }
                 }
                 self.refresh_theme(window);
+                self.refresh_tray(window);
             }
             UiEvent::AppearanceChanged => {
                 let appearance = self.platform.appearance();
@@ -86,6 +123,8 @@ impl BarHandler for BarLogic {
             UiEvent::Fullscreen(_) => {}
             UiEvent::CloseRequested => self.host.quit(),
             UiEvent::Activate => self.host.activate(),
+            UiEvent::TrayClick => self.host.toggle_bar(),
+            UiEvent::TrayMenu => self.tray_menu(window),
         }
     }
 

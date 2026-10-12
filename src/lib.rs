@@ -1,5 +1,5 @@
-//! Infodock core (SPEC §4): start-up, the main-thread UI (Settings window, tray, hotkey) and
-//! shutdown. The bar runs on its own thread (`bar`).
+//! Infodock core (SPEC §4): start-up, the main-thread UI (Settings window, hotkey) and shutdown.
+//! The bar, with the tray icon, runs on its own thread (`bar`).
 
 /// Connects a Slint component's `I18n` global to the shared catalog (SPEC §13). Every component
 /// instance has its own copy of the global.
@@ -10,7 +10,7 @@ macro_rules! install_i18n {
         i18n.on_lookup_with(|key, name, value, _| {
             $crate::i18n::t_args(&key, &[(&name, &value)]).into()
         });
-        // Bindings evaluated before the lookups existed (e.g. the tray menu) translate again.
+        // Bindings evaluated before the lookups existed (e.g. the window title) translate again.
         i18n.set_revision(i18n.get_revision() + 1);
     }};
 }
@@ -24,7 +24,6 @@ pub mod i18n;
 mod logging;
 pub mod platform;
 mod settings;
-mod tray;
 
 /// The Slint UI compiled from `ui/app.slint`.
 mod ui {
@@ -63,8 +62,8 @@ pub fn run() {
     let (store, report) = ConfigStore::open(&dirs.config, VERSION);
     log_load_report(&report);
 
-    // The Settings window and the tray use Slint's winit backend on this thread; software
-    // rendering keeps GPU drivers out of the process (SPEC §3, §14.1).
+    // The Settings window uses Slint's winit backend on this thread; software rendering keeps
+    // GPU drivers out of the process (SPEC §3, §14.1).
     if let Err(e) = slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
@@ -89,7 +88,6 @@ pub fn run() {
     };
     app.set_bar(bar);
 
-    tray::create(&app);
     hotkey::init(&app);
     settings::watch(&app);
     if !app.platform.capabilities().appbar {
@@ -100,8 +98,6 @@ pub fn run() {
     if let Err(e) = slint::run_event_loop_until_quit() {
         tracing::error!("the event loop failed: {e}");
     }
-    // Removes the tray icon before the process ends.
-    tray::destroy();
     app.shutdown();
 }
 

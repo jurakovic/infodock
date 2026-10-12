@@ -216,6 +216,42 @@ pub enum UiEvent {
     CloseRequested,
     /// A second launch asked this instance to show itself (SPEC §6.5).
     Activate,
+    /// The tray icon was clicked or selected with the keyboard (SPEC §6.5).
+    TrayClick,
+    /// The tray icon's menu was requested (right click, menu key).
+    TrayMenu,
+}
+
+/// An entry of a native menu: the tray menu, and the context menus of SPEC §6.4.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MenuEntry {
+    Item {
+        id: u32,
+        label: String,
+        checked: bool,
+        enabled: bool,
+    },
+    Separator,
+}
+
+impl MenuEntry {
+    pub fn item(id: u32, label: impl Into<String>) -> Self {
+        Self::Item {
+            id,
+            label: label.into(),
+            checked: false,
+            enabled: true,
+        }
+    }
+
+    pub fn check(id: u32, label: impl Into<String>, checked: bool) -> Self {
+        Self::Item {
+            id,
+            label: label.into(),
+            checked,
+            enabled: true,
+        }
+    }
 }
 
 /// The bar logic. Called by the native bar window, always on the bar thread.
@@ -231,6 +267,16 @@ pub trait BarWindow {
     fn invalidate(&self);
     /// Applies a window material; [`Material::None`] removes it.
     fn set_material(&self, material: Material);
+    /// Shows the notification-area icon with this tooltip, or removes it with `None`.
+    fn set_tray_icon(&self, tooltip: Option<&str>);
+    /// Shows a menu at the pointer and returns the chosen item's id. Runs the menu's modal loop;
+    /// events that arrive meanwhile are delivered after the current handler call.
+    fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32>;
+}
+
+/// Removes the tray icon from any thread, e.g. on exit.
+pub trait TrayIcon: Send + Sync {
+    fn remove(&self);
 }
 
 /// Wakes the bar thread from any thread; its handler then receives [`UiEvent::Wake`]. Wakes
@@ -254,6 +300,7 @@ pub type HandlerFactory = Box<dyn FnOnce() -> Box<dyn BarHandler> + Send>;
 /// Handles to a running bar thread, usable from any thread.
 pub struct BarThread {
     pub appbar: Arc<dyn AppBar>,
+    pub tray: Arc<dyn TrayIcon>,
     pub waker: UiWaker,
 }
 

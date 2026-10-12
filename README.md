@@ -27,6 +27,6 @@ cargo lint   # clippy
 
 MIT, see [LICENSE](LICENSE).
 
-The Settings window and the tray icon are built with [Slint](https://slint.dev), used under the Slint Royalty-free License 2.0:
+The Settings window is built with [Slint](https://slint.dev), used under the Slint Royalty-free License 2.0:
 
 [![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)

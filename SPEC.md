@@ -6,7 +6,7 @@
 | Date | 2026-10-12 |
 | Product | **Infodock** — a compact system-information and launcher bar for the desktop |
 | Target | Windows 10/11 first; macOS/Linux later |
-| Stack | **Rust**: a **native bar** (Win32 + Direct2D/DirectWrite) and **Slint** for the Settings window and the tray |
+| Stack | **Rust**: a **native bar** (Win32 + Direct2D/DirectWrite) and **Slint** for the Settings window |
 | Licence | **MIT** |
 
 ---
@@ -100,7 +100,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Name | **Infodock**. Identifier `app.infodock.desktop`, executable `infodock.exe`, Cargo crate `infodock`. A trademark search (WIPO Global Brand Database) found only two marks, both expired about 10 years ago |
 | Licence | MIT |
 | Platforms | Windows first; platform code behind interfaces for later macOS/Linux |
-| Stack | Rust. The bar, hints and popups are native windows drawn with Direct2D/DirectWrite. The Settings window and the tray use Slint, created on demand (§3, §4.1) |
+| Stack | Rust. The bar, hints and popups are native windows drawn with Direct2D/DirectWrite. The Settings window uses Slint and is created on demand (§3, §4.1) |
 | v1 sensors | §1.2 |
 | Look | Modern default theme + Classic theme with skins |
 | Assets | All artwork and sounds are produced for Infodock (Appendix C). No third-party artwork is bundled except permissively licensed icon sets (e.g. Fluent UI System Icons, MIT) with attribution |
@@ -117,8 +117,9 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Bar, hints, popups | **Native Win32 windows** owned by the core, drawn with **Direct2D** + **DirectWrite** (software render target, §4.6), images decoded with **WIC** | No browser engine. Everything is drawn by Infodock's own renderer (§8.3) |
 | SVG assets | `resvg` (rasterises the Infodock icon set and user SVG images to bitmaps, cached per size) | Built without its text feature |
 | Windows API | `windows` crate (Win32: Shell, UI.Shell, UI.WindowsAndMessaging, UI.Input.KeyboardAndMouse, UI.Accessibility, Graphics.Gdi, Graphics.Dwm, Graphics.Direct2D, Graphics.DirectWrite, Graphics.Imaging, System.Com, System.Ole, Media.Audio, Globalization, NetworkManagement.IpHelper, NetworkManagement.WiFi, System.Performance (PDH), System.Power, System.Shutdown, System.RemoteDesktop, Devices.DeviceAndDriverInstallation, Storage.FileSystem) | |
-| Settings window, tray | **Slint 1.x** (winit backend, software renderer, Fluent style, AccessKit), UI in `.slint` files compiled by `build.rs`; pin exact versions in the lockfile | Event loop on the main thread. Settings is created when opened and dropped when closed. The tray is Slint's `SystemTrayIcon`. Licence: Slint Royalty-free 2.0, which requires the Slint attribution badge where the app is downloaded (README) or `AboutSlint` in the About page |
+| Settings window | **Slint 1.x** (winit backend, software renderer, Fluent style, AccessKit), UI in `.slint` files compiled by `build.rs`; pin exact versions in the lockfile | Event loop on the main thread. Settings is created when opened and dropped when closed. Licence: Slint Royalty-free 2.0, which requires the Slint attribution badge where the app is downloaded (README) or `AboutSlint` in the About page |
 | Global hotkey | `global-hotkey` | |
+| Tray icon and menus | Native: `Shell_NotifyIconW` registered for the bar window, `TrackPopupMenuEx` menus, both on the bar thread | Slint 1.18's tray ignores menu check marks on Windows (plan D17) |
 | System info helpers | `sysinfo` (fallback/cross-platform), `starship-battery`, `wmi` (page-file sizes only) | |
 | Threads | A dedicated **bar thread** (§4.1), a **sampler thread** (§4.4), and worker threads for slow work (directory listings, file operations, icon extraction) | |
 | Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import) | |
@@ -129,7 +130,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | UI tests | Rust unit tests for the bar and the Settings mapping; offscreen rendering of the Settings pages to PNG (§16) | |
 | Packaging | `cargo-packager` → **NSIS per-user installer** (no admin); the portable exe needs nothing else | |
 
-**Why a native bar.** The bar is visible all the time; Settings is opened now and then. A WebView2 bar costs a browser process tree for as long as the app runs: the M0 build (an empty webview bar) used about 360 MB across `infodock.exe` and six `msedgewebview2.exe` processes, and Settings added a seventh (about 65 MB). Comparable native bars use about 30 MB. The bar's content is small and regular (text, meters, graphs, icons, a calendar, a list popup), so drawing it directly is affordable, and it removes the IPC between bar and core. Settings and the tray use Slint: declarative markup, Fluent widgets that follow light/dark mode, accessibility through AccessKit, and no browser engine, so Settings costs a few MB while it is open instead of WebView2's ~65 MB, and the toolchain is Rust only (plan D16).
+**Why a native bar.** The bar is visible all the time; Settings is opened now and then. A WebView2 bar costs a browser process tree for as long as the app runs: the M0 build (an empty webview bar) used about 360 MB across `infodock.exe` and six `msedgewebview2.exe` processes, and Settings added a seventh (about 65 MB). Comparable native bars use about 30 MB. The bar's content is small and regular (text, meters, graphs, icons, a calendar, a list popup), so drawing it directly is affordable, and it removes the IPC between bar and core. Settings uses Slint: declarative markup, Fluent widgets that follow light/dark mode, accessibility through AccessKit, and no browser engine, so Settings costs a few MB while it is open instead of WebView2's ~65 MB, and the toolchain is Rust only (plan D16).
 
 **Why not Electron, WPF or WinUI:** they idle at 50–150 MB or more and would still need native code for the AppBar and system counters. **Why not a cross-platform Rust GUI toolkit for the bar:** the bar needs DWM materials, AppBar integration, layered popups, OLE drag & drop and UI Automation, which are Win32-level anyway; a toolkit would sit between Infodock and those APIs without saving much code.
 
@@ -148,15 +149,15 @@ One process (single instance enforced). No browser engine runs at any time.
 | `popup` | native, bar thread | layered, topmost, tool window, focusable; hides when it loses activation; created on first use and reused | Interactive popups (Folder Menu, Start Menu, Eject list) |
 | `settings` | Slint window, main thread | normal decorated window, opened on a route (`general`, `bar`, `sensor/<id>`, `new?zone=…`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
 
-Plus a **tray icon** (Slint `SystemTrayIcon`, main thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit.
+Plus a **tray icon** (native, registered for the bar window, bar thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit. The menu is built from the current state each time it opens.
 
 Threads:
-* **main**: Slint's event loop — the Settings window, the tray and the global hotkey. Other threads reach it with `slint::invoke_from_event_loop`.
-* **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint and popup windows, the sensor instances, layout, rendering, context menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
+* **main**: Slint's event loop — the Settings window and the global hotkey. Other threads reach it with `slint::invoke_from_event_loop`.
+* **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint and popup windows, the tray icon, the sensor instances, layout, rendering, menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
 * **sampler thread**: polls the providers and delivers samples to the bar thread's queue (§4.4).
-* **tokio workers**: slow work (directory listings, file operations, icon extraction); results go back to the bar thread's queue.
+* **worker threads**: slow work (directory listings, file operations, icon extraction); results go back to the bar thread's queue.
 
-**Single instance**: a named mutex (`Local\\app.infodock.desktop`). A second launch finds the running bar window by its class, allows it to take the foreground and posts it a registered activation message; the running instance shows the bar and opens Settings (§6.5), and the second launch exits.
+**Single instance**: a named mutex (`Local\app.infodock.desktop`). A second launch finds the running bar window by its class, allows it to take the foreground and posts it a registered activation message; the running instance shows the bar and opens Settings (§6.5), and the second launch exits.
 
 ### 4.2 Rust modules
 
@@ -164,7 +165,7 @@ Threads:
 src/
   main.rs / lib.rs          start-up and shutdown; starts the bar thread, the sampler and the main event loop
   app.rs                    App (state shared by all threads), bar visibility, quitting
-  hotkey.rs, tray.rs        global hotkey and tray icon (main thread)
+  hotkey.rs                 global hotkey (main thread)
   settings/                 Settings window glue: fills and saves the Slint state; mapping helpers
   config/                   model.rs (typed config), store.rs (load/save/atomic write/debounce),
                             migrate.rs (schema versions), patch.rs, legacy.rs (legacy XML layout import)
@@ -179,7 +180,7 @@ src/
     interact.rs             hover, clicks and Lock rules, reorder drag, drop routing (§6)
     hint.rs, popup.rs       hover hint (§7.1) and interactive popup host (§7.2)
     placement.rs            hint/popup placement (§7.3), pure
-    menus.rs                context menus (§6.4)
+    menus.rs, tray.rs       context menus (§6.4) and the tray menu (§6.5)
     theme.rs, skins.rs      resolved theme (§12.1), built-in skins, skin packs and tint (§12.3–12.4)
     anim.rs                 rise animation, hover highlight, fades (§5.5)
   sensors/
@@ -194,7 +195,8 @@ src/
     canvas.rs               colours, rectangles and the Canvas trait (§4.6)
     geometry.rs             pure placement math: docking strips, monitor selection
     windows/                window.rs (window classes, message loop, input → events), appbar.rs,
-                            instance.rs (single-instance lock, known folders),
+                            instance.rs (single-instance lock, known folders), tray.rs
+                            (notification-area icon),
                             monitors.rs, render.rs (Direct2D/DirectWrite/WIC canvas), menu.rs
                             (TrackPopupMenuEx), dialog.rs (TaskDialogIndirect), droptarget.rs
                             (IDropTarget), uia.rs (UI Automation provider), shell.rs (ShellExecuteEx,
@@ -210,14 +212,13 @@ ui/
   app.slint                 exports the components Rust uses
   i18n.slint                global I18n { tr(key), tr-with(key, name, value) }, backed by i18n::t
   settings.slint            SettingsWindow and the SettingsState global (pages, rows, controls)
-  tray.slint                Tray (SystemTrayIcon with its menu)
 ```
 
 Controls bind two-way to the `SettingsState` global. Rust fills it from the config, saves each change as a settings patch (§4.5) and refreshes it from the config store's change listener, so changes made elsewhere (tray, hotkey) show up at once. Generated forms (PropertyForm, §6.7) are `for` loops over the field schemas with one control per field type (§8.2).
 
 ### 4.4 Data flow
 
-1. On start, Rust loads the config, starts the sampler thread and the bar thread, and creates the tray. The bar thread creates the bar window and instantiates one sensor per layout entry through the registry.
+1. On start, Rust loads the config and starts the sampler thread and the bar thread. The bar thread creates the bar window and the tray icon and instantiates one sensor per layout entry through the registry.
 2. For each sensor, the bar thread asks its type for **topic requests** (`topics(props)`), e.g. `{ topic: "cpu", interval_ms: 1000 }`, and subscribes once per *(sensor, topic)*. The **scheduler** keeps the subscriber set per topic and samples at the **minimum** requested interval. Every sample goes to the bar thread's queue; slower subscribers simply use the newest sample.
 3. Providers are **shared**: ten CPU sensors cost one CPU sample per tick.
 4. Event-driven topics (`volumes`, `battery`, `wifi`, `recycle-bin` after actions) push immediately when the OS notifies.
@@ -273,7 +274,8 @@ UI services, used only on the bar thread (not `Send`):
 
 * **Windows**: create a native window of a kind (§4.1) with an event handler; set geometry (physical px), show/hide, global alpha (fades), capture the pointer, invalidate, read its scale. Input arrives as platform-neutral events: pointer move/leave/down/up (button, modifiers), wheel, key, DPI change, timer, drag-enter/over/leave/drop (§6.3), and the OS broadcasts the bar cares about (resume, time change, device change, appearance change).
 * **Canvas**: drawing in logical px at the window's scale: filled and stroked rectangles, rounded rectangles, lines and polygons, linear gradients, text layouts, bitmaps (with opacity), clipping and layer opacity. **Text**: layout and measurement with a font family, size, weight and style, optional maximum width with an end ellipsis, tabular numerals. **Bitmaps**: decode files (PNG, JPEG, GIF, BMP, ICO; SVG through `resvg`) and wrap RGBA buffers.
-* **Menus** and **dialogs**: native popup menus at the cursor and confirmation dialogs.
+* **Menus** and **dialogs**: native popup menus at the cursor (checkable items, separators) and confirmation dialogs.
+* **Tray icon**: shown, updated or removed on the bar window; clicks and menu requests arrive as events; removable from any thread on exit.
 * **AppBar**: attached to the bar window (`attach_appbar(window, sink) → AppBar`), because it needs that window and its thread.
 * **Accessibility**: a UI Automation provider for the bar (§14.4).
 
@@ -1088,6 +1090,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | theme | modern / classic | modern | |
+| colorScheme | system / light / dark | system | Light or dark for the Settings window and the modern bar (§12.2); `system` follows the OS app mode |
 | background.colorMode | standard / custom | custom | standard = theme colour |
 | background.color | color | modern `#1C1C1F`; classic `#2A2A2E` | Tint for skins |
 | background.opacity | 0–100 % | modern 80 %; classic 90 % | |
@@ -1271,7 +1274,7 @@ Settings has its own look (§4.3) and does not use the bar theme, except for ski
 * Typography: Segoe UI Variable; small 10 px, medium 11 px, large 15 px; semibold labels; tabular numerals.
 * Icons: the Infodock SVG set (Appendix C), monochrome, rasterised at the physical size and tinted with the sensor text colour.
 * Popups: radius 8 px, `#202024` at 92 %, soft shadow, 12 px text.
-* Follows the OS **light/dark** mode: in light mode (if the user has not customised colours) the bar is `#F3F3F3` at 80 % with sensor text `#1A1A1A`.
+* Follows `colorScheme` (§10.3; by default the OS **light/dark** mode): in light mode (if the user has not customised colours) the bar is `#F3F3F3` at 80 % with sensor text `#1A1A1A`.
 * Placer: 2 px line in the accent colour.
 
 ### 12.3 Classic theme
@@ -1321,7 +1324,7 @@ A compact, denser look:
 
 ## 13. Localisation
 
-* Infrastructure from day one: all user-visible strings go through `i18n::t(key, …args)` — directly in Rust (bar, menus, dialogs, notifications) and through the `I18n` global in `.slint` files (Settings, tray). The catalogs are `i18n/<lang>.json`, embedded in the binary, with stable keys (e.g. `sensor.cpu.hint.activity`); `en.json` is the source.
+* Infrastructure from day one: all user-visible strings go through `i18n::t(key, …args)` — directly in Rust (bar, tray, menus, dialogs, notifications) and through the `I18n` global in `.slint` files (Settings). The catalogs are `i18n/<lang>.json`, embedded in the binary, with stable keys (e.g. `sensor.cpu.hint.activity`); `en.json` is the source.
 * **v1 ships English only.** The language selector is hidden while only one catalog exists.
 * A missing key in a future catalog falls back to English and is logged once.
 * Plurals: catalog entries support the CLDR categories `one/few/many/other`; Rust selects the category with CLDR plural rules for the UI language.

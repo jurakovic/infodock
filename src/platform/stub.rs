@@ -7,7 +7,8 @@ use std::sync::{Arc, mpsc};
 
 use super::{
     AppBar, AppDirs, BarHandler, BarThread, BarWindow, Capabilities, DockRequest, HandlerFactory,
-    Instance, InstanceGuard, MonitorInfo, OsAppearance, Platform, PlatformError, UiEvent, UiWaker,
+    Instance, InstanceGuard, MenuEntry, MonitorInfo, OsAppearance, Platform, PlatformError,
+    TrayIcon, UiEvent, UiWaker,
 };
 use crate::config::model::Material;
 
@@ -47,6 +48,18 @@ impl BarWindow for NoWindow {
     fn invalidate(&self) {}
 
     fn set_material(&self, _material: Material) {}
+
+    fn set_tray_icon(&self, _tooltip: Option<&str>) {}
+
+    fn show_menu(&self, _entries: &[MenuEntry]) -> Option<u32> {
+        None
+    }
+}
+
+struct NoTray;
+
+impl TrayIcon for NoTray {
+    fn remove(&self) {}
 }
 
 pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, PlatformError> {
@@ -64,6 +77,7 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
     tracing::info!("no native bar on this OS; the bar is not shown");
     Ok(BarThread {
         appbar: Arc::new(StubAppBar),
+        tray: Arc::new(NoTray),
         waker: UiWaker::new(move || {
             let _ = wake_tx.send(());
         }),

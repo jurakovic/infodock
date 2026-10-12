@@ -45,12 +45,14 @@ use windows::core::{HSTRING, PCWSTR, w};
 
 use super::appbar::{Shared as AppBarState, WinAppBar};
 use super::instance::activate_message;
+use super::menu;
 use super::render::Renderer;
+use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
-    AppBarEvent, BarHandler, BarThread, BarWindow, HandlerFactory, PlatformError, SizeF, UiEvent,
-    UiWaker,
+    AppBarEvent, BarHandler, BarThread, BarWindow, HandlerFactory, MenuEntry, PlatformError, SizeF,
+    TrayIcon, UiEvent, UiWaker,
 };
 
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
@@ -63,6 +65,7 @@ struct WindowState {
     hwnd: Cell<isize>,
     handler: RefCell<Option<Box<dyn BarHandler>>>,
     appbar: OnceCell<Arc<AppBarState>>,
+    tray: OnceCell<Arc<Tray>>,
     /// AppBar events raised while handling a message; delivered to the handler afterwards.
     appbar_events: Arc<Mutex<Vec<AppBarEvent>>>,
     /// Events that arrived while the handler was busy.
@@ -83,6 +86,17 @@ impl WindowState {
 
     fn handle(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let hwnd = self.hwnd();
+        if msg == WM_TRAY {
+            if let Some(event) = Tray::event(lparam) {
+                self.dispatch(event);
+            }
+            return LRESULT(0);
+        }
+        if msg == taskbar_created()
+            && let Some(tray) = self.tray.get()
+        {
+            tray.restore();
+        }
         let handled = self
             .appbar
             .get()
@@ -131,6 +145,9 @@ impl WindowState {
                 self.dispatch(UiEvent::AppearanceChanged);
             }
             WM_NCDESTROY => {
+                if let Some(tray) = self.tray.get() {
+                    tray.hide();
+                }
                 // SAFETY: detaches this state from the dying window; it is intentionally leaked.
                 unsafe {
                     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -262,6 +279,19 @@ impl BarWindow for WindowState {
             Err(e) => tracing::warn!("window material {material:?} not available: {e}"),
         }
     }
+
+    fn set_tray_icon(&self, tooltip: Option<&str>) {
+        if let Some(tray) = self.tray.get() {
+            match tooltip {
+                Some(tooltip) => tray.show(tooltip),
+                None => tray.hide(),
+            }
+        }
+    }
+
+    fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32> {
+        menu::show(self.hwnd(), entries)
+    }
 }
 
 /// The bar window as a raw window handle, for `window-vibrancy`.
@@ -342,6 +372,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         hwnd: Cell::new(0),
         handler: RefCell::new(None),
         appbar: OnceCell::new(),
+        tray: OnceCell::new(),
         appbar_events: Arc::new(Mutex::new(Vec::new())),
         deferred: RefCell::new(VecDeque::new()),
         repaint: Cell::new(false),
@@ -400,6 +431,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
             .push(event);
     });
     let _ = state.appbar.set(AppBarState::new(hwnd, sink));
+    let _ = state.tray.set(Arc::new(Tray::new(hwnd)));
     Ok(state)
 }
 
@@ -411,8 +443,9 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
             return;
         }
     };
-    let Some(appbar) = state.appbar.get().cloned() else {
-        let _ = ready.send(Err(PlatformError::Os("AppBar missing".into())));
+    let (Some(appbar), Some(tray)) = (state.appbar.get().cloned(), state.tray.get().cloned())
+    else {
+        let _ = ready.send(Err(PlatformError::Os("AppBar or tray missing".into())));
         return;
     };
     *state.handler.borrow_mut() = Some(make_handler());
@@ -438,6 +471,7 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
     });
     let _ = ready.send(Ok(BarThread {
         appbar: Arc::new(WinAppBar { shared: appbar }),
+        tray: tray as Arc<dyn TrayIcon>,
         waker,
     }));
 
