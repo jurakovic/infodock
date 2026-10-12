@@ -261,6 +261,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_locked(settings.locked);
     state.set_popups_enabled(settings.popups_enabled);
     state.set_clicks_when_locked(choice("clicksWhenLocked"));
+    state.set_new_sensor_menu(choice("newSensorMenu"));
     state.set_sensor_spacing(settings.sensor_spacing as f32);
 
     state.set_mode(choice("bar.mode"));

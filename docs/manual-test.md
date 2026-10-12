@@ -73,19 +73,19 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Open Settings (tray → *Settings…*), then close it: Infodock keeps running, and memory is back near the idle value.
 - [ ] Hover and click the bar: the window you were working in keeps the focus.
 
-**Sensors on the bar** (since M1 S4; adding and editing sensors arrives with S5 and S9)
+**Sensors on the bar** (since M1 S4)
 
 - [ ] With the first-run config, the bar shows the Infodock logo in the centre, and dimmed, outlined labels `cpu-graph`, `memory-meter`, `network-graph` on the left and `date`, `time` on the right: those sensor types arrive in M2.
 - [ ] Settings ▸ General ▸ *Space between sensors*: the gaps on the left and right change at once.
 - [ ] At 150 % scaling, the logo and the labels are crisp, not blurred.
-- [ ] Optional, by editing `config.json` while Infodock is closed: a `text` sensor (`{ "id": "s_t1", "type": "text", "props": { "text": "Hello" } }`) shows its text; a `spacer` with `"showDivider": true` shows a faint vertical line; an `image` with `"image": "C:\\path\\to\\picture.png"` shows that picture one pixel less than the bar tall.
+- [ ] Add a Text sensor (*New sensor… ▸ Text*) with the text "Hello": it shows "Hello"; a Spacer with *Show divider* shows a faint vertical line; an Image with a picture file shows that picture one pixel less than the bar tall.
 
 **Menus and Lock** (since M1 S6)
 
 - [ ] Right-click an empty part of the bar: *New sensor…*, *Tools ▸* (only *Layout manager…* enabled), *Settings…*, *Lock*, *Popups*, *Quit Infodock*. The check marks match the tray menu.
 - [ ] Right-click the logo: *New sensor…*, *Properties…*, *Remove sensor*, *Tools ▸*, *Settings…*, *Lock*, *Popups*. On a placeholder (e.g. `cpu-graph`), *Properties…* is greyed out.
 - [ ] *Remove sensor* on the logo asks "Remove sensor “Image”?"; *Cancel* keeps it, *Remove* removes it at once (and from `config.json`).
-- [ ] Settings ▸ General ▸ *New sensor menu* is not there yet; set `"newSensorMenu": "submenu"` in `config.json` (Infodock closed): *New sensor* becomes a submenu *General ▸ Image, Spacer, Text*; choosing *Text* adds a "Text" sensor after the one you clicked (or in the zone under the pointer) and opens Settings.
+- [ ] Settings ▸ General ▸ *“New sensor” in the bar’s menu* → *Lists the sensor types*: *New sensor* becomes a submenu *General ▸ Image, Spacer, Text*; choosing *Text* adds a "Text" sensor after the one you clicked (or in the zone under the pointer) and opens its properties.
 - [ ] Press and hold the left button on the logo: it dims; release: it is back.
 - [ ] *Lock* on and Settings ▸ General ▸ *Clicks while locked* → *Only while Alt is held*: pressing the logo no longer dims it; with Alt held it does.
 
@@ -105,7 +105,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Tray → *Popups* off: no hints. On again: hints are back.
 - [ ] Bar at the top (Settings ▸ Bar ▸ Screen edge): hints appear below the bar, their triangle pointing up.
 - [ ] At 150 % scaling the hint text is crisp.
-- [ ] Settings ▸ General ▸ no popup settings yet; with `popups.showDelayMs` set to `0` in `config.json` (Infodock closed), hints appear at once.
+- [ ] Settings ▸ Popups ▸ *Delay before a popup shows* at 0: hints appear at once.
 
 **Floating mode** (since M1 S11)
 

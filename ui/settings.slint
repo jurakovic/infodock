@@ -66,6 +66,8 @@ export global SettingsState {
     in-out property <bool> popups-enabled;
     in-out property <int> clicks-when-locked;
     in-out property <float> sensor-spacing;
+    // 0 = the picker, 1 = a submenu of types.
+    in-out property <int> new-sensor-menu;
 
     // Bar (SPEC §10.2)
     // 0 = docked, 1 = floating.
@@ -412,6 +414,23 @@ component GeneralPage inherits VerticalLayout {
             value <=> SettingsState.sensor-spacing;
             released(v) => {
                 SettingsState.set-number("sensorSpacing", v);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.newSensorMenu");
+        help: I18n.tr("settings.general.newSensorMenu.help");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.general.newSensorMenu.dialog"),
+                I18n.tr("settings.general.newSensorMenu.submenu"),
+            ];
+            current-index <=> SettingsState.new-sensor-menu;
+            accessible-label: I18n.tr("settings.general.newSensorMenu");
+            selected => {
+                SettingsState.set-choice("newSensorMenu", self.current-index);
             }
         }
     }

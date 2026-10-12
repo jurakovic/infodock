@@ -73,6 +73,10 @@ pub const CHOICES: &[Choice] = &[
         values: &["always", "altOnly"],
     },
     Choice {
+        path: "newSensorMenu",
+        values: &["dialog", "submenu"],
+    },
+    Choice {
         path: "bar.mode",
         values: &["docked", "floating"],
     },
