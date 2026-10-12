@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::model::{Edge, PRIMARY_MONITOR};
+use crate::config::model::{Edge, FloatingRect, PRIMARY_MONITOR};
 
 /// A rectangle in physical pixels, right/bottom exclusive (like Win32 `RECT`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -141,6 +141,67 @@ pub fn keep_height(rect: Rect, edge: Edge, height: i32) -> Rect {
     }
 }
 
+/// A floating bar's width until the user sets one, logical px (SPEC §5.1).
+pub const DEFAULT_FLOATING_WIDTH: u32 = 800;
+/// Its default gap to the work area's edge, logical px.
+const FLOATING_MARGIN: u32 = 12;
+
+/// Where a floating bar goes (SPEC §5.1): at `floating` (x and y physical screen px, width
+/// logical px), kept inside the work area of the monitor it is on; without a position, centred
+/// near `edge` of the selected monitor. Returns the rect and its monitor.
+pub fn floating_rect<'a>(
+    monitors: &'a [MonitorInfo],
+    selection: &str,
+    floating: Option<FloatingRect>,
+    edge: Edge,
+    height: u32,
+) -> Option<(Rect, &'a MonitorInfo)> {
+    let monitor = match floating {
+        Some(f) => monitor_at(monitors, f.x, f.y)?,
+        None => select_monitor(monitors, selection)?,
+    };
+    let work = monitor.work_area;
+    let width = floating.map_or(DEFAULT_FLOATING_WIDTH, |f| f.width);
+    let w = to_physical(width, monitor.scale).min(work.width());
+    let h = to_physical(height, monitor.scale).min(work.height());
+    let (x, y) = match floating {
+        Some(f) => (f.x, f.y),
+        None => {
+            let margin = to_physical(FLOATING_MARGIN, monitor.scale);
+            let y = match edge {
+                Edge::Top => work.top + margin,
+                Edge::Bottom => work.bottom - h - margin,
+            };
+            (work.left + (work.width() - w) / 2, y)
+        }
+    };
+    let x = x.clamp(work.left, work.right - w);
+    let y = y.clamp(work.top, work.bottom - h);
+    Some((Rect::new(x, y, x + w, y + h), monitor))
+}
+
+/// The monitor containing the point, else the nearest one.
+fn monitor_at(monitors: &[MonitorInfo], x: i32, y: i32) -> Option<&MonitorInfo> {
+    let distance = |m: &MonitorInfo| {
+        let b = m.bounds;
+        let dx = (b.left - x).max(x - (b.right - 1)).max(0);
+        let dy = (b.top - y).max(y - (b.bottom - 1)).max(0);
+        i64::from(dx) * i64::from(dx) + i64::from(dy) * i64::from(dy)
+    };
+    monitors.iter().min_by_key(|m| distance(m))
+}
+
+/// The monitor edge nearer to the middle of `rect`: where hints of a floating bar open away
+/// from (SPEC §7.3).
+pub fn nearer_edge(rect: Rect, monitor: &MonitorInfo) -> Edge {
+    let middle = (rect.top + rect.bottom) / 2;
+    if middle - monitor.bounds.top < monitor.bounds.bottom - middle {
+        Edge::Top
+    } else {
+        Edge::Bottom
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +297,70 @@ mod tests {
         assert_eq!(select_monitor(&ms, "D9|Z|1x1").unwrap().device, "D1");
         assert_eq!(select_monitor(&ms, r"D2").unwrap().device, "D2");
         assert!(select_monitor(&[], "primary").is_none());
+    }
+
+    /// A 1920 × 1080 primary at 100 % and a 2560 × 1440 monitor at 150 % to its right.
+    fn two_monitors() -> Vec<MonitorInfo> {
+        vec![
+            MonitorInfo::new(
+                "A".into(),
+                "Left".into(),
+                Rect::new(0, 0, 1920, 1080),
+                Rect::new(0, 0, 1920, 1040),
+                1.0,
+                true,
+            ),
+            MonitorInfo::new(
+                "B".into(),
+                "Right".into(),
+                Rect::new(1920, 0, 4480, 1440),
+                Rect::new(1920, 0, 4480, 1440),
+                1.5,
+                false,
+            ),
+        ]
+    }
+
+    #[test]
+    fn floating_bar_starts_centred_near_the_edge() {
+        let monitors = two_monitors();
+        let (rect, m) =
+            floating_rect(&monitors, "primary", None, Edge::Bottom, 28).expect("placed");
+        assert_eq!(m.device, "A");
+        assert_eq!(rect, Rect::new(560, 1000, 1360, 1028));
+        let (rect, _) = floating_rect(&monitors, "primary", None, Edge::Top, 28).expect("placed");
+        assert_eq!(rect.top, 12);
+    }
+
+    #[test]
+    fn floating_bar_keeps_its_place_inside_its_monitor() {
+        let monitors = two_monitors();
+        let at = |x, y, width| {
+            let f = FloatingRect { x, y, width };
+            floating_rect(&monitors, "primary", Some(f), Edge::Bottom, 28)
+                .map(|(r, m)| (r, m.device.clone()))
+        };
+        // On the right monitor, at its scale: 600 × 1.5 wide, 28 × 1.5 tall.
+        assert_eq!(
+            at(2000, 100, 600),
+            Some((Rect::new(2000, 100, 2900, 142), "B".into()))
+        );
+        // Partly off the work area: pulled back in.
+        assert_eq!(
+            at(1700, 1030, 600),
+            Some((Rect::new(1320, 1012, 1920, 1040), "A".into()))
+        );
+        // Off every monitor: onto the nearest one.
+        assert_eq!(at(-500, 500, 300).map(|(r, _)| r.left), Some(0));
+        // Wider than the monitor: as wide as its work area.
+        assert_eq!(at(0, 0, 5000).map(|(r, _)| r.width()), Some(1920));
+
+        let rect = Rect::new(2000, 100, 2900, 142);
+        assert_eq!(nearer_edge(rect, &monitors[1]), Edge::Top);
+        assert_eq!(
+            nearer_edge(Rect::new(0, 1000, 800, 1028), &monitors[0]),
+            Edge::Bottom
+        );
     }
 
     #[test]

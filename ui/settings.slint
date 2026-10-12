@@ -68,6 +68,10 @@ export global SettingsState {
     in-out property <float> sensor-spacing;
 
     // Bar (SPEC §10.2)
+    // 0 = docked, 1 = floating.
+    in-out property <int> mode;
+    // Logical px.
+    in-out property <float> floating-width;
     in-out property <int> edge;
     in property <[string]> monitors;
     in-out property <int> monitor;
@@ -140,6 +144,8 @@ export global SettingsState {
     callback set-choice(path: string, index: int);
     callback set-number(path: string, value: int);
     callback set-monitor(index: int);
+    // A floating bar's width, logical px.
+    callback set-floating-width(width: int);
     // Back to the theme default.
     callback reset(path: string);
     // A colour typed as #RRGGBB.
@@ -415,6 +421,34 @@ component BarPage inherits VerticalLayout {
     alignment: start;
 
     Row {
+        label: I18n.tr("settings.bar.mode");
+        help: I18n.tr("settings.bar.mode.help");
+        ComboBox {
+            width: 240px;
+            model: [I18n.tr("settings.bar.mode.docked"), I18n.tr("settings.bar.mode.floating")];
+            current-index <=> SettingsState.mode;
+            accessible-label: I18n.tr("settings.bar.mode");
+            selected => {
+                SettingsState.set-choice("bar.mode", self.current-index);
+            }
+        }
+    }
+
+    if SettingsState.mode == 1: Row {
+        label: I18n.tr("settings.bar.width");
+        ValueSlider {
+            label: I18n.tr("settings.bar.width");
+            minimum: 200;
+            maximum: 3840;
+            step: 10;
+            value <=> SettingsState.floating-width;
+            released(v) => {
+                SettingsState.set-floating-width(v);
+            }
+        }
+    }
+
+    Row {
         label: I18n.tr("settings.bar.edge");
         ComboBox {
             width: 240px;
@@ -440,7 +474,7 @@ component BarPage inherits VerticalLayout {
         }
     }
 
-    Row {
+    if SettingsState.mode == 0: Row {
         label: I18n.tr("settings.bar.reserveSpace");
         help: I18n.tr("settings.bar.reserveSpace.help");
         Switch {

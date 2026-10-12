@@ -21,6 +21,7 @@ use crate::app::App;
 use crate::config::model::Settings;
 use crate::config::patch::apply_settings_patch;
 use crate::config::{Config, ConfigError};
+use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::{hotkey, ui};
 
 thread_local! {
@@ -172,6 +173,15 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let a = Arc::clone(app);
     state.on_reset(move |path| save(&a, model::patch(&path, Value::Null)));
     let a = Arc::clone(app);
+    state.on_set_floating_width(move |width| {
+        let width = u32::try_from(width).unwrap_or(DEFAULT_FLOATING_WIDTH);
+        let settings = a.store.get().settings;
+        let floating = model::floating_with_width(&settings, &a.platform.monitors(), width);
+        if let Ok(value) = serde_json::to_value(floating) {
+            save(&a, model::patch("bar.floating", value));
+        }
+    });
+    let a = Arc::clone(app);
     state.on_set_choice(move |path, index| {
         let value = model::choice(&path)
             .and_then(|c| usize::try_from(index).ok().and_then(|i| c.values.get(i)));
@@ -253,6 +263,13 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_clicks_when_locked(choice("clicksWhenLocked"));
     state.set_sensor_spacing(settings.sensor_spacing as f32);
 
+    state.set_mode(choice("bar.mode"));
+    state.set_floating_width(
+        settings
+            .bar
+            .floating
+            .map_or(DEFAULT_FLOATING_WIDTH, |f| f.width) as f32,
+    );
     state.set_edge(choice("bar.edge"));
     let monitors = model::monitor_choices(&settings.bar.monitor, &app.platform.monitors());
     let labels: Vec<SharedString> = monitors.labels.iter().map(SharedString::from).collect();
@@ -555,6 +572,9 @@ mod screenshots {
         // The whole Bar page.
         state.set_page(1);
         render_sized("settings-bar-full", 1000);
+        state.set_mode(1);
+        render("settings-bar-floating");
+        state.set_mode(0);
         // The whole Sensors page, with the Layout manager; then a Remove waiting to be confirmed.
         state.set_page(2);
         render_sized("settings-sensors-layout", 1000);

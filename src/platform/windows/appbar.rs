@@ -38,8 +38,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::w;
 
 use super::monitors::{self, to_rect, to_win_rect};
-use crate::config::model::{BarMode, Edge, ZOrder};
-use crate::platform::geometry::{Rect, dock_strip, keep_height, select_monitor, to_physical};
+use crate::config::model::{BarMode, Edge, FloatingRect, ZOrder};
+use crate::platform::geometry::{
+    DEFAULT_FLOATING_WIDTH, Rect, dock_strip, floating_rect, keep_height, nearer_edge,
+    select_monitor, to_physical,
+};
 use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest};
 
 /// `wParam` of the private "reposition" message when it asks to raise the bar instead.
@@ -200,23 +203,36 @@ impl Shared {
             self.ui(|u| u.positioning = false);
             return;
         }
-        // Floating mode arrives in M1; until then it behaves like a docked bar without reservation.
-        let reserve = req.reserve_space && req.mode == BarMode::Docked;
+        let floating = req.mode == BarMode::Floating;
+        let reserve = req.reserve_space && !floating;
         if !reserve {
             // Remove first so the work area below no longer contains our old reservation.
             self.unregister();
         }
         let monitors = monitors::list();
-        let Some(monitor) = select_monitor(&monitors, &req.monitor) else {
+        let placed = if floating {
+            floating_rect(&monitors, &req.monitor, req.floating, req.edge, req.height)
+        } else {
+            select_monitor(&monitors, &req.monitor).map(|monitor| {
+                let height = to_physical(req.height, monitor.scale);
+                let rect = if reserve {
+                    self.register();
+                    self.negotiate(monitor.bounds, req.edge, height)
+                } else {
+                    dock_strip(monitor.work_area, req.edge, height)
+                };
+                (rect, monitor)
+            })
+        };
+        let Some((rect, monitor)) = placed else {
             tracing::warn!("no monitors found; bar not placed");
             return;
         };
-        let height = to_physical(req.height, monitor.scale);
-        let rect = if reserve {
-            self.register();
-            self.negotiate(monitor.bounds, req.edge, height)
+        // A floating bar's hints open away from the nearer screen edge (SPEC §7.3).
+        let edge = if floating {
+            nearer_edge(rect, monitor)
         } else {
-            dock_strip(monitor.work_area, req.edge, height)
+            req.edge
         };
 
         let (fullscreen, raised) = self.ui(|u| (u.fullscreen, u.raised));
@@ -239,11 +255,43 @@ impl Shared {
             );
             (self.sink)(AppBarEvent::Placed(BarGeometry {
                 rect,
-                edge: req.edge,
+                edge,
                 monitor: monitor.clone(),
                 scale: monitor.scale,
             }));
         }
+    }
+
+    /// Moves a floating bar by physical px while the user drags it (SPEC §5.1). The request
+    /// follows, so a placement meanwhile (e.g. crossing to a monitor with another scale) keeps
+    /// the new position; the caller stores it when the drag ends.
+    pub(super) fn move_by(&self, dx: i32, dy: i32) -> Option<Rect> {
+        let (req, rect) = self.ui(|u| u.applied.clone())?;
+        if req.mode != BarMode::Floating {
+            return None;
+        }
+        let rect = Rect::new(
+            rect.left + dx,
+            rect.top + dy,
+            rect.right + dx,
+            rect.bottom + dy,
+        );
+        if let Some(stored) = lock(&self.request).as_mut() {
+            let width = stored.floating.map_or(DEFAULT_FLOATING_WIDTH, |f| f.width);
+            stored.floating = Some(FloatingRect {
+                x: rect.left,
+                y: rect.top,
+                width,
+            });
+        }
+        self.ui(|u| {
+            if let Some((_, applied)) = &mut u.applied {
+                *applied = rect;
+            }
+        });
+        // The z-order stays as it is.
+        self.set_window_pos(HWND_TOP, rect, SWP_NOACTIVATE | SWP_NOZORDER);
+        Some(rect)
     }
 
     /// `ABM_QUERYPOS` → adjust → `ABM_SETPOS`; returns the rect the shell granted.
@@ -526,6 +574,7 @@ mod tests {
             reserve_space: true,
             z_order,
             hide_on_fullscreen,
+            floating: None,
         }
     }
 

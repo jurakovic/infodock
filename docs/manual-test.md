@@ -107,6 +107,15 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] At 150 % scaling the hint text is crisp.
 - [ ] Settings ▸ General ▸ no popup settings yet; with `popups.showDelayMs` set to `0` in `config.json` (Infodock closed), hints appear at once.
 
+**Floating mode** (since M1 S11)
+
+- [ ] Settings ▸ Bar ▸ *Position* → *Floating*: the bar becomes an 800 px wide strip, centred a little above the bottom of the screen; maximised windows no longer stop at it, and *Reserve screen space* is hidden. *Width* changes its width at once.
+- [ ] Drag the bar by an empty part of its background: it follows the pointer smoothly; release it: after a restart it is in the same place. Dragging a sensor still reorders sensors.
+- [ ] Drag it partly off the screen and release: it slides back inside the screen. With two monitors, drag it onto the other one (also one with another scale): it stays there with the right height.
+- [ ] *Lock* on: dragging the background does nothing.
+- [ ] Hints: with the bar near the top of the screen they open below it, near the bottom above it.
+- [ ] *Position* → *Docked*: the bar is back at its edge, reserving space again.
+
 **Highlight and fades** (since M1 S11)
 
 - [ ] Settings ▸ Bar ▸ *Highlight on hover* on: moving the pointer onto the bar makes its background noticeably more opaque over about a third of a second; leaving fades it back.

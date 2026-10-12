@@ -412,6 +412,10 @@ impl BarWindow for WindowState {
         }
     }
 
+    fn move_by(&self, dx: i32, dy: i32) -> Option<Rect> {
+        self.appbar.get()?.move_by(dx, dy)
+    }
+
     fn escape_down(&self) -> bool {
         // SAFETY: plain key-state query; the high bit is set while the key is down.
         unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) < 0 }

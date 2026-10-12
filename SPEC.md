@@ -310,6 +310,7 @@ Sensor types declare `requires: &[Capability]`. The picker hides types whose cap
 * **Modes**
   * **Docked** (default): attached to the chosen edge; optionally **reserves space** (§5.2).
   * **Floating**: free position, draggable by the bar background while unlocked (drag threshold 4 px). Position and width are persisted. No space reservation.
+  * Implementation (`platform/geometry.rs` `floating_rect`, `appbar.rs`, `bar/thread.rs`): a floating bar is kept inside the work area of the monitor it is on (or the nearest one); before it was ever moved or sized it starts 800 px wide, centred, 12 px from the work area's `edge` on the selected monitor. While it is dragged the window follows the pointer; the position is stored when the button is released (or the capture is lost). Its hints open away from the nearer screen edge.
 
 ### 5.2 Work-area reservation (AppBar)
 
@@ -1109,7 +1110,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | zOrder | topmost / normal / bottom | topmost | |
 | hideOnFullscreen | bool | true | |
 | height | 22–40 | theme default (28 / 25) | |
-| floating | `{ x, y, width }` | null | |
+| floating | `{ x, y, width }` | null | `x`, `y`: the top-left corner in physical screen px (they name the monitor); `width`: logical px, 200–3840 in Settings |
 | highlightOnHover | bool | false | |
 | shadow | bool | false | |
 | animations | auto / on / off | auto | auto follows the OS |

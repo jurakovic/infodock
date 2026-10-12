@@ -3,9 +3,10 @@
 
 use serde_json::{Map, Value};
 
-use crate::config::model::{PRIMARY_MONITOR, Zone};
+use crate::config::model::{FloatingRect, PRIMARY_MONITOR, Settings, Zone};
 use crate::i18n::t_args;
 use crate::platform::MonitorInfo;
+use crate::platform::geometry::{floating_rect, to_physical};
 
 /// Settings pages in navigation order (SPEC §10.7).
 pub const PAGES: [&str; 4] = ["general", "bar", "sensors", "popups"];
@@ -70,6 +71,10 @@ pub const CHOICES: &[Choice] = &[
     Choice {
         path: "clicksWhenLocked",
         values: &["always", "altOnly"],
+    },
+    Choice {
+        path: "bar.mode",
+        values: &["docked", "floating"],
     },
     Choice {
         path: "bar.edge",
@@ -174,6 +179,36 @@ pub struct MonitorChoices {
 }
 
 /// "Primary monitor", then every monitor, then the saved monitor if it is not connected.
+/// A floating bar's place with a new `width` (logical px): where it is, or, before it was ever
+/// placed, centred where it starts (SPEC §5.1).
+pub fn floating_with_width(
+    settings: &Settings,
+    monitors: &[MonitorInfo],
+    width: u32,
+) -> FloatingRect {
+    if let Some(f) = settings.bar.floating {
+        return FloatingRect { width, ..f };
+    }
+    let bar = &settings.bar;
+    match floating_rect(
+        monitors,
+        &bar.monitor,
+        None,
+        bar.edge,
+        settings.bar_height(),
+    ) {
+        Some((rect, monitor)) => {
+            let w = to_physical(width, monitor.scale).min(monitor.work_area.width());
+            FloatingRect {
+                x: rect.left + (rect.width() - w) / 2,
+                y: rect.top,
+                width,
+            }
+        }
+        None => FloatingRect { x: 0, y: 0, width },
+    }
+}
+
 pub fn monitor_choices(saved: &str, monitors: &[MonitorInfo]) -> MonitorChoices {
     let mut labels = vec![crate::i18n::t("settings.bar.monitor.primary")];
     let mut keys = vec![PRIMARY_MONITOR.to_owned()];
@@ -209,8 +244,42 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
     use crate::platform::Rect;
+
+    #[test]
+    fn floating_width_keeps_the_place_or_centres() {
+        let monitors = [MonitorInfo::new(
+            r"\\.\DISPLAY1".into(),
+            "Test".into(),
+            Rect::new(0, 0, 1920, 1080),
+            Rect::new(0, 0, 1920, 1040),
+            1.0,
+            true,
+        )];
+        let mut s = Settings::default();
+        // Never placed: centred where a new floating bar starts (800 px at x = 560).
+        assert_eq!(
+            floating_with_width(&s, &monitors, 1000),
+            FloatingRect {
+                x: 460,
+                y: 1000,
+                width: 1000
+            }
+        );
+        s.bar.floating = Some(FloatingRect {
+            x: 10,
+            y: 20,
+            width: 300,
+        });
+        assert_eq!(
+            floating_with_width(&s, &monitors, 600),
+            FloatingRect {
+                x: 10,
+                y: 20,
+                width: 600
+            }
+        );
+    }
 
     #[test]
     fn routes() {

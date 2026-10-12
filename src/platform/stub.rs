@@ -76,6 +76,10 @@ impl BarWindow for NoWindow {
     fn confirm(&self, _message: &str, _action: &str) -> bool {
         false
     }
+
+    fn move_by(&self, _dx: i32, _dy: i32) -> Option<Rect> {
+        None
+    }
 }
 
 struct NoTray;

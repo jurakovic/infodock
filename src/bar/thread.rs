@@ -20,8 +20,9 @@ use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
 use crate::config::Config;
 use crate::config::model::Zone;
-use crate::config::model::{Layout, Material, SensorInstance, Settings};
+use crate::config::model::{BarMode, FloatingRect, Layout, Material, SensorInstance, Settings};
 use crate::i18n::{t, t_args};
+use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::platform::{
     BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
     PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent,
@@ -64,6 +65,8 @@ pub(super) struct BarLogic {
     press: Option<Press>,
     /// A reorder drag runs (SPEC §6.2).
     drag: Option<Drag>,
+    /// The left button is down on the background of a floating bar, which moves it (§5.1).
+    moving: Option<Moving>,
     /// When the hover hint shows and hides.
     hover: Hover,
     /// Where the bar is; hints are placed from it.
@@ -89,6 +92,13 @@ pub(super) struct BarLogic {
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
+}
+
+/// A press on the background of a floating bar; past the threshold it moves the window.
+struct Moving {
+    press: Press,
+    /// Where the window is after the last move, physical px.
+    rect: Option<Rect>,
 }
 
 /// The subscription changes from `old` to `new` (by sensor id): new or changed topic lists, and
@@ -128,6 +138,7 @@ impl BarLogic {
             previews: HashMap::new(),
             press: None,
             drag: None,
+            moving: None,
             hover: Hover::default(),
             geometry: None,
             sensors: BarSensors::default(),
@@ -189,6 +200,13 @@ impl BarLogic {
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
         let Some(hit) = self.sensors.hit(at.x) else {
+            if self.settings.bar.mode == BarMode::Floating && !self.settings.locked {
+                window.capture_pointer(true);
+                self.moving = Some(Moving {
+                    press: Press::new(String::new(), at),
+                    rect: None,
+                });
+            }
             return;
         };
         if !self.clicks_allowed(modifiers.alt) {
@@ -205,6 +223,21 @@ impl BarLogic {
         if !self.inside {
             self.inside = true;
             self.refresh_highlight(window);
+        }
+        if let Some(moving) = &mut self.moving {
+            moving.press.moved_to(at);
+            if moving.press.moved {
+                // The window follows, so the pointer stays at the pressed point inside it.
+                let scale = self.geometry.as_ref().map_or(1.0, |g| g.scale);
+                let dx = (f64::from(at.x - moving.press.at.x) * scale).round() as i32;
+                let dy = (f64::from(at.y - moving.press.at.y) * scale).round() as i32;
+                if (dx, dy) != (0, 0)
+                    && let Some(rect) = window.move_by(dx, dy)
+                {
+                    moving.rect = Some(rect);
+                }
+            }
+            return;
         }
         if let Some(drag) = &mut self.drag {
             let target = interact::drop_target(
@@ -424,7 +457,29 @@ impl BarLogic {
     }
 
     /// Releasing over the pressed sensor without having moved is a click.
+    /// Stores where a moved floating bar is now (SPEC §5.1).
+    fn end_moving(&mut self, window: &dyn BarWindow) {
+        let Some(moving) = self.moving.take() else {
+            return;
+        };
+        window.capture_pointer(false);
+        if let Some(rect) = moving.rect {
+            self.host.change_settings(Box::new(move |s| {
+                let width = s.bar.floating.map_or(DEFAULT_FLOATING_WIDTH, |f| f.width);
+                s.bar.floating = Some(FloatingRect {
+                    x: rect.left,
+                    y: rect.top,
+                    width,
+                });
+            }));
+        }
+    }
+
     fn pointer_up(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
+        if self.moving.is_some() {
+            self.end_moving(window);
+            return;
+        }
         if let Some(drag) = self.drag.take() {
             self.press = None;
             window.set_timer(TimerId::Drag, None);
@@ -701,7 +756,10 @@ impl BarHandler for BarLogic {
                 ..
             } => self.context_menu(window, at),
             UiEvent::PointerLeave => self.pointer_left(window),
-            UiEvent::CaptureLost => self.cancel_drag(window),
+            UiEvent::CaptureLost => {
+                self.cancel_drag(window);
+                self.end_moving(window);
+            }
             // Middle clicks are reserved (SPEC §6.1).
             UiEvent::PointerDown { .. } | UiEvent::PointerUp { .. } => {}
             UiEvent::AppearanceChanged => {
@@ -773,6 +831,8 @@ mod tests {
         hint_timer: Cell<Option<std::time::Duration>>,
         /// Frame timers requested.
         frames: Cell<u32>,
+        /// Where a floating bar is; `None` when docked.
+        position: Cell<Option<Rect>>,
         escape: Cell<bool>,
         /// The shown hint: where, and what it draws.
         hint: RefCell<Option<(Rect, String)>>,
@@ -804,6 +864,17 @@ mod tests {
         fn capture_pointer(&self, capture: bool) {
             self.captured.set(capture);
         }
+        fn move_by(&self, dx: i32, dy: i32) -> Option<Rect> {
+            let mut rect = self.position.get()?;
+            rect = Rect::new(
+                rect.left + dx,
+                rect.top + dy,
+                rect.right + dx,
+                rect.bottom + dy,
+            );
+            self.position.set(Some(rect));
+            Some(rect)
+        }
         fn escape_down(&self) -> bool {
             self.escape.get()
         }
@@ -816,6 +887,8 @@ mod tests {
     #[derive(Default)]
     struct FakeHost {
         calls: Mutex<Vec<String>>,
+        /// What `change_settings` changes.
+        settings: Mutex<Settings>,
     }
 
     impl FakeHost {
@@ -843,8 +916,9 @@ mod tests {
         fn open_settings(&self, route: &str) {
             self.log(format!("open {route}"));
         }
-        fn change_settings(&self, _change: Box<dyn FnOnce(&mut Settings) + Send>) {
+        fn change_settings(&self, change: Box<dyn FnOnce(&mut Settings) + Send>) {
             self.log("change settings".into());
+            change(&mut self.settings.lock().unwrap_or_else(|e| e.into_inner()));
         }
         fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String> {
             self.log(format!("add {kind} {} {index}", zone_id(zone)));
@@ -995,6 +1069,53 @@ mod tests {
         logic.on_event(&window, UiEvent::PointerMove(empty));
         assert_eq!(logic.highlight.target(), 0.0);
         assert_eq!(window.frames.get(), 0);
+    }
+
+    #[test]
+    fn a_floating_bar_moves_by_its_background_while_unlocked() {
+        let mut settings = Settings::default();
+        settings.bar.mode = BarMode::Floating;
+        let (mut logic, window, host, _) = bar(settings.clone());
+        let start = Rect::new(100, 500, 1300, 528);
+        window.position.set(Some(start));
+        let empty = PointF::new(300.0, 14.0);
+        press(&mut logic, &window, empty, false);
+        assert!(window.captured.get());
+        // Within the threshold nothing moves.
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(302.0, 14.0)));
+        assert_eq!(window.position.get(), Some(start));
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(320.0, 4.0)));
+        assert_eq!(window.position.get(), Some(Rect::new(120, 490, 1320, 518)));
+        // The window followed, so the pointer is back at the pressed point inside it.
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(305.0, 14.0)));
+        assert_eq!(window.position.get(), Some(Rect::new(125, 490, 1325, 518)));
+        release(&mut logic, &window, PointF::new(300.0, 14.0));
+        assert!(!window.captured.get());
+        let stored = host
+            .settings
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .bar
+            .floating;
+        assert_eq!(
+            stored,
+            Some(FloatingRect {
+                x: 125,
+                y: 490,
+                width: DEFAULT_FLOATING_WIDTH
+            })
+        );
+
+        // Locked, or docked: the background does not move the bar.
+        settings.locked = true;
+        let (mut logic, window, _, _) = bar(settings);
+        window.position.set(Some(start));
+        press(&mut logic, &window, empty, false);
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(350.0, 14.0)));
+        assert_eq!(window.position.get(), Some(start));
+        let (mut logic, window, _, _) = bar(Settings::default());
+        press(&mut logic, &window, empty, false);
+        assert!(!window.captured.get());
     }
 
     #[test]

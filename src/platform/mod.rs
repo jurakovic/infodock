@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::config::model::{BarMode, Edge, Material, Settings, ZOrder};
+use crate::config::model::{BarMode, Edge, FloatingRect, Material, Settings, ZOrder};
 pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
 pub use canvas::{Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF};
 pub use geometry::{MonitorInfo, Rect};
@@ -118,6 +118,8 @@ pub struct DockRequest {
     pub reserve_space: bool,
     pub z_order: ZOrder,
     pub hide_on_fullscreen: bool,
+    /// Where a floating bar is (SPEC §5.1); `None` until it was moved or sized.
+    pub floating: Option<FloatingRect>,
 }
 
 impl DockRequest {
@@ -131,6 +133,7 @@ impl DockRequest {
             reserve_space: s.bar.reserve_space,
             z_order: s.bar.z_order,
             hide_on_fullscreen: s.bar.hide_on_fullscreen,
+            floating: s.bar.floating,
         }
     }
 }
@@ -466,6 +469,9 @@ pub trait BarWindow {
     /// Asks a yes/no question in a native dialog (SPEC §6.4): `message` as the main text and
     /// `action` on the confirming button. Returns whether the user confirmed.
     fn confirm(&self, message: &str, action: &str) -> bool;
+    /// Moves a floating bar by physical px (SPEC §5.1) and returns where it is now; `None` when
+    /// the bar is docked or not shown.
+    fn move_by(&self, dx: i32, dy: i32) -> Option<Rect>;
 }
 
 /// Removes the tray icon from any thread, e.g. on exit.
