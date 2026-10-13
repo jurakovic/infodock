@@ -859,10 +859,28 @@ mod screenshots {
         settle();
         key('e'.into());
         assert_eq!(state.get_picker_selected(), 0, "Image");
-        (0..8).for_each(|_| key(Key::DownArrow.into()));
-        assert_eq!(state.get_picker_selected(), 7, "CPU Meter, the last");
-        (0..4).for_each(|_| key(Key::UpArrow.into()));
-        assert_eq!(state.get_picker_selected(), 3, "Date");
+        // The types listed depend on the platform (e.g. the CPU dual graph needs per-processor
+        // counters), so the last match is counted from the picker's own entries.
+        let entries = super::picker::entries(
+            crate::sensors::registry::registry(),
+            &app.platform.capabilities(),
+        );
+        let matches: Vec<usize> = super::picker::lines(&entries, "e")
+            .into_iter()
+            .filter_map(|line| match line {
+                super::picker::Line::Entry(i) => Some(i),
+                super::picker::Line::Heading(_) => None,
+            })
+            .collect();
+        let last = *matches.last().expect("matches") as i32;
+        (0..=matches.len()).for_each(|_| key(Key::DownArrow.into()));
+        assert_eq!(state.get_picker_selected(), last, "the last, and it stays");
+        let date = matches
+            .iter()
+            .position(|i| entries[*i].kind == "date")
+            .expect("Date matches");
+        (date + 1..matches.len()).for_each(|_| key(Key::UpArrow.into()));
+        assert_eq!(state.get_picker_selected(), matches[date] as i32, "Date");
         key(Key::Return.into());
         assert_eq!(state.get_page(), super::properties::PAGE);
         assert_eq!(app.store.get().layout.center[1].kind, "date");
