@@ -692,7 +692,7 @@ mod screenshots {
             text.chars().for_each(|c| key(c.into()));
             settle();
         };
-        let (general, bar, popups) = (27.0, 67.0, 147.0);
+        let (general, bar, sensors, popups) = (27.0, 67.0, 107.0, 147.0);
         let nav = |y: f32| click(49.0, y);
 
         // Ctrl+Space in the navigation unselects its item; the page stays.
@@ -706,6 +706,27 @@ mod screenshots {
         });
         settle();
         assert_eq!(state.get_page(), 0);
+
+        // A sensor moved with the keyboard keeps the focus on its button, so it moves on.
+        nav(sensors);
+        key(Key::Tab.into()); // the left zone's Add
+        key(Key::Tab.into()); // cpu-graph's Down (its Up is disabled)
+        for _ in 0..2 {
+            key(' '.into());
+            // In the app the store's listener shows the change.
+            super::WINDOW.with(|w| {
+                if let Some(open) = w.borrow().as_ref() {
+                    super::layout::fill(open, &app, &app.store.get().layout);
+                }
+            });
+            settle();
+        }
+        let left = || -> Vec<String> {
+            let layout = app.store.get().layout;
+            layout.left.iter().map(|s| s.kind.clone()).collect()
+        };
+        assert_eq!(left(), ["network-graph", "memory-meter", "cpu-graph"]);
+        nav(general);
 
         // Leaving General ends recording the hotkey.
         state.set_recording_hotkey(true);
@@ -772,8 +793,13 @@ mod screenshots {
         render("settings-properties-image");
         state.invoke_prop_color_mode("color".into(), 1, "#20B7FF".into());
         render("settings-properties-image-custom");
+        // An incomplete colour shows its error on the row and disables Save (SPEC §6.7).
+        retype(690.0, 203.0, "#12345");
+        assert!(!state.get_props_valid());
+        render("settings-properties-invalid");
         // A typed path and colour are what Save stores.
         retype(690.0, 203.0, "#123abc");
+        assert!(state.get_props_valid());
         retype(525.0, 92.0, r"C:\Pictures\logo.png");
         // A path picked with Browse replaces the typed one, and typing goes on from it.
         super::properties::set_path(&app, "image", r"C:\Pictures\other.png".into());
@@ -825,6 +851,21 @@ mod screenshots {
         assert_eq!(state.get_page(), super::properties::PAGE);
         let layout = app.store.get().layout;
         assert_eq!(layout.center[1].kind, "text");
+        state.invoke_props_cancel();
+        assert_eq!(app.store.get().layout.center.len(), 1);
+        // From the keyboard: typing selects the first match, Up and Down in the search box move
+        // the selection, and Enter adds it.
+        super::picker::open_picker(&app, super::picker::Place::Next(logo.clone()));
+        settle();
+        key('e'.into());
+        assert_eq!(state.get_picker_selected(), 0, "Image");
+        (0..3).for_each(|_| key(Key::DownArrow.into()));
+        assert_eq!(state.get_picker_selected(), 2, "Text, the last");
+        key(Key::UpArrow.into());
+        assert_eq!(state.get_picker_selected(), 1, "Spacer");
+        key(Key::Return.into());
+        assert_eq!(state.get_page(), super::properties::PAGE);
+        assert_eq!(app.store.get().layout.center[1].kind, "spacer");
         state.invoke_props_cancel();
         assert_eq!(app.store.get().layout.center.len(), 1);
         super::WINDOW.with(|w| w.borrow_mut().take());

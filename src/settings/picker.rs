@@ -82,6 +82,28 @@ pub enum Place {
     Next(String),
 }
 
+/// The selection after a search listed `lines` (entry indices, `-1` for headings): the
+/// selected entry while it is still listed, else the first match, so that Enter adds it.
+pub fn searched(lines: &[i32], selected: i32) -> i32 {
+    if selected >= 0 && lines.contains(&selected) {
+        return selected;
+    }
+    lines.iter().copied().find(|e| *e >= 0).unwrap_or(-1)
+}
+
+/// The selection after Up or Down in the search box: the listed entry above or below the
+/// selected one, staying at the ends; with none selected, the last or the first.
+pub fn stepped(lines: &[i32], selected: i32, up: bool) -> i32 {
+    let entries: Vec<i32> = lines.iter().copied().filter(|e| *e >= 0).collect();
+    let next = match entries.iter().position(|e| *e == selected) {
+        None if up => entries.last(),
+        None => entries.first(),
+        Some(i) if up => entries.get(i.saturating_sub(1)),
+        Some(i) => entries.get(i + 1).or(entries.last()),
+    };
+    next.copied().unwrap_or(-1)
+}
+
 /// Where a `new?zone=…&index=…&target=…` route inserts. Without a target or index: the end of
 /// the left or center zone, the start of the right one (SPEC §6.6).
 pub fn place(
@@ -249,12 +271,20 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
             };
             let (shown, lines) = rows(&picker.entries, &query);
             let state = open.window.global::<ui::SettingsState>();
-            // Keep the selection only while it is still listed.
-            if !lines.contains(&state.get_picker_selected()) {
-                state.set_picker_selected(-1);
-            }
+            state.set_picker_selected(searched(&lines, state.get_picker_selected()));
             picker.lines = lines;
             state.set_picker_rows(ModelRc::new(VecModel::from(shown)));
+        });
+    });
+    state.on_picker_step(|up| {
+        WINDOW.with(|w| {
+            if let Ok(w) = w.try_borrow()
+                && let Some(open) = w.as_ref()
+                && let Some(picker) = open.picker.as_ref()
+            {
+                let state = open.window.global::<ui::SettingsState>();
+                state.set_picker_selected(stepped(&picker.lines, state.get_picker_selected(), up));
+            }
         });
     });
     let a = Arc::clone(app);
@@ -303,6 +333,29 @@ mod tests {
         // "Empty space between sensors…" is the Spacer's description.
         assert_eq!(lines(&entries, "space")[1], Line::Entry(1));
         assert!(lines(&entries, "battery").is_empty());
+    }
+
+    #[test]
+    fn a_search_keeps_the_selection_or_selects_the_first_match() {
+        // A heading, then entries 0 and 2; another heading, then entry 5.
+        let lines = [-1, 0, 2, -1, 5];
+        assert_eq!(searched(&lines, 2), 2);
+        assert_eq!(searched(&lines, 1), 0, "no longer listed");
+        assert_eq!(searched(&lines, -1), 0);
+        assert_eq!(searched(&[], 2), -1, "nothing matches");
+    }
+
+    #[test]
+    fn up_and_down_move_over_the_entries() {
+        let lines = [-1, 0, 2, -1, 5];
+        assert_eq!(stepped(&lines, -1, false), 0);
+        assert_eq!(stepped(&lines, -1, true), 5);
+        assert_eq!(stepped(&lines, 0, false), 2);
+        assert_eq!(stepped(&lines, 2, false), 5, "past the heading");
+        assert_eq!(stepped(&lines, 5, false), 5, "stays at the end");
+        assert_eq!(stepped(&lines, 5, true), 2);
+        assert_eq!(stepped(&lines, 0, true), 0, "stays at the start");
+        assert_eq!(stepped(&[], -1, false), -1);
     }
 
     #[test]

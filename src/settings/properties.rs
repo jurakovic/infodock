@@ -54,6 +54,7 @@ fn prop_row(row: &FormRow) -> ui::PropRow {
         options: strings(&row.options),
         index: row.index,
         color: row.color.as_str().into(),
+        error: row.error.as_str().into(),
     }
 }
 
@@ -82,6 +83,7 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
         state.set_props(ModelRc::new(VecModel::from(shown)));
         state.set_props_title(t_args("settings.props.title", &[("name", &form.title)]).into());
         state.set_props_error(SharedString::new());
+        state.set_props_valid(true);
         state.set_save_error(SharedString::new());
         open.form = Some(FormState {
             form,
@@ -107,6 +109,7 @@ pub(super) fn cancel(open: &mut Open, app: &App) {
 }
 
 /// Applies an edit to the open form, refreshes the rows it affects and schedules the preview.
+/// An invalid value shows an error on its row and disables Save (SPEC §6.7).
 fn edit(app: &Arc<App>, change: impl FnOnce(&mut Form, &[String]) -> bool) {
     WINDOW.with(|w| {
         let Ok(mut w) = w.try_borrow_mut() else {
@@ -121,11 +124,9 @@ fn edit(app: &Arc<App>, change: impl FnOnce(&mut Form, &[String]) -> bool) {
         };
         let valid = change(&mut state.form, &families);
         let window = open.window.global::<ui::SettingsState>();
-        window.set_props_error(if valid {
-            SharedString::new()
-        } else {
-            t("settings.props.invalid").into()
-        });
+        // An error of an earlier Save no longer applies.
+        window.set_props_error(SharedString::new());
+        window.set_props_valid(state.form.valid());
         let rows = state.form.rows(&families);
         let model = window.get_props();
         for (i, (new, old)) in rows.iter().zip(&state.rows).enumerate() {
@@ -167,7 +168,9 @@ fn save(app: &App) {
     let pending = WINDOW.with(|w| {
         let w = w.try_borrow().ok()?;
         let state = w.as_ref()?.form.as_ref()?;
-        Some((state.form.id.clone(), state.form.changes().clone()))
+        // Save is disabled while a value is invalid (SPEC §6.7).
+        let valid = state.form.valid();
+        valid.then(|| (state.form.id.clone(), state.form.changes().clone()))
     });
     let Some((id, changes)) = pending else {
         return;

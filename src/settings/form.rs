@@ -1,6 +1,8 @@
 //! The properties form (SPEC §6.7): a sensor's schema fields as rows for Settings (§8.2), the
 //! user's edits, and the changes to preview and save. Pure; the window glue is in `mod.rs`.
 
+use std::collections::BTreeSet;
+
 use serde_json::{Value, json};
 
 use super::model::FONT_STYLES;
@@ -52,6 +54,8 @@ pub struct FormRow {
     pub index: i32,
     /// The colour of a colour-mode row.
     pub color: String,
+    /// Why the value typed last cannot be used; empty if it can.
+    pub error: String,
 }
 
 /// The colour modes a field offers, in list order (SPEC §8.4).
@@ -74,6 +78,8 @@ pub struct Form {
     props: Props,
     /// The edited keys and their values, for previewing and saving.
     changes: Props,
+    /// Fields whose last edit was invalid: they show an error and block saving (SPEC §6.7).
+    invalid: BTreeSet<&'static str>,
 }
 
 impl Form {
@@ -88,11 +94,20 @@ impl Form {
             schema: ty.schema(),
             props,
             changes: Props::new(),
+            invalid: BTreeSet::new(),
         })
     }
 
     pub fn changes(&self) -> &Props {
         &self.changes
+    }
+
+    /// Whether the edits can be saved: no visible field holds an invalid value.
+    pub fn valid(&self) -> bool {
+        self.schema
+            .iter()
+            .filter(|f| self.invalid.contains(f.key))
+            .all(|f| !f.visible(&self.props))
     }
 
     /// The rows for the fields Settings can edit, in schema order. `fonts` is the list of
@@ -113,6 +128,14 @@ impl Form {
             label: t(field.label),
             help: field.description.map(t).unwrap_or_default(),
             visible: field.visible(&self.props),
+            error: if self.invalid.contains(field.key) {
+                t(match kind {
+                    RowKind::Color | RowKind::ColorMode => "settings.color.invalid",
+                    _ => "settings.props.invalid",
+                })
+            } else {
+                String::new()
+            },
             text: value.as_str().unwrap_or_default().to_owned(),
             checked: value.as_bool().unwrap_or(false),
             number: value.as_f64().unwrap_or(0.0) as f32,
@@ -192,14 +215,17 @@ impl Form {
         Some(row)
     }
 
-    /// Applies an edit of `key`; `false` (and nothing changes) if the value is invalid.
+    /// Applies an edit of `key`; `false` if the value is invalid, which leaves the value as it
+    /// was and marks the field invalid until a valid edit.
     pub fn set(&mut self, key: &str, value: Value) -> bool {
         let Some(field) = schema::field(self.schema, key) else {
             return false;
         };
         let Some(value) = schema::normalize(field, &value, &field.default.to_value()) else {
+            self.invalid.insert(field.key);
             return false;
         };
+        self.invalid.remove(field.key);
         self.props.insert(key.to_owned(), value.clone());
         self.changes.insert(key.to_owned(), value);
         true
@@ -288,6 +314,7 @@ pub fn extensions(registry: &Registry, kind: &str, key: &str) -> &'static [&'sta
 mod tests {
     use super::*;
     use crate::sensors::registry::registry;
+    use crate::sensors::schema::Lit;
 
     fn instance(kind: &str, props: Value) -> SensorInstance {
         SensorInstance {
@@ -381,6 +408,48 @@ mod tests {
             "no dynamic mode for images"
         );
         assert!(!form.color_mode("color", 1, "red"));
+    }
+
+    #[test]
+    fn invalid_values_show_an_error_and_block_saving() {
+        let mut form = Form::open(registry(), &instance("image", json!({})), false).expect("known");
+        let error = |form: &Form| {
+            let rows = form.rows(&fonts());
+            rows.into_iter()
+                .find(|r| r.key == "color")
+                .map(|r| r.error)
+                .unwrap_or_default()
+        };
+        assert!(form.valid());
+        assert!(!form.color_mode("color", 1, "#12345"));
+        assert!(!form.valid());
+        assert_eq!(error(&form), t("settings.color.invalid"));
+        assert!(form.changes().is_empty(), "the invalid colour is not kept");
+        assert!(form.color_mode("color", 1, "#123456"));
+        assert!(form.valid());
+        assert_eq!(error(&form), "");
+    }
+
+    #[test]
+    fn hidden_invalid_fields_do_not_block_saving() {
+        static SCHEMA: [PropField; 2] = [
+            PropField::new("custom", FieldKind::Bool, "label", Lit::Bool(true)),
+            PropField::new("color", FieldKind::Color, "label", Lit::Str("#FFFFFF"))
+                .visible_if("custom", &[Lit::Bool(true)]),
+        ];
+        let mut form = Form {
+            id: "s_test1".into(),
+            title: "Test".into(),
+            new: false,
+            schema: &SCHEMA,
+            props: schema::resolve(&SCHEMA, &Props::new(), &Props::new()).0,
+            changes: Props::new(),
+            invalid: BTreeSet::new(),
+        };
+        assert!(!form.set("color", json!("#12")));
+        assert!(!form.valid());
+        assert!(form.set("custom", json!(false)));
+        assert!(form.valid(), "the colour is hidden now");
     }
 
     #[test]

@@ -23,6 +23,8 @@ export struct PropRow {
     options: [string],
     index: int,
     color: string,
+    // Why the value typed last cannot be used; empty if it can.
+    error: string,
 }
 
 // One line of the sensor picker (SPEC §6.6): a category heading or a sensor type.
@@ -122,11 +124,17 @@ export global SettingsState {
     in property <[PropRow]> props;
     in property <string> props-title;
     in property <string> props-error;
+    // No field holds an invalid value, so the form can be saved (SPEC §6.7).
+    in property <bool> props-valid: true;
 
     // The Layout manager (SPEC §10.7)
     in property <[LayoutRow]> layout-rows;
     // The sensor whose Remove waits for confirmation.
     in-out property <string> layout-confirm;
+    // A sensor just moved with its Up (or Down) button: the button takes the focus again once
+    // the list shows the move, and the request is cleared.
+    in-out property <string> layout-focus-id;
+    in property <bool> layout-focus-up;
 
     // The sensor picker (SPEC §6.6)
     in property <[PickerRow]> picker-rows;
@@ -180,6 +188,8 @@ export global SettingsState {
     callback layout-add(zone: int);
     // The picker's search text changed.
     callback picker-searched(text: string);
+    // Up (or Down) in the search box: the listed type above (or below) the selected one.
+    callback picker-step(up: bool);
     // Adds the selected type and opens its properties.
     callback picker-add();
     callback picker-cancel();
@@ -280,9 +290,11 @@ component ValueSlider inherits HorizontalLayout {
 
 // A colour as #RRGGBB with a swatch. It is accepted as soon as the typed text is a colour, so
 // a click that does not take the focus (Save, the navigation) finds it saved; on Enter or when
-// the field loses focus it is accepted whatever it is, and an invalid one shows an error.
+// the field loses focus it is accepted whatever it is, and an invalid one shows an error. With
+// `every-edit` (the properties form, which validates as it goes) every edit is accepted.
 component ColorField inherits HorizontalLayout {
     in property <string> label;
+    in property <bool> every-edit;
     in-out property <string> value;
     callback accepted(text: string);
 
@@ -302,7 +314,7 @@ component ColorField inherits HorizontalLayout {
         text <=> root.value;
         accessible-label: root.label;
         edited(text) => {
-            if SettingsState.is-color(text) {
+            if root.every-edit || SettingsState.is-color(text) {
                 root.accepted(text);
             }
         }
@@ -774,7 +786,20 @@ component LayoutList inherits Rectangle {
                     alignment: end;
                     padding-top: 6px;
                     padding-bottom: 6px;
-                    IconButton {
+                    // The list is rebuilt after a move, so keyboard users find their button
+                    // again on the moved sensor (the other one where the list ends).
+                    init => {
+                        if SettingsState.layout-focus-id == row.id {
+                            SettingsState.layout-focus-id = "";
+                            if (SettingsState.layout-focus-up && row.up) || !row.down {
+                                up.focus();
+                            } else {
+                                down.focus();
+                            }
+                        }
+                    }
+
+                    up := IconButton {
                         label: I18n.tr("settings.layout.up");
                         icon: @image-url("icons/up.svg");
                         enabled: row.up;
@@ -783,7 +808,7 @@ component LayoutList inherits Rectangle {
                         }
                     }
 
-                    IconButton {
+                    down := IconButton {
                         label: I18n.tr("settings.layout.down");
                         icon: @image-url("icons/down.svg");
                         enabled: row.down;
@@ -1086,6 +1111,7 @@ component PropertiesPage inherits VerticalLayout {
         if row.visible: Row {
             label: row.label;
             help: row.help;
+            error: row.error;
 
             if row.kind == 0: LineEdit {
                 width: 280px;
@@ -1124,6 +1150,7 @@ component PropertiesPage inherits VerticalLayout {
             }
             if row.kind == 4: ColorField {
                 label: row.label;
+                every-edit: true;
                 value: row.text;
                 accepted(text) => {
                     SettingsState.prop-text(row.key, text);
@@ -1143,6 +1170,7 @@ component PropertiesPage inherits VerticalLayout {
                 // Custom: the colour.
                 if row.index == 1: ColorField {
                     label: row.label;
+                    every-edit: true;
                     value: row.color;
                     accepted(text) => {
                         SettingsState.prop-color-mode(row.key, row.index, text);
@@ -1185,6 +1213,7 @@ component PropertiesPage inherits VerticalLayout {
         Button {
             text: I18n.tr("settings.props.save");
             primary: true;
+            enabled: SettingsState.props-valid;
             clicked => {
                 SettingsState.props-save();
             }
@@ -1198,19 +1227,31 @@ component PickerPage inherits VerticalLayout {
     alignment: start;
     spacing: 8px;
 
-    LineEdit {
-        placeholder-text: I18n.tr("settings.picker.search");
-        text <=> SettingsState.picker-search;
-        accessible-label: I18n.tr("settings.picker.search");
-        init => {
-            self.focus();
+    // Up and Down move the selection while the search box keeps the focus (SPEC §6.6).
+    FocusScope {
+        enabled: false;
+        capture-key-pressed(event) => {
+            if event.text == Key.UpArrow || event.text == Key.DownArrow {
+                SettingsState.picker-step(event.text == Key.UpArrow);
+                return accept;
+            }
+            reject
         }
-        edited(text) => {
-            SettingsState.picker-searched(text);
-        }
-        accepted => {
-            if SettingsState.picker-selected >= 0 {
-                SettingsState.picker-add();
+
+        LineEdit {
+            placeholder-text: I18n.tr("settings.picker.search");
+            text <=> SettingsState.picker-search;
+            accessible-label: I18n.tr("settings.picker.search");
+            init => {
+                self.focus();
+            }
+            edited(text) => {
+                SettingsState.picker-searched(text);
+            }
+            accepted => {
+                if SettingsState.picker-selected >= 0 {
+                    SettingsState.picker-add();
+                }
             }
         }
     }

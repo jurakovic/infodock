@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 use super::picker::{self, Place};
 use super::{Open, WINDOW, properties};
@@ -149,7 +149,8 @@ pub fn step(layout: &Layout, id: &str, up: bool) -> Option<(Zone, usize)> {
     }
 }
 
-/// Shows `layout` in the open window.
+/// Shows `layout` in the open window. The list is rebuilt only when a line changed, so other
+/// changes keep the keyboard focus in it.
 pub(super) fn fill(open: &Open, app: &App, layout: &Layout) {
     let lines = lines(layout, registry(), &app.platform.capabilities());
     let rows: Vec<ui::LayoutRow> = lines
@@ -170,6 +171,9 @@ pub(super) fn fill(open: &Open, app: &App, layout: &Layout) {
         })
         .collect();
     let state = open.window.global::<ui::SettingsState>();
+    if state.get_layout_rows().iter().eq(rows.iter().cloned()) {
+        return;
+    }
     state.set_layout_rows(ModelRc::new(VecModel::from(rows)));
 }
 
@@ -190,13 +194,30 @@ fn report(result: Result<(), crate::config::ConfigError>) {
     });
 }
 
+/// Asks for the focus on sensor `id`'s Up (or Down) button once the list shows its move.
+fn refocus(id: &str, up: bool) {
+    WINDOW.with(|w| {
+        if let Ok(w) = w.try_borrow()
+            && let Some(open) = w.as_ref()
+        {
+            let state = open.window.global::<ui::SettingsState>();
+            state.set_layout_focus_id(id.into());
+            state.set_layout_focus_up(up);
+        }
+    });
+}
+
 /// Handles the list's callbacks.
 pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_layout_move(move |id, up| {
         if let Some((zone, index)) = step(&a.store.get().layout, &id, up) {
-            report(a.move_sensor(&id, zone, index));
+            let result = a.move_sensor(&id, zone, index);
+            if result.is_ok() {
+                refocus(&id, up);
+            }
+            report(result);
         }
     });
     let a = Arc::clone(app);
