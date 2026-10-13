@@ -40,6 +40,25 @@ pub fn t_args(key: &str, args: &[(&str, &str)]) -> String {
     })
 }
 
+/// Like [`t_args`] for a message that depends on `count`: its plural form is chosen by the UI
+/// language's rules (SPEC §13; English: `one` for exactly 1, else `other`), and `{count}` is
+/// replaced by `count`.
+pub fn t_count(key: &str, count: u64, args: &[(&str, &str)]) -> String {
+    let form = if count == 1 { "one" } else { "other" };
+    let count = count.to_string();
+    let mut args = args.to_vec();
+    args.push(("count", &count));
+    match CATALOG.get(key) {
+        Some(Value::Object(forms)) => match forms.get(form).and_then(Value::as_str) {
+            Some(template) => args.iter().fold(template.to_owned(), |s, (name, value)| {
+                s.replace(&format!("{{{name}}}"), value)
+            }),
+            None => t_args(key, &args),
+        },
+        _ => t_args(key, &args),
+    }
+}
+
 /// Whether the catalog has `key`, for tests of code that names keys.
 #[cfg(test)]
 pub(crate) fn exists(key: &str) -> bool {
@@ -54,6 +73,18 @@ mod tests {
     fn looks_up_and_formats() {
         assert_eq!(t("tray.quit"), "Quit Infodock");
         assert_eq!(t_args("common.items", &[("count", "3")]), "3 items");
+    }
+
+    #[test]
+    fn plural_forms_follow_the_count() {
+        assert_eq!(t_count("common.items", 1, &[]), "1 item");
+        assert_eq!(t_count("common.items", 0, &[]), "0 items");
+        assert_eq!(t_count("common.items", 21, &[]), "21 items");
+        assert_eq!(
+            t_count("tray.quit", 2, &[]),
+            "Quit Infodock",
+            "not a plural entry"
+        );
     }
 
     #[test]

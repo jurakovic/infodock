@@ -149,6 +149,36 @@
   "settings.popups.hideDelay": "Delay before a popup hides",
   "common.seconds": "{value} s",
   "common.number": "{value}",
+  "format.bytes": {
+    "one": "{count} byte",
+    "other": "{count} bytes"
+  },
+  "format.kb": "{value} KB",
+  "format.mb": "{value} MB",
+  "format.gb": "{value} GB",
+  "format.tb": "{value} TB",
+  "format.rate.b": "{value} B/s",
+  "format.rate.kb": "{value} KB/s",
+  "format.rate.mb": "{value} MB/s",
+  "format.rate.gb": "{value} GB/s",
+  "format.rate.tb": "{value} TB/s",
+  "format.short.days": "{value}d",
+  "format.short.hours": "{value}h",
+  "format.short.minutes": "{value}m",
+  "format.days": {
+    "one": "{count} day",
+    "other": "{count} days"
+  },
+  "format.hours": {
+    "one": "{count} hour",
+    "other": "{count} hours"
+  },
+  "format.minutes": {
+    "one": "{count} minute",
+    "other": "{count} minutes"
+  },
+  "format.listSeparator": ", ",
+  "format.percent": "{value}%",
   "settings.props.font.default": "Default",
   "settings.props.colorMode.standard": "Standard",
   "settings.props.colorMode.custom": "Custom",
