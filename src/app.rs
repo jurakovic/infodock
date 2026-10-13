@@ -252,6 +252,19 @@ impl BarHost for AppHost {
     fn resumed(&self) {
         self.0.sampler.resume();
     }
+
+    fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
+        let result = self.0.store.update(|c| {
+            // A sensor removed meanwhile keeps no state.
+            if c.layout.find(id).is_some() {
+                c.state.insert(id.to_owned(), state);
+            }
+            Ok(())
+        });
+        if let Err(e) = result {
+            tracing::warn!("could not store the state of sensor {id}: {e}");
+        }
+    }
 }
 
 #[cfg(test)]

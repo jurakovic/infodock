@@ -196,3 +196,9 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] Hover: a month calendar from Monday (or Sunday, per *Calendar*), weekends in the strong popup colour, today highlighted, and `Week …, Day …` below; with *Calendar* → *None*, only that line.
 - [ ] Click: the date and time settings open; with *Settings ▸ Applications ▸ Calendar* set (when that page exists), that app.
 - [ ] Just after midnight (or after changing the date), the date shows the new day.
+
+**Uptime** (since M2 S8)
+
+- [ ] *New sensor… ▸ Info ▸ Uptime*: it shows `Uptime: 3d 04h 12m` (days only when there are any), matching Task Manager ▸ Performance ▸ *Up time*, and turns to the next minute on time.
+- [ ] Hover: the uptime in words. After a restart of the computer, the hint also shows *Longest uptime* from before (it is stored at most 10 minutes behind).
+- [ ] Properties: *Text before* empty shows only the uptime; font, style, size and shadow work as for Text.

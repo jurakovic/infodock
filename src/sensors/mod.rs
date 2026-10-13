@@ -20,6 +20,7 @@ pub mod schema;
 pub mod spacer;
 pub mod text;
 pub mod time;
+pub mod uptime;
 
 use std::time::Instant;
 
@@ -231,6 +232,11 @@ pub trait Sensor {
     /// A new sample of one of its topics; returns whether what it shows changed.
     fn on_sample(&mut self, _topic: &Topic, _sample: &Sample, _cx: &SensorCtx) -> Dirty {
         false
+    }
+    /// State to store for this sensor in the config (SPEC §11.2 `state`), e.g. a new uptime
+    /// record; the bar asks after samples and wake-ups, and each change is taken once.
+    fn take_state(&mut self) -> Option<State> {
+        None
     }
     /// The wall clock jumped: the time or time zone changed, or the system resumed. Clocks
     /// read the time again and move their wake-ups (SPEC §9.4–9.5).

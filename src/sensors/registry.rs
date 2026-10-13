@@ -20,6 +20,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::spacer::SpacerType,
         &super::date::DateType,
         &super::time::TimeType,
+        &super::uptime::UptimeType,
     ])
 });
 

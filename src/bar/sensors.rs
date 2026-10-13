@@ -309,6 +309,13 @@ impl BarSensors {
         changed
     }
 
+    /// The state sensors want stored (SPEC §11.2), by id.
+    pub fn take_states(&mut self) -> Vec<(String, State)> {
+        self.all_mut()
+            .filter_map(|p| p.sensor.take_state().map(|s| (p.entry.id.clone(), s)))
+            .collect()
+    }
+
     /// Tells every sensor the wall clock jumped (SPEC §9.4–9.5); returns whether what any of
     /// them shows changed.
     pub fn clock_changed(&mut self, now: Instant, env: &Env) -> bool {

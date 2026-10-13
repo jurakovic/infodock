@@ -753,6 +753,7 @@ impl BarLogic {
             window.invalidate();
             self.refresh_hint(window);
         }
+        self.store_states();
     }
 
     /// The wall clock jumped: clocks read it again and move their wake-ups.
@@ -769,6 +770,13 @@ impl BarLogic {
             self.refresh_hint(window);
         }
         self.arm_timer(window);
+    }
+
+    /// Hands the state sensors want stored to the host (SPEC §11.2).
+    fn store_states(&mut self) {
+        for (id, state) in self.sensors.take_states() {
+            self.host.set_sensor_state(&id, state);
+        }
     }
 
     /// Sets the window's timer to the earliest wake-up any sensor asked for (SPEC §4.4).
@@ -796,6 +804,7 @@ impl BarLogic {
                     window.invalidate();
                     self.refresh_hint(window);
                 }
+                self.store_states();
                 self.arm_timer(window);
             }
             TimerId::Hint => {
@@ -1075,6 +1084,9 @@ mod tests {
         fn resumed(&self) {
             self.log("resumed".into());
         }
+        fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
+            self.log(format!("state {id} {}", serde_json::Value::Object(state)));
+        }
     }
 
     const WIDTH: f32 = 1200.0;
@@ -1293,6 +1305,38 @@ mod tests {
         assert_eq!(logic.shown.target(), 1.0, "it rises");
         logic.frame(&window, Instant::now() + 2 * RISE);
         assert_eq!(window.slides.borrow().last(), Some(&0));
+    }
+
+    #[test]
+    fn a_sensors_new_state_is_stored() {
+        use crate::sampler::{Delivery, Sample, Topic, UptimeSample};
+        let (mut logic, window, host, mut config) = bar(Settings::default());
+        let uptime = SensorInstance {
+            id: "s_up".into(),
+            kind: "uptime".into(),
+            props: crate::sensors::Props::new(),
+        };
+        config.layout.left.push(uptime);
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        let sample = Sample::Uptime(UptimeSample {
+            boot_unix_ms: 0,
+            uptime_secs: 700,
+        });
+        logic.deliver(
+            &window,
+            &Delivery {
+                topic: Topic::Uptime,
+                sample: Arc::new(sample),
+                to: None,
+            },
+        );
+        assert!(
+            host.calls()
+                .contains(&r#"state s_up {"longestSecs":700}"#.to_owned()),
+            "{:?}",
+            host.calls()
+        );
     }
 
     #[test]

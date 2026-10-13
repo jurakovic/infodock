@@ -859,9 +859,9 @@ mod screenshots {
         settle();
         key('e'.into());
         assert_eq!(state.get_picker_selected(), 0, "Image");
-        (0..5).for_each(|_| key(Key::DownArrow.into()));
-        assert_eq!(state.get_picker_selected(), 4, "Time, the last");
-        key(Key::UpArrow.into());
+        (0..6).for_each(|_| key(Key::DownArrow.into()));
+        assert_eq!(state.get_picker_selected(), 5, "Uptime, the last");
+        (0..2).for_each(|_| key(Key::UpArrow.into()));
         assert_eq!(state.get_picker_selected(), 3, "Date");
         key(Key::Return.into());
         assert_eq!(state.get_page(), super::properties::PAGE);

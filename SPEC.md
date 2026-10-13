@@ -757,6 +757,8 @@ Topic `uptime`. Rust takes the boot time from `GetTickCount64()`; the UI counts 
 View: `{prefix} 3d 04h 12m`, updated at minute boundaries.
 Hint: `3 days, 4 hours, 12 minutes`; when a longer record exists, a second line `Longest uptime: 12 days, 1 hour, 3 minutes`. The record updates whenever the current uptime exceeds it.
 
+Implementation (`sensors/uptime.rs`): the sensor counts from its last sample and wakes at each whole minute of uptime. The record updates in memory at once but is stored only when it has grown by 10 minutes, so the config is not rewritten every minute: a sensor hands state to store through `Sensor::take_state`, which the bar passes on after samples and wake-ups (`BarHost::set_sensor_state` → the config's `state`, §11.2).
+
 ### 9.7 `cpu-meter` — CPU Meter  (System; `DockCPUMeter`)
 
 | Key | XML key | Type | Default | Range |
