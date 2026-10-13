@@ -130,6 +130,34 @@ pub struct PageFile {
     pub used: u64,
 }
 
+/// What kind of drive a volume is on (SPEC Appendix A, `volumes`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveKind {
+    Fixed,
+    Removable,
+    Optical,
+    Network,
+    Ram,
+    Other,
+}
+
+/// A volume with a drive letter (SPEC §4.5: lists of volumes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Volume {
+    /// `C:\`.
+    pub root: String,
+    pub kind: DriveKind,
+    /// The volume label; empty if it has none or no medium is inserted.
+    pub label: String,
+}
+
+/// A volume's size and free space, bytes (SPEC Appendix A, `disk/<X:\>`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DiskSpace {
+    pub total: u64,
+    pub free: u64,
+}
+
 /// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryStatus {
@@ -166,6 +194,16 @@ pub trait Platform: Send + Sync {
     /// The page files now, for the `swap` topic: empty when there is none, `None` where they
     /// cannot be read.
     fn page_files(&self) -> Option<Vec<PageFile>> {
+        None
+    }
+    /// The volumes with drive letters, in letter order.
+    fn volumes(&self) -> Vec<Volume> {
+        Vec::new()
+    }
+    /// The size and free space of the volume at `root` (`C:\`), for the `disk/<X:\>` topic;
+    /// `None` when there is none (no such drive, no medium inserted).
+    fn disk_space(&self, root: &str) -> Option<DiskSpace> {
+        let _ = root;
         None
     }
     /// The local wall-clock time; UTC where the platform does not know the time zone.

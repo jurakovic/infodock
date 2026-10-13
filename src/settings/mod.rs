@@ -834,6 +834,19 @@ mod screenshots {
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&text).is_none());
         assert_eq!(state.get_page(), 2);
+        // A drive field lists this computer's volumes (none on Linux: only the stored drive).
+        let disk = app
+            .add_sensor(
+                "disk-meter",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &disk, true);
+        render("settings-properties-disk");
+        state.invoke_props_cancel();
+        assert!(app.store.get().layout.find(&disk).is_none());
 
         // The picker (SPEC §6.6): next to the logo, with Text selected; then a search.
         let place = super::picker::Place::Next(logo.clone());

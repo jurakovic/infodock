@@ -2,6 +2,7 @@
 //! sampler thread and reach the OS only through [`Platform`].
 
 mod cpu;
+mod disk;
 mod memory;
 mod swap;
 mod uptime;
@@ -57,6 +58,7 @@ impl Providers {
                 .platform
                 .page_files()
                 .map(|files| Sample::Swap(swap::sample(&files))),
+            Topic::Disk(root) => Some(Sample::Disk(disk::sample(self.platform.disk_space(root)))),
         }
     }
 }

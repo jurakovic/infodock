@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use super::model::FONT_STYLES;
 use crate::config::model::SensorInstance;
 use crate::i18n::{t, t_args};
+use crate::platform::{DriveKind, Volume};
 use crate::sensors::Props;
 use crate::sensors::registry::Registry;
 use crate::sensors::schema::{self, FieldKind, PropField};
@@ -82,6 +83,8 @@ pub struct Form {
     invalid: BTreeSet<&'static str>,
     /// This computer's logical processors, for `cpuSeries` fields.
     processors: u32,
+    /// This computer's volumes, for `drive` fields.
+    volumes: Vec<Volume>,
 }
 
 impl Form {
@@ -98,12 +101,26 @@ impl Form {
             changes: Props::new(),
             invalid: BTreeSet::new(),
             processors: 1,
+            volumes: Vec::new(),
         })
     }
 
     /// Sets the number of logical processors `cpuSeries` fields offer (SPEC §9.9).
     pub fn set_processors(&mut self, processors: u32) {
         self.processors = processors.max(1);
+    }
+
+    /// Whether a field picks a drive, so the form needs the volumes (reading them can take a
+    /// moment with network drives).
+    pub fn has_drive_field(&self) -> bool {
+        self.schema
+            .iter()
+            .any(|f| matches!(f.kind, FieldKind::Drive { .. }))
+    }
+
+    /// Sets the volumes `drive` fields offer (SPEC §8.2).
+    pub fn set_volumes(&mut self, volumes: Vec<Volume>) {
+        self.volumes = volumes;
     }
 
     pub fn changes(&self) -> &Props {
@@ -224,6 +241,12 @@ impl Form {
                 row.index = series.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = series.into_iter().map(|(_, label)| label).collect();
             }
+            FieldKind::Drive { hide_optical } => {
+                let current = value.as_str().unwrap_or("");
+                let drives = drives(&self.volumes, hide_optical, current);
+                row.index = drives.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
+                row.options = drives.into_iter().map(|(_, label)| label).collect();
+            }
             _ => {}
         }
         Some(row)
@@ -272,6 +295,13 @@ impl Form {
                     .nth(index)
                     .map(|(value, _)| Value::from(value))
             }
+            FieldKind::Drive { hide_optical } => {
+                let current = self.props.get(key).and_then(Value::as_str).unwrap_or("");
+                drives(&self.volumes, hide_optical, current)
+                    .into_iter()
+                    .nth(index)
+                    .map(|(value, _)| Value::from(value))
+            }
             _ => None,
         };
         value.is_some_and(|v| self.set(key, v))
@@ -292,7 +322,7 @@ impl Form {
 }
 
 /// How Settings edits `field`; `None` for fields it does not show (hidden ones, and the
-/// drive, adapter and battery pickers, which arrive with their sensors in M2 and M3).
+/// adapter and battery pickers, which arrive with their sensors in M2 and M3).
 fn kind(field: &PropField) -> Option<RowKind> {
     Some(match field.kind {
         FieldKind::Text { .. } => RowKind::Text,
@@ -304,12 +334,9 @@ fn kind(field: &PropField) -> Option<RowKind> {
         FieldKind::Color => RowKind::Color,
         FieldKind::ColorMode { .. } => RowKind::ColorMode,
         FieldKind::File { .. } => RowKind::File,
-        FieldKind::CpuSeries => RowKind::Choice,
+        FieldKind::CpuSeries | FieldKind::Drive { .. } => RowKind::Choice,
         FieldKind::Folder => RowKind::Folder,
-        FieldKind::Drive { .. }
-        | FieldKind::NetAdapter
-        | FieldKind::Battery
-        | FieldKind::Hidden => return None,
+        FieldKind::NetAdapter | FieldKind::Battery | FieldKind::Hidden => return None,
     })
 }
 
@@ -351,6 +378,38 @@ fn cpu_series(processors: u32, current: &str) -> Vec<(String, String)> {
         ));
     }
     series
+}
+
+/// The drives a `drive` field offers, as (root, label): this computer's volumes (optical ones
+/// left out with `hide_optical`), e.g. `Local Disk (C:)` or `Data (D:)` by their label; a
+/// stored drive that is not connected stays listed, marked so.
+fn drives(volumes: &[Volume], hide_optical: bool, current: &str) -> Vec<(String, String)> {
+    let mut drives: Vec<(String, String)> = volumes
+        .iter()
+        .filter(|v| !(hide_optical && v.kind == DriveKind::Optical))
+        .map(|v| {
+            let name = if v.label.is_empty() {
+                t(match v.kind {
+                    DriveKind::Fixed => "volume.fixed",
+                    DriveKind::Removable => "volume.removable",
+                    DriveKind::Optical => "volume.optical",
+                    DriveKind::Network => "volume.network",
+                    DriveKind::Ram => "volume.ram",
+                    DriveKind::Other => "volume.other",
+                })
+            } else {
+                v.label.clone()
+            };
+            let letter = v.root.trim_end_matches('\\');
+            let label = t_args("volume.entry", &[("name", &name), ("drive", letter)]);
+            (v.root.clone(), label)
+        })
+        .collect();
+    if !current.is_empty() && !drives.iter().any(|(root, _)| root == current) {
+        let label = t_args("volume.missing", &[("drive", current)]);
+        drives.push((current.to_owned(), label));
+    }
+    drives
 }
 
 /// The file types a `file` field accepts, e.g. `["png", "jpg"]`.
@@ -501,6 +560,7 @@ mod tests {
             changes: Props::new(),
             invalid: BTreeSet::new(),
             processors: 1,
+            volumes: Vec::new(),
         };
         assert!(!form.set("color", json!("#12")));
         assert!(!form.valid());
@@ -538,6 +598,34 @@ mod tests {
         assert_eq!(bottom.index, 5);
         assert!(form.choose("bottomSeries", 4, &fonts()));
         assert_eq!(form.changes()["bottomSeries"], json!("core1"));
+    }
+
+    #[test]
+    fn drives_list_this_computers_volumes() {
+        let volume = |root: &str, kind, label: &str| Volume {
+            root: root.into(),
+            kind,
+            label: label.into(),
+        };
+        let stored = json!({ "drive": "F:\\" });
+        let mut form =
+            Form::open(registry(), &instance("disk-meter", stored), false).expect("known");
+        form.set_volumes(vec![
+            volume("C:\\", DriveKind::Fixed, ""),
+            volume("D:\\", DriveKind::Fixed, "Data"),
+            volume("E:\\", DriveKind::Optical, ""),
+        ]);
+        let rows = form.rows(&fonts());
+        let drive = rows.iter().find(|r| r.key == "drive").expect("drive");
+        assert_eq!(drive.kind, RowKind::Choice);
+        assert_eq!(
+            drive.options,
+            ["Local Disk (C:)", "Data (D:)", "F:\\ (not connected)"],
+            "optical drives hidden"
+        );
+        assert_eq!(drive.index, 2);
+        assert!(form.choose("drive", 1, &fonts()));
+        assert_eq!(form.changes()["drive"], json!("D:\\"));
     }
 
     #[test]

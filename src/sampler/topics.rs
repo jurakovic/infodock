@@ -10,6 +10,8 @@ pub enum Topic {
     Cpu,
     Memory,
     Swap,
+    /// `disk/<X:\>`: one volume, by its root.
+    Disk(String),
 }
 
 /// A sensor's wish to receive `topic` at least every `interval`.
@@ -26,6 +28,7 @@ pub enum Sample {
     Cpu(CpuSample),
     Memory(MemorySample),
     Swap(SwapSample),
+    Disk(DiskSample),
 }
 
 /// `cpu`: the processors' load, each 0–100 (SPEC Appendix A).
@@ -61,6 +64,15 @@ pub struct SwapSample {
     pub used: u64,
     /// `used` of `total`, 0–100.
     pub load: f32,
+}
+
+/// `disk/<X:\>`: a volume's size and free space, bytes (SPEC Appendix A).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DiskSample {
+    /// The drive exists and has a medium; otherwise the sizes are 0.
+    pub present: bool,
+    pub total: u64,
+    pub free: u64,
 }
 
 /// `uptime`: when the system started.

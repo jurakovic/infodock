@@ -12,7 +12,8 @@ use std::time::{Duration, Instant};
 
 use scheduler::Scheduler;
 pub use topics::{
-    CpuSample, Delivery, MemorySample, Sample, SwapSample, Topic, TopicRequest, UptimeSample,
+    CpuSample, Delivery, DiskSample, MemorySample, Sample, SwapSample, Topic, TopicRequest,
+    UptimeSample,
 };
 
 use crate::providers::Providers;

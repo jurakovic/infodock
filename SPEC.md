@@ -870,6 +870,8 @@ Disk Space Used: 75%
 ```
 Click: open the drive in Explorer. Drive absent: value `n/a`, inactive.
 
+Implementation (`sensors/disk.rs`, `providers/disk.rs`, `platform/windows/disk.rs`): `Platform::disk_space` (`GetDiskFreeSpaceExW`; free = all free bytes, used = total − free) and `Platform::volumes` (`GetLogicalDriveStringsW`, `GetDriveTypeW`, `GetVolumeInformationW` for the label) run with critical-error dialogs off for the thread, so an empty card reader or optical drive never asks for a disk. A missing drive (or one without a medium) is a sample with `present: false`; its hint says the drive is not available and a click does nothing. Mode ids: `usedPercent`, `freePercent`, `usedBytes`, `freeBytes`. The `drive` control lists the volumes when the form opens, named by label or kind (`Local Disk (C:)`, `Data (D:)`), and keeps a stored drive that is not connected as `F:\ (not connected)`; it does not update while open yet (the `volumes` topic arrives in M3). The Layout manager shows the drive beside the name. Open: a disconnected network drive can hold up the sampler for the duration of the SMB timeout.
+
 ### 9.13 `network-graph` — Network Graph  (Network; `DockNetwork`)
 
 | Key | XML key | Type | Default | Notes |
@@ -1532,7 +1534,7 @@ Ordered by expected value; each item reuses the framework unchanged.
 | `cpu` | `{ total, user, kernel, idle, cores: number[], logical }` (0–100) | PDH `\Processor Information(_Total)\% Processor Utility` and `(*)` instances; `GetSystemTimes` deltas for user/kernel/idle (kernel time includes idle: busy = (kernel − idle) + user) | The first sample after start/resume is discarded |
 | `memory` | `{ total, available, used, load }` | `GlobalMemoryStatusEx` | `load` = `dwMemoryLoad` |
 | `swap` | `{ total, used, load }` (all page files together) | `NtQuerySystemInformation(SystemPageFileInformation)`: each page file's allocated size and use, in pages (`GetSystemInfo` page size) | `total == 0` → no page file |
-| `disk/<X:\>` | `{ present, total, free, availUser, kind, label, displayName }` | `GetDiskFreeSpaceExW`, `GetDriveTypeW`, `GetVolumeInformationW`, `SHGetFileInfoW(SHGFI_DISPLAYNAME)` | |
+| `disk/<X:\>` | `{ present, total, free }` (kind and label come with `volumes`) | `GetDiskFreeSpaceExW`, `GetDriveTypeW`, `GetVolumeInformationW`, `SHGetFileInfoW(SHGFI_DISPLAYNAME)` | |
 | `volumes` | `Volume[]` | `GetLogicalDriveStringsW` + the above + bus type (`IOCTL_STORAGE_QUERY_PROPERTY`) for "ejectable" | Pushed on `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`/`DBT_DEVICEREMOVECOMPLETE`, volume type) |
 | `net/<id\|auto>` | `{ id, name, alias, description, up, rxRate, txRate, rxTotal, txTotal, linkRx, linkTx }` | `GetIfTable2` (`InOctets`, `OutOctets`, `OperStatus`, `ReceiveLinkSpeed`, `TransmitLinkSpeed`, `Alias`, `Description`); `GetBestInterfaceEx` for Automatic | Rates from QPC-timed deltas; a negative delta → 0 and new baseline |
 | `battery/<i>` | §9.14 | `starship-battery` (state, charge, time to full/empty, vendor/model) + `GetSystemPowerStatus` (AC line) | Also pushed on `PBT_APMPOWERSTATUSCHANGE` |

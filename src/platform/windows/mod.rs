@@ -3,6 +3,7 @@
 pub mod appbar;
 mod cpu;
 mod dialog;
+mod disk;
 mod hint;
 pub mod image;
 pub mod instance;
@@ -59,6 +60,14 @@ impl Platform for WindowsPlatform {
 
     fn page_files(&self) -> Option<Vec<super::PageFile>> {
         memory::page_files()
+    }
+
+    fn volumes(&self) -> Vec<super::Volume> {
+        disk::volumes()
+    }
+
+    fn disk_space(&self, root: &str) -> Option<super::DiskSpace> {
+        disk::space(root)
     }
 
     fn local_time(&self) -> LocalTime {

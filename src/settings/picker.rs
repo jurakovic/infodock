@@ -322,6 +322,7 @@ mod tests {
                 "Uptime",
                 "CPU Graph",
                 "CPU Meter",
+                "Disk Meter",
                 "Memory Graph",
                 "Memory Meter",
                 "Swap Graph",
@@ -345,7 +346,8 @@ mod tests {
                 Line::Entry(8),
                 Line::Entry(9),
                 Line::Entry(10),
-                Line::Entry(11)
+                Line::Entry(11),
+                Line::Entry(12)
             ]
         );
     }

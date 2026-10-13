@@ -224,3 +224,9 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] *New sensor… ▸ System ▸ Swap Meter* and *Swap Graph*: `Swap` / the share of the page file in use. Hover: *Total Virtual* is the page file's current size (System Properties ▸ Advanced ▸ Performance ▸ Virtual memory, *Currently allocated*), *Available Virtual* and *Swap Load*; click: Task Manager.
 - [ ] With the page file turned off (*No paging file*, restart): both show `n/a`, their bar or graph dimmed (the label stays), and the hint says *No page file configured*.
 
+**Disk Meter** (since M2 S13)
+
+- [ ] *New sensor… ▸ System ▸ Disk Meter*: `HD: C:\` with the used share, within 1 % of Explorer ▸ This PC (the bar shows the used fraction). Hover: *Disk Meter for C:\*, *Total Space*, *Free Space* and *Disk Space Used*; click: the drive opens in Explorer.
+- [ ] Properties: *Drive* lists your drives by label or kind (`Local Disk (C:)`), without optical drives; *Show* → free percent, used size and free size (the sizes under the label); a *Title* replaces `HD: C:\`; *Update every* 10–300 s.
+- [ ] Pick a USB stick, then remove it: within the interval the meter shows `n/a` with its bar dimmed, the hint says the drive is not available, a click does nothing, and no "insert a disk" dialog appears. The properties keep it as `E:\ (not connected)`. Plug it back in: values return.
+

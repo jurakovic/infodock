@@ -25,6 +25,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::memory::MEMORY_GRAPH,
         &super::memory::SWAP_METER,
         &super::memory::SWAP_GRAPH,
+        &super::disk::DiskMeterType,
         &super::date::DateType,
         &super::time::TimeType,
         &super::uptime::UptimeType,

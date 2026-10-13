@@ -75,6 +75,9 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
             .and_then(|i| Form::open(registry(), i, new).map(|f| (f, i.kind.clone())))
             .map(|(mut form, kind)| {
                 form.set_processors(app.platform.logical_processors());
+                if form.has_drive_field() {
+                    form.set_volumes(app.platform.volumes());
+                }
                 (form, kind)
             })
         else {
