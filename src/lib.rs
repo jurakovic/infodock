@@ -77,6 +77,9 @@ pub fn run() {
         .select()
     {
         tracing::error!("the UI toolkit could not start: {e}");
+        // As on a normal exit: saves pending changes and flushes the log with this line.
+        store.shutdown();
+        logging::shutdown();
         return;
     }
 

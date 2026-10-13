@@ -72,6 +72,8 @@ pub(super) struct BarSensors {
     pressed: Option<String>,
     /// The zones must be placed again.
     relayout: bool,
+    /// Ids of the sensors created since [`Self::take_created`] was last called.
+    created: Vec<String>,
     /// The bar width, scale and the theme's padding and gap of the last layout.
     bar_width: f32,
     scale: f32,
@@ -103,6 +105,7 @@ impl BarSensors {
                     Some(p) if p.entry.kind == entry.kind && p.entry.props == entry.props => p,
                     _ => {
                         created = true;
+                        self.created.push(entry.id.clone());
                         let empty = State::new();
                         let state = state.get(&entry.id).unwrap_or(&empty);
                         let sensor = registry.create(entry, state, caps);
@@ -122,6 +125,11 @@ impl BarSensors {
         let changed = created || self.ids() != before;
         self.relayout |= changed;
         changed
+    }
+
+    /// The ids of the sensors created (or re-created) since the last call.
+    pub fn take_created(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.created)
     }
 
     fn ids(&self) -> Vec<Vec<String>> {
@@ -441,12 +449,15 @@ mod tests {
         };
         let mut sensors = BarSensors::default();
         sensors.sync(&layout, &BTreeMap::new(), &caps, registry());
+        assert_eq!(sensors.take_created(), ["a", "b"]);
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert!(!sensors.sync(&layout, &BTreeMap::new(), &caps, registry()));
+        assert!(sensors.take_created().is_empty());
 
         // A new text: re-created, re-measured, and the spacer moves.
         layout.left[0].props.insert("text".into(), json!("Longer"));
         assert!(sensors.sync(&layout, &BTreeMap::new(), &caps, registry()));
+        assert_eq!(sensors.take_created(), ["a"], "same id, new instance");
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert_eq!(sensors.places()[1], ("b".into(), 56.0, 9.0));
 

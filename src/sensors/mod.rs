@@ -215,11 +215,86 @@ pub trait Sensor {
 /// Helpers for the sensor types' tests: the default modern theme, fixed text metrics, scale 1.
 #[cfg(test)]
 pub(crate) mod test_support {
-    use super::{DrawCtx, LayoutCtx, Sensor};
+    use serde_json::json;
+
+    use super::schema::{FieldKind, Lit, PropField};
+    use super::{Category, DefaultsCtx, DrawCtx, LayoutCtx, Props, Sensor, SensorType, State};
     use crate::bar::theme::Theme;
     use crate::config::model::Settings;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::platform::{OsAppearance, RectF};
+    use crate::platform::{
+        Canvas, Capabilities, MonitorInfo, OsAppearance, Platform, RectF, TextEngine, TextStyle,
+    };
+
+    /// Draws its text as the label, so tests can see what it was created with.
+    pub struct Echo(pub String);
+
+    impl Sensor for Echo {
+        fn measure(&mut self, _cx: &LayoutCtx) -> f32 {
+            10.0
+        }
+
+        fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
+            let layout = FixedMetrics.layout(&self.0, &TextStyle::new(&cx.theme.sensor_font, 10.0));
+            canvas.draw_text(&layout, Default::default(), cx.theme.sensor_text);
+        }
+    }
+
+    const CLOCK_SCHEMA: &[PropField] = &[
+        PropField::new("use24h", FieldKind::Bool, "x", Lit::Bool(true)).machine(),
+        PropField::new("showSeconds", FieldKind::Bool, "x", Lit::Bool(false)),
+    ];
+
+    /// A type with a machine-derived field: `use24h` defaults to `true`, the machine says
+    /// `false`. It draws its props.
+    pub struct Clock;
+
+    impl SensorType for Clock {
+        fn id(&self) -> &'static str {
+            "clock"
+        }
+        fn category(&self) -> Category {
+            Category::Info
+        }
+        fn name(&self) -> &'static str {
+            "test.clock"
+        }
+        fn description(&self) -> &'static str {
+            "test.clock.description"
+        }
+        fn schema(&self) -> &'static [PropField] {
+            CLOCK_SCHEMA
+        }
+        fn machine_defaults(&self, _ctx: &DefaultsCtx) -> Props {
+            let mut p = Props::new();
+            p.insert("use24h".into(), json!(false));
+            p
+        }
+        fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
+            Ok(Box::new(Echo(format!(
+                "use24h={} showSeconds={}",
+                props["use24h"], props["showSeconds"]
+            ))))
+        }
+    }
+
+    /// A platform without capabilities or monitors.
+    pub struct NoPlatform;
+
+    impl Platform for NoPlatform {
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+        fn monitors(&self) -> Vec<MonitorInfo> {
+            Vec::new()
+        }
+        fn appearance(&self) -> OsAppearance {
+            OsAppearance::default()
+        }
+        fn uptime(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+    }
 
     pub fn theme() -> Theme {
         Theme::resolve(&Settings::default(), OsAppearance::default())

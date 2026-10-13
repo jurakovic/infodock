@@ -130,27 +130,31 @@ impl App {
         index: usize,
         props: &Props,
     ) -> Result<String, ConfigError> {
-        let ctx = DefaultsCtx {
-            platform: self.platform.as_ref(),
-        };
         let (id, _) = self
             .store
-            .update(|c| ops::add(c, registry(), &ctx, kind, zone, index, props))?;
+            .update(|c| ops::add(c, registry(), &self.defaults(), kind, zone, index, props))?;
         Ok(id)
+    }
+
+    /// Where machine-derived props come from (SPEC §11.2).
+    fn defaults(&self) -> DefaultsCtx<'_> {
+        DefaultsCtx {
+            platform: self.platform.as_ref(),
+        }
     }
 
     /// Saves `changes` to sensor `id` and ends its preview.
     pub fn update_sensor(&self, id: &str, changes: &Props) -> Result<(), ConfigError> {
         let result = self
             .store
-            .update(|c| ops::update(c, registry(), id, changes));
+            .update(|c| ops::update(c, registry(), &self.defaults(), id, changes));
         self.end_preview(id);
         result.map(|_| ())
     }
 
     /// Shows sensor `id` with `changes` on the bar without saving (SPEC §6.7).
     pub fn preview_sensor(&self, id: &str, changes: &Props) -> Result<(), ConfigError> {
-        let shown = ops::preview(&self.store.get(), registry(), id, changes)?;
+        let shown = ops::preview(&self.store.get(), registry(), &self.defaults(), id, changes)?;
         if let Some(bar) = self.bar.get() {
             bar.preview(shown);
         }

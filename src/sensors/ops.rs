@@ -34,8 +34,7 @@ pub fn add(
         kind: kind.to_owned(),
         props: Props::new(),
     };
-    instance.props = updated_props(registry, &instance, props)?;
-    registry.fill_machine_props(&mut instance, ctx);
+    instance.props = with_machine_props(registry, ctx, &instance, props)?;
     let id = instance.id.clone();
     let list = config.layout.zone_mut(zone);
     list.insert(index.min(list.len()), instance);
@@ -77,19 +76,35 @@ pub fn updated_props(
     Ok(schema::to_stored(fields, &props, &instance.props))
 }
 
+/// [`updated_props`] for `instance` with the machine-derived props it lacks filled in first:
+/// stored machine fields are kept as they are, so their static defaults must not stand in for
+/// the machine's values (SPEC §11.2).
+fn with_machine_props(
+    registry: &Registry,
+    ctx: &DefaultsCtx,
+    instance: &SensorInstance,
+    changes: &Props,
+) -> Result<Props, ConfigError> {
+    let mut instance = instance.clone();
+    registry.fill_machine_props(&mut instance, ctx);
+    updated_props(registry, &instance, changes)
+}
+
 fn instance_mut<'a>(layout: &'a mut Layout, id: &str) -> Option<&'a mut SensorInstance> {
     layout.all_mut().find(|s| s.id == id)
 }
 
-/// Applies `changes` to sensor `id` (see [`updated_props`]).
+/// Applies `changes` to sensor `id` (see [`updated_props`]); machine-derived props it lacks
+/// are filled in.
 pub fn update(
     config: &mut Config,
     registry: &Registry,
+    ctx: &DefaultsCtx,
     id: &str,
     changes: &Props,
 ) -> Result<(), ConfigError> {
     let instance = instance_mut(&mut config.layout, id).ok_or_else(|| not_found(id))?;
-    instance.props = updated_props(registry, instance, changes)?;
+    instance.props = with_machine_props(registry, ctx, instance, changes)?;
     Ok(())
 }
 
@@ -98,6 +113,7 @@ pub fn update(
 pub fn preview(
     config: &Config,
     registry: &Registry,
+    ctx: &DefaultsCtx,
     id: &str,
     changes: &Props,
 ) -> Result<SensorInstance, ConfigError> {
@@ -107,7 +123,7 @@ pub fn preview(
         .find(|s| s.id == id)
         .ok_or_else(|| not_found(id))?;
     Ok(SensorInstance {
-        props: updated_props(registry, instance, changes)?,
+        props: with_machine_props(registry, ctx, instance, changes)?,
         ..instance.clone()
     })
 }
@@ -144,25 +160,8 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
     use crate::sensors::registry::registry;
-
-    struct NoPlatform;
-
-    impl Platform for NoPlatform {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> std::time::Duration {
-            std::time::Duration::ZERO
-        }
-    }
+    use crate::sensors::test_support::{Clock, NoPlatform};
 
     const CTX: DefaultsCtx = DefaultsCtx {
         platform: &NoPlatform,
@@ -252,6 +251,7 @@ mod tests {
         update(
             &mut c,
             registry(),
+            &CTX,
             &logo,
             &props(json!({ "opacity": 5, "color": { "mode": "custom", "color": "#abcdef" } })),
         )
@@ -265,29 +265,43 @@ mod tests {
             })
         );
         // Back to the default: no longer stored.
-        update(&mut c, registry(), &logo, &props(json!({ "opacity": 100 }))).expect("updated");
+        update(
+            &mut c,
+            registry(),
+            &CTX,
+            &logo,
+            &props(json!({ "opacity": 100 })),
+        )
+        .expect("updated");
         assert!(!c.layout.center[0].props.contains_key("opacity"));
 
         let err = update(
             &mut c,
             registry(),
+            &CTX,
             &logo,
             &props(json!({ "opacity": "full", "size": 3 })),
         )
         .expect_err("invalid");
         assert_eq!(err.to_string(), "invalid props for image: opacity, size");
-        assert!(update(&mut c, registry(), "s_nope", &Props::new()).is_err());
+        assert!(update(&mut c, registry(), &CTX, "s_nope", &Props::new()).is_err());
         // Placeholders (unknown types) cannot be edited.
         let cpu = c.layout.left[0].id.clone();
-        assert!(update(&mut c, registry(), &cpu, &Props::new()).is_err());
+        assert!(update(&mut c, registry(), &CTX, &cpu, &Props::new()).is_err());
     }
 
     #[test]
     fn previews_without_saving() {
         let c = config();
         let logo = c.layout.center[0].id.clone();
-        let shown =
-            preview(&c, registry(), &logo, &props(json!({ "opacity": 50 }))).expect("preview");
+        let shown = preview(
+            &c,
+            registry(),
+            &CTX,
+            &logo,
+            &props(json!({ "opacity": 50 })),
+        )
+        .expect("preview");
         assert_eq!(shown.props["opacity"], 50);
         assert_eq!(shown.id, logo);
         assert!(!c.layout.center[0].props.contains_key("opacity"));
@@ -326,5 +340,31 @@ mod tests {
         assert_eq!(c.layout.right.len(), 1);
         assert!(!c.state.contains_key(&date));
         assert!(remove(&mut c, &date).is_err());
+    }
+
+    #[test]
+    fn machine_derived_props_come_from_the_machine() {
+        // Clock's `use24h` defaults to true; the machine says false.
+        let registry = Registry::new(vec![&Clock]);
+        let mut c = Config::default();
+        let id = add(
+            &mut c,
+            &registry,
+            &CTX,
+            "clock",
+            Zone::Left,
+            0,
+            &Props::new(),
+        )
+        .expect("added");
+        assert_eq!(c.layout.left[0].props["use24h"], false);
+        // An instance stored before the field existed gets the machine's value too.
+        c.layout.left[0].props.remove("use24h");
+        let shown = props(json!({ "showSeconds": true }));
+        let previewed = preview(&c, &registry, &CTX, &id, &shown).expect("preview");
+        assert_eq!(previewed.props["use24h"], false);
+        update(&mut c, &registry, &CTX, &id, &shown).expect("updated");
+        assert_eq!(c.layout.left[0].props["use24h"], false);
+        assert_eq!(c.layout.left[0].props["showSeconds"], true);
     }
 }

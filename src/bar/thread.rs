@@ -115,15 +115,18 @@ struct Moving {
     rect: Option<Rect>,
 }
 
-/// The subscription changes from `old` to `new` (by sensor id): new or changed topic lists, and
-/// an empty list for sensors that no longer subscribe. Sorted by id.
+/// The subscription changes from `old` to `new` (by sensor id): new or changed topic lists, the
+/// lists of sensors `created` anew (a re-created sensor keeps its id and topics but starts
+/// without data, and subscribing sends it the newest samples, SPEC §4.4), and an empty list for
+/// sensors that no longer subscribe. Sorted by id.
 fn subscription_changes(
     old: &HashMap<String, Vec<TopicRequest>>,
     new: &HashMap<String, Vec<TopicRequest>>,
+    created: &[String],
 ) -> Vec<(String, Vec<TopicRequest>)> {
     let mut changes: Vec<(String, Vec<TopicRequest>)> = new
         .iter()
-        .filter(|(id, topics)| old.get(*id) != Some(*topics))
+        .filter(|(id, topics)| old.get(*id) != Some(*topics) || created.contains(*id))
         .map(|(id, topics)| (id.clone(), topics.clone()))
         .chain(
             old.keys()
@@ -730,7 +733,8 @@ impl BarLogic {
             self.refresh_hint(window);
         }
         let subscriptions = self.sensors.subscriptions();
-        for (id, topics) in subscription_changes(&self.subscribed, &subscriptions) {
+        let created = self.sensors.take_created();
+        for (id, topics) in subscription_changes(&self.subscribed, &subscriptions, &created) {
             self.host.subscribe(&id, topics);
         }
         self.subscribed = subscriptions;
@@ -1163,14 +1167,19 @@ mod tests {
         let old = map(&[("a", 60), ("b", 60), ("c", 60)]);
         let new = map(&[("a", 60), ("b", 30), ("d", 60)]);
         assert_eq!(
-            subscription_changes(&old, &new),
+            subscription_changes(&old, &new, &[]),
             [
                 ("b".to_owned(), vec![uptime(30)]),
                 ("c".to_owned(), Vec::new()),
                 ("d".to_owned(), vec![uptime(60)]),
             ]
         );
-        assert!(subscription_changes(&new, &new).is_empty());
+        assert!(subscription_changes(&new, &new, &[]).is_empty());
+        // A re-created sensor subscribes again, to be sent the newest samples.
+        assert_eq!(
+            subscription_changes(&new, &new, &["a".to_owned(), "c".to_owned()]),
+            [("a".to_owned(), vec![uptime(60)])]
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! subscribers asked for and keeps its newest sample for subscribers that join later. Pure; the
 //! sampler thread supplies the clock.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::time::{Duration, Instant};
 
@@ -41,7 +41,8 @@ impl<K, S> Default for Scheduler<K, S> {
 
 impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
     /// Replaces `subscriber`'s requests (an empty list unsubscribes it). Returns the newest
-    /// sample of each topic it has just joined, if there is one yet; a new topic is due at once.
+    /// sample of each requested topic, if there is one yet, since the subscriber may be new
+    /// (or a re-created sensor with the same id); a new topic is due at once.
     pub fn subscribe(
         &mut self,
         subscriber: &str,
@@ -49,13 +50,9 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
         now: Instant,
     ) -> Vec<(K, S)> {
         // It leaves every topic, then joins the requested ones again.
-        let before: HashSet<K> = self
-            .topics
-            .iter_mut()
-            .filter_map(|(topic, entry)| {
-                entry.subscribers.remove(subscriber).map(|_| topic.clone())
-            })
-            .collect();
+        for entry in self.topics.values_mut() {
+            entry.subscribers.remove(subscriber);
+        }
         let mut catch_up = Vec::new();
         for (topic, interval) in requests {
             let interval = (*interval).max(MIN_INTERVAL);
@@ -65,7 +62,6 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
                 last: None,
                 latest: None,
             });
-            let fresh = !before.contains(topic) && !entry.subscribers.contains_key(subscriber);
             entry
                 .subscribers
                 .entry(subscriber.to_owned())
@@ -75,7 +71,9 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
             if let Some(last) = entry.last {
                 entry.next = entry.next.min(last + entry.interval());
             }
-            if fresh && let Some(sample) = &entry.latest {
+            if let Some(sample) = &entry.latest
+                && !catch_up.iter().any(|(t, _)| t == topic)
+            {
                 catch_up.push((topic.clone(), sample.clone()));
             }
         }
@@ -164,10 +162,10 @@ mod tests {
         s.sampled(&"uptime", t0, Some(7));
         let joined = s.subscribe("b", &requests(&[("uptime", 60_000)]), t0 + SEC);
         assert_eq!(joined, [("uptime", 7)]);
-        // Subscribing again with the same topics catches nothing up.
-        assert!(
-            s.subscribe("b", &requests(&[("uptime", 30_000)]), t0 + SEC)
-                .is_empty()
+        // Subscribing again (a re-created sensor keeps its id) catches up again.
+        assert_eq!(
+            s.subscribe("b", &requests(&[("uptime", 30_000)]), t0 + SEC),
+            [("uptime", 7)]
         );
         // A shorter interval applies from the last sample on.
         assert_eq!(s.next_due(), Some(t0 + 30 * SEC));
