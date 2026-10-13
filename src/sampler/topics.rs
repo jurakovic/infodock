@@ -8,6 +8,7 @@ use std::time::Duration;
 pub enum Topic {
     Uptime,
     Cpu,
+    Memory,
 }
 
 /// A sensor's wish to receive `topic` at least every `interval`.
@@ -22,6 +23,7 @@ pub struct TopicRequest {
 pub enum Sample {
     Uptime(UptimeSample),
     Cpu(CpuSample),
+    Memory(MemorySample),
 }
 
 /// `cpu`: the processors' load, each 0–100 (SPEC Appendix A).
@@ -36,6 +38,17 @@ pub struct CpuSample {
     /// The busy share per logical processor; empty where unavailable.
     pub cores: Vec<f32>,
     pub logical: u32,
+}
+
+/// `memory`: physical memory, bytes (SPEC Appendix A).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct MemorySample {
+    pub total: u64,
+    pub available: u64,
+    /// `total − available`.
+    pub used: u64,
+    /// The share in use as the OS reports it, 0–100.
+    pub load: f32,
 }
 
 /// `uptime`: when the system started.

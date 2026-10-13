@@ -249,7 +249,7 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::Config;
+    use crate::config::model::{Config, SensorInstance};
 
     fn layout() -> Layout {
         // Left: cpu-graph, memory-meter, network-graph; center: image; right: date, time.
@@ -270,15 +270,22 @@ mod tests {
     #[test]
     fn lists_each_zone_with_its_sensors() {
         let mut layout = layout();
+        layout.left.truncate(2);
         layout.right.clear();
+        // A type from a newer version.
+        layout.left.push(SensorInstance {
+            id: "s_mail".into(),
+            kind: "mail".into(),
+            props: Default::default(),
+        });
         let lines = lines(&layout, registry(), &Capabilities::default());
         assert_eq!(
             shown(&lines),
             [
                 "# Left",
                 "0 CPU Graph: ",
-                "1 memory-meter: Not available in this version",
-                "2 network-graph: Not available in this version",
+                "1 Memory Meter: ",
+                "2 mail: Not available in this version",
                 "# Centre",
                 "0 Image: Infodock logo",
                 "# Right",
@@ -286,7 +293,7 @@ mod tests {
             ]
         );
         assert!(lines[1].editable, "the CPU graph");
-        assert!(!lines[2].editable, "a placeholder");
+        assert!(!lines[3].editable, "a placeholder");
         assert!(lines[5].editable);
     }
 

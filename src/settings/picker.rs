@@ -321,7 +321,9 @@ mod tests {
                 "Time",
                 "Uptime",
                 "CPU Graph",
-                "CPU Meter"
+                "CPU Meter",
+                "Memory Graph",
+                "Memory Meter"
             ]
         );
         assert_eq!(
@@ -337,7 +339,9 @@ mod tests {
                 Line::Entry(5),
                 Line::Heading("System".into()),
                 Line::Entry(6),
-                Line::Entry(7)
+                Line::Entry(7),
+                Line::Entry(8),
+                Line::Entry(9)
             ]
         );
     }

@@ -21,7 +21,7 @@ use crate::platform::{Canvas, Capability};
 use crate::sampler::{CpuSample, Sample, Topic, TopicRequest};
 
 /// Task Manager, opened by a click (SPEC §9.7).
-const TASK_MANAGER: &str = "taskmgr.exe";
+pub(super) const TASK_MANAGER: &str = "taskmgr.exe";
 
 const METER_SCHEMA: &[PropField] = &[
     graph::INTERVAL,

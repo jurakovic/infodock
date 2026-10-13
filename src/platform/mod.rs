@@ -123,6 +123,15 @@ pub trait CpuReader: Send {
     fn read(&mut self) -> Option<CpuReading>;
 }
 
+/// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MemoryStatus {
+    pub total: u64,
+    pub available: u64,
+    /// The share in use as the OS reports it (`dwMemoryLoad`), 0–100.
+    pub load: u32,
+}
+
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// All active monitors, physical pixels.
@@ -141,6 +150,10 @@ pub trait Platform: Send + Sync {
     }
     /// A reader of the processors' load, for the `cpu` topic; `None` where there is none.
     fn cpu_reader(&self) -> Option<Box<dyn CpuReader>> {
+        None
+    }
+    /// Physical memory now, for the `memory` topic; `None` where it cannot be read.
+    fn memory(&self) -> Option<MemoryStatus> {
         None
     }
     /// The local wall-clock time; UTC where the platform does not know the time zone.

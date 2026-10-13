@@ -1596,9 +1596,18 @@ mod tests {
 
     #[test]
     fn placeholders_explain_themselves() {
-        let (mut logic, window, _, _) = bar(Settings::default());
-        // The first placeholder (memory-meter) follows the CPU graph.
-        hover(&mut logic, &window, PointF::new(100.0, 14.0));
+        let (mut logic, window, _, mut config) = bar(Settings::default());
+        // A sensor of a type from a newer version, first on the left.
+        let unknown = SensorInstance {
+            id: "s_mail".into(),
+            kind: "mail".into(),
+            props: Default::default(),
+        };
+        config.layout.left.insert(0, unknown);
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        hover(&mut logic, &window, PointF::new(10.0, 14.0));
         hint_timer(&mut logic, &window);
         let hint = window.hint.borrow().clone().expect("shown");
         assert!(

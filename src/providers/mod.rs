@@ -2,6 +2,7 @@
 //! sampler thread and reach the OS only through [`Platform`].
 
 mod cpu;
+mod memory;
 mod uptime;
 
 use std::sync::Arc;
@@ -47,6 +48,10 @@ impl Providers {
                     .get_or_insert_with(|| platform.cpu_reader().map(cpu::Cpu::new));
                 cpu.as_mut()?.sample().map(Sample::Cpu)
             }
+            Topic::Memory => self
+                .platform
+                .memory()
+                .map(|status| Sample::Memory(memory::sample(status))),
         }
     }
 }

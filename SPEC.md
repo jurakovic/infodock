@@ -832,6 +832,8 @@ Click to open Task Manager
 ```
 Click: Task Manager.
 
+Implementation (`sensors/memory.rs`, `providers/memory.rs`, `platform/windows/memory.rs`): the meter and the graph are written for any "used of total" topic, so swap (§9.11) shares them. The graph always plots the load; `display` changes only the value line (bytes: the used size). Before the first sample the value line is empty and there is no hint; a sample that changes nothing does not redraw the meter.
+
 ### 9.11 `swap-meter` / `swap-graph` — Swap  (System; `DockSwapMeter`, `DockSwapGraph`)
 
 Same properties as memory (graph `display`: `bytes` / `percent`). Topic `swap`. Label "Swap".

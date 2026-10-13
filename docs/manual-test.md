@@ -211,3 +211,10 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] Graph properties: *Width* 50–150 in steps of 5; background and grid colours and opacities (both off by default); *Graph colour* → *Dynamic* colours each column by its value; *Update every* 1–10 s slows the scrolling.
 - [ ] After sleep and wake, the first values are sensible (no spike or drop to 0).
 - [ ] *New sensor… ▸ System ▸ CPU Graph (dual)*: processor 1 in blue growing up from the middle, processor 2 in orange growing down; `CPUs` / `37%` beside them. Properties list *Total*, *User tasks*, *System* and each of your processors for *Top shows* and *Bottom shows*; *Bottom grows down* off makes the orange graph grow up from the bottom edge.
+
+**Memory** (since M2 S11)
+
+- [ ] The first-run *memory-meter* placeholder is now a meter: `RAM` / `43%`, its bar filled to the same share. The value stays within 3 % of Task Manager ▸ Performance ▸ Memory (*In use* of the total); load memory (open many browser tabs) and watch both.
+- [ ] Hover: *Total Physical*, *Available Physical* and *Memory Load* (Total a little below the installed size, as Windows reserves some), and *Click to open Task Manager*; click: Task Manager opens.
+- [ ] *New sensor… ▸ System ▸ Memory Graph*: a graph of the load with `RAM` / `5.21 GB` (the used size); *Show* → *Percentage in use* shows `43%` instead; the plot is the same in both. Graph properties behave as for the CPU graph.
+- [ ] Meter properties: *Update every* 1–60 s (2 s by default); *Colour* → *Dynamic* goes from green to red with the load.

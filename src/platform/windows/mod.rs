@@ -7,6 +7,7 @@ mod hint;
 pub mod image;
 pub mod instance;
 mod locale;
+mod memory;
 mod menu;
 mod monitors;
 pub mod render;
@@ -50,6 +51,10 @@ impl Platform for WindowsPlatform {
 
     fn logical_processors(&self) -> u32 {
         cpu::logical_processors()
+    }
+
+    fn memory(&self) -> Option<super::MemoryStatus> {
+        memory::status()
     }
 
     fn local_time(&self) -> LocalTime {
