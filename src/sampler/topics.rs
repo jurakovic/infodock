@@ -9,6 +9,7 @@ pub enum Topic {
     Uptime,
     Cpu,
     Memory,
+    Swap,
 }
 
 /// A sensor's wish to receive `topic` at least every `interval`.
@@ -24,6 +25,7 @@ pub enum Sample {
     Uptime(UptimeSample),
     Cpu(CpuSample),
     Memory(MemorySample),
+    Swap(SwapSample),
 }
 
 /// `cpu`: the processors' load, each 0–100 (SPEC Appendix A).
@@ -48,6 +50,16 @@ pub struct MemorySample {
     /// `total − available`.
     pub used: u64,
     /// The share in use as the OS reports it, 0–100.
+    pub load: f32,
+}
+
+/// `swap`: all page files together, bytes (SPEC Appendix A); a `total` of 0 means there is
+/// no page file.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct SwapSample {
+    pub total: u64,
+    pub used: u64,
+    /// `used` of `total`, 0–100.
     pub load: f32,
 }
 

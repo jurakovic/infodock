@@ -218,3 +218,9 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] Hover: *Total Physical*, *Available Physical* and *Memory Load* (Total a little below the installed size, as Windows reserves some), and *Click to open Task Manager*; click: Task Manager opens.
 - [ ] *New sensor… ▸ System ▸ Memory Graph*: a graph of the load with `RAM` / `5.21 GB` (the used size); *Show* → *Percentage in use* shows `43%` instead; the plot is the same in both. Graph properties behave as for the CPU graph.
 - [ ] Meter properties: *Update every* 1–60 s (2 s by default); *Colour* → *Dynamic* goes from green to red with the load.
+
+**Swap** (since M2 S12)
+
+- [ ] *New sensor… ▸ System ▸ Swap Meter* and *Swap Graph*: `Swap` / the share of the page file in use. Hover: *Total Virtual* is the page file's current size (System Properties ▸ Advanced ▸ Performance ▸ Virtual memory, *Currently allocated*), *Available Virtual* and *Swap Load*; click: Task Manager.
+- [ ] With the page file turned off (*No paging file*, restart): both show `n/a`, their bar or graph dimmed (the label stays), and the hint says *No page file configured*.
+

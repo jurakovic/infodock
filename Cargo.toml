@@ -60,6 +60,7 @@ window-vibrancy = "0.8"
 # Points and matrices of the Direct2D API; the version the `windows` crate uses.
 windows-numerics = "0.3"
 windows = { version = "0.62", features = [
+    "Wdk_System_SystemInformation",
     "Win32_Devices_Display",
     "Win32_Foundation",
     "Win32_Globalization",

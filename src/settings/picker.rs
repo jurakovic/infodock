@@ -323,7 +323,9 @@ mod tests {
                 "CPU Graph",
                 "CPU Meter",
                 "Memory Graph",
-                "Memory Meter"
+                "Memory Meter",
+                "Swap Graph",
+                "Swap Meter"
             ]
         );
         assert_eq!(
@@ -341,7 +343,9 @@ mod tests {
                 Line::Entry(6),
                 Line::Entry(7),
                 Line::Entry(8),
-                Line::Entry(9)
+                Line::Entry(9),
+                Line::Entry(10),
+                Line::Entry(11)
             ]
         );
     }

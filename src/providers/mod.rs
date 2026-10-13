@@ -3,6 +3,7 @@
 
 mod cpu;
 mod memory;
+mod swap;
 mod uptime;
 
 use std::sync::Arc;
@@ -52,6 +53,10 @@ impl Providers {
                 .platform
                 .memory()
                 .map(|status| Sample::Memory(memory::sample(status))),
+            Topic::Swap => self
+                .platform
+                .page_files()
+                .map(|files| Sample::Swap(swap::sample(&files))),
         }
     }
 }

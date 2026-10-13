@@ -57,6 +57,10 @@ impl Platform for WindowsPlatform {
         memory::status()
     }
 
+    fn page_files(&self) -> Option<Vec<super::PageFile>> {
+        memory::page_files()
+    }
+
     fn local_time(&self) -> LocalTime {
         // SAFETY: no arguments; it only reads the clock.
         let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };

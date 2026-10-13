@@ -120,7 +120,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Settings window | **Slint 1.x** (winit backend, software renderer, Fluent style, AccessKit), UI in `.slint` files compiled by `build.rs`; pin exact versions in the lockfile | Event loop on the main thread. Settings is created when opened and dropped when closed. Licence: Slint Royalty-free 2.0, which requires the Slint attribution badge where the app is downloaded (README) or `AboutSlint` in the About page |
 | Global hotkey | `global-hotkey` | |
 | Tray icon and menus | Native: `Shell_NotifyIconW` registered for the bar window, `TrackPopupMenuEx` menus, both on the bar thread | Slint 1.18's tray ignores menu check marks on Windows (plan D17) |
-| System info helpers | `sysinfo` (fallback/cross-platform), `starship-battery`, `wmi` (page-file sizes only) | |
+| System info helpers | `sysinfo` (fallback/cross-platform), `starship-battery` | No WMI: page files come from `NtQuerySystemInformation` (plan D24) |
 | Threads | A dedicated **bar thread** (§4.1), a **sampler thread** (§4.4), and worker threads for slow work (directory listings, file operations, icon extraction) | |
 | Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import) | |
 | Logging | `tracing` + `tracing-appender` (rolling files) | |
@@ -847,6 +847,8 @@ Click to open Task Manager
 ```
 Without a page file: value `n/a`, inactive, hint "No page file configured".
 
+Implementation: the meter and graph of §9.10 (`sensors/memory.rs`) on the `swap` topic. `Platform::page_files` reads every page file's allocated size and use with `NtQuerySystemInformation(SystemPageFileInformation)`, one cheap call per tick, so neither WMI nor a size cache is needed (plan D24); `providers/swap.rs` adds them up. Inactive, the meter's bar and the graph's background, grid and columns dim (§8.5).
+
 ### 9.12 `disk-meter` — Disk Meter  (System; `DockDiskMeter`)
 
 | Key | XML key | Type | Default | Notes |
@@ -1398,7 +1400,7 @@ A compact, denser look:
 | Hint shown after its delay | ≤ 30 ms |
 | Folder Menu popup, folder with 500 items | ≤ 200 ms to first paint |
 
-Techniques: one sampler thread; PDH query handles opened once and reused; no WMI on hot paths (page-file sizes cached for 60 s); only dirty sensors are re-measured, and a frame is drawn only when something changed (at most one per 16 ms); software Direct2D (no GPU device in the process); text layouts and decoded bitmaps cached per sensor and invalidated on change; hint and popup windows created on first use and reused; icon LRU cache (256 entries); the Settings window dropped on close. CI measures memory on every Windows build (§16).
+Techniques: one sampler thread; PDH query handles opened once and reused; no WMI at all (page files from one `NtQuerySystemInformation` call); only dirty sensors are re-measured, and a frame is drawn only when something changed (at most one per 16 ms); software Direct2D (no GPU device in the process); text layouts and decoded bitmaps cached per sensor and invalidated on change; hint and popup windows created on first use and reused; icon LRU cache (256 entries); the Settings window dropped on close. CI measures memory on every Windows build (§16).
 
 ### 14.2 Reliability
 
@@ -1529,7 +1531,7 @@ Ordered by expected value; each item reuses the framework unchanged.
 |---|---|---|---|
 | `cpu` | `{ total, user, kernel, idle, cores: number[], logical }` (0–100) | PDH `\Processor Information(_Total)\% Processor Utility` and `(*)` instances; `GetSystemTimes` deltas for user/kernel/idle (kernel time includes idle: busy = (kernel − idle) + user) | The first sample after start/resume is discarded |
 | `memory` | `{ total, available, used, load }` | `GlobalMemoryStatusEx` | `load` = `dwMemoryLoad` |
-| `swap` | `{ total, used, load, files: [{ name, allocated, used, peak }] }` | PDH `\Paging File(*)\% Usage` + WMI `Win32_PageFileUsage` (sizes, cached 60 s) | `total == 0` → no page file |
+| `swap` | `{ total, used, load }` (all page files together) | `NtQuerySystemInformation(SystemPageFileInformation)`: each page file's allocated size and use, in pages (`GetSystemInfo` page size) | `total == 0` → no page file |
 | `disk/<X:\>` | `{ present, total, free, availUser, kind, label, displayName }` | `GetDiskFreeSpaceExW`, `GetDriveTypeW`, `GetVolumeInformationW`, `SHGetFileInfoW(SHGFI_DISPLAYNAME)` | |
 | `volumes` | `Volume[]` | `GetLogicalDriveStringsW` + the above + bus type (`IOCTL_STORAGE_QUERY_PROPERTY`) for "ejectable" | Pushed on `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`/`DBT_DEVICEREMOVECOMPLETE`, volume type) |
 | `net/<id\|auto>` | `{ id, name, alias, description, up, rxRate, txRate, rxTotal, txTotal, linkRx, linkTx }` | `GetIfTable2` (`InOctets`, `OutOctets`, `OperStatus`, `ReceiveLinkSpeed`, `TransmitLinkSpeed`, `Alias`, `Description`); `GetBestInterfaceEx` for Automatic | Rates from QPC-timed deltas; a negative delta → 0 and new baseline |

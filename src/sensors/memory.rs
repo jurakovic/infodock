@@ -1,13 +1,13 @@
-//! `memory-meter` and `memory-graph` — physical memory in use (SPEC §9.10) on the `memory`
-//! topic, as a meter of the load or a graph showing the used bytes or the load; a click opens
-//! Task Manager. The meter and graph are written for any "used of total" topic, so swap
-//! (§9.11) shares them.
+//! `memory-meter` / `memory-graph` and `swap-meter` / `swap-graph` — physical memory and the
+//! page files in use (SPEC §9.10–9.11) on the `memory` and `swap` topics, as a meter of the
+//! load or a graph showing the used bytes or the load; a click opens Task Manager. Without a
+//! page file the swap sensors show `n/a` and are inactive.
 
 use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::common::graph::{self, GraphStyle, GraphText, Growth};
+use super::common::graph::{self, Columns, GraphStyle, GraphText, Growth};
 use super::common::history::History;
 use super::common::meter::Meter;
 use super::cpu::TASK_MANAGER;
@@ -17,11 +17,13 @@ use super::{
     Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
     SensorType, State, color, typed,
 };
+use crate::bar::theme::Inactive;
 use crate::i18n::{t, t_args};
 use crate::platform::Canvas;
 use crate::sampler::{Sample, Topic, TopicRequest};
 
-/// A reading of a "used of total" topic: bytes, and the load 0–100.
+/// A reading of a "used of total" topic: bytes, and the load 0–100. A total of 0 means there
+/// is nothing to use (no page file).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Reading {
     total: u64,
@@ -30,22 +32,31 @@ struct Reading {
     load: f32,
 }
 
+impl Reading {
+    fn absent(&self) -> bool {
+        self.total == 0
+    }
+}
+
 /// Which topic a usage sensor shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Memory,
+    Swap,
 }
 
 impl Kind {
     fn topic(self) -> Topic {
         match self {
             Kind::Memory => Topic::Memory,
+            Kind::Swap => Topic::Swap,
         }
     }
 
     fn label(self) -> String {
         t(match self {
             Kind::Memory => "sensor.memory.label",
+            Kind::Swap => "sensor.swap.label",
         })
     }
 
@@ -57,20 +68,41 @@ impl Kind {
                 used: m.used,
                 load: m.load,
             }),
+            (Kind::Swap, Sample::Swap(s)) => Some(Reading {
+                total: s.total,
+                available: s.total.saturating_sub(s.used),
+                used: s.used,
+                load: s.load,
+            }),
             _ => None,
         }
     }
 
-    /// The hint (SPEC §9.10): total, available and load, and what a click does.
+    /// The hint (SPEC §9.10–9.11): total, available and load, and what a click does; for swap
+    /// without a page file, just that.
     fn hint(self, r: &Reading, numbers: Numbers) -> String {
+        if self == Kind::Swap && r.absent() {
+            return t("sensor.swap.hint.none");
+        }
         let bytes = |n: u64| format::bytes(n, None, numbers);
-        let lines = match self {
+        let keys = match self {
             Kind::Memory => [
-                ("sensor.memory.hint.total", bytes(r.total)),
-                ("sensor.memory.hint.available", bytes(r.available)),
-                ("sensor.memory.hint.load", percent(f64::from(r.load))),
+                "sensor.memory.hint.total",
+                "sensor.memory.hint.available",
+                "sensor.memory.hint.load",
+            ],
+            Kind::Swap => [
+                "sensor.swap.hint.total",
+                "sensor.swap.hint.available",
+                "sensor.swap.hint.load",
             ],
         };
+        let values = [
+            bytes(r.total),
+            bytes(r.available),
+            percent(f64::from(r.load)),
+        ];
+        let lines = keys.into_iter().zip(values);
         let mut text = String::new();
         for (label, value) in lines {
             text.push_str(&format!("{}\t{value}\n", t(label)));
@@ -138,22 +170,34 @@ fn hint(kind: Kind, reading: Option<&Reading>, cx: &SensorCtx) -> Option<HintCon
     Some(HintContent::Text(kind.hint(reading?, numbers)))
 }
 
-/// The meter's value, and the graph's in percent mode: the load.
+/// The meter's value, and the graph's in percent mode: the load; `n/a` when absent, nothing
+/// before the first sample.
 fn load(reading: Option<&Reading>) -> String {
+    match reading {
+        None => String::new(),
+        Some(r) if r.absent() => t("format.notAvailable"),
+        Some(r) => percent(f64::from(r.load)),
+    }
+}
+
+/// How an absent reading dims the graphic (SPEC §8.5); `None` while it is there.
+fn dimmed(reading: Option<&Reading>, cx: &DrawCtx) -> Option<Inactive> {
     reading
-        .map(|r| percent(f64::from(r.load)))
-        .unwrap_or_default()
+        .is_some_and(Reading::absent)
+        .then_some(cx.theme.inactive)
 }
 
 /// A meter of a usage topic's load (SPEC §9.10).
 pub struct UsageMeterType(Kind);
 
 pub static MEMORY_METER: UsageMeterType = UsageMeterType(Kind::Memory);
+pub static SWAP_METER: UsageMeterType = UsageMeterType(Kind::Swap);
 
 impl SensorType for UsageMeterType {
     fn id(&self) -> &'static str {
         match self.0 {
             Kind::Memory => "memory-meter",
+            Kind::Swap => "swap-meter",
         }
     }
 
@@ -164,18 +208,21 @@ impl SensorType for UsageMeterType {
     fn name(&self) -> &'static str {
         match self.0 {
             Kind::Memory => "sensor.memoryMeter.name",
+            Kind::Swap => "sensor.swapMeter.name",
         }
     }
 
     fn description(&self) -> &'static str {
         match self.0 {
             Kind::Memory => "sensor.memoryMeter.description",
+            Kind::Swap => "sensor.swapMeter.description",
         }
     }
 
     fn legacy_types(&self) -> &'static [&'static str] {
         match self.0 {
             Kind::Memory => &["DockMemMeter"],
+            Kind::Swap => &["DockSwapMeter"],
         }
     }
 
@@ -222,7 +269,13 @@ impl Sensor for UsageMeter {
         };
         let fraction = self.reading.as_ref().map_or(0.0, |r| r.load / 100.0);
         let fill = color::resolve(&self.props.color, Meter::standard_fill(cx.theme), fraction);
-        meter.draw(canvas, cx, fraction, fill, None);
+        meter.draw(
+            canvas,
+            cx,
+            fraction,
+            fill,
+            dimmed(self.reading.as_ref(), cx),
+        );
     }
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
@@ -236,6 +289,10 @@ impl Sensor for UsageMeter {
 
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         load(self.reading.as_ref())
+    }
+
+    fn inactive(&self) -> bool {
+        self.reading.as_ref().is_some_and(Reading::absent)
     }
 
     fn topics(&self) -> Vec<TopicRequest> {
@@ -256,11 +313,13 @@ impl Sensor for UsageMeter {
 pub struct UsageGraphType(Kind);
 
 pub static MEMORY_GRAPH: UsageGraphType = UsageGraphType(Kind::Memory);
+pub static SWAP_GRAPH: UsageGraphType = UsageGraphType(Kind::Swap);
 
 impl SensorType for UsageGraphType {
     fn id(&self) -> &'static str {
         match self.0 {
             Kind::Memory => "memory-graph",
+            Kind::Swap => "swap-graph",
         }
     }
 
@@ -271,18 +330,21 @@ impl SensorType for UsageGraphType {
     fn name(&self) -> &'static str {
         match self.0 {
             Kind::Memory => "sensor.memoryGraph.name",
+            Kind::Swap => "sensor.swapGraph.name",
         }
     }
 
     fn description(&self) -> &'static str {
         match self.0 {
             Kind::Memory => "sensor.memoryGraph.description",
+            Kind::Swap => "sensor.swapGraph.description",
         }
     }
 
     fn legacy_types(&self) -> &'static [&'static str] {
         match self.0 {
             Kind::Memory => &["DockMemGraph"],
+            Kind::Swap => &["DockSwapGraph"],
         }
     }
 
@@ -331,7 +393,7 @@ struct UsageGraph {
 impl UsageGraph {
     fn value(&self, numbers: Numbers) -> String {
         match (self.props.display, &self.reading) {
-            (Display::Bytes, Some(r)) => format::bytes(r.used, None, numbers),
+            (Display::Bytes, Some(r)) if !r.absent() => format::bytes(r.used, None, numbers),
             (_, reading) => load(reading.as_ref()),
         }
     }
@@ -355,8 +417,16 @@ impl Sensor for UsageGraph {
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
         let style = &self.props.style;
         let plot = graph::plot_rect(cx.rect, style.plot_width());
-        graph::draw_backdrop(canvas, plot, style.backdrop());
-        let columns = style.columns(cx.theme);
+        let mut backdrop = style.backdrop();
+        let mut columns = style.columns(cx.theme);
+        if let Some(how) = dimmed(self.reading.as_ref(), cx) {
+            backdrop.background = color::inactive(backdrop.background, how);
+            backdrop.grid = color::inactive(backdrop.grid, how);
+            if let Columns::Solid(c) = columns {
+                columns = Columns::Solid(color::inactive(c, how));
+            }
+        }
+        graph::draw_backdrop(canvas, plot, backdrop);
         graph::draw_columns(canvas, plot, &self.history, 100.0, columns, Growth::Up);
         if let Some(text) = &self.text {
             text.draw(canvas, cx);
@@ -374,6 +444,10 @@ impl Sensor for UsageGraph {
 
     fn accessible_value(&self, cx: &SensorCtx) -> String {
         self.value(cx.platform.locale(cx.settings.date_locale).numbers())
+    }
+
+    fn inactive(&self) -> bool {
+        self.reading.as_ref().is_some_and(Reading::absent)
     }
 
     fn topics(&self) -> Vec<TopicRequest> {
@@ -398,7 +472,7 @@ mod tests {
     use crate::config::model::Settings;
     use crate::platform::RectF;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::sampler::MemorySample;
+    use crate::sampler::{MemorySample, SwapSample};
     use crate::sensors::schema::resolve;
     use crate::sensors::test_support::{FakeClock, theme};
 
@@ -545,5 +619,61 @@ mod tests {
         );
         assert_eq!(meter.click(&h.ctx()), ClickResult::Handled);
         assert_eq!(h.clock.log(), ["open taskmgr.exe"]);
+    }
+
+    #[test]
+    fn swap_shares_the_view() {
+        let h = Harness::new();
+        let mut meter = create(&SWAP_METER, json!({}));
+        assert_eq!(meter.topics()[0].topic, Topic::Swap);
+        let swap = Sample::Swap(SwapSample {
+            total: 8 * GB,
+            used: 3 * GB / 5,
+            load: 7.5,
+        });
+        meter.on_sample(&Topic::Swap, &swap, &h.ctx());
+        assert!(!meter.inactive());
+        let (_, dump) = h.drawn(meter.as_mut());
+        assert!(dump.contains("text \"Swap\""), "{dump}");
+        assert!(dump.contains("text \"8%\""), "{dump}");
+        assert_eq!(
+            meter.hint(&h.ctx()),
+            Some(HintContent::Text(
+                "Total Virtual:\t8.00 GB\nAvailable Virtual:\t7.40 GB\nSwap Load:\t8%\n\
+                 Click to open Task Manager"
+                    .into()
+            ))
+        );
+        let mut graph = create(&SWAP_GRAPH, json!({}));
+        graph.on_sample(&Topic::Swap, &swap, &h.ctx());
+        let (_, dump) = h.drawn(graph.as_mut());
+        assert!(dump.contains("text \"614 MB\""), "{dump}");
+    }
+
+    #[test]
+    fn swap_without_a_page_file_is_inactive() {
+        let h = Harness::new();
+        let none = Sample::Swap(SwapSample::default());
+        let mut meter = create(&SWAP_METER, json!({}));
+        meter.on_sample(&Topic::Swap, &none, &h.ctx());
+        assert!(meter.inactive());
+        let (_, dump) = h.drawn(meter.as_mut());
+        let lines: Vec<&str> = dump.lines().collect();
+        // The bar at the inactive opacity (78 % of 31 %); the text as it is.
+        assert_eq!(lines[0], "fill rect 0,3 4×22 #FFFFFF/24%");
+        assert!(lines[2].starts_with("text \"n/a\""), "{dump}");
+        assert_eq!(
+            meter.hint(&h.ctx()),
+            Some(HintContent::Text("No page file configured".into()))
+        );
+        let mut graph = create(&SWAP_GRAPH, json!({ "bkOpacity": 100 }));
+        graph.on_sample(&Topic::Swap, &none, &h.ctx());
+        assert!(graph.inactive());
+        let (_, dump) = h.drawn(graph.as_mut());
+        assert!(
+            dump.starts_with("fill rect 0,2 50×24 #000000/78%"),
+            "{dump}"
+        );
+        assert!(dump.contains("text \"n/a\""), "{dump}");
     }
 }

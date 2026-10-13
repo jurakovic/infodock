@@ -11,7 +11,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use scheduler::Scheduler;
-pub use topics::{CpuSample, Delivery, MemorySample, Sample, Topic, TopicRequest, UptimeSample};
+pub use topics::{
+    CpuSample, Delivery, MemorySample, Sample, SwapSample, Topic, TopicRequest, UptimeSample,
+};
 
 use crate::providers::Providers;
 

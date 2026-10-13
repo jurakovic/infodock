@@ -123,6 +123,13 @@ pub trait CpuReader: Send {
     fn read(&mut self) -> Option<CpuReading>;
 }
 
+/// A page file's size and how much of it is in use, bytes (SPEC Appendix A, `swap`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PageFile {
+    pub allocated: u64,
+    pub used: u64,
+}
+
 /// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryStatus {
@@ -154,6 +161,11 @@ pub trait Platform: Send + Sync {
     }
     /// Physical memory now, for the `memory` topic; `None` where it cannot be read.
     fn memory(&self) -> Option<MemoryStatus> {
+        None
+    }
+    /// The page files now, for the `swap` topic: empty when there is none, `None` where they
+    /// cannot be read.
+    fn page_files(&self) -> Option<Vec<PageFile>> {
         None
     }
     /// The local wall-clock time; UTC where the platform does not know the time zone.
