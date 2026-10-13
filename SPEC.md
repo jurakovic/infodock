@@ -223,7 +223,7 @@ Controls bind two-way to the `SettingsState` global. Rust fills it from the conf
 ### 4.4 Data flow
 
 1. On start, Rust loads the config and starts the sampler thread and the bar thread. The bar thread creates the bar window and the tray icon and instantiates one sensor per layout entry through the registry.
-2. For each sensor, the bar thread asks its type for **topic requests** (`topics(props)`), e.g. `{ topic: "cpu", interval_ms: 1000 }`, and subscribes once per *(sensor, topic)*. The **scheduler** keeps the subscriber set per topic and samples at the **minimum** requested interval. Every sample goes to the bar thread's queue; slower subscribers simply use the newest sample.
+2. For each sensor, the bar thread asks its type for **topic requests** (`topics(props)`), e.g. `{ topic: "cpu", interval_ms: 1000 }`, and subscribes once per *(sensor, topic)*. The **scheduler** keeps the subscriber set per topic and samples at the **minimum** requested interval. Every sample goes to the bar thread's queue; slower subscribers simply use the newest sample: the bar hands a sample to a sensor only once the sensor's own interval has passed since the last one it took (a quarter of the interval early, at most 500 ms, still counts), so a 5 s graph keeps its time scale next to a 1 s meter on the same topic; a catch-up always reaches its sensor.
 3. Providers are **shared**: ten CPU sensors cost one CPU sample per tick.
 4. Event-driven topics (`volumes`, `battery`, `wifi`, `recycle-bin` after actions) push immediately when the OS notifies.
 5. Sensors that need no system data (Text, Image, Spacer, Date, Time) ask for a **wake-up time** instead (e.g. the next minute boundary). The bar thread keeps one timer for the earliest wake-up of all sensors.
@@ -597,7 +597,7 @@ All trait methods except the identity ones, `create`, `measure` and `draw` have 
 
 Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf? }`. `visibleIf` is declarative so Settings can evaluate it: `{ key, in: [values] }` (shown while another field has one of these values).
 
-Validation (`sensors/schema.rs`): each value is normalised for its field type: colours to upper-case `#RRGGBB`, numbers clamped to their range (`slider`, `interval`, `opacity`), drives to `X:\`. A value of the wrong type or shape is invalid: on load it is ignored (the field takes its default) and logged; `update_sensor` rejects it with error code `invalid`. An empty `text` with `emptyIsDefault` means the default.
+Validation (`sensors/schema.rs`): each value is normalised for its field type: colours to upper-case `#RRGGBB`, numbers clamped to their range (`slider`, `interval`, `opacity`), intervals rounded to whole seconds and sliders with whole steps to whole numbers (a hand-edited `2.5` would not load into an integer), drives to `X:\`. A value of the wrong type or shape is invalid: on load it is ignored (the field takes its default) and logged; `update_sensor` rejects it with error code `invalid`. An empty `text` with `emptyIsDefault` means the default.
 
 `default` is normally a static value. A **machine-derived** field (`machineDefault: true`) instead gets its default from `defaults(ctx)`, e.g. the first fixed drive or the locale's clock format. §11.2 defines how this affects what is stored.
 
@@ -623,7 +623,7 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 * Drawn at the window's scale (one logical column = `scale` physical px, snapped to whole pixels), fully redrawn per sample (cheap at ≤ 150 columns).
 
 **Dual graph** (`common/dual_graph.rs`) — CPU dual, Network:
-* The plot is split into two halves of (plotHeight − 1)/2 with a 1 px gap. The **top** series grows upward from the middle line. The **bottom** series grows **downward** from the middle (`flipBottom = true`, default) or upward from the bottom edge (`false`).
+* The plot is split into two halves of (plotHeight − 1)/2 with a 1 px gap; implementation: both halves are as tall in whole physical px, and the gap takes what is left (1 or 2 physical px; at 28 px, halves of 11 px and a 2 px gap; classic 25 px, 10 and 1). The **top** series grows upward from the middle line. The **bottom** series grows **downward** from the middle (`flipBottom = true`, default) or upward from the bottom edge (`false`).
 * Colour and opacity per series (`topColor`/`topOpacity`, `bottomColor`/`bottomOpacity`).
 * Values are normalised to 0..1 per series by the owning sensor.
 
@@ -658,6 +658,7 @@ Labels stay readable; only the icon/graphic dims. v1 uses it for: Disk (drive ab
 * **Rates** (`formatRate`): same scaling, units `TB/s … KB/s, B/s`.
 * **Durations**: compact `3d 04h 12m` (uptime; the leading unit unpadded and units above it left out: `4h 05m`, `12m`); long `3 days, 4 hours, 12 minutes` with plural rules, leaving out parts that are zero (`1 day`; under a minute `0 minutes`); battery `h:mm`.
 * Implementation (`platform/locale.rs`, `sensors/dates.rs`): `Platform::locale(dateLocale)` returns the locale as plain data (weekday and month names, the long, short and month-day date patterns in the Windows picture format, the hour cycle, am/pm, the first day of the week, the decimal separator), read with `GetLocaleInfoEx` (`ui` reads `en-US`, the only UI language in v1) and English (United States) elsewhere. Rust formats dates with those patterns and computes weekdays, days of the year and ISO weeks itself, so all of it is tested against fixed locales. Genitive month names (e.g. Russian `d MMMM`) are not used yet.
+* Implementation: the bar keeps the `Numbers` of `settings.dateLocale` and hands them to sensors as they measure (`LayoutCtx::numbers`), so text on the bar uses the locale's decimal separator as hints do; they are read again, and the clocks re-read the locale, when the setting or the OS regional format (`WM_SETTINGCHANGE` "intl") changes.
 * Implementation (`sensors/format.rs`): a value that would round to 1024 moves to the next unit (`1.00 MB`, not `1024 KB`), and the automatic digits are chosen after rounding (`10.0 KB`, not `10.00 KB`); units and words are catalog entries (`format.*`, plural forms through `i18n::t_count`).
 * **Percent**: integer, `37%` (locale-specific spacing allowed). Decimal separator from the locale.
 * **Dates**: weekday and month names, date patterns and the hour cycle from the platform `Locale` (Windows NLS: `GetLocaleInfoEx`, `GetDateFormatEx`, `GetTimeFormatEx`) for `settings.dateLocale`; ISO 8601 week numbers computed in Rust.
@@ -669,7 +670,7 @@ Labels stay readable; only the icon/graphic dims. v1 uses it for: Disk (drive ab
 Conventions:
 * Properties table: key · XML key (§11.4) · type · default · range/options.
 * Intervals are in seconds.
-* "Hint" is the hover popup text; `{braces}` mark data. "Click to …" lines are added per §6.1.
+* "Hint" is the hover popup text; `{braces}` mark data. "Click to …" lines are added per §6.1 where a hint shows one: the examples are complete, so Date, Time and the Disk Meter have none. Hints are built without Alt held, so with Lock and *Alt only* no hint has the line (`SensorCtx::clicks`).
 * Sizes refer to the modern 28 px bar; classic geometry is given where it matters.
 
 ### 9.1 `text` — Text  (General; XML `DockText`)
@@ -757,7 +758,7 @@ Topic `uptime`. Rust takes the boot time from `GetTickCount64()`; the UI counts 
 View: `{prefix} 3d 04h 12m`, updated at minute boundaries.
 Hint: `3 days, 4 hours, 12 minutes`; when a longer record exists, a second line `Longest uptime: 12 days, 1 hour, 3 minutes`. The record updates whenever the current uptime exceeds it.
 
-Implementation (`sensors/uptime.rs`): the sensor counts from its last sample and wakes at each whole minute of uptime. The record updates in memory at once but is stored only when it has grown by 10 minutes, so the config is not rewritten every minute: a sensor hands state to store through `Sensor::take_state`, which the bar passes on after samples and wake-ups (`BarHost::set_sensor_state` → the config's `state`, §11.2).
+Implementation (`sensors/uptime.rs`): the sensor counts from its last sample (which carries when it was read, since a catch-up can arrive up to a minute later) and wakes 20 ms after each whole minute of uptime, counted from the minute it shows, so a late timer still finds the wake-up due. The record updates in memory at once but is stored only when it has grown by 10 minutes, so the config is not rewritten every minute: a sensor hands state to store through `Sensor::take_state`, which the bar passes on after samples and wake-ups (`BarHost::set_sensor_state` → the config's `state`, §11.2).
 
 ### 9.7 `cpu-meter` — CPU Meter  (System; `DockCPUMeter`)
 

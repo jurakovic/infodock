@@ -78,8 +78,8 @@ impl Kind {
         }
     }
 
-    /// The hint (SPEC §9.10–9.11): total, available and load, and what a click does; for swap
-    /// without a page file, just that.
+    /// The hint (SPEC §9.10–9.11): total, available and load (the caller adds what a click
+    /// does); for swap without a page file, just that.
     fn hint(self, r: &Reading, numbers: Numbers) -> String {
         if self == Kind::Swap && r.absent() {
             return t("sensor.swap.hint.none");
@@ -103,12 +103,10 @@ impl Kind {
             percent(f64::from(r.load)),
         ];
         let lines = keys.into_iter().zip(values);
-        let mut text = String::new();
-        for (label, value) in lines {
-            text.push_str(&format!("{}\t{value}\n", t(label)));
-        }
-        text.push_str(&t("sensor.cpu.hint.click"));
-        text
+        let lines: Vec<String> = lines
+            .map(|(label, value)| format!("{}\t{value}", t(label)))
+            .collect();
+        lines.join("\n")
     }
 }
 
@@ -167,7 +165,15 @@ fn topics(kind: Kind, interval: u64) -> Vec<TopicRequest> {
 
 fn hint(kind: Kind, reading: Option<&Reading>, cx: &SensorCtx) -> Option<HintContent> {
     let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
-    Some(HintContent::Text(kind.hint(reading?, numbers)))
+    let reading = reading?;
+    let text = kind.hint(reading, numbers);
+    Some(HintContent::Text(
+        if kind == Kind::Swap && reading.absent() {
+            text
+        } else {
+            cx.with_click_line(text, "sensor.cpu.hint.click")
+        },
+    ))
 }
 
 /// The meter's value, and the graph's in percent mode: the load; `n/a` when absent, nothing
@@ -401,8 +407,7 @@ impl UsageGraph {
 
 impl Sensor for UsageGraph {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // Measuring has no locale; the decimal separator only changes the text, not its width.
-        let value = self.value(Numbers::default());
+        let value = self.value(cx.numbers);
         // The column fits `9999 MB` in bytes mode (SPEC §9.10).
         let reserve = match self.props.display {
             Display::Bytes => t_args("format.mb", &[("value", "9999")]),
@@ -527,6 +532,7 @@ mod tests {
                 theme: &self.theme,
                 text: &FixedMetrics,
                 scale: 1.0,
+                numbers: Default::default(),
             });
             let mut canvas = RecordingCanvas::new(1.0);
             let rect = RectF::new(0.0, 0.0, width, 28.0);
@@ -582,6 +588,33 @@ mod tests {
         let (width, dump) = h.drawn(graph.as_mut());
         assert_eq!(width, 75.0, "a column for 100%");
         assert!(dump.contains("text \"16%\""), "{dump}");
+    }
+
+    #[test]
+    fn bar_text_follows_the_locale() {
+        let h = Harness::new();
+        let mut graph = create(&MEMORY_GRAPH, json!({}));
+        graph.on_sample(&Topic::Memory, &memory(5 * GB + GB / 5, 16.3), &h.ctx());
+        graph.measure(&LayoutCtx {
+            theme: &h.theme,
+            text: &FixedMetrics,
+            scale: 1.0,
+            numbers: Numbers { decimal: ',' },
+        });
+        let mut canvas = RecordingCanvas::new(1.0);
+        let rect = RectF::new(0.0, 0.0, 90.0, 28.0);
+        graph.draw(
+            &mut canvas,
+            &DrawCtx {
+                theme: &h.theme,
+                rect,
+            },
+        );
+        assert!(
+            canvas.dump().contains("text \"5,20 GB\""),
+            "{}",
+            canvas.dump()
+        );
     }
 
     #[test]

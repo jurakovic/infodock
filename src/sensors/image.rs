@@ -219,6 +219,7 @@ mod tests {
             theme: &theme(),
             text: &FixedMetrics,
             scale: 1.5,
+            numbers: Default::default(),
         });
         assert_eq!(width, 28.0);
         assert_eq!(sensor.bitmap.as_ref().map(Bitmap::height), Some(41));

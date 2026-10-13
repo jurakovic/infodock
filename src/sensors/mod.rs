@@ -139,6 +139,8 @@ pub struct LayoutCtx<'a> {
     pub text: &'a dyn TextEngine,
     /// Physical px per logical px, e.g. for decoding images at their drawn size.
     pub scale: f32,
+    /// How the locale writes numbers (SPEC §8.6), kept by the bar.
+    pub numbers: format::Numbers,
 }
 
 /// What drawing may use (bar thread).
@@ -160,6 +162,24 @@ pub struct SensorCtx<'a> {
     /// Transitions animate (SPEC §5.5); otherwise they jump.
     pub animate: bool,
     pub platform: &'a dyn Platform,
+}
+
+impl SensorCtx<'_> {
+    /// Whether a click would reach the sensor now (SPEC §6.1): hints end with their
+    /// "Click to …" line only then. Hints are built without Alt held, so with Lock and
+    /// *Alt only* they have none.
+    pub fn clicks(&self) -> bool {
+        crate::bar::clicks_allowed(self.locked, self.settings.clicks_when_locked, self.alt)
+    }
+
+    /// `text` with the "Click to …" line `key` when a click would reach the sensor.
+    pub fn with_click_line(&self, mut text: String, key: MsgKey) -> String {
+        if self.clicks() {
+            text.push('\n');
+            text.push_str(&crate::i18n::t(key));
+        }
+        text
+    }
 }
 
 /// The content of a hover hint (SPEC §7.1).
@@ -414,6 +434,7 @@ pub(crate) mod test_support {
             theme: &theme(),
             text: &FixedMetrics,
             scale: 1.0,
+            numbers: Default::default(),
         })
     }
 

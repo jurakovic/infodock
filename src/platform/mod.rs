@@ -492,6 +492,8 @@ pub enum UiEvent {
     CloseRequested,
     /// The system time or time zone changed (`WM_TIMECHANGE`).
     TimeChanged,
+    /// The OS regional format changed (`WM_SETTINGCHANGE` "intl").
+    LocaleChanged,
     /// The system resumed from sleep or hibernation.
     Resumed,
     /// A second launch asked this instance to show itself (SPEC §6.5).

@@ -256,6 +256,9 @@ impl WindowState {
             WM_SETTINGCHANGE if is_appearance_change(wparam, lparam) => {
                 self.dispatch(UiEvent::AppearanceChanged);
             }
+            WM_SETTINGCHANGE if setting_area(lparam).as_deref() == Some("intl") => {
+                self.dispatch(UiEvent::LocaleChanged);
+            }
             WM_THEMECHANGED | WM_DWMCOLORIZATIONCOLORCHANGED => {
                 self.dispatch(UiEvent::AppearanceChanged);
             }
@@ -533,12 +536,17 @@ fn is_appearance_change(wparam: WPARAM, lparam: LPARAM) -> bool {
     if wparam.0 == SPI_SETCLIENTAREAANIMATION.0 as usize {
         return true;
     }
+    setting_area(lparam).as_deref() == Some("ImmersiveColorSet")
+}
+
+/// What a `WM_SETTINGCHANGE` is about, e.g. `ImmersiveColorSet` or `intl` (the regional
+/// format); `None` when it does not say.
+fn setting_area(lparam: LPARAM) -> Option<String> {
     if lparam.0 == 0 {
-        return false;
+        return None;
     }
     // SAFETY: for WM_SETTINGCHANGE a non-null lParam points to a NUL-terminated string.
-    let area = unsafe { PCWSTR(lparam.0 as *const u16).to_string() };
-    area.is_ok_and(|a| a == "ImmersiveColorSet")
+    unsafe { PCWSTR(lparam.0 as *const u16).to_string() }.ok()
 }
 
 unsafe extern "system" fn window_proc(

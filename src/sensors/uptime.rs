@@ -19,6 +19,8 @@ use crate::sampler::{Sample, Topic, TopicRequest};
 
 /// The `uptime` topic is read this often; the sensor counts on its own in between.
 const RESAMPLE: Duration = Duration::from_secs(60);
+/// Wake-ups come this long after a minute of uptime is complete, so it has surely passed.
+const PAST_BOUNDARY: Duration = Duration::from_millis(20);
 /// A new record is stored once it has grown this much, so the config is not rewritten every
 /// minute; at most this much of a record is lost if Infodock ends abruptly.
 const RECORD_STEP: u64 = 10 * 60;
@@ -94,6 +96,7 @@ impl SensorType for UptimeType {
         Ok(Box::new(Uptime {
             props: typed(props)?,
             reading: None,
+            shown: 0,
             longest,
             stored: longest,
             layout: None,
@@ -115,8 +118,10 @@ struct UptimeProps {
 
 struct Uptime {
     props: UptimeProps,
-    /// The last sample's uptime and when it arrived.
+    /// The last sample's uptime and when it was read.
     reading: Option<(u64, Instant)>,
+    /// The whole minutes of uptime shown.
+    shown: u64,
     /// The longest uptime seen, this one included.
     longest: u64,
     /// The record as stored in the config.
@@ -131,8 +136,10 @@ impl Uptime {
         Some(secs + at.saturating_duration_since(received).as_secs())
     }
 
-    fn text(&self, at: Instant) -> Option<String> {
-        let uptime = duration_compact(self.uptime(at)?);
+    /// The text for the shown minute; nothing before the first sample.
+    fn text(&self) -> Option<String> {
+        self.reading?;
+        let uptime = duration_compact(self.shown * 60);
         Some(if self.props.text.is_empty() {
             uptime
         } else {
@@ -140,17 +147,23 @@ impl Uptime {
         })
     }
 
-    /// Notes the uptime at `at` as a record if it is one.
-    fn note(&mut self, at: Instant) {
-        if let Some(uptime) = self.uptime(at) {
-            self.longest = self.longest.max(uptime);
-        }
+    /// Notes the uptime at `at` as a record if it is one, and shows its minute; returns
+    /// whether the minute shown changed.
+    fn note(&mut self, at: Instant) -> bool {
+        let Some(uptime) = self.uptime(at) else {
+            return false;
+        };
+        self.longest = self.longest.max(uptime);
+        let minute = uptime / 60;
+        let changed = minute != self.shown;
+        self.shown = minute;
+        changed
     }
 }
 
 impl Sensor for Uptime {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let Some(text) = self.text(Instant::now()) else {
+        let Some(text) = self.text() else {
             self.layout = None;
             return 0.0;
         };
@@ -216,24 +229,20 @@ impl Sensor for Uptime {
         let Sample::Uptime(sample) = sample else {
             return false;
         };
-        let now = Instant::now();
-        let before = self.text(now);
-        self.reading = Some((sample.uptime_secs, now));
-        self.note(now);
-        self.text(now) != before
+        let first = self.reading.is_none();
+        self.reading = Some((sample.uptime_secs, sample.read_at));
+        self.note(Instant::now()) || first
     }
 
-    /// At the next whole minute of uptime.
+    /// When the minute after the one shown is complete (in the past if that has happened).
     fn wake_at(&self, _now: Instant) -> Option<Instant> {
-        let (secs, received) = self.reading?;
-        let elapsed = received.elapsed().as_secs();
-        let next = 60 - (secs + elapsed) % 60;
-        Some(received + Duration::from_secs(elapsed + next))
+        let (secs, read_at) = self.reading?;
+        let next = (self.shown + 1) * 60;
+        Some(read_at + Duration::from_secs(next.saturating_sub(secs)) + PAST_BOUNDARY)
     }
 
     fn on_wake(&mut self, now: Instant, _cx: &SensorCtx) -> bool {
-        self.note(now);
-        true
+        self.note(now)
     }
 
     fn take_state(&mut self) -> Option<State> {
@@ -266,9 +275,14 @@ mod tests {
     }
 
     fn sample(secs: u64) -> Sample {
+        read(secs, Instant::now())
+    }
+
+    fn read(secs: u64, read_at: Instant) -> Sample {
         Sample::Uptime(UptimeSample {
             boot_unix_ms: 0,
             uptime_secs: secs,
+            read_at,
         })
     }
 
@@ -293,6 +307,7 @@ mod tests {
             theme: &theme,
             text: &FixedMetrics,
             scale: 1.0,
+            numbers: Default::default(),
         });
         let mut canvas = RecordingCanvas::new(1.0);
         let rect = RectF::new(0.0, 0.0, width, 28.0);
@@ -325,11 +340,33 @@ mod tests {
         assert!(dump.contains(" 700 12px "), "bold 12 px: {dump}");
         // The next whole minute of uptime is 30 s away.
         let woken = sensor.wake_at(Instant::now()).expect("a wake-up");
-        assert!(woken - Instant::now() <= Duration::from_secs(30));
+        assert!(woken - Instant::now() <= Duration::from_secs(30) + PAST_BOUNDARY);
 
         let mut bare = uptime(json!({ "text": "" }), json!({}));
         with_ctx(|cx| bare.on_sample(&Topic::Uptime, &sample(125), cx));
         assert!(drawn(bare.as_mut()).starts_with("text \"2m\""));
+    }
+
+    #[test]
+    fn wakes_at_each_minute_of_uptime() {
+        let mut sensor = uptime(json!({}), json!({}));
+        // Read 90 s ago at 12m 30s (a catch-up keeps its reading time): 14m now.
+        let read_at = Instant::now() - Duration::from_secs(90);
+        with_ctx(|cx| sensor.on_sample(&Topic::Uptime, &read(750, read_at), cx));
+        assert!(drawn(sensor.as_mut()).contains("\"Uptime: 14m\""));
+        // The 15th minute is complete 150 s after the reading.
+        let boundary = read_at + Duration::from_secs(900 - 750) + PAST_BOUNDARY;
+        assert_eq!(sensor.wake_at(Instant::now()), Some(boundary));
+        assert!(with_ctx(|cx| sensor.on_wake(boundary, cx)), "15m");
+        assert!(drawn(sensor.as_mut()).contains("\"Uptime: 15m\""));
+        // A late timer: the wake-up stays due, and the text catches up.
+        let next = boundary + Duration::from_secs(60);
+        assert_eq!(sensor.wake_at(boundary), Some(next));
+        let late = next + Duration::from_secs(100);
+        assert!(sensor.wake_at(late).is_some_and(|at| at <= late));
+        assert!(with_ctx(|cx| sensor.on_wake(late, cx)));
+        assert!(drawn(sensor.as_mut()).contains("\"Uptime: 17m\""));
+        assert!(!with_ctx(|cx| sensor.on_wake(late, cx)), "nothing new");
     }
 
     #[test]

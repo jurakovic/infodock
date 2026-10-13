@@ -13,6 +13,8 @@ pub mod theme;
 mod thread;
 mod tray;
 
+pub(crate) use interact::clicks_allowed;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};

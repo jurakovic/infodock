@@ -111,9 +111,9 @@ fn series_value(series: &str, sample: &CpuSample) -> f32 {
     }
 }
 
-/// The hint of every CPU sensor (SPEC §9.7): the processor count, the busy, user, system and
-/// idle shares with one decimal, and what a click does. User and system are clamped so that
-/// they add up to at most 100.
+/// The hint of every CPU sensor (SPEC §9.7): the processor count and the busy, user, system
+/// and idle shares with one decimal (the caller adds what a click does). User and system are
+/// clamped so that they add up to at most 100.
 pub fn hint(sample: &CpuSample, numbers: Numbers) -> String {
     let share = |value: f32| percent_digits(f64::from(value), 1, numbers);
     let user = sample.user.clamp(0.0, 100.0);
@@ -128,8 +128,6 @@ pub fn hint(sample: &CpuSample, numbers: Numbers) -> String {
     for (label, value) in lines {
         text.push_str(&format!("\n   {}\t{}", t(label), share(value)));
     }
-    text.push('\n');
-    text.push_str(&t("sensor.cpu.hint.click"));
     text
 }
 
@@ -149,7 +147,10 @@ fn cpu(sample: &Sample) -> Option<&CpuSample> {
 
 fn shared_hint(sample: Option<&CpuSample>, cx: &SensorCtx) -> Option<HintContent> {
     let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
-    Some(HintContent::Text(hint(sample?, numbers)))
+    let text = hint(sample?, numbers);
+    Some(HintContent::Text(
+        cx.with_click_line(text, "sensor.cpu.hint.click"),
+    ))
 }
 
 fn value(sample: Option<&CpuSample>) -> String {
@@ -544,7 +545,7 @@ mod tests {
                 id: "s_cpu",
                 settings: &self.settings,
                 theme: &self.theme,
-                locked: false,
+                locked: self.settings.locked,
                 alt: false,
                 animate: true,
                 platform: &self.clock,
@@ -556,6 +557,7 @@ mod tests {
                 theme: &self.theme,
                 text: &FixedMetrics,
                 scale: 1.0,
+                numbers: Default::default(),
             });
             let mut canvas = RecordingCanvas::new(1.0);
             let rect = RectF::new(0.0, 0.0, width, 28.0);
@@ -637,10 +639,10 @@ mod tests {
         let (width, dump) = h.drawn(dual.as_mut());
         assert_eq!(width, 75.0);
         let lines: Vec<&str> = dump.lines().collect();
-        // Halves of 11.5 px (2..13.5 and 14.5..26, snapped to whole px): core0 at 100 % fills
-        // the top one up from the middle; core7 does not exist here, so the bottom shows the
-        // total (30 %, 3.45 px) down from the middle.
-        assert_eq!(lines[0], "fill rect 49,2 1×12 #20B7FF/86%");
+        // Halves of 11 px (2..13 and 15..26): core0 at 100 % fills the top one up from the
+        // middle; core7 does not exist here, so the bottom shows the total (30 %, 3.3 px) down
+        // from the middle.
+        assert_eq!(lines[0], "fill rect 49,2 1×11 #20B7FF/86%");
         assert_eq!(lines[1], "fill rect 49,15 1×3 #FFAD5B/86%");
         assert!(lines[2].starts_with("text \"CPUs\""), "{dump}");
         let user = CpuSample {
@@ -682,5 +684,13 @@ mod tests {
         let text = hint(&one, Numbers::default());
         assert!(text.starts_with("1 CPU uses"), "{text}");
         assert!(text.contains("by system:\t20.0%"), "clamped: {text}");
+        // Locked with clicks only while Alt is held: no click line (SPEC §6.1).
+        let mut h = h;
+        h.settings.locked = true;
+        h.settings.clicks_when_locked = crate::config::model::ClicksWhenLocked::AltOnly;
+        let Some(HintContent::Text(locked)) = meter.hint(&h.ctx()) else {
+            panic!("a hint");
+        };
+        assert!(locked.ends_with("idle:\t63.0%"), "{locked}");
     }
 }

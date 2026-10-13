@@ -13,9 +13,12 @@ pub struct Series<'a> {
     pub columns: Columns,
 }
 
-/// The two halves of `plot`, each (height − 1) / 2 tall with 1 px between them.
-pub fn halves(plot: RectF) -> (RectF, RectF) {
-    let half = (plot.height() - 1.0) / 2.0;
+/// The two halves of `plot` at `scale`: equally tall in whole physical px, with at least one
+/// physical px between them (two when the plot's height is even).
+pub fn halves(plot: RectF, scale: f32) -> (RectF, RectF) {
+    let scale = scale.max(f32::EPSILON);
+    let height = (plot.height() * scale).round();
+    let half = ((height - 1.0) / 2.0).floor().max(0.0) / scale;
     (
         RectF::new(plot.left, plot.top, plot.right, plot.top + half),
         RectF::new(plot.left, plot.bottom - half, plot.right, plot.bottom),
@@ -24,7 +27,7 @@ pub fn halves(plot: RectF) -> (RectF, RectF) {
 
 /// Draws both series in `plot` (over a backdrop the caller drew).
 pub fn draw(canvas: &mut dyn Canvas, plot: RectF, top: &Series, bottom: &Series, flip: bool) {
-    let (upper, lower) = halves(plot);
+    let (upper, lower) = halves(plot, canvas.scale());
     graph::draw_columns(canvas, upper, top.history, top.max, top.columns, Growth::Up);
     let growth = if flip { Growth::Down } else { Growth::Up };
     graph::draw_columns(
@@ -51,11 +54,19 @@ mod tests {
 
     #[test]
     fn halves_with_a_gap() {
-        // A 28 px bar: the plot is 24 px, so two halves of 11.5 px around a 1 px gap.
+        // A 28 px bar: the plot is 24 px, so two halves of 11 px around a 2 px gap.
         let plot = RectF::new(0.0, 2.0, 50.0, 26.0);
-        let (upper, lower) = halves(plot);
-        assert_eq!(upper, RectF::new(0.0, 2.0, 50.0, 13.5));
-        assert_eq!(lower, RectF::new(0.0, 14.5, 50.0, 26.0));
+        let (upper, lower) = halves(plot, 1.0);
+        assert_eq!(upper, RectF::new(0.0, 2.0, 50.0, 13.0));
+        assert_eq!(lower, RectF::new(0.0, 15.0, 50.0, 26.0));
+        // At 150 % the plot is 36 physical px: halves of 17 and a 2 px gap.
+        let (upper, lower) = halves(plot, 1.5);
+        assert_eq!(upper.height() * 1.5, 17.0);
+        assert_eq!(lower.top, 26.0 - 17.0 / 1.5);
+        // A classic 25 px bar: 21 px, halves of 10 around 1 px.
+        let classic = RectF::new(0.0, 2.0, 50.0, 23.0);
+        let (upper, lower) = halves(classic, 1.0);
+        assert_eq!((upper.bottom, lower.top), (12.0, 13.0));
     }
 
     #[test]

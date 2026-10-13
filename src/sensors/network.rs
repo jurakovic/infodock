@@ -219,8 +219,7 @@ impl NetworkGraph {
 
 impl Sensor for NetworkGraph {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // Measuring has no locale; the decimal separator only changes the text, not its width.
-        let (rx, tx) = self.rates(Numbers::default());
+        let (rx, tx) = self.rates(cx.numbers);
         // The column fits `1023 MB/s` (SPEC §9.13).
         let reserve = t_args("format.rate.mb", &[("value", "1023")]);
         let text = GraphText::new(cx.text, cx.theme, &rx, &tx, &reserve);
@@ -286,9 +285,9 @@ impl Sensor for NetworkGraph {
         ] {
             text.push_str(&format!("\n   {}\t{value}", t(label)));
         }
-        text.push('\n');
-        text.push_str(&t("sensor.network.hint.click"));
-        Some(HintContent::Text(text))
+        Some(HintContent::Text(
+            cx.with_click_line(text, "sensor.network.hint.click"),
+        ))
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
@@ -395,6 +394,7 @@ mod tests {
                 theme: &self.theme,
                 text: &FixedMetrics,
                 scale: 1.0,
+                numbers: Default::default(),
             });
             let mut canvas = RecordingCanvas::new(1.0);
             let rect = RectF::new(0.0, 0.0, width, 28.0);
@@ -420,10 +420,10 @@ mod tests {
         // A 50 px plot, the gap and a column for "1023 MB/s" (9 characters).
         assert_eq!(width, 50.0 + 5.0 + 45.0);
         let lines: Vec<&str> = dump.lines().collect();
-        // Halves of 11.5 px. Receive is scaled to its 2 MB/s peak, so the newest 1 MB/s is
-        // half of the upper half; send to 200 KB/s, so the newest fills the lower half.
-        assert_eq!(lines[0], "fill rect 49,8 1×6 #20B7FF/86%");
-        assert_eq!(lines[1], "fill rect 48,2 1×12 #20B7FF/86%");
+        // Halves of 11 px. Receive is scaled to its 2 MB/s peak, so the newest 1 MB/s is half
+        // of the upper half; send to 200 KB/s, so the newest fills the lower half.
+        assert_eq!(lines[0], "fill rect 49,8 1×5 #20B7FF/86%");
+        assert_eq!(lines[1], "fill rect 48,2 1×11 #20B7FF/86%");
         assert_eq!(lines[2], "fill rect 49,15 1×11 #FFAD5B/86%");
         assert!(lines[4].starts_with("text \"1.00 MB/s\""), "{dump}");
         assert!(lines[5].starts_with("text \"200 KB/s\""), "{dump}");

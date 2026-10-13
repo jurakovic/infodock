@@ -1,7 +1,7 @@
 //! Topic ids and sample payloads (SPEC §4.4, Appendix A).
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -106,6 +106,8 @@ pub struct NetSample {
 pub struct UptimeSample {
     pub boot_unix_ms: i64,
     pub uptime_secs: u64,
+    /// When it was read: a subscriber may get it later, as a catch-up (SPEC §4.4).
+    pub read_at: Instant,
 }
 
 /// A sample on its way to the bar thread.

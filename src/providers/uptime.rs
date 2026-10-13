@@ -1,11 +1,11 @@
 //! `uptime` (Appendix A): the time since the system started, from `GetTickCount64`.
 
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::sampler::UptimeSample;
 
-/// The sample for `uptime` read at `now`.
-pub fn sample(uptime: Duration, now: SystemTime) -> UptimeSample {
+/// The sample for `uptime` read at `now` (`read_at` on the monotonic clock).
+pub fn sample(uptime: Duration, now: SystemTime, read_at: Instant) -> UptimeSample {
     let boot = now.checked_sub(uptime).unwrap_or(SystemTime::UNIX_EPOCH);
     let boot_unix_ms = boot
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -13,6 +13,7 @@ pub fn sample(uptime: Duration, now: SystemTime) -> UptimeSample {
     UptimeSample {
         boot_unix_ms,
         uptime_secs: uptime.as_secs(),
+        read_at,
     }
 }
 
@@ -24,11 +25,13 @@ mod tests {
     fn boot_time_is_now_minus_uptime() {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
         let uptime = Duration::from_millis(3 * 86_400_000 + 4_500);
+        let read_at = Instant::now();
         assert_eq!(
-            sample(uptime, now),
+            sample(uptime, now, read_at),
             UptimeSample {
                 boot_unix_ms: 1_800_000_000_000 - 3 * 86_400_000 - 4_500,
                 uptime_secs: 3 * 86_400 + 4,
+                read_at,
             }
         );
     }

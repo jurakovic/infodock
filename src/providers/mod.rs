@@ -69,6 +69,7 @@ impl Providers {
             Topic::Uptime => Some(Sample::Uptime(uptime::sample(
                 self.platform.uptime(),
                 SystemTime::now(),
+                Instant::now(),
             ))),
             Topic::Cpu => {
                 let platform = &self.platform;

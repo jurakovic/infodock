@@ -108,6 +108,7 @@ mod tests {
             theme: &theme,
             text: &FixedMetrics,
             scale: 1.0,
+            numbers: Default::default(),
         });
         // 9 characters × 5 px + 2 × 4 px.
         assert_eq!(width, 53.0);

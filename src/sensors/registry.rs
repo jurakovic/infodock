@@ -226,6 +226,7 @@ mod tests {
             theme: &theme,
             text: &FixedMetrics,
             scale: 1.0,
+            numbers: Default::default(),
         });
         let mut canvas = RecordingCanvas::new(1.0);
         sensor.draw(

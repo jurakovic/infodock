@@ -148,8 +148,9 @@ pub fn hours_minutes(seconds: u64) -> String {
 
 /// A whole percentage: `37%`.
 pub fn percent(value: f64) -> String {
+    // `+ 0.0` turns -0 into 0, which would print as `-0`.
     let value = if value.is_finite() {
-        value.round()
+        value.round() + 0.0
     } else {
         0.0
     };
@@ -230,6 +231,7 @@ mod tests {
         assert_eq!(percent(37.4), "37%");
         assert_eq!(percent(99.5), "100%");
         assert_eq!(percent(f64::NAN), "0%");
+        assert_eq!(percent(-0.3), "0%", "not -0%");
         assert_eq!(percent_digits(37.04, 1, Numbers::default()), "37.0%");
         assert_eq!(percent_digits(37.04, 1, Numbers { decimal: ',' }), "37,0%");
     }

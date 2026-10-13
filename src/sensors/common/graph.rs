@@ -184,7 +184,7 @@ pub fn plot_rect(rect: RectF, width: f32) -> RectF {
 
 /// One physical px, in logical px.
 fn hairline(canvas: &dyn Canvas) -> f32 {
-    canvas.snap(1.0).max(1.0 / canvas.scale())
+    1.0 / canvas.scale().max(f32::EPSILON)
 }
 
 /// The background, then a grid of 5 px cells: vertical lines counted from the left, horizontal

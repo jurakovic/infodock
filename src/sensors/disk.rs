@@ -212,8 +212,7 @@ impl DiskMeter {
 
 impl Sensor for DiskMeter {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // Measuring has no locale; the decimal separator only changes the text, not its width.
-        let value = self.value(Numbers::default());
+        let value = self.value(cx.numbers);
         // In the byte modes the value sits under the label (SPEC §9.12).
         let meter = Meter::new(cx.text, cx.theme, &self.label(), &value, !self.bytes_mode());
         let width = meter.width();
@@ -357,6 +356,7 @@ mod tests {
                 theme: &self.theme,
                 text: &FixedMetrics,
                 scale: 1.0,
+                numbers: Default::default(),
             });
             let mut canvas = RecordingCanvas::new(1.0);
             let rect = RectF::new(0.0, 0.0, width, 28.0);

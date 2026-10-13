@@ -30,6 +30,7 @@ use crate::platform::{
     PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent,
 };
 use crate::sampler::{Delivery, TopicRequest};
+use crate::sensors::format::Numbers;
 use crate::sensors::ops::index_after_removal;
 use crate::sensors::registry::registry;
 use crate::sensors::{ClickResult, LayoutCtx, State};
@@ -87,6 +88,9 @@ pub(super) struct BarLogic {
     subscribed: HashMap<String, Vec<TopicRequest>>,
     /// Transitions animate (the setting, or the OS for `auto`; SPEC §5.5).
     animate: bool,
+    /// How the locale of `settings.dateLocale` writes numbers (SPEC §8.6), read once and again
+    /// when the setting or the OS regional format changes.
+    numbers: Numbers,
     /// The pointer is over the bar.
     inside: bool,
     /// The sensor under the pointer, told when the pointer enters and leaves it.
@@ -147,6 +151,7 @@ impl BarLogic {
     ) -> Self {
         let appearance = platform.appearance();
         let animate = anim::enabled(config.settings.bar.animations, appearance.animations);
+        let numbers = platform.locale(config.settings.date_locale).numbers();
         Self {
             theme: Theme::resolve(&config.settings, appearance),
             settings: config.settings,
@@ -165,6 +170,7 @@ impl BarLogic {
             tray_shown: None,
             subscribed: HashMap::new(),
             animate,
+            numbers,
             inside: false,
             hovered: None,
             highlight: Fade::at(0.0, Instant::now()),
@@ -446,7 +452,11 @@ impl BarLogic {
             }
         }
         let layout_changed = config.layout != self.layout || config.state != self.state;
+        let locale_changed = config.settings.date_locale != self.settings.date_locale;
         self.settings = config.settings;
+        if locale_changed {
+            self.locale_changed(window);
+        }
         self.layout = config.layout;
         self.state = config.state;
         layout_changed
@@ -749,11 +759,19 @@ impl BarLogic {
             alt: false,
             animate: self.animate,
         };
-        if self.sensors.deliver(delivery, &env) {
+        if self.sensors.deliver(delivery, &env, Instant::now()) {
             window.invalidate();
             self.refresh_hint(window);
         }
         self.store_states();
+    }
+
+    /// The locale for dates and numbers may have changed (the setting, or the OS regional
+    /// format): numbers are read again, and clocks re-read the locale as on a clock change.
+    fn locale_changed(&mut self, window: &dyn BarWindow) {
+        self.numbers = self.platform.locale(self.settings.date_locale).numbers();
+        window.invalidate();
+        self.clock_changed(window);
     }
 
     /// The wall clock jumped: clocks read it again and move their wake-ups.
@@ -903,6 +921,7 @@ impl BarHandler for BarLogic {
             UiEvent::Fullscreen(false) => {}
             UiEvent::CloseRequested => self.host.quit(),
             UiEvent::TimeChanged => self.clock_changed(window),
+            UiEvent::LocaleChanged => self.locale_changed(window),
             UiEvent::Resumed => {
                 self.host.resumed();
                 self.clock_changed(window);
@@ -918,6 +937,7 @@ impl BarHandler for BarLogic {
             theme: &self.theme,
             text: self.text.as_ref(),
             scale: canvas.scale(),
+            numbers: self.numbers,
         };
         self.sensors.update_layout(&cx, size.width);
         let now = Instant::now();
@@ -1324,6 +1344,7 @@ mod tests {
         let sample = Sample::Uptime(UptimeSample {
             boot_unix_ms: 0,
             uptime_secs: 700,
+            read_at: Instant::now(),
         });
         logic.deliver(
             &window,

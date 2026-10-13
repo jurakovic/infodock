@@ -3,24 +3,30 @@
 //! reports a change is re-measured, and the zones are placed again only if a width changed.
 
 use std::collections::{BTreeMap, HashMap};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::platform::{Canvas, Capabilities, Platform, RectF, TextEngine};
-use crate::sampler::{Delivery, TopicRequest};
+use crate::sampler::{Delivery, Topic, TopicRequest};
+use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
 use crate::sensors::{ClickResult, DrawCtx, HintContent, LayoutCtx, Sensor, SensorCtx, State};
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
 const PRESSED_OPACITY: f32 = 0.6;
+/// A broadcast sample this much before a sensor's interval is over still counts as on time,
+/// at most (samples come on a grid, give or take a few ms).
+const EARLY: Duration = Duration::from_millis(500);
 
 struct Placed {
     entry: SensorInstance,
     sensor: Box<dyn Sensor>,
     /// What it subscribes to, asked once when it is created (SPEC §4.4).
     topics: Vec<TopicRequest>,
+    /// When it last took a sample of each topic.
+    taken: Vec<(Topic, Instant)>,
     /// Logical px, from the last measurement.
     width: f32,
     /// Logical px from the bar's left edge.
@@ -74,9 +80,10 @@ pub(super) struct BarSensors {
     relayout: bool,
     /// Ids of the sensors created since [`Self::take_created`] was last called.
     created: Vec<String>,
-    /// The bar width, scale and the theme's padding and gap of the last layout.
+    /// The bar width, scale, numbers and the theme's padding and gap of the last layout.
     bar_width: f32,
     scale: f32,
+    numbers: Numbers,
     spacing: (f32, f32),
 }
 
@@ -112,6 +119,7 @@ impl BarSensors {
                         Placed {
                             entry: entry.clone(),
                             topics: sensor.topics(),
+                            taken: Vec::new(),
                             sensor,
                             width: 0.0,
                             x: 0.0,
@@ -153,10 +161,12 @@ impl BarSensors {
     /// Measures the sensors that need it and places the zones if a width, the bar width, the
     /// scale or the spacing (Sensor spacing, SPEC §10.4) changed.
     pub fn update_layout(&mut self, cx: &LayoutCtx, bar_width: f32) {
-        if cx.scale != self.scale {
-            // Images are decoded at their physical size.
+        if cx.scale != self.scale || cx.numbers != self.numbers {
+            // Images are decoded at their physical size; numbers are written as the locale
+            // writes them.
             self.invalidate_all();
             self.scale = cx.scale;
+            self.numbers = cx.numbers;
         }
         let mut resized = false;
         for p in self.all_mut().filter(|p| p.dirty) {
@@ -191,6 +201,7 @@ impl BarSensors {
                 theme,
                 text,
                 scale: self.scale,
+                numbers: self.numbers,
             };
             self.update_layout(&cx, self.bar_width);
         }
@@ -348,17 +359,34 @@ impl BarSensors {
             .collect()
     }
 
-    /// Hands a sample to the sensors it is for; returns whether any changed what it shows.
-    pub fn deliver(&mut self, delivery: &Delivery, env: &Env) -> bool {
+    /// Hands a sample that arrived `now` to the sensors it is for; returns whether any
+    /// changed what it shows. A topic is sampled at the shortest interval any subscriber asked
+    /// for, so a broadcast reaches a sensor only once its own interval has passed since the
+    /// last sample it took (a graph keeps its time scale); a catch-up always does (SPEC §4.4).
+    pub fn deliver(&mut self, delivery: &Delivery, env: &Env, now: Instant) -> bool {
         let mut changed = false;
         for p in self.all_mut() {
             let addressed = delivery.to.as_ref().is_none_or(|to| *to == p.entry.id);
-            if addressed && p.topics.iter().any(|r| r.topic == delivery.topic) {
-                let cx = env.ctx(&p.entry.id);
-                let dirty = p.sensor.on_sample(&delivery.topic, &delivery.sample, &cx);
-                p.dirty |= dirty;
-                changed |= dirty;
+            let Some(request) = p.topics.iter().find(|r| r.topic == delivery.topic) else {
+                continue;
+            };
+            let last = p.taken.iter_mut().find(|(t, _)| *t == delivery.topic);
+            let early = request.interval.mul_f32(0.25).min(EARLY);
+            let on_time = delivery.to.is_some()
+                || last.as_ref().is_none_or(|(_, at)| {
+                    now.saturating_duration_since(*at) + early >= request.interval
+                });
+            if !addressed || !on_time {
+                continue;
             }
+            match last {
+                Some((_, at)) => *at = now,
+                None => p.taken.push((delivery.topic.clone(), now)),
+            }
+            let cx = env.ctx(&p.entry.id);
+            let dirty = p.sensor.on_sample(&delivery.topic, &delivery.sample, &cx);
+            p.dirty |= dirty;
+            changed |= dirty;
         }
         changed
     }
@@ -402,6 +430,7 @@ mod tests {
             theme,
             text: &FixedMetrics,
             scale,
+            numbers: Default::default(),
         }
     }
 
@@ -537,6 +566,7 @@ mod tests {
                     wakes: Rc::new(Cell::new(0)),
                 }),
                 topics: Vec::new(),
+                taken: Vec::new(),
                 width: 0.0,
                 x: 0.0,
                 dirty: false,
@@ -573,6 +603,7 @@ mod tests {
                 wakes: Rc::clone(&wakes),
             }),
             topics: Vec::new(),
+            taken: Vec::new(),
             width: 0.0,
             x: 0.0,
             dirty: true,
@@ -644,6 +675,7 @@ mod tests {
             sensors.zones[0].push(Placed {
                 entry: entry(id, "uptime", json!({})),
                 topics: sensor.topics(),
+                taken: Vec::new(),
                 sensor,
                 width: 0.0,
                 x: 0.0,
@@ -657,6 +689,7 @@ mod tests {
                 wakes: Rc::new(Cell::new(0)),
             }),
             topics: Vec::new(),
+            taken: Vec::new(),
             width: 0.0,
             x: 0.0,
             dirty: true,
@@ -671,20 +704,32 @@ mod tests {
             sample: std::sync::Arc::new(Sample::Uptime(crate::sampler::UptimeSample {
                 boot_unix_ms: 0,
                 uptime_secs: secs,
+                read_at: Instant::now(),
             })),
             to: to.map(str::to_owned),
         };
         // A catch-up reaches only its subscriber.
-        assert!(sensors.deliver(&delivery(120, Some("u2")), &env));
+        let t0 = Instant::now();
+        let minute = Duration::from_secs(60);
+        assert!(sensors.deliver(&delivery(120, Some("u2")), &env, t0));
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         let widths: Vec<f32> = sensors.places().iter().map(|p| p.2).collect();
         assert_eq!(widths, [10.0, 12.0, 10.0]);
         // Every subscriber gets a broadcast; one whose minute is unchanged stays clean.
-        assert!(sensors.deliver(&delivery(150, None), &env));
-        assert!(!sensors.deliver(&delivery(170, None), &env));
+        assert!(sensors.deliver(&delivery(150, None), &env, t0 + minute));
+        assert!(!sensors.deliver(&delivery(170, None), &env, t0 + 2 * minute));
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         let widths: Vec<f32> = sensors.places().iter().map(|p| p.2).collect();
         assert_eq!(widths, [12.0, 12.0, 10.0]);
+        // Samples sooner than a sensor's own interval pass it by (the topic may be read
+        // faster for another sensor); one a little early is on time.
+        let soon = t0 + 2 * minute + Duration::from_secs(30);
+        assert!(
+            !sensors.deliver(&delivery(300, None), &env, soon),
+            "not taken"
+        );
+        let nearly = t0 + 3 * minute - Duration::from_millis(400);
+        assert!(sensors.deliver(&delivery(300, None), &env, nearly));
     }
 
     #[test]

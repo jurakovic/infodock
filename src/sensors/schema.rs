@@ -204,8 +204,16 @@ pub fn check(field: &PropField, value: &Value) -> Option<Value> {
             .iter()
             .map(|o| o.value.to_value())
             .find(|v| v == value),
-        FieldKind::Slider { min, max, .. } | FieldKind::Interval { min, max } => {
+        // Whole seconds, and whole numbers for sliders with whole steps: the typed props
+        // read them as integers (a hand-edited 2.5 would not load).
+        FieldKind::Interval { min, max } => number_in(value, min, max)
+            .and_then(|v| v.as_f64())
+            .map(|n| number(n.round())),
+        FieldKind::Slider { min, max, step, .. } => {
+            let whole = step.fract() == 0.0;
             number_in(value, min, max)
+                .and_then(|v| v.as_f64())
+                .map(|n| number(if whole { n.round() } else { n }))
         }
         FieldKind::Color => value
             .as_str()
@@ -479,7 +487,29 @@ mod tests {
             max: 60.0,
         });
         assert_eq!(check(&interval, &json!(0.5)), Some(json!(1)));
-        assert_eq!(check(&interval, &json!(2.5)), Some(json!(2.5)));
+        assert_eq!(
+            check(&interval, &json!(2.5)),
+            Some(json!(3)),
+            "whole seconds"
+        );
+        let width = f(FieldKind::Slider {
+            min: 50.0,
+            max: 150.0,
+            step: 5.0,
+            unit: None,
+        });
+        assert_eq!(
+            check(&width, &json!(57.4)),
+            Some(json!(57)),
+            "whole numbers"
+        );
+        let fine = f(FieldKind::Slider {
+            min: 0.0,
+            max: 1.0,
+            step: 0.1,
+            unit: None,
+        });
+        assert_eq!(check(&fine, &json!(0.25)), Some(json!(0.25)));
         assert_eq!(check(&interval, &json!("2")), None);
         let adapter = f(FieldKind::NetAdapter);
         assert_eq!(check(&adapter, &Value::Null), Some(Value::Null));

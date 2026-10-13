@@ -448,6 +448,7 @@ mod tests {
                 Topic::Uptime => Sample::Uptime(UptimeSample {
                     boot_unix_ms: 0,
                     uptime_secs: 3 * 86_400 + 4 * 3600 + 12 * 60,
+                    read_at: std::time::Instant::now(),
                 }),
             }
         }
@@ -459,14 +460,17 @@ mod tests {
                     topics.push(request.topic);
                 }
             }
+            // One sample a second, as the sampler would read them.
+            let start = std::time::Instant::now();
             for i in 0..150 {
+                let now = start + std::time::Duration::from_secs(i as u64);
                 for topic in &topics {
                     let delivery = Delivery {
                         topic: topic.clone(),
                         sample: Arc::new(sample(topic, i)),
                         to: None,
                     };
-                    sensors.deliver(&delivery, env);
+                    sensors.deliver(&delivery, env, now);
                 }
             }
         }
@@ -672,6 +676,7 @@ mod tests {
                     theme: &theme,
                     text: text.as_ref(),
                     scale,
+                    numbers: platform.locale(settings.date_locale).numbers(),
                 };
                 sensors.update_layout(&cx, size.width);
                 let width = (size.width * scale).round() as u32;
