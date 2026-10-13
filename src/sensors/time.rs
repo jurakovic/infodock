@@ -332,74 +332,14 @@ pub(crate) fn chime() -> &'static [u8] {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use serde_json::json;
 
     use super::*;
     use crate::config::model::Settings;
+    use crate::platform::RectF;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::platform::{Capabilities, Locale, MonitorInfo, OsAppearance, Platform, RectF};
-    use crate::sensors::dates::Date;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::theme;
-
-    /// A platform with a settable clock that records what it is asked to play and open.
-    #[derive(Default)]
-    struct FakeClock {
-        time: Mutex<Option<LocalTime>>,
-        log: Mutex<Vec<String>>,
-    }
-
-    impl FakeClock {
-        fn set(&self, hour: u8, minute: u8, second: u8) {
-            let date = Date::new(2026, 10, 13).expect("a date");
-            *self.time.lock().expect("lock") = Some(LocalTime {
-                date,
-                hour,
-                minute,
-                second,
-                millis: 0,
-            });
-        }
-
-        fn log(&self) -> Vec<String> {
-            self.log.lock().expect("lock").clone()
-        }
-    }
-
-    impl Platform for FakeClock {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> Duration {
-            Duration::ZERO
-        }
-        fn local_time(&self) -> LocalTime {
-            self.time.lock().expect("lock").expect("set first")
-        }
-        fn locale(&self, _which: DateLocale) -> Locale {
-            Locale::en_us()
-        }
-        fn play_sound(&self, wav: &'static [u8]) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("play {}", wav.len()));
-        }
-        fn open(&self, target: &str) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("open {target}"));
-        }
-    }
+    use crate::sensors::test_support::{FakeClock, theme};
 
     fn time(stored: serde_json::Value) -> Box<dyn Sensor> {
         let stored = stored.as_object().cloned().unwrap_or_default();

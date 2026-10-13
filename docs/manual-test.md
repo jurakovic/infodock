@@ -188,3 +188,11 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] Hover: the hint shows today's long date in the regional format. Click: Settings ▸ Time & language ▸ Date & time opens.
 - [ ] *Chime* → *Every 15 minutes*: a soft two-tone chime plays at :00, :15, :30 and :45, not at other minutes, and not right after starting Infodock or waking the computer.
 - [ ] Change the time zone or the system time: the clock follows at once. Sleep and wake the computer: the clock is right at once.
+
+**Date** (since M2 S7)
+
+- [ ] The first-run *date* placeholder is now the date: the day large (`Tuesday, 13`) with the year above the month (`2026` / `october`) to its right.
+- [ ] Properties: each weekday, month and year choice changes the view as described (e.g. *Year* → *None* gives one line in the regional order, such as `Tuesday, October 13`); with a German regional format the names are German.
+- [ ] Hover: a month calendar from Monday (or Sunday, per *Calendar*), weekends in the strong popup colour, today highlighted, and `Week …, Day …` below; with *Calendar* → *None*, only that line.
+- [ ] Click: the date and time settings open; with *Settings ▸ Applications ▸ Calendar* set (when that page exists), that app.
+- [ ] Just after midnight (or after changing the date), the date shows the new day.

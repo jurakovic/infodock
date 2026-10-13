@@ -479,7 +479,7 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 * Trigger: the pointer enters a sensor, `popupsEnabled` is true, no drag is in progress, and the sensor returns a non-empty hint.
 * **Show delay** 600 ms (`popups.showDelayMs`); **hide delay** 100 ms after the pointer leaves (`popups.hideDelayMs`). Moving to another sensor within the hide delay swaps the content immediately, without a new show delay.
 * While visible, the hint **updates live** when the sensor's data changes (CPU %, battery time…).
-* Content (`HintContent`): `Text(String)` (multi-line plain text; `\n` line breaks; tab-aligned "label: value" columns) or `Rich(Box<dyn RichHint>)` for hints that measure and draw themselves (Date calendar).
+* Content (`HintContent`): `Text(String)` (multi-line plain text; `\n` line breaks; tab-aligned "label: value" columns) or `Rich(Box<dyn RichHint>)` for hints that measure and draw themselves (Date calendar). A rich hint lays itself out (`layout` → its size) and draws itself at an origin in the popup font and colours; the hint window frames it like text.
 * Visuals: rounded rectangle (modern radius 8 px, classic 6 px); background `popups.background` at `popups.opacity`; text `popups.textColor`; font `popups.font` / `popups.fontStyle` / `popups.fontSize` (9–15, default 12); optional shadow (`popups.shadow`: a soft shadow drawn into the layered window's margin); padding 6 px; minimum size 30×20. A **pointer triangle** 13×7 points at the sensor (downward when the bar is at the bottom, upward at the top).
 * The hint is click-through. It closes when the pointer leaves the sensor, on any click, when a menu opens and when a drag starts.
 * After a click, a menu or a drag, the hint stays closed while the pointer remains over that sensor; it shows again over another sensor (or after leaving and coming back). Full-screen apps (§5.3) and turning `popupsEnabled` off close it too.
@@ -722,6 +722,8 @@ View: a transparent hit area `width` × bar height. A 1 px divider is centred (x
 **Hint (rich)**: when calendar ≠ none, a **month calendar**: a header row of short weekday names starting at the chosen week start, then 4–6 week rows with right-aligned day numbers in columns ≥ 29 px wide. Weekend columns (Sat, Sun) use `popups.strongTextColor`. **Today** is a filled rounded rect in the text colour (strong colour on weekends) with the number in the popup background colour. Below the calendar: `Week {isoWeek}, Day {dayOfYear}`. With calendar = none, only that line.
 
 **Click**: open `settings.apps.calendar` if set (file path or URI, e.g. `outlookcal:`); otherwise `ms-settings:dateandtime`.
+
+Implementation (`sensors/date.rs`): the month and year lines are 11 px on the two-line block's rows (§8.3) for that size; the day line is the weekday name, a comma and the day. Without a year, the line is the weekday (`dddd, ` or `ddd, `) followed by the locale's month-day pattern (`MMMM` → `MMM` for short months) or, for numeric months, its short-date pattern without the year (`M/d/yyyy` → `M/d`). The sensor reads the clock at its first wake-up (due at once) and then each minute, which also notices midnight; a clock change reads it again. The calendar is a rich hint (`RichHint`, §7.1): columns at least 29 px, numbers right-aligned 4 px from the column's edge, today on a rounded highlight, the week line half a row below (`Week {week}, Day {day}`).
 
 ### 9.5 `time` — Time  (Info; `DockTime`)
 

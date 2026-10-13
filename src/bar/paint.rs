@@ -519,19 +519,37 @@ mod tests {
             }
         }
 
-        // Hints (SPEC §7.1): a two-column hint above a bottom bar, one below a top bar.
-        use crate::bar::hint::{self, HintFrame, HintText};
+        // Hints (SPEC §7.1): a two-column hint above a bottom bar, one below a top bar, and
+        // Date's calendar (a rich hint, §9.4).
+        use crate::bar::hint::{self, HintBody, HintFrame};
         use crate::bar::placement::Anchor;
-        use crate::platform::RectF;
-        for (name, settings, os, edge) in [
-            ("hint-modern", Settings::default(), dark, Edge::Bottom),
+        use crate::platform::{Locale, RectF};
+        use crate::sensors::HintContent;
+        use crate::sensors::date::MonthCalendar;
+        use crate::sensors::dates::Date;
+        for (name, settings, os, edge, calendar) in [
+            (
+                "hint-modern",
+                Settings::default(),
+                dark,
+                Edge::Bottom,
+                false,
+            ),
             (
                 "hint-modern-light-top",
                 Settings::default(),
                 light,
                 Edge::Top,
+                false,
             ),
-            ("hint-classic", classic.clone(), dark, Edge::Bottom),
+            ("hint-classic", classic.clone(), dark, Edge::Bottom, false),
+            (
+                "hint-calendar",
+                Settings::default(),
+                dark,
+                Edge::Bottom,
+                true,
+            ),
         ] {
             let theme = Theme::resolve(&settings, os);
             let bar = match edge {
@@ -544,17 +562,21 @@ mod tests {
                 monitor: RectF::new(0.0, 0.0, 800.0, 600.0),
                 edge,
             };
-            let text = HintText::new(
-                "Processor: 37%\nUser:\t25%\nKernel:\t12%\nCores:\t8 (16 threads)",
-                text.as_ref(),
-                &theme,
-            );
-            let frame = HintFrame::new(&text, &anchor, &theme);
+            let content = if calendar {
+                let today = Date::new(2026, 10, 13).expect("a date");
+                let names = Locale::en_us().weekdays_short;
+                HintContent::Rich(Box::new(MonthCalendar::new(today, 0, names)))
+            } else {
+                let text = "Processor: 37%\nUser:\t25%\nKernel:\t12%\nCores:\t8 (16 threads)";
+                HintContent::Text(text.into())
+            };
+            let body = HintBody::new(content, text.as_ref(), &theme).expect("not empty");
+            let frame = HintFrame::new(body.size(), &anchor, &theme);
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
                 let width = (frame.window.width() * scale).round() as u32;
                 let height = (frame.window.height() * scale).round() as u32;
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
-                    hint::paint(canvas, &frame, &text, &theme)
+                    hint::paint(canvas, &frame, &body, &theme)
                 })
                 .expect("rendered");
                 save(&format!("{name}{suffix}"), &bitmap);

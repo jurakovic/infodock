@@ -411,8 +411,8 @@ mod tests {
         ));
         sensors.update_layout(&layout_ctx(&theme, 1.0), 800.0);
         let places: Vec<(f32, f32)> = sensors.places().iter().map(|p| (p.1, p.2)).collect();
-        // Placeholders (M2 types): label × 5 px + 8; the logo is 27 px wide. Time shows
-        // nothing until its first wake-up reads the clock.
+        // Placeholders (M2 types): label × 5 px + 8; the logo is 27 px wide. Date and Time
+        // show nothing until their first wake-up reads the clock.
         assert_eq!(
             places,
             [
@@ -420,7 +420,7 @@ mod tests {
                 (70.0, 68.0),  // memory-meter
                 (148.0, 73.0), // network-graph
                 (382.0, 27.0), // logo: round((800 − 37) / 2)
-                (755.0, 28.0), // date
+                (783.0, 0.0),  // date
                 (793.0, 0.0)   // time, ending 7 px from the right
             ]
         );
@@ -437,7 +437,7 @@ mod tests {
             .collect();
         assert_eq!(
             order,
-            ["cpu-graph", "memory-meter", "network-graph", "date", "logo"],
+            ["cpu-graph", "memory-meter", "network-graph", "logo"],
             "the centre zone is drawn last"
         );
     }

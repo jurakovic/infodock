@@ -859,13 +859,13 @@ mod screenshots {
         settle();
         key('e'.into());
         assert_eq!(state.get_picker_selected(), 0, "Image");
-        (0..4).for_each(|_| key(Key::DownArrow.into()));
-        assert_eq!(state.get_picker_selected(), 3, "Time, the last");
+        (0..5).for_each(|_| key(Key::DownArrow.into()));
+        assert_eq!(state.get_picker_selected(), 4, "Time, the last");
         key(Key::UpArrow.into());
-        assert_eq!(state.get_picker_selected(), 2, "Text");
+        assert_eq!(state.get_picker_selected(), 3, "Date");
         key(Key::Return.into());
         assert_eq!(state.get_page(), super::properties::PAGE);
-        assert_eq!(app.store.get().layout.center[1].kind, "text");
+        assert_eq!(app.store.get().layout.center[1].kind, "date");
         state.invoke_props_cancel();
         assert_eq!(app.store.get().layout.center.len(), 1);
         super::WINDOW.with(|w| w.borrow_mut().take());

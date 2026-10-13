@@ -27,7 +27,12 @@ pub fn style(theme: &Theme) -> TextStyle {
 /// centred as a block, each baseline 1.5 px above its row's bottom. In a 25 px classic bar
 /// (9 px font) that is y = 11 and y = 21, as in the spec.
 pub fn baselines(theme: &Theme, bar_height: f32) -> [f32; 2] {
-    let row = theme.small_size + 1.0;
+    baselines_for(theme.small_size, bar_height)
+}
+
+/// [`baselines`] for two lines of `size` px, e.g. Date's 11 px month and year (SPEC §9.4).
+pub fn baselines_for(size: f32, bar_height: f32) -> [f32; 2] {
+    let row = size + 1.0;
     let top = (bar_height - 2.0 * row) / 2.0;
     [top + row - 1.5, top + 2.0 * row - 1.5]
 }

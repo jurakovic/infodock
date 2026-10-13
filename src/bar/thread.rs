@@ -9,7 +9,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use super::anim::{self, Easing, Fade};
-use super::hint::{self, HintFrame, HintText, Hover, Step};
+use super::hint::{self, HintBody, HintFrame, Hover, Step};
 use super::interact::{self, DropTarget, Press};
 use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
@@ -32,7 +32,7 @@ use crate::platform::{
 use crate::sampler::{Delivery, TopicRequest};
 use crate::sensors::ops::index_after_removal;
 use crate::sensors::registry::registry;
-use crate::sensors::{ClickResult, HintContent, LayoutCtx, State};
+use crate::sensors::{ClickResult, LayoutCtx, State};
 
 /// How often Esc is checked during a drag.
 const ESC_POLL: Duration = Duration::from_millis(50);
@@ -506,14 +506,14 @@ impl BarLogic {
             alt: false,
             animate: self.animate,
         };
-        let (Some(HintContent::Text(text)), Some((x, width))) =
+        let (Some(content), Some((x, width))) =
             (self.sensors.hint(id, &env), self.sensors.place_of(id))
         else {
             return false;
         };
-        if text.is_empty() {
+        let Some(body) = HintBody::new(content, self.text.as_ref(), &self.theme) else {
             return false;
-        }
+        };
         let scale = geometry.scale as f32;
         let logical = |r: Rect| {
             RectF::new(
@@ -530,8 +530,7 @@ impl BarLogic {
             monitor: logical(geometry.monitor.bounds),
             edge: geometry.edge,
         };
-        let layout = HintText::new(&text, self.text.as_ref(), &self.theme);
-        let frame = HintFrame::new(&layout, &anchor, &self.theme);
+        let frame = HintFrame::new(body.size(), &anchor, &self.theme);
         let physical = |v: f32| (v * scale).round() as i32;
         let rect = Rect::new(
             physical(frame.window.left),
@@ -541,7 +540,7 @@ impl BarLogic {
         );
         let theme = &self.theme;
         window.show_hint(rect, scale, &mut |canvas| {
-            hint::paint(canvas, &frame, &layout, theme);
+            hint::paint(canvas, &frame, &body, theme);
         });
         true
     }

@@ -9,6 +9,7 @@
 
 pub mod color;
 pub mod common;
+pub mod date;
 pub mod dates;
 pub mod format;
 pub mod image;
@@ -27,7 +28,7 @@ use serde_json::{Map, Value};
 
 use crate::bar::theme::Theme;
 use crate::config::model::Settings;
-use crate::platform::{Canvas, Capability, Platform, RectF, TextEngine};
+use crate::platform::{Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
 use crate::sampler::{Sample, Topic, TopicRequest};
 use schema::PropField;
 
@@ -157,10 +158,35 @@ pub struct SensorCtx<'a> {
 }
 
 /// The content of a hover hint (SPEC §7.1).
-#[derive(Debug, Clone, PartialEq)]
 pub enum HintContent {
     /// Plain text; `\n` breaks lines, tabs align "label: value" columns.
     Text(String),
+    /// Content that lays itself out and draws itself, e.g. Date's calendar.
+    Rich(Box<dyn RichHint>),
+}
+
+impl PartialEq for HintContent {
+    /// Text compares by its text; rich content is never equal.
+    fn eq(&self, other: &Self) -> bool {
+        matches!((self, other), (Self::Text(a), Self::Text(b)) if a == b)
+    }
+}
+
+impl std::fmt::Debug for HintContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.debug_tuple("Text").field(text).finish(),
+            Self::Rich(_) => f.write_str("Rich(..)"),
+        }
+    }
+}
+
+/// A hint that lays itself out and draws itself (SPEC §7.1), in the popup font and colours.
+pub trait RichHint {
+    /// Lays the content out; returns its size, logical px.
+    fn layout(&mut self, text: &dyn TextEngine, theme: &Theme) -> SizeF;
+    /// Draws it with its top-left corner at `origin`, after [`RichHint::layout`].
+    fn draw(&self, canvas: &mut dyn Canvas, origin: PointF, theme: &Theme);
 }
 
 /// What a click did (SPEC §8.1). Popups arrive with the sensors that open them (M3).
@@ -225,15 +251,20 @@ pub trait Sensor {
 /// Helpers for the sensor types' tests: the default modern theme, fixed text metrics, scale 1.
 #[cfg(test)]
 pub(crate) mod test_support {
+    use std::sync::Mutex;
+
     use serde_json::json;
 
+    use super::dates::{Date, LocalTime};
     use super::schema::{FieldKind, Lit, PropField};
     use super::{Category, DefaultsCtx, DrawCtx, LayoutCtx, Props, Sensor, SensorType, State};
     use crate::bar::theme::Theme;
+    use crate::config::model::DateLocale;
     use crate::config::model::Settings;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::platform::{
-        Canvas, Capabilities, MonitorInfo, OsAppearance, Platform, RectF, TextEngine, TextStyle,
+        Canvas, Capabilities, Locale, MonitorInfo, OsAppearance, Platform, RectF, TextEngine,
+        TextStyle,
     };
 
     /// Draws its text as the label, so tests can see what it was created with.
@@ -285,6 +316,64 @@ pub(crate) mod test_support {
                 "use24h={} showSeconds={}",
                 props["use24h"], props["showSeconds"]
             ))))
+        }
+    }
+
+    /// A platform with a settable clock (2026-10-13, a Tuesday) and the en-US locale that
+    /// records what it is asked to play and open.
+    #[derive(Default)]
+    pub struct FakeClock {
+        time: Mutex<Option<LocalTime>>,
+        log: Mutex<Vec<String>>,
+    }
+
+    impl FakeClock {
+        pub fn set(&self, hour: u8, minute: u8, second: u8) {
+            let date = Date::new(2026, 10, 13).expect("a date");
+            *self.time.lock().expect("lock") = Some(LocalTime {
+                date,
+                hour,
+                minute,
+                second,
+                millis: 0,
+            });
+        }
+
+        pub fn log(&self) -> Vec<String> {
+            self.log.lock().expect("lock").clone()
+        }
+    }
+
+    impl Platform for FakeClock {
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+        fn monitors(&self) -> Vec<MonitorInfo> {
+            Vec::new()
+        }
+        fn appearance(&self) -> OsAppearance {
+            OsAppearance::default()
+        }
+        fn uptime(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+        fn local_time(&self) -> LocalTime {
+            self.time.lock().expect("lock").expect("set first")
+        }
+        fn locale(&self, _which: DateLocale) -> Locale {
+            Locale::en_us()
+        }
+        fn play_sound(&self, wav: &'static [u8]) {
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("play {}", wav.len()));
+        }
+        fn open(&self, target: &str) {
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("open {target}"));
         }
     }
 

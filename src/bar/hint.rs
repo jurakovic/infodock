@@ -11,6 +11,7 @@ use crate::config::model::Edge;
 use crate::platform::{
     Brush, Canvas, Color, PointF, RectF, Shape, SizeF, TextEngine, TextLayout, TextStyle,
 };
+use crate::sensors::{HintContent, RichHint};
 
 /// Space between the bubble's edge and the text.
 const PADDING: f32 = 6.0;
@@ -85,6 +86,40 @@ impl HintText {
     }
 }
 
+/// What a hint shows, laid out.
+pub enum HintBody {
+    Text(HintText),
+    Rich(Box<dyn RichHint>, SizeF),
+}
+
+impl HintBody {
+    /// Lays out `content`; `None` for empty text, which shows no hint.
+    pub fn new(content: HintContent, engine: &dyn TextEngine, theme: &Theme) -> Option<Self> {
+        match content {
+            HintContent::Text(text) if text.is_empty() => None,
+            HintContent::Text(text) => Some(Self::Text(HintText::new(&text, engine, theme))),
+            HintContent::Rich(mut rich) => {
+                let size = rich.layout(engine, theme);
+                Some(Self::Rich(rich, size))
+            }
+        }
+    }
+
+    pub fn size(&self) -> SizeF {
+        match self {
+            Self::Text(text) => text.size,
+            Self::Rich(_, size) => *size,
+        }
+    }
+
+    fn draw(&self, canvas: &mut dyn Canvas, origin: PointF, theme: &Theme) {
+        match self {
+            Self::Text(text) => text.draw(canvas, origin, theme.popup_text),
+            Self::Rich(rich, _) => rich.draw(canvas, origin, theme),
+        }
+    }
+}
+
 /// The hint window's geometry for one hint.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HintFrame {
@@ -99,11 +134,11 @@ pub struct HintFrame {
 }
 
 impl HintFrame {
-    /// Places a hint for `text` at `anchor` (SPEC §7.1, §7.3).
-    pub fn new(text: &HintText, anchor: &Anchor, theme: &Theme) -> Self {
+    /// Places a hint whose content is `size` at `anchor` (SPEC §7.1, §7.3).
+    pub fn new(size: SizeF, anchor: &Anchor, theme: &Theme) -> Self {
         let bubble = SizeF::new(
-            (text.size.width + 2.0 * PADDING).max(MIN_SIZE.width),
-            (text.size.height + 2.0 * PADDING).max(MIN_SIZE.height),
+            (size.width + 2.0 * PADDING).max(MIN_SIZE.width),
+            (size.height + 2.0 * PADDING).max(MIN_SIZE.height),
         );
         let content = SizeF::new(bubble.width, bubble.height + POINTER.height);
         let Placement { x, y, pointer_x } =
@@ -157,7 +192,7 @@ fn fill_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, radius: f32, grow: f3
 }
 
 /// Draws the hint into a cleared canvas the size of the frame's window.
-pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, text: &HintText, theme: &Theme) {
+pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, body: &HintBody, theme: &Theme) {
     let radius = theme.popup_radius;
     if theme.popup_shadow {
         // A soft shadow: rings fading outwards (SPEC §7.1).
@@ -175,11 +210,11 @@ pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, text: &HintText, theme:
     }
     fill_bubble(canvas, frame, radius, 0.0, theme.popup_background);
     let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);
-    let free = frame.bubble.height() - 2.0 * PADDING - text.size.height;
-    text.draw(
+    let free = frame.bubble.height() - 2.0 * PADDING - body.size().height;
+    body.draw(
         canvas,
         PointF::new(origin.x, origin.y + (free / 2.0).max(0.0)),
-        theme.popup_text,
+        theme,
     );
 }
 
@@ -342,7 +377,7 @@ mod tests {
     fn frame_above_a_bottom_bar_with_a_shadow_margin() {
         let theme = theme(true);
         let text = HintText::new("Infodock 1.0", &FixedMetrics, &theme);
-        let frame = HintFrame::new(&text, &anchor(Edge::Bottom), &theme);
+        let frame = HintFrame::new(text.size, &anchor(Edge::Bottom), &theme);
         // Bubble 72 + 12 wide, 15 + 12 tall, pointer 7 below it; 6 px of shadow around.
         assert_eq!(frame.bubble, RectF::new(6.0, 6.0, 90.0, 33.0));
         assert_eq!((frame.window.width(), frame.window.height()), (96.0, 46.0));
@@ -355,7 +390,7 @@ mod tests {
     fn frame_below_a_top_bar_without_shadow() {
         let theme = theme(false);
         let text = HintText::new("x", &FixedMetrics, &theme);
-        let frame = HintFrame::new(&text, &anchor(Edge::Top), &theme);
+        let frame = HintFrame::new(text.size, &anchor(Edge::Top), &theme);
         // The minimum bubble, with the pointer above it.
         assert_eq!(frame.bubble, RectF::new(0.0, 7.0, 30.0, 34.0));
         assert_eq!(frame.window.top, 28.0);
@@ -366,9 +401,9 @@ mod tests {
     fn paints_bubble_pointer_and_text() {
         let theme = theme(false);
         let text = HintText::new("Hi", &FixedMetrics, &theme);
-        let frame = HintFrame::new(&text, &anchor(Edge::Bottom), &theme);
+        let frame = HintFrame::new(text.size, &anchor(Edge::Bottom), &theme);
         let mut canvas = RecordingCanvas::new(1.0);
-        paint(&mut canvas, &frame, &text, &theme);
+        paint(&mut canvas, &frame, &HintBody::Text(text), &theme);
         let dump = canvas.dump();
         let lines: Vec<&str> = dump.lines().collect();
         assert_eq!(lines.len(), 3);
