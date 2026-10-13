@@ -886,10 +886,8 @@ mod screenshots {
         assert_eq!(state.get_picker_selected(), 0, "Image");
         // The types listed depend on the platform (e.g. the CPU dual graph needs per-processor
         // counters), so the last match is counted from the picker's own entries.
-        let entries = super::picker::entries(
-            crate::sensors::registry::registry(),
-            &app.platform.capabilities(),
-        );
+        let entries =
+            super::picker::entries(crate::sensors::registry::registry(), app.platform.as_ref());
         let matches: Vec<usize> = super::picker::lines(&entries, "e")
             .into_iter()
             .filter_map(|line| match line {

@@ -131,6 +131,11 @@ pub trait SensorType: Send + Sync {
     fn summary(&self, _props: &Props) -> Option<String> {
         None
     }
+    /// A note the picker adds to the description on this machine (SPEC §6.6), e.g. the CPU
+    /// dual graph's on a single-processor computer.
+    fn picker_note(&self, _ctx: &DefaultsCtx) -> Option<MsgKey> {
+        None
+    }
 }
 
 /// What measuring may use (bar thread).

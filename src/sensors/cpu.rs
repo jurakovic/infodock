@@ -13,8 +13,8 @@ use super::common::meter::Meter;
 use super::format::{Numbers, percent, percent_digits};
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
-    SensorType, State, color, typed,
+    Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, LayoutCtx, Props,
+    Sensor, SensorCtx, SensorType, State, color, typed,
 };
 use crate::i18n::{t, t_count};
 use crate::platform::{Canvas, Capability};
@@ -390,6 +390,11 @@ impl SensorType for CpuDualType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockCPUGraphDual"]
+    }
+
+    /// SPEC §9.9: both halves show the one processor.
+    fn picker_note(&self, ctx: &DefaultsCtx) -> Option<&'static str> {
+        (ctx.platform.logical_processors() == 1).then_some("sensor.cpuDual.singleProcessor")
     }
 
     fn schema(&self) -> &'static [PropField] {

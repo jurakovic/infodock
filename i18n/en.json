@@ -122,6 +122,7 @@
   "sensor.cpu.series.missing": "Processor {n} (not on this computer: shows the total)",
   "sensor.cpuDual.name": "CPU Graph (dual)",
   "sensor.cpuDual.description": "Two processors, or total and user time, as graphs above and below each other.",
+  "sensor.cpuDual.singleProcessor": "This computer has one processor; both halves show the same data.",
   "sensor.cpuDual.field.topSeries": "Top shows",
   "sensor.cpuDual.field.bottomSeries": "Bottom shows",
   "sensor.dual.field.topColor": "Top colour",

@@ -11,9 +11,9 @@ use super::{WINDOW, properties};
 use crate::app::App;
 use crate::config::model::{Layout, Zone};
 use crate::i18n::t;
-use crate::platform::Capabilities;
+use crate::platform::Platform;
 use crate::sensors::registry::Registry;
-use crate::sensors::{Category, Props};
+use crate::sensors::{Category, DefaultsCtx, Props};
 use crate::ui;
 
 /// The page index of the picker in the window.
@@ -28,17 +28,23 @@ pub struct Entry {
     pub description: String,
 }
 
-/// The types that can run here, by category and then name (SPEC §6.6).
-pub fn entries(registry: &Registry, caps: &Capabilities) -> Vec<Entry> {
+/// The types that can run on `platform`, by category and then name (SPEC §6.6), with any
+/// note a type adds to its description on this machine.
+pub fn entries(registry: &Registry, platform: &dyn Platform) -> Vec<Entry> {
+    let caps = platform.capabilities();
+    let ctx = DefaultsCtx { platform };
     let mut entries: Vec<Entry> = registry
         .types()
         .iter()
-        .filter(|ty| Registry::available(**ty, caps))
+        .filter(|ty| Registry::available(**ty, &caps))
         .map(|ty| Entry {
             kind: ty.id(),
             category: ty.category(),
             name: t(ty.name()),
-            description: t(ty.description()),
+            description: match ty.picker_note(&ctx) {
+                Some(note) => format!("{} {}", t(ty.description()), t(note)),
+                None => t(ty.description()),
+            },
         })
         .collect();
     entries.sort_by_cached_key(|e| (e.category, e.name.to_lowercase()));
@@ -183,10 +189,7 @@ pub(super) fn open_picker(app: &App, place: Place) {
         };
         properties::cancel(open, app);
         let state = open.window.global::<ui::SettingsState>();
-        let entries = entries(
-            crate::sensors::registry::registry(),
-            &app.platform.capabilities(),
-        );
+        let entries = entries(crate::sensors::registry::registry(), app.platform.as_ref());
         let (shown, lines) = rows(&entries, "");
         state.set_picker_rows(ModelRc::new(VecModel::from(shown)));
         state.set_picker_search(SharedString::new());
@@ -305,11 +308,52 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
 mod tests {
     use super::*;
     use crate::config::model::Config;
+    use crate::platform::{Capabilities, MonitorInfo, OsAppearance};
     use crate::sensors::registry::registry;
+    use crate::sensors::test_support::NoPlatform;
+
+    /// A single-processor computer with per-processor counters.
+    struct OneProcessor;
+
+    impl Platform for OneProcessor {
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                per_core_cpu: true,
+                ..Capabilities::default()
+            }
+        }
+        fn monitors(&self) -> Vec<MonitorInfo> {
+            Vec::new()
+        }
+        fn appearance(&self) -> OsAppearance {
+            OsAppearance::default()
+        }
+        fn uptime(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+        fn logical_processors(&self) -> u32 {
+            1
+        }
+    }
+
+    #[test]
+    fn notes_one_processor_for_the_dual_graph() {
+        let entries = entries(registry(), &OneProcessor);
+        let dual = entries
+            .iter()
+            .find(|e| e.kind == "cpu-graph-dual")
+            .expect("listed with per-processor counters");
+        assert!(
+            dual.description
+                .ends_with("both halves show the same data."),
+            "{}",
+            dual.description
+        );
+    }
 
     #[test]
     fn lists_types_by_category_and_name() {
-        let entries = entries(registry(), &Capabilities::default());
+        let entries = entries(registry(), &NoPlatform);
         let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(
             names,
@@ -357,7 +401,7 @@ mod tests {
 
     #[test]
     fn search_matches_names_and_descriptions() {
-        let entries = entries(registry(), &Capabilities::default());
+        let entries = entries(registry(), &NoPlatform);
         assert_eq!(
             lines(&entries, "TEXT"),
             [Line::Heading("General".into()), Line::Entry(2)]
