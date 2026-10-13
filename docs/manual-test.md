@@ -177,9 +177,9 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Restart Explorer (Task Manager ▸ *Windows Explorer* ▸ Restart): the tray icon comes back.
 - [ ] Quit from the tray: the icon disappears at once (no ghost icon until hovered).
 
-## M2 — System sensors (in progress)
+## M2 — System sensors
 
-The first-run placeholders are real sensors now. The M0 and M1 checks above still apply.
+The first-run placeholders are real sensors now. The M0 and M1 checks above still apply. CI renders every system sensor with made-up data (`bar-system*.png` in `infodock-screenshots`) and measures the idle CPU; the checks here cover what only real hardware shows.
 
 **Time** (since M2 S6)
 
@@ -243,3 +243,13 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 - [ ] Task Manager ▸ Details, *CPU* column, the first-run layout: Infodock stays at 0–1 % on a 4-core machine (§14.1: ≤ 0.5 % on average over a minute; CI measures it too).
 - [ ] *Memory* column: within the budget at idle, and still after the first chime, a click on the CPU graph (Task Manager opens) and on the Date (date settings open): the audio and shell libraries those load must not push it over 30 MB.
+
+**Close-out fixes** (M2 S15)
+
+- [ ] Uptime turns to the next minute on time, also after hovering it for a while (its hint updates too).
+- [ ] A CPU Graph with *Update every* 5 s next to a 1 s CPU Meter: the meter changes every second, the graph moves one column every 5 s.
+- [ ] Settings ▸ Time & language ▸ Language & region ▸ *Regional format* → German (Germany), without restarting Infodock: the bar's sizes and rates use a comma (`5,21 GB`, `1,24 MB/s`), and Date shows German names at once. Back to your format: back at once.
+- [ ] Lock on with *Clicks when locked* → *Alt only*: the CPU, memory and network hints have no *Click to …* line; with Lock off, they have it again.
+- [ ] *New sensor…* (picker): with every type listed, the search box and the Add and Cancel buttons stay in view; Up and Down move the selection and the list scrolls with it.
+- [ ] Edit a Time sensor's properties: the clock does not blink empty while previewing.
+- [ ] A Network Graph set to a connection that is then renamed (Network Connections ▸ Rename): its properties still show it (by the new name), not *Automatic*.
