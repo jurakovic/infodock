@@ -900,6 +900,9 @@ mod screenshots {
         let last = *matches.last().expect("matches") as i32;
         (0..=matches.len()).for_each(|_| key(Key::DownArrow.into()));
         assert_eq!(state.get_picker_selected(), last, "the last, and it stays");
+        // The list scrolled to show it.
+        settle();
+        render("settings-picker-end");
         let date = matches
             .iter()
             .position(|i| entries[*i].kind == "date")

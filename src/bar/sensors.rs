@@ -276,6 +276,14 @@ impl BarSensors {
     }
 
     /// Where sensor `id` is: its x and width, logical px.
+    /// Whether sensor `id` changed what it shows since it was last measured.
+    pub fn is_dirty(&self, id: &str) -> bool {
+        self.zones
+            .iter()
+            .flatten()
+            .any(|p| p.entry.id == id && p.dirty)
+    }
+
     pub fn place_of(&self, id: &str) -> Option<(f32, f32)> {
         self.zones
             .iter()

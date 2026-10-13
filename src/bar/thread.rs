@@ -573,6 +573,21 @@ impl BarLogic {
         }
     }
 
+    /// After samples or wake-ups changed what sensors show: the open hint is rebuilt only when
+    /// its own sensor changed or moved, so an open calendar is not laid out again for every
+    /// CPU sample.
+    fn refresh_changed_hint(&mut self, window: &dyn BarWindow) {
+        let Some(id) = self.hover.shown().map(str::to_owned) else {
+            return;
+        };
+        let changed = self.sensors.is_dirty(&id);
+        let before = self.sensors.place_of(&id);
+        self.sensors.refresh_layout(&self.theme, self.text.as_ref());
+        if changed || self.sensors.place_of(&id) != before {
+            self.refresh_hint(window);
+        }
+    }
+
     /// Releasing over the pressed sensor without having moved is a click.
     /// Stores where a moved floating bar is now (SPEC §5.1).
     fn end_moving(&mut self, window: &dyn BarWindow) {
@@ -738,6 +753,16 @@ impl BarLogic {
             }
         }
         if self.sensors.sync(&shown, &self.state, &caps, registry()) {
+            // New clocks read the time now, so the next frame does not show them empty.
+            let env = Env {
+                settings: &self.settings,
+                theme: &self.theme,
+                platform: self.platform.as_ref(),
+                alt: false,
+                animate: self.animate,
+            };
+            self.sensors.wake(Instant::now(), &env);
+            self.store_states();
             window.invalidate();
             self.refresh_hint(window);
         }
@@ -761,7 +786,7 @@ impl BarLogic {
         };
         if self.sensors.deliver(delivery, &env, Instant::now()) {
             window.invalidate();
-            self.refresh_hint(window);
+            self.refresh_changed_hint(window);
         }
         self.store_states();
     }
@@ -820,7 +845,7 @@ impl BarLogic {
                 };
                 if self.sensors.wake(Instant::now(), &env) {
                     window.invalidate();
-                    self.refresh_hint(window);
+                    self.refresh_changed_hint(window);
                 }
                 self.store_states();
                 self.arm_timer(window);
@@ -853,9 +878,11 @@ impl BarHandler for BarLogic {
             }
             UiEvent::Wake => {
                 let mut layout_changed = false;
+                let mut configured = false;
                 while let Ok(command) = self.commands.try_recv() {
                     match command {
                         Command::Config(config) => {
+                            configured = true;
                             layout_changed |= self.apply_config(window, *config);
                         }
                         Command::Preview(sensor) => {
@@ -868,8 +895,11 @@ impl BarHandler for BarLogic {
                         Command::Sample(delivery) => self.deliver(window, &delivery),
                     }
                 }
-                self.refresh_theme(window);
-                self.refresh_tray(window);
+                // Samples alone change neither the theme nor the tray.
+                if configured {
+                    self.refresh_theme(window);
+                    self.refresh_tray(window);
+                }
                 if layout_changed {
                     self.sync_sensors(window);
                 }
@@ -1638,6 +1668,30 @@ mod tests {
         );
         // Kept on screen: 7 px from the monitor's left edge, less the shadow margin.
         assert_eq!(hint.0.left, 1);
+    }
+
+    #[test]
+    fn a_hint_is_rebuilt_only_when_its_sensor_changes() {
+        use crate::sampler::{CpuSample, Sample, Topic};
+        let (mut logic, window, _, _) = bar(Settings::default());
+        hover(&mut logic, &window, LOGO);
+        hint_timer(&mut logic, &window);
+        assert!(window.hint.borrow().is_some(), "the logo's hint");
+        *window.hint.borrow_mut() = None;
+        // The CPU graph changes; the logo's hint is left as it is.
+        let cpu = Sample::Cpu(CpuSample {
+            total: 50.0,
+            ..Default::default()
+        });
+        logic.deliver(
+            &window,
+            &Delivery {
+                topic: Topic::Cpu,
+                sample: Arc::new(cpu),
+                to: None,
+            },
+        );
+        assert!(window.hint.borrow().is_none(), "not shown again");
     }
 
     #[test]

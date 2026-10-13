@@ -77,6 +77,9 @@ pub struct Form {
     schema: &'static [PropField],
     /// The resolved props with the edits applied.
     props: Props,
+    /// The resolved props as stored when the form opened: a stored drive, adapter or
+    /// processor this computer lacks stays listed after another one is chosen.
+    opened: Props,
     /// The edited keys and their values, for previewing and saving.
     changes: Props,
     /// Fields whose last edit was invalid: they show an error and block saving (SPEC §6.7).
@@ -99,6 +102,7 @@ impl Form {
             title: t(ty.name()),
             new,
             schema: ty.schema(),
+            opened: props.clone(),
             props,
             changes: Props::new(),
             invalid: BTreeSet::new(),
@@ -252,19 +256,22 @@ impl Form {
             }
             FieldKind::CpuSeries => {
                 let current = value.as_str().unwrap_or("total");
-                let series = cpu_series(self.processors, current);
+                let series = cpu_series(self.processors, self.opened_str(field.key));
                 row.index = series.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = series.into_iter().map(|(_, label)| label).collect();
             }
             FieldKind::Drive { hide_optical } => {
                 let current = value.as_str().unwrap_or("");
-                let drives = drives(&self.volumes, hide_optical, current);
+                let drives = drives(&self.volumes, hide_optical, self.opened_str(field.key));
                 row.index = drives.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = drives.into_iter().map(|(_, label)| label).collect();
             }
             FieldKind::NetAdapter => {
-                let adapters = adapters(&self.adapters, &value);
-                row.index = adapters.iter().position(|(v, _)| *v == value).unwrap_or(0) as i32;
+                let adapters = adapters(&self.adapters, self.opened.get(field.key));
+                row.index = adapters
+                    .iter()
+                    .position(|(v, _)| adapter_id(v) == adapter_id(&value))
+                    .unwrap_or(0) as i32;
                 row.options = adapters.into_iter().map(|(_, label)| label).collect();
             }
             _ => {}
@@ -304,34 +311,28 @@ impl Form {
                 }
             }
             FieldKind::FontStyle => FONT_STYLES.get(index).map(|s| Value::from(*s)),
-            FieldKind::CpuSeries => {
-                let current = self
-                    .props
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .unwrap_or("total");
-                cpu_series(self.processors, current)
-                    .into_iter()
-                    .nth(index)
-                    .map(|(value, _)| Value::from(value))
-            }
+            FieldKind::CpuSeries => cpu_series(self.processors, self.opened_str(key))
+                .into_iter()
+                .nth(index)
+                .map(|(value, _)| Value::from(value)),
             FieldKind::Drive { hide_optical } => {
-                let current = self.props.get(key).and_then(Value::as_str).unwrap_or("");
-                drives(&self.volumes, hide_optical, current)
+                drives(&self.volumes, hide_optical, self.opened_str(key))
                     .into_iter()
                     .nth(index)
                     .map(|(value, _)| Value::from(value))
             }
-            FieldKind::NetAdapter => {
-                let current = self.props.get(key).cloned().unwrap_or(Value::Null);
-                adapters(&self.adapters, &current)
-                    .into_iter()
-                    .nth(index)
-                    .map(|(value, _)| value)
-            }
+            FieldKind::NetAdapter => adapters(&self.adapters, self.opened.get(key))
+                .into_iter()
+                .nth(index)
+                .map(|(value, _)| value),
             _ => None,
         };
         value.is_some_and(|v| self.set(key, v))
+    }
+
+    /// The text of `key` when the form opened.
+    fn opened_str(&self, key: &str) -> &str {
+        self.opened.get(key).and_then(Value::as_str).unwrap_or("")
     }
 
     /// Sets a colour-mode row to the mode at `index` with `color` (`#RRGGBB`).
@@ -379,9 +380,9 @@ fn font_options(fonts: &[String], current: &str) -> Vec<String> {
 }
 
 /// The series a CPU dual graph offers (SPEC §9.9), as (value, label): total, user, system and
-/// each logical processor; a stored processor this computer lacks stays listed, marked as
+/// each logical processor; a `stored` processor this computer lacks stays listed, marked as
 /// unavailable.
-fn cpu_series(processors: u32, current: &str) -> Vec<(String, String)> {
+fn cpu_series(processors: u32, stored: &str) -> Vec<(String, String)> {
     let mut series: Vec<(String, String)> = [
         ("total", "sensor.cpu.series.total"),
         ("user", "sensor.cpu.series.user"),
@@ -390,30 +391,27 @@ fn cpu_series(processors: u32, current: &str) -> Vec<(String, String)> {
     .into_iter()
     .map(|(value, label)| (value.to_owned(), t(label)))
     .collect();
-    let processor = |i: u32, key: &str| t_args(key, &[("n", &(i + 1).to_string())]);
+    let processor = |i: u32, key: &str| t_args(key, &[("n", &(u64::from(i) + 1).to_string())]);
     series.extend(
         (0..processors).map(|i| (format!("core{i}"), processor(i, "sensor.cpu.series.core"))),
     );
-    if !series.iter().any(|(value, _)| value == current)
-        && let Some(i) = current
+    if !series.iter().any(|(value, _)| value == stored)
+        && let Some(i) = stored
             .strip_prefix("core")
             .and_then(|n| n.parse::<u32>().ok())
     {
-        series.push((
-            current.to_owned(),
-            processor(i, "sensor.cpu.series.missing"),
-        ));
+        series.push((stored.to_owned(), processor(i, "sensor.cpu.series.missing")));
     }
     series
 }
 
 /// The drives a `drive` field offers, as (root, label): this computer's volumes (optical ones
-/// left out with `hide_optical`), e.g. `Local Disk (C:)` or `Data (D:)` by their label; a
-/// stored drive that is not connected stays listed, marked so.
-fn drives(volumes: &[Volume], hide_optical: bool, current: &str) -> Vec<(String, String)> {
+/// left out with `hide_optical`, unless `stored`), e.g. `Local Disk (C:)` or `Data (D:)` by
+/// their label; a stored drive that is not connected stays listed, marked so.
+fn drives(volumes: &[Volume], hide_optical: bool, stored: &str) -> Vec<(String, String)> {
     let mut drives: Vec<(String, String)> = volumes
         .iter()
-        .filter(|v| !(hide_optical && v.kind == DriveKind::Optical))
+        .filter(|v| !(hide_optical && v.kind == DriveKind::Optical) || v.root == stored)
         .map(|v| {
             let name = if v.label.is_empty() {
                 t(match v.kind {
@@ -432,17 +430,23 @@ fn drives(volumes: &[Volume], hide_optical: bool, current: &str) -> Vec<(String,
             (v.root.clone(), label)
         })
         .collect();
-    if !current.is_empty() && !drives.iter().any(|(root, _)| root == current) {
-        let label = t_args("volume.missing", &[("drive", current)]);
-        drives.push((current.to_owned(), label));
+    if !stored.is_empty() && !drives.iter().any(|(root, _)| root == stored) {
+        let label = t_args("volume.missing", &[("drive", stored)]);
+        drives.push((stored.to_owned(), label));
     }
     drives
 }
 
+/// A `netAdapter` value's id; `None` for Automatic.
+fn adapter_id(value: &Value) -> Option<&str> {
+    value.get("id").and_then(Value::as_str)
+}
+
 /// The connections a `netAdapter` field offers, as (stored value, label): Automatic (`null`),
-/// then this computer's connections as `{ id, name }` named like `Wi-Fi (Intel(R) …)`; a
-/// stored connection that is not there stays listed, marked so.
-fn adapters(interfaces: &[NetInterface], current: &Value) -> Vec<(Value, String)> {
+/// then this computer's connections as `{ id, name }` named like `Wi-Fi (Intel(R) …)`, matched
+/// by id (a renamed connection is the same one); a `stored` connection that is not there stays
+/// listed, marked so.
+fn adapters(interfaces: &[NetInterface], stored: Option<&Value>) -> Vec<(Value, String)> {
     let mut adapters = vec![(Value::Null, t("sensor.network.automatic"))];
     adapters.extend(interfaces.iter().map(|i| {
         let value = json!({ "id": i.id, "name": i.alias });
@@ -456,13 +460,13 @@ fn adapters(interfaces: &[NetInterface], current: &Value) -> Vec<(Value, String)
         };
         (value, label)
     }));
-    let id = current.get("id").and_then(Value::as_str);
-    if let Some(id) = id
+    if let Some(stored) = stored
+        && let Some(id) = adapter_id(stored)
         && !interfaces.iter().any(|i| i.id == id)
     {
-        let name = current.get("name").and_then(Value::as_str).unwrap_or(id);
+        let name = stored.get("name").and_then(Value::as_str).unwrap_or(id);
         let label = t_args("sensor.network.missing", &[("name", name)]);
-        adapters.push((current.clone(), label));
+        adapters.push((stored.clone(), label));
     }
     adapters
 }
@@ -612,6 +616,7 @@ mod tests {
             new: false,
             schema: &SCHEMA,
             props: schema::resolve(&SCHEMA, &Props::new(), &Props::new()).0,
+            opened: Props::new(),
             changes: Props::new(),
             invalid: BTreeSet::new(),
             processors: 1,
@@ -654,6 +659,14 @@ mod tests {
         assert_eq!(bottom.index, 5);
         assert!(form.choose("bottomSeries", 4, &fonts()));
         assert_eq!(form.changes()["bottomSeries"], json!("core1"));
+        assert!(form.choose("bottomSeries", 5, &fonts()), "still listed");
+        assert_eq!(form.changes()["bottomSeries"], json!("core7"));
+        // A huge processor number does not overflow.
+        let huge = json!({ "topSeries": "core4294967295" });
+        let form = Form::open(registry(), &instance("cpu-graph-dual", huge), false).expect("known");
+        let rows = form.rows(&fonts());
+        let top = rows.iter().find(|r| r.key == "topSeries").expect("top");
+        assert!(top.options.last().is_some_and(|o| o.contains("4294967296")));
     }
 
     #[test]
@@ -682,6 +695,20 @@ mod tests {
         assert_eq!(drive.index, 2);
         assert!(form.choose("drive", 1, &fonts()));
         assert_eq!(form.changes()["drive"], json!("D:\\"));
+        // The stored drive stays listed, so it can be chosen again.
+        let rows = form.rows(&fonts());
+        let drive = rows.iter().find(|r| r.key == "drive").expect("drive");
+        assert_eq!((drive.options.len(), drive.index), (3, 1));
+        assert!(form.choose("drive", 2, &fonts()));
+        assert_eq!(form.changes()["drive"], json!("F:\\"));
+        // A stored optical drive that is there is named by its kind.
+        let stored = json!({ "drive": "E:\\" });
+        let mut form =
+            Form::open(registry(), &instance("disk-meter", stored), false).expect("known");
+        form.set_volumes(vec![volume("E:\\", DriveKind::Optical, "")]);
+        let rows = form.rows(&fonts());
+        let drive = rows.iter().find(|r| r.key == "drive").expect("drive");
+        assert_eq!(drive.options, ["CD Drive (E:)"]);
     }
 
     #[test]
@@ -716,6 +743,24 @@ mod tests {
         );
         assert!(form.choose("adapter", 0, &fonts()));
         assert_eq!(form.changes()["adapter"], Value::Null, "Automatic");
+        assert!(
+            form.choose("adapter", 2, &fonts()),
+            "the stored one, still listed"
+        );
+        assert_eq!(form.changes()["adapter"]["id"], json!("GONE"));
+
+        // A connection renamed since it was stored is still the same one.
+        let stored = json!({ "adapter": { "id": "WIFI", "name": "Old name" } });
+        let mut form =
+            Form::open(registry(), &instance("network-graph", stored), false).expect("known");
+        form.set_adapters(vec![NetInterface {
+            id: "WIFI".into(),
+            alias: "Wi-Fi".into(),
+            ..NetInterface::default()
+        }]);
+        let rows = form.rows(&fonts());
+        let adapter = rows.iter().find(|r| r.key == "adapter").expect("adapter");
+        assert_eq!((adapter.options.len(), adapter.index), (2, 1));
     }
 
     #[test]

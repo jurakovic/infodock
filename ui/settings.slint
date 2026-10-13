@@ -1223,9 +1223,20 @@ component PropertiesPage inherits VerticalLayout {
 
 // The sensor picker (SPEC §6.6): types by category, a search box, and for a target sensor
 // where to insert.
+// The search box and buttons stay; only the list scrolls, following the selection.
 component PickerPage inherits VerticalLayout {
-    alignment: start;
     spacing: 8px;
+    padding-right: 20px;
+    padding-bottom: 24px;
+
+    // Scrolls the list so that a line `top` to `top + height` (in the list) is in view.
+    function reveal(top: length, height: length) {
+        if top < -list.content-y {
+            list.content-y = -top;
+        } else if top + height > -list.content-y + list.visible-height {
+            list.content-y = -(top + height - list.visible-height);
+        }
+    }
 
     // Up and Down move the selection while the search box keeps the focus (SPEC §6.6).
     FocusScope {
@@ -1239,6 +1250,7 @@ component PickerPage inherits VerticalLayout {
         }
 
         LineEdit {
+            width: parent.width;
             placeholder-text: I18n.tr("settings.picker.search");
             text <=> SettingsState.picker-search;
             accessible-label: I18n.tr("settings.picker.search");
@@ -1286,52 +1298,65 @@ component PickerPage inherits VerticalLayout {
         color: Palette.foreground;
     }
 
-    VerticalLayout {
-        for row in SettingsState.picker-rows: VerticalLayout {
-            if row.heading: Text {
-                text: row.name;
-                font-weight: 600;
-                color: Palette.foreground;
-                accessible-role: text;
-            }
-            if !row.heading: item := Rectangle {
-                property <bool> selected: SettingsState.picker-selected == row.entry;
-                border-radius: 4px;
-                background: self.selected ? Palette.selection-background
-                    : touch.has-hover ? Palette.alternate-background : transparent;
-                accessible-role: list-item;
-                accessible-label: row.name;
-                accessible-description: row.description;
-                accessible-item-selectable: true;
-                accessible-item-selected: self.selected;
-                accessible-action-default => {
-                    SettingsState.picker-selected = row.entry;
+    list := ScrollView {
+        vertical-stretch: 1;
+        horizontal-scrollbar-policy: always-off;
+        content-width: self.visible-width;
+        content-height: lines.preferred-height;
+        lines := VerticalLayout {
+            width: list.visible-width - 16px;
+            alignment: start;
+            for row in SettingsState.picker-rows: line := VerticalLayout {
+                if row.heading: Text {
+                    text: row.name;
+                    font-weight: 600;
+                    color: Palette.foreground;
+                    accessible-role: text;
                 }
-
-                touch := TouchArea {
-                    clicked => {
+                if !row.heading: item := Rectangle {
+                    property <bool> selected: SettingsState.picker-selected == row.entry;
+                    changed selected => {
+                        if self.selected {
+                            root.reveal(line.y + self.y, self.height);
+                        }
+                    }
+                    border-radius: 4px;
+                    background: self.selected ? Palette.selection-background
+                        : touch.has-hover ? Palette.alternate-background : transparent;
+                    accessible-role: list-item;
+                    accessible-label: row.name;
+                    accessible-description: row.description;
+                    accessible-item-selectable: true;
+                    accessible-item-selected: self.selected;
+                    accessible-action-default => {
                         SettingsState.picker-selected = row.entry;
                     }
-                    double-clicked => {
-                        SettingsState.picker-selected = row.entry;
-                        SettingsState.picker-add();
-                    }
-                }
 
-                VerticalLayout {
-                    padding: 8px;
-                    spacing: 2px;
-                    Text {
-                        text: row.name;
-                        color: item.selected ? Palette.selection-foreground : Palette.foreground;
+                    touch := TouchArea {
+                        clicked => {
+                            SettingsState.picker-selected = row.entry;
+                        }
+                        double-clicked => {
+                            SettingsState.picker-selected = row.entry;
+                            SettingsState.picker-add();
+                        }
                     }
 
-                    Text {
-                        text: row.description;
-                        wrap: word-wrap;
-                        font-size: 12px;
-                        color: item.selected ? Palette.selection-foreground : Palette.foreground;
-                        opacity: 0.7;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 2px;
+                        Text {
+                            text: row.name;
+                            color: item.selected ? Palette.selection-foreground : Palette.foreground;
+                        }
+
+                        Text {
+                            text: row.description;
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: item.selected ? Palette.selection-foreground : Palette.foreground;
+                            opacity: 0.7;
+                        }
                     }
                 }
             }
@@ -1425,7 +1450,7 @@ export component SettingsWindow inherits Window {
                 color: #d13438;
             }
 
-            scroll := ScrollView {
+            if SettingsState.page != 5: scroll := ScrollView {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
@@ -1437,8 +1462,11 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == 2: SensorsPage { }
                     if SettingsState.page == 3: PopupsPage { }
                     if SettingsState.page == 4: PropertiesPage { }
-                    if SettingsState.page == 5: PickerPage { }
                 }
+            }
+            // The picker scrolls only its list (SPEC §6.6).
+            if SettingsState.page == 5: PickerPage {
+                vertical-stretch: 1;
             }
         }
     }
