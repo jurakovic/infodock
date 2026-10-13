@@ -54,7 +54,7 @@ Exit (SPEC §17): values match Task Manager within ±3 % (CPU, memory) and ±1 %
 
 Order (D23): the shared pieces first, then the sensors that need no new provider (Time, Date, Uptime), then one provider with its sensors per item. Each item adds its checks to a new M2 section of `docs/manual-test.md`.
 
-- [ ] **S1 Formatting**: `sensors/format.rs` (§8.6): bytes, rates, compact and long durations with plural rules, percent with the locale's decimal separator; unit tests from the spec's examples
+- [x] **S1 Formatting**: `sensors/format.rs` (§8.6): `bytes`, `rate`, `duration_compact`, `duration_long`, `hours_minutes`, `percent(_digits)`; the decimal separator as `Numbers` until S2; units and words in the catalog, plural forms through `i18n::t_count` (English rule). Unit tests from the spec's examples
 - [ ] **S2 Locale**: platform `Locale` (§8.6): weekday and month names, date patterns, hour cycle, decimal separator; Windows NLS (`GetLocaleInfoEx`, `GetDateFormatEx`, `GetTimeFormatEx`) and a fixed en-US stub for other OSes and tests; `settings.dateLocale`; ISO week numbers in Rust
 - [ ] **S3 Colour and two-line block**: `sensors/color.rs` (colour modes and the dynamic gradient, §8.4), inactive rendering (§8.5), the two-line block and `History` (§8.3); recording-canvas tests
 - [ ] **S4 Meter and graphs**: `common/meter.rs`, `common/graph.rs`, `common/dual_graph.rs` (§8.3): geometry, layers, one column per logical px snapped to physical px; recording-canvas tests at 100 % and 150 %
