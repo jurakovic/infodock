@@ -7,6 +7,8 @@
 //! sampler (M1 S10), clicks, menus and drops with the interaction slices (S5–S8, M3), and
 //! `from_legacy` with the legacy import (M4).
 
+pub mod color;
+pub mod common;
 pub mod dates;
 pub mod format;
 pub mod image;

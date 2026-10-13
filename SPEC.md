@@ -601,7 +601,7 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 
 ### 8.3 Reusable building blocks
 
-**Two-line block** (`common/two_line.rs`) — the core visual idiom: a small **label** line above a **value** line, both in the sensor font (modern: 10 px semibold; classic: Arial 9 px bold). In a 25 px bar the classic text baselines are y = 11 and y = 21. Modern: two rows centred vertically as a block; line height = font size + 1.
+**Two-line block** (`common/two_line.rs`) — the core visual idiom: a small **label** line above a **value** line, both in the sensor font (modern: 10 px semibold; classic: Arial 9 px bold). In a 25 px bar the classic text baselines are y = 11 and y = 21. Modern: two rows centred vertically as a block; line height = font size + 1. Implementation: both themes place each baseline 1.5 px above its row's bottom (which gives the classic y = 11 and 21), with tabular digits; each line is left-aligned at an x or right-aligned to one.
 
 **Meter** (`common/meter.rs`) — CPU, Memory, Swap and Disk meters:
 ```
