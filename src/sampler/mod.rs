@@ -20,6 +20,8 @@ enum Message {
         subscriber: String,
         requests: Vec<TopicRequest>,
     },
+    /// The system resumed from sleep.
+    Resume,
     Shutdown,
 }
 
@@ -46,6 +48,12 @@ impl Sampler {
             subscriber: subscriber.to_owned(),
             requests,
         });
+    }
+
+    /// The system resumed from sleep: every topic is read again at once, from new baselines
+    /// (SPEC §4.4).
+    pub fn resume(&self) {
+        let _ = self.messages.send(Message::Resume);
     }
 
     /// Ends the thread.
@@ -90,6 +98,10 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                         to: Some(subscriber.clone()),
                     });
                 }
+            }
+            Ok(Message::Resume) => {
+                providers.resume();
+                scheduler.resume(Instant::now());
             }
             Ok(Message::Shutdown) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {}

@@ -309,6 +309,18 @@ impl BarSensors {
         changed
     }
 
+    /// Tells every sensor the wall clock jumped (SPEC §9.4–9.5); returns whether what any of
+    /// them shows changed.
+    pub fn clock_changed(&mut self, now: Instant, env: &Env) -> bool {
+        let mut changed = false;
+        for p in self.all_mut() {
+            let dirty = p.sensor.on_clock_change(now, &env.ctx(&p.entry.id));
+            p.dirty |= dirty;
+            changed |= dirty;
+        }
+        changed
+    }
+
     /// Tells sensor `id` the pointer entered or left it; returns whether what it shows changed.
     pub fn on_hover(&mut self, id: &str, hovered: bool, now: Instant, env: &Env) -> bool {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
@@ -494,6 +506,48 @@ mod tests {
             self.wakes.set(self.wakes.get() + 1);
             true
         }
+
+        /// Counts from the new time, as a clock re-reads it.
+        fn on_clock_change(&mut self, now: Instant, _cx: &SensorCtx) -> bool {
+            self.start = now;
+            true
+        }
+    }
+
+    #[test]
+    fn a_clock_change_reaches_every_sensor() {
+        let theme = theme();
+        let settings = Settings::default();
+        let platform = crate::platform::current();
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+            animate: true,
+        };
+        let start = Instant::now();
+        let mut sensors = BarSensors::default();
+        for (zone, id) in [(0, "a"), (2, "b")] {
+            sensors.zones[zone].push(Placed {
+                entry: entry(id, "ticker", json!({})),
+                sensor: Box::new(Ticker {
+                    start,
+                    wakes: Rc::new(Cell::new(0)),
+                }),
+                topics: Vec::new(),
+                width: 0.0,
+                x: 0.0,
+                dirty: false,
+            });
+        }
+        let later = start + Duration::from_secs(3);
+        assert!(sensors.clock_changed(later, &env));
+        assert_eq!(
+            sensors.next_wake(later),
+            Some(later + Duration::from_secs(10))
+        );
+        assert!(sensors.all_mut().all(|p| p.dirty), "both re-measure");
     }
 
     #[test]

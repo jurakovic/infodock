@@ -756,6 +756,22 @@ impl BarLogic {
         }
     }
 
+    /// The wall clock jumped: clocks read it again and move their wake-ups.
+    fn clock_changed(&mut self, window: &dyn BarWindow) {
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+            animate: self.animate,
+        };
+        if self.sensors.clock_changed(Instant::now(), &env) {
+            window.invalidate();
+            self.refresh_hint(window);
+        }
+        self.arm_timer(window);
+    }
+
     /// Sets the window's timer to the earliest wake-up any sensor asked for (SPEC §4.4).
     fn arm_timer(&self, window: &dyn BarWindow) {
         let now = Instant::now();
@@ -878,6 +894,11 @@ impl BarHandler for BarLogic {
             }
             UiEvent::Fullscreen(false) => {}
             UiEvent::CloseRequested => self.host.quit(),
+            UiEvent::TimeChanged => self.clock_changed(window),
+            UiEvent::Resumed => {
+                self.host.resumed();
+                self.clock_changed(window);
+            }
             UiEvent::Activate => self.host.activate(),
             UiEvent::TrayClick => self.host.toggle_bar(),
             UiEvent::TrayMenu => self.tray_menu(window),
@@ -1051,6 +1072,9 @@ mod tests {
         }
         fn redock(&self) {
             self.log("redock".into());
+        }
+        fn resumed(&self) {
+            self.log("resumed".into());
         }
     }
 
@@ -1270,6 +1294,15 @@ mod tests {
         assert_eq!(logic.shown.target(), 1.0, "it rises");
         logic.frame(&window, Instant::now() + 2 * RISE);
         assert_eq!(window.slides.borrow().last(), Some(&0));
+    }
+
+    #[test]
+    fn a_resume_reaches_the_sampler() {
+        let (mut logic, window, host, _) = bar(Settings::default());
+        logic.on_event(&window, UiEvent::TimeChanged);
+        assert!(!host.calls().contains(&"resumed".to_owned()));
+        logic.on_event(&window, UiEvent::Resumed);
+        assert!(host.calls().contains(&"resumed".to_owned()));
     }
 
     #[test]

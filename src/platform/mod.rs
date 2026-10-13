@@ -105,6 +105,22 @@ pub trait Platform: Send + Sync {
     fn font_families(&self) -> Vec<String> {
         Vec::new()
     }
+    /// The local wall-clock time; UTC where the platform does not know the time zone.
+    fn local_time(&self) -> crate::sensors::dates::LocalTime {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        crate::sensors::dates::LocalTime::from_unix(
+            i64::try_from(now.as_secs()).unwrap_or(0),
+            now.subsec_millis() as u16,
+        )
+    }
+    /// Opens `target` as Explorer would, for sensor clicks (SPEC §9): a program such as
+    /// `taskmgr.exe`, a file or folder, or a URI such as `ms-settings:dateandtime`. It runs in
+    /// the background; failures are logged (and the shell may explain them).
+    fn open(&self, target: &str) {
+        tracing::info!("opening {target:?} is not supported on this platform");
+    }
     /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
     /// UI language's for `Ui`. English (United States) where the platform cannot tell.
     fn locale(&self, which: DateLocale) -> Locale {
@@ -339,6 +355,10 @@ pub enum UiEvent {
     AppearanceChanged,
     /// The OS asks the app to close (graceful `taskkill`, Restart Manager).
     CloseRequested,
+    /// The system time or time zone changed (`WM_TIMECHANGE`).
+    TimeChanged,
+    /// The system resumed from sleep or hibernation.
+    Resumed,
     /// A second launch asked this instance to show itself (SPEC §6.5).
     Activate,
     /// The tray icon was clicked or selected with the keyboard (SPEC §6.5).

@@ -1,4 +1,5 @@
-//! Shell services (SPEC §4.6): the file and folder pickers Settings uses (`IFileOpenDialog`).
+//! Shell services (SPEC §4.6): opening programs, files and URIs for sensor clicks
+//! (`ShellExecuteExW`), and the file and folder pickers Settings uses (`IFileOpenDialog`).
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
@@ -7,11 +8,48 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
-    FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH,
+    FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, SEE_MASK_NOASYNC,
+    SHELLEXECUTEINFOW, SIGDN_FILESYSPATH, ShellExecuteExW,
 };
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result};
 
 use crate::platform::PathRequest;
+
+/// Opens `target` as Explorer would, on a short-lived thread: the shell can take a moment (and
+/// show its own message when the target is missing), and the bar thread must not wait.
+pub fn open(target: &str) {
+    let target = target.to_owned();
+    let spawned = std::thread::Builder::new()
+        .name("open".into())
+        .spawn(move || {
+            // Shell extensions may use COM.
+            // SAFETY: per-thread initialisation, balanced below.
+            let initialised =
+                unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) }
+                    .is_ok();
+            let file = HSTRING::from(target.as_str());
+            let mut info = SHELLEXECUTEINFOW {
+                cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+                // The thread ends after the call, so the shell must finish before it returns.
+                fMask: SEE_MASK_NOASYNC,
+                lpFile: PCWSTR(file.as_ptr()),
+                nShow: SW_SHOWNORMAL.0,
+                ..Default::default()
+            };
+            // SAFETY: `info` is initialised and `file` outlives the call.
+            if let Err(e) = unsafe { ShellExecuteExW(&mut info) } {
+                tracing::warn!("could not open {target:?}: {e}");
+            }
+            if initialised {
+                // SAFETY: balances the successful CoInitializeEx above.
+                unsafe { CoUninitialize() };
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("could not start opening a target: {e}");
+    }
+}
 
 /// Shows the picker modal to `owner`; `None` if the user cancelled or it failed (logged).
 pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> {

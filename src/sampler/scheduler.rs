@@ -81,6 +81,14 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
         catch_up
     }
 
+    /// After the system resumed: every topic is due now, and the cadence starts again from the
+    /// next reading (SPEC §4.4).
+    pub fn resume(&mut self, now: Instant) {
+        for entry in self.topics.values_mut() {
+            entry.next = now;
+        }
+    }
+
     /// The topics to sample now.
     pub fn due(&self, now: Instant) -> Vec<K> {
         self.topics
@@ -152,6 +160,21 @@ mod tests {
         // The last subscriber leaves: nothing is sampled.
         s.subscribe("a", &[], t0 + SEC);
         assert_eq!(s.next_due(), None);
+    }
+
+    #[test]
+    fn resuming_makes_every_topic_due() {
+        let t0 = Instant::now();
+        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        s.subscribe("a", &requests(&[("uptime", 60_000), ("cpu", 1000)]), t0);
+        for topic in s.due(t0) {
+            s.sampled(&topic, t0, Some(1));
+        }
+        assert!(s.due(t0 + SEC / 2).is_empty());
+        s.resume(t0 + SEC / 2);
+        let mut due = s.due(t0 + SEC / 2);
+        due.sort_unstable();
+        assert_eq!(due, ["cpu", "uptime"]);
     }
 
     #[test]

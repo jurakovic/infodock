@@ -248,6 +248,10 @@ impl BarHost for AppHost {
             bar.redock();
         }
     }
+
+    fn resumed(&self) {
+        self.0.sampler.resume();
+    }
 }
 
 #[cfg(test)]

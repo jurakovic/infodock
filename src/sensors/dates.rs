@@ -1,7 +1,13 @@
 //! Calendar dates for the Date and Time sensors (SPEC §8.6, §9.4–9.5): weekdays, the day of the
 //! year, ISO 8601 week numbers and the locale's date patterns. Pure.
 
+use std::time::Duration;
+
 use crate::platform::Locale;
+
+/// Wake-ups aim this far past a second or minute boundary, so a timer that fires a little
+/// early still finds the new second.
+const BOUNDARY_MARGIN: Duration = Duration::from_millis(20);
 
 /// A day in the proleptic Gregorian calendar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,6 +96,42 @@ impl Date {
     }
 }
 
+/// A local wall-clock time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalTime {
+    pub date: Date,
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+    pub millis: u16,
+}
+
+impl LocalTime {
+    /// The UTC time `seconds` and `millis` after 1970-01-01, for platforms that do not know
+    /// the time zone.
+    pub fn from_unix(seconds: i64, millis: u16) -> Self {
+        let in_day = seconds.rem_euclid(86_400);
+        Self {
+            date: Date::from_days(seconds.div_euclid(86_400)),
+            hour: (in_day / 3600) as u8,
+            minute: (in_day / 60 % 60) as u8,
+            second: (in_day % 60) as u8,
+            millis: millis.min(999),
+        }
+    }
+
+    /// How long until just after the next second starts (SPEC §9.5: aligned, no polling).
+    pub fn until_next_second(&self) -> Duration {
+        Duration::from_millis(u64::from(1000 - self.millis.min(999))) + BOUNDARY_MARGIN
+    }
+
+    /// How long until just after the next minute starts.
+    pub fn until_next_minute(&self) -> Duration {
+        let elapsed = u64::from(self.second.min(59)) * 1000 + u64::from(self.millis.min(999));
+        Duration::from_millis(60_000 - elapsed) + BOUNDARY_MARGIN
+    }
+}
+
 /// `date` written with `pattern`, a date pattern in the Windows picture format (SPEC §8.6):
 /// `d`/`dd` the day, `ddd`/`dddd` the weekday's short or long name, `M`/`MM` the month,
 /// `MMM`/`MMMM` its short or long name, `y`/`yy` the year's last two digits, `yyy`/`yyyy` the
@@ -173,6 +215,18 @@ mod tests {
         assert_eq!(date(2026, 1, 1).day_of_year(), 1);
         assert_eq!(date(2026, 12, 31).day_of_year(), 365);
         assert_eq!(date(2024, 12, 31).day_of_year(), 366);
+    }
+
+    #[test]
+    fn local_times_and_boundaries() {
+        let t = LocalTime::from_unix(date(2026, 10, 13).days() * 86_400 + 3723, 250);
+        assert_eq!(t.date, date(2026, 10, 13));
+        assert_eq!((t.hour, t.minute, t.second, t.millis), (1, 2, 3, 250));
+        assert_eq!(t.until_next_second(), Duration::from_millis(770));
+        assert_eq!(t.until_next_minute(), Duration::from_millis(56_770));
+        let before_1970 = LocalTime::from_unix(-1, 0);
+        assert_eq!(before_1970.date, date(1969, 12, 31));
+        assert_eq!(before_1970.second, 59);
     }
 
     #[test]

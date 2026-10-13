@@ -22,6 +22,7 @@ use windows::core::{PCWSTR, w};
 
 use super::{Capabilities, Color, Locale, MonitorInfo, OsAppearance, Platform};
 use crate::config::model::DateLocale;
+use crate::sensors::dates::{Date, LocalTime};
 
 pub struct WindowsPlatform;
 
@@ -39,6 +40,24 @@ impl Platform for WindowsPlatform {
 
     fn locale(&self, which: DateLocale) -> Locale {
         locale::read(which)
+    }
+
+    fn local_time(&self) -> LocalTime {
+        // SAFETY: no arguments; it only reads the clock.
+        let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+        let date = Date::new(i32::from(t.wYear), t.wMonth as u8, t.wDay as u8)
+            .unwrap_or_else(|| Date::from_days(0));
+        LocalTime {
+            date,
+            hour: t.wHour as u8,
+            minute: t.wMinute as u8,
+            second: t.wSecond as u8,
+            millis: t.wMilliseconds,
+        }
+    }
+
+    fn open(&self, target: &str) {
+        shell::open(target);
     }
 
     fn font_families(&self) -> Vec<String> {

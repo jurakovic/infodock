@@ -41,12 +41,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
     GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
-    LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW,
-    SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMER,
-    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PBT_APMRESUMEAUTOMATIC, PostMessageW,
+    PostQuitMessage, RegisterClassExW, SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP,
+    WM_CAPTURECHANGED, WM_CLOSE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
+    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WNDCLASSEXW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -231,6 +232,11 @@ impl WindowState {
             }
             WM_CAPTURECHANGED if lparam.0 != hwnd.0 as isize => {
                 self.dispatch(UiEvent::CaptureLost);
+            }
+            WM_TIMECHANGE => self.dispatch(UiEvent::TimeChanged),
+            // Sent on every resume, also when no user input follows (unlike the "suspend" one).
+            WM_POWERBROADCAST if wparam.0 == PBT_APMRESUMEAUTOMATIC as usize => {
+                self.dispatch(UiEvent::Resumed);
             }
             WM_TIMER if wparam.0 == RETRY_TIMER => {
                 // SAFETY: plain call on our own window.

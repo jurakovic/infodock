@@ -47,6 +47,8 @@ pub trait BarHost: Send + Sync {
     /// Docks the bar as the settings say now; after a docked bar's edge changed, the bar
     /// thread calls this once it has slid out (SPEC §5.5).
     fn redock(&self);
+    /// The system resumed from sleep: the sampler reads every topic again (SPEC §4.4).
+    fn resumed(&self);
 }
 
 /// Work for the bar thread, queued by [`BarController`].

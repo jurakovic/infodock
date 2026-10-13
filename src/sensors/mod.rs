@@ -205,6 +205,11 @@ pub trait Sensor {
     fn on_sample(&mut self, _topic: &Topic, _sample: &Sample, _cx: &SensorCtx) -> Dirty {
         false
     }
+    /// The wall clock jumped: the time or time zone changed, or the system resumed. Clocks
+    /// read the time again and move their wake-ups (SPEC §9.4–9.5).
+    fn on_clock_change(&mut self, _now: Instant, _cx: &SensorCtx) -> Dirty {
+        false
+    }
     /// When the sensor next needs [`Sensor::on_wake`], for timer-driven sensors (clock,
     /// uptime). The bar keeps one timer for the earliest wake-up of all sensors.
     fn wake_at(&self, _now: Instant) -> Option<Instant> {

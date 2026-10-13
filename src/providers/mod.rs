@@ -19,6 +19,10 @@ impl Providers {
         Self { platform }
     }
 
+    /// The system resumed from sleep: providers that read deltas start from a new baseline
+    /// (the first CPU reading after resume is discarded, Appendix A). None do yet.
+    pub fn resume(&mut self) {}
+
     /// Reads `topic` now; `None` if it cannot be read.
     pub fn sample(&mut self, topic: &Topic) -> Option<Sample> {
         match topic {
