@@ -63,7 +63,7 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 - [ ] Windows ▸ Personalisation ▸ Colours ▸ *Transparency effects* off: the bar turns plain (no blur) without a restart. On again: the blur returns.
 - [ ] Windows ▸ Personalisation ▸ Colours ▸ *Choose your mode* → Light: the bar turns light grey; Dark: dark again. No restart needed.
 
-## M1 — Framework (in progress)
+## M1 — Framework
 
 The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tray is native (D17); no browser engine runs at all (SPEC §4.1, §14.1). The M0 checks above still apply.
 
@@ -77,8 +77,9 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 - [ ] With the first-run config, the bar shows the Infodock logo in the centre, and dimmed, outlined labels `cpu-graph`, `memory-meter`, `network-graph` on the left and `date`, `time` on the right: those sensor types arrive in M2.
 - [ ] Settings ▸ General ▸ *Space between sensors*: the gaps on the left and right change at once.
-- [ ] At 150 % scaling, the logo and the labels are crisp, not blurred.
+- [ ] At 125 % and 150 % scaling, the logo and the labels are crisp, not blurred (an Image is drawn from a whole pixel since S12d).
 - [ ] Add a Text sensor (*New sensor… ▸ Text*) with the text "Hello": it shows "Hello"; a Spacer with *Show divider* shows a faint vertical line; an Image with a picture file shows that picture one pixel less than the bar tall.
+- [ ] Images (since S12d): a large photo (e.g. 24 megapixels) shows; an SVG and a compressed `.svgz` show. A picture over 64 megapixels is refused (the logo shows instead, and the log says why) without freezing or crashing Infodock.
 
 **Menus and Lock** (since M1 S6)
 
@@ -104,6 +105,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Click a sensor while its hint shows: the hint closes and does not come back until the pointer moves to another sensor. Right-click: the hint closes before the menu opens.
 - [ ] Tray → *Popups* off: no hints. On again: hints are back.
 - [ ] Bar at the top (Settings ▸ Bar ▸ Screen edge): hints appear below the bar, their triangle pointing up.
+- [ ] With the logo's hint shown, add a sensor in front of it from Settings (picker, *Add*): the hint moves with the logo (since S12c).
 - [ ] At 150 % scaling the hint text is crisp.
 - [ ] Settings ▸ Popups ▸ *Delay before a popup shows* at 0: hints appear at once.
 
@@ -111,26 +113,29 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 - [ ] Settings ▸ Bar ▸ *Position* → *Floating*: the bar becomes an 800 px wide strip, centred a little above the bottom of the screen; maximised windows no longer stop at it, and *Reserve screen space* is hidden. *Width* changes its width at once.
 - [ ] Drag the bar by an empty part of its background: it follows the pointer smoothly; release it: after a restart it is in the same place. Dragging a sensor still reorders sensors.
-- [ ] Drag it partly off the screen and release: it slides back inside the screen. With two monitors, drag it onto the other one (also one with another scale): it stays there with the right height.
+- [ ] Drag it partly off the screen and release: it slides back inside the screen. With two monitors, drag it onto the other one (also one with another scale): it stays there with the right height. Dropped across the boundary, it goes to the monitor holding most of it (since S12c).
 - [ ] *Lock* on: dragging the background does nothing.
-- [ ] Hints: with the bar near the top of the screen they open below it, near the bottom above it.
+- [ ] Hints: with the bar near the top of the screen they open below it, near the bottom above it. The bar's thin edge line is on the side facing the screen centre (below the bar near the top).
 - [ ] *Position* → *Docked*: the bar is back at its edge, reserving space again.
 
 **Highlight and fades** (since M1 S11)
 
 - [ ] Start Infodock: the bar slides up from below the screen edge while its content fades in (about a third of a second). With the bar at the top, it slides down from above.
 - [ ] Settings ▸ Bar ▸ *Screen edge* → *Top*: the bar slides down out of the screen, then slides in at the top. Back to *Bottom*: the same the other way. Maximised windows follow the reserved space.
+- [ ] Change the edge to *Top* and at once back to *Bottom* (within a third of a second): the bar slides out and comes back; it never stays invisible (since S12c).
+- [ ] While the bar rises, another app bar or a display change moves things: the bar does not jump (since S12c).
 - [ ] *Animations* → *Off*, then change the edge or restart: the bar is simply there, without sliding or fading.
 
 - [ ] Settings ▸ Bar ▸ *Highlight on hover* on: moving the pointer onto the bar makes its background noticeably more opaque over about a third of a second; leaving fades it back.
 - [ ] Add a Spacer without divider (*New sensor… ▸ Spacer*): hovering it fades in a faint vertical line; leaving fades it out. With *Show divider* on, the line is always there.
-- [ ] *Animations* → *Off*: the highlight and the Spacer's line appear and disappear at once. *Like Windows* follows Settings ▸ Accessibility ▸ Visual effects ▸ *Animation effects* (after switching it, move the pointer over the bar again).
+- [ ] *Animations* → *Off*: the highlight and the Spacer's line appear and disappear at once. *Like Windows* follows Settings ▸ Accessibility ▸ Visual effects ▸ *Animation effects* at once (since S12c).
 
 **Sensor properties** (since M1 S9)
 
 - [ ] Right-click the logo → *Properties…*: Settings opens "Image properties" with *Image file*, *Colour*, *Opacity* and *Popup text*.
 - [ ] *Colour* → *Custom* and a colour such as `#20B7FF` (Enter): within a moment the logo on the bar turns that colour; nothing is saved yet. *Opacity* 50 %: the logo fades.
-- [ ] *Browse…* opens the Windows file picker filtered to images; pick a PNG: the bar shows it.
+- [ ] *Browse…* opens the Windows file picker filtered to images; pick a PNG: the bar shows it. Type into the path first, then *Browse…*: the box shows the picked path (since S12a2).
+- [ ] Type `#12345` as the custom colour: the row says how to write a colour and *Save* is greyed out; complete it to `#123456`: the message goes and *Save* works (since S12b).
 - [ ] *Cancel*: the logo is back as it was. Again with *Save*: the change stays, also after a restart.
 - [ ] Change something, then click *General* in the navigation, or close Settings: the change is dropped.
 
@@ -141,6 +146,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Choose *Before*, double-click *Text*: "Text properties" opens and a "Text" sensor appears left of the logo. *Cancel*: it is gone again. Again with *Save*: it stays.
 - [ ] Right-click empty space in the right third → *New sensor…*: there is no Insert choice; *Add* puts the sensor at the start of the right zone (next to the centre). In the left third, at the end of the left zone.
 - [ ] Open the picker, then click *Sensors* in the navigation: nothing is added.
+- [ ] Keyboard only (since S12b): open the picker, type `e`: *Image* is selected; Down and Up in the search box move the selection; Enter adds the selected type.
 
 **Layout manager** (since M1 S9)
 
@@ -150,12 +156,15 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Drag a sensor on the bar: the list in Settings follows at once.
 - [ ] *Remove* on a sensor: the row asks "Remove sensor “…”?"; *Cancel* keeps it, *Remove* removes it from the list and the bar.
 - [ ] *Add…* next to *Centre*: the picker opens without an Insert choice; *Add* puts the new sensor at the end of the centre zone and opens its properties.
-- [ ] Keyboard: Tab reaches every button of every row, Space activates it; Narrator reads each button's name (*Move up*, *Move down*, *Properties*, *Remove*).
+- [ ] Keyboard: Tab reaches every button of every row, Space activates it; Narrator reads each button's name (*Move up*, *Move down*, *Properties*, *Remove*). After *Move down* with Space, the focus stays on that sensor's *Move down*, so Space again moves it on (since S12b).
 
 **Settings window (Slint)**
 
 - [ ] It looks like Windows 11 Settings: navigation on the left; each setting with its label and help on the left and its control on the right. Light and dark mode follow Windows.
 - [ ] Every control from the M0 checks works the same (hotkey recording, choices, switches, sliders save when released, *Use theme default*). A tray toggle of *Lock* or *Popups* shows up in Settings at once.
+- [ ] Since S12a: a slider shows the value it will save (e.g. *Delay before a popup shows* in steps of 50 ms) and snaps to it when released. Tabbing through *Popups ▸ Background* or clicking its opacity slider without moving it keeps *Use theme default* greyed out. Typing a colour and clicking *General* saves it. Recording the hotkey, then clicking another page ends recording.
+- [ ] Record a hotkey that another app uses: the error shows; close and reopen Settings: no error (the old hotkey still works).
+- [ ] Ctrl+Space in the navigation does not blank the page.
 - [ ] Keyboard: Tab moves through the controls, Space toggles switches, arrow keys change choices and sliders. Narrator reads each control with its label.
 - [ ] Resize the window down to its minimum: labels and help texts wrap, nothing overlaps or is cut off.
 - [ ] With Settings open behind other windows, start Infodock again: Settings comes to the front.
