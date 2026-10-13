@@ -14,9 +14,9 @@ From the M1 close-out review (four clean-context reviewers, 2026-10-12). High an
 
 ## S12b — Settings: validation and keyboard
 
-- [ ] **Medium — properties validation differs from §6.7.** `src/settings/properties.rs` `edit` (≈122): one page-level error that the next valid edit clears, and Save is never disabled, so `#12345` can stay in the box while the old colour is saved. Fix: track invalid keys in `FormState`, show the error on the row, disable Save while any is invalid.
-- [ ] **Medium — the Layout manager loses keyboard focus after each change.** `src/settings/layout.rs` `fill` installs a new `VecModel` on every config change, so the Repeater rebuilds every row. Fix: update the model in place, and refocus the moved row's button (e.g. a `layout-focus-id`).
-- [ ] **Medium — the sensor picker cannot be used from the keyboard.** `ui/settings.slint` `PickerPage`: rows cannot take focus, no arrow keys, Enter adds only with a selection. Fix: select the first match when nothing is selected, and move the selection with Up/Down in the search box.
+- [x] **Medium — properties validation differs from §6.7.** *Fixed in `16d5167`: invalid fields are tracked (`Form::valid`), the row shows the error, Save is disabled; colour boxes in the form report every edit.* `src/settings/properties.rs` `edit` (≈122): one page-level error that the next valid edit clears, and Save is never disabled, so `#12345` can stay in the box while the old colour is saved. Fix: track invalid keys in `FormState`, show the error on the row, disable Save while any is invalid.
+- [x] **Medium — the Layout manager loses keyboard focus after each change.** *Fixed in `16d5167`: the list is rebuilt only when a line changed; the moved sensor's button takes the focus again (`layout-focus-id`).* `src/settings/layout.rs` `fill` installs a new `VecModel` on every config change, so the Repeater rebuilds every row. Fix: update the model in place, and refocus the moved row's button (e.g. a `layout-focus-id`).
+- [x] **Medium — the sensor picker cannot be used from the keyboard.** *Fixed in `16d5167`: a search selects the first match, Up/Down in the search box move the selection.* `ui/settings.slint` `PickerPage`: rows cannot take focus, no arrow keys, Enter adds only with a selection. Fix: select the first match when nothing is selected, and move the selection with Up/Down in the search box.
 
 ## S12c — Bar
 
