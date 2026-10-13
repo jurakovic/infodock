@@ -93,8 +93,10 @@ fn parse(bytes: &[u8], base: usize, page: u64) -> Vec<PageFile> {
         let start = address.checked_sub(base)?;
         let text = bytes.get(start..start.checked_add(length)?)?;
         let units: Vec<u16> = text
-            .chunks_exact(2)
-            .map(|c| u16::from_ne_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_ne_bytes(*c))
             .collect();
         Some(String::from_utf16_lossy(&units))
     };
