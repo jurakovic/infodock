@@ -1,11 +1,14 @@
-# Measures Infodock's memory (SPEC §14.1, §16): the private working set (Task Manager's
+# Measures Infodock's budgets (SPEC §14.1, §16): the private working set (Task Manager's
 # "Memory" column) of infodock.exe and all its child processes, at idle, with Settings open,
-# and after Settings was closed. Also saves a screenshot, quits the app gracefully and prints
-# its log. Writes a summary table to the job summary.
+# and after Settings was closed; and its CPU use at idle over 60 s, as a share of all
+# processors (Task Manager's "CPU" column). Also saves a screenshot, quits the app gracefully
+# and prints its log. Writes a summary table to the job summary.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
     [int] $BudgetMb = 30,
+    [double] $CpuBudgetPercent = 0.5,
+    [int] $CpuSeconds = 60,
     # Fail the step when a measurement without Settings is over budget.
     [switch] $Enforce
 )
@@ -79,6 +82,15 @@ try {
     Measure-Tree 'Idle' $app.Id
     Save-Screenshot (Join-Path $OutDir 'bar.png')
 
+    # Idle CPU: processor time used over the window, of all processors' time.
+    $before = (Get-Process -Id $app.Id).TotalProcessorTime
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    Start-Sleep -Seconds $CpuSeconds
+    $used = (Get-Process -Id $app.Id).TotalProcessorTime - $before
+    $capacity = $clock.Elapsed.TotalSeconds * [Environment]::ProcessorCount
+    $cpuPercent = [math]::Round(100 * $used.TotalSeconds / $capacity, 3)
+    Write-Host "== Idle CPU: $cpuPercent % over $CpuSeconds s ($([math]::Round($used.TotalMilliseconds)) ms on $([Environment]::ProcessorCount) processors)"
+
     # A second launch opens Settings in the running instance (SPEC §6.5).
     $second = Start-Process -FilePath $Exe -PassThru
     if (-not $second.WaitForExit(15000)) { Write-Warning 'The second instance did not exit' }
@@ -110,11 +122,19 @@ try {
 
 $summary = @("### Memory (private working set, budget $BudgetMb MB)", '', '| Stage | Total MB | Processes |', '|---|---:|---:|')
 $summary += $results | ForEach-Object { "| $($_.Stage) | $($_.TotalMb) | $($_.Processes) |" }
+$summary += @('', "### Idle CPU (budget $CpuBudgetPercent %)", '', "$cpuPercent % of $([Environment]::ProcessorCount) processors over $CpuSeconds s")
 if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
 $summary -join "`n" | Write-Host
 
+$problems = @()
 $over = $results | Where-Object { $_.Stage -ne 'Settings open' -and $_.TotalMb -gt $BudgetMb }
 if ($over) {
-    $message = "Over the $BudgetMb MB budget: " + (($over | ForEach-Object { "$($_.Stage) $($_.TotalMb) MB" }) -join ', ')
+    $problems += "over the $BudgetMb MB budget: " + (($over | ForEach-Object { "$($_.Stage) $($_.TotalMb) MB" }) -join ', ')
+}
+if ($cpuPercent -gt $CpuBudgetPercent) {
+    $problems += "idle CPU $cpuPercent % is over the $CpuBudgetPercent % budget"
+}
+if ($problems) {
+    $message = 'Budgets missed: ' + ($problems -join '; ')
     if ($Enforce) { throw $message } else { Write-Warning $message }
 }

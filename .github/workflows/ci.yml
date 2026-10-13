@@ -103,8 +103,8 @@ jobs:
           path: target/screenshots
           if-no-files-found: ignore
           retention-days: 14
-      # Memory budget (SPEC §14.1): reported until M1 S12, enforced from then on.
-      - name: Memory check
+      # Memory and idle CPU budgets (SPEC §14.1), enforced.
+      - name: Memory and CPU check
         shell: pwsh
         run: .github/scripts/measure-memory.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/memory-check" -Enforce
       - uses: actions/upload-artifact@v6

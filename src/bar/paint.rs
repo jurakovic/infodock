@@ -379,9 +379,102 @@ mod tests {
         }
     }
 
+    /// Made-up samples for the screenshots of the system sensors: a plot's worth of each
+    /// topic the sensors subscribe to, varying over time.
+    #[cfg(windows)]
+    mod samples {
+        use std::sync::Arc;
+
+        use crate::bar::sensors::{BarSensors, Env};
+        use crate::sampler::{
+            CpuSample, Delivery, DiskSample, MemorySample, NetSample, Sample, SwapSample, Topic,
+            UptimeSample,
+        };
+
+        const GB: u64 = 1 << 30;
+
+        fn sample(topic: &Topic, i: usize) -> Sample {
+            let wave = |period: f32, phase: f32| (i as f32 / period + phase).sin();
+            match topic {
+                Topic::Cpu => {
+                    let total = 35.0 + 30.0 * wave(7.0, 0.0);
+                    Sample::Cpu(CpuSample {
+                        total,
+                        user: total * 0.6,
+                        kernel: total * 0.3,
+                        idle: 100.0 - total,
+                        cores: (0..8).map(|c| 50.0 + 45.0 * wave(5.0, c as f32)).collect(),
+                        logical: 8,
+                    })
+                }
+                Topic::Memory => {
+                    let total = 32 * GB;
+                    let load = 45.0 + 8.0 * wave(20.0, 0.0);
+                    let used = (total as f64 * f64::from(load) / 100.0) as u64;
+                    Sample::Memory(MemorySample {
+                        total,
+                        available: total - used,
+                        used,
+                        load,
+                    })
+                }
+                Topic::Swap => {
+                    let total = 8 * GB;
+                    let load = 12.0 + 6.0 * wave(15.0, 1.0);
+                    Sample::Swap(SwapSample {
+                        total,
+                        used: (total as f64 * f64::from(load) / 100.0) as u64,
+                        load,
+                    })
+                }
+                Topic::Disk(root) => Sample::Disk(if root.starts_with('Q') {
+                    DiskSample::default()
+                } else {
+                    DiskSample {
+                        present: true,
+                        total: 953 * GB,
+                        free: 241 * GB,
+                    }
+                }),
+                Topic::Net(_) => Sample::Net(NetSample {
+                    present: true,
+                    id: "WIFI".into(),
+                    alias: "Wi-Fi".into(),
+                    up: true,
+                    rx_rate: f64::from(1.3e6 * (1.0 + wave(6.0, 0.0)).powi(2)),
+                    tx_rate: f64::from(9e4 * (1.0 + wave(4.0, 2.0))),
+                    ..NetSample::default()
+                }),
+                Topic::Uptime => Sample::Uptime(UptimeSample {
+                    boot_unix_ms: 0,
+                    uptime_secs: 3 * 86_400 + 4 * 3600 + 12 * 60,
+                }),
+            }
+        }
+
+        pub fn feed(sensors: &mut BarSensors, env: &Env) {
+            let mut topics: Vec<Topic> = Vec::new();
+            for request in sensors.subscriptions().into_values().flatten() {
+                if !topics.contains(&request.topic) {
+                    topics.push(request.topic);
+                }
+            }
+            for i in 0..150 {
+                for topic in &topics {
+                    let delivery = Delivery {
+                        topic: topic.clone(),
+                        sample: Arc::new(sample(topic, i)),
+                        to: None,
+                    };
+                    sensors.deliver(&delivery, env);
+                }
+            }
+        }
+    }
+
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
-    /// them): plain bars per theme, the canvas specimen, the first-run layout and the General
-    /// sensors, at 100 % and 150 %.
+    /// them): plain bars per theme, the canvas specimen, the first-run layout, the General
+    /// sensors and every system sensor with made-up samples, at 100 % and 150 %.
     #[cfg(windows)]
     #[test]
     #[ignore = "writes PNGs to target/screenshots; run with --ignored"]
@@ -484,23 +577,97 @@ mod tests {
             ),
             entry("h", "image", serde_json::json!({ "opacity": 40 })),
         ];
+        // Every system sensor, with made-up samples: CPU, memory and dual graph on the left,
+        // network and uptime in the centre, swap and disks on the right (Q:\ is absent).
+        let mut system = Layout::default();
+        let dynamic = serde_json::json!({ "mode": "dynamic", "color": "#FFFFFF" });
+        system.left = vec![
+            entry("s1", "cpu-meter", serde_json::json!({ "color": dynamic })),
+            entry(
+                "s2",
+                "cpu-graph",
+                serde_json::json!({ "bkOpacity": 40, "gridOpacity": 25 }),
+            ),
+            entry("s3", "cpu-graph-dual", serde_json::json!({})),
+            entry("s4", "memory-meter", serde_json::json!({})),
+            entry(
+                "s5",
+                "memory-graph",
+                serde_json::json!({ "graphColor": dynamic }),
+            ),
+        ];
+        system.center = vec![
+            entry("s6", "network-graph", serde_json::json!({ "width": 80 })),
+            entry("s7", "uptime", serde_json::json!({})),
+        ];
+        system.right = vec![
+            entry("s8", "swap-meter", serde_json::json!({})),
+            entry(
+                "s9",
+                "swap-graph",
+                serde_json::json!({ "display": "percent" }),
+            ),
+            entry("s10", "disk-meter", serde_json::json!({ "drive": "C:\\" })),
+            entry(
+                "s11",
+                "disk-meter",
+                serde_json::json!({ "drive": "Q:\\", "mode": "freeBytes" }),
+            ),
+        ];
+        let platform = crate::platform::current();
         let first_run = crate::config::Config::first_run("1.0.0").layout;
-        for (name, layout, settings, os) in [
-            ("bar-first-run", &first_run, Settings::default(), dark),
-            ("bar-first-run-classic", &first_run, classic.clone(), dark),
-            ("bar-general", &general, Settings::default(), dark),
-            ("bar-general-light", &general, Settings::default(), light),
+        for (name, layout, settings, os, bar_width) in [
+            (
+                "bar-first-run",
+                &first_run,
+                Settings::default(),
+                dark,
+                700.0,
+            ),
+            (
+                "bar-first-run-classic",
+                &first_run,
+                classic.clone(),
+                dark,
+                700.0,
+            ),
+            ("bar-general", &general, Settings::default(), dark, 700.0),
+            (
+                "bar-general-light",
+                &general,
+                Settings::default(),
+                light,
+                700.0,
+            ),
+            ("bar-system", &system, Settings::default(), dark, 1100.0),
+            (
+                "bar-system-light",
+                &system,
+                Settings::default(),
+                light,
+                1100.0,
+            ),
         ] {
             let theme = Theme::resolve(&settings, os);
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
-                let size = SizeF::new(700.0, theme.bar_height as f32);
+                let size = SizeF::new(bar_width, theme.bar_height as f32);
                 let mut sensors = BarSensors::default();
                 sensors.sync(
                     layout,
                     &Default::default(),
-                    &crate::platform::Capabilities::default(),
+                    &platform.capabilities(),
                     crate::sensors::registry::registry(),
                 );
+                let env = crate::bar::sensors::Env {
+                    settings: &settings,
+                    theme: &theme,
+                    platform: platform.as_ref(),
+                    alt: false,
+                    animate: false,
+                };
+                // The clocks read the time at their first wake-up; the others get samples.
+                sensors.wake(std::time::Instant::now(), &env);
+                samples::feed(&mut sensors, &env);
                 let cx = LayoutCtx {
                     theme: &theme,
                     text: text.as_ref(),
