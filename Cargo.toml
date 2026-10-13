@@ -42,6 +42,10 @@ slint = { version = "1.18", default-features = false, features = [
 global-hotkey = "0.8"
 # SVG icons and images (SPEC §3). Slint links the same version; its text feature is Slint's.
 resvg = { version = "0.48", default-features = false }
+# For SVG limits (`platform/bitmap.rs`): .svgz inflated with a cap, and the size of embedded
+# rasters. The versions and features usvg already links, so they cost nothing.
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+imagesize = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 fastrand = "2"

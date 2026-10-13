@@ -5,7 +5,9 @@
 use std::cell::RefCell;
 
 use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPRGBA, IWICBitmapFrameDecode,
+    CLSID_WICImagingFactory, GUID_ContainerFormatBmp, GUID_ContainerFormatGif,
+    GUID_ContainerFormatIco, GUID_ContainerFormatJpeg, GUID_ContainerFormatPng,
+    GUID_VendorMicrosoftBuiltIn, GUID_WICPixelFormat32bppPRGBA, IWICBitmapFrameDecode,
     IWICBitmapSource, IWICImagingFactory, IWICPalette, WICBitmapDitherTypeNone,
     WICBitmapInterpolationModeHighQualityCubic, WICBitmapPaletteTypeCustom,
     WICDecodeMetadataCacheOnDemand,
@@ -14,10 +16,11 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoCreateInstance,
     CoInitializeEx, CoUninitialize,
 };
+use windows::core::GUID;
 use windows::core::Interface;
 
 use crate::platform::Bitmap;
-use crate::platform::bitmap::{ImageError, ImageFormat, scaled_size};
+use crate::platform::bitmap::{ImageError, ImageFormat, raster_size};
 
 /// COM for this thread and its WIC factory, released when the thread ends.
 struct Wic {
@@ -87,6 +90,18 @@ fn pick_frame(
     chosen.map(|f| &f.0)
 }
 
+/// The WIC container format of `format`; `None` for SVG, which WIC does not read.
+fn container(format: ImageFormat) -> Option<GUID> {
+    Some(match format {
+        ImageFormat::Png => GUID_ContainerFormatPng,
+        ImageFormat::Jpeg => GUID_ContainerFormatJpeg,
+        ImageFormat::Gif => GUID_ContainerFormatGif,
+        ImageFormat::Bmp => GUID_ContainerFormatBmp,
+        ImageFormat::Ico => GUID_ContainerFormatIco,
+        ImageFormat::Svg => return None,
+    })
+}
+
 pub fn decode(
     bytes: &[u8],
     format: ImageFormat,
@@ -98,8 +113,14 @@ pub fn decode(
     unsafe {
         let stream = factory.CreateStream().map_err(os)?;
         stream.InitializeFromMemory(bytes).map_err(os)?;
+        // The built-in decoder of the sniffed format, never a codec another program installed
+        // (SPEC §4.6).
+        let container = container(format).ok_or(ImageError::Unsupported)?;
         let decoder = factory
-            .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
+            .CreateDecoder(&container, &GUID_VendorMicrosoftBuiltIn)
+            .map_err(os)?;
+        decoder
+            .Initialize(&stream, WICDecodeMetadataCacheOnDemand)
             .map_err(os)?;
         let count = match format {
             ImageFormat::Ico => decoder.GetFrameCount().map_err(os)?.min(32),
@@ -116,7 +137,7 @@ pub fn decode(
         let (mut own_width, mut own_height) = (0, 0);
         frame.GetSize(&mut own_width, &mut own_height).map_err(os)?;
         let (width, height) =
-            scaled_size(own_width, own_height, height).ok_or(ImageError::TooLarge)?;
+            raster_size(own_width, own_height, height).ok_or(ImageError::TooLarge)?;
 
         // Premultiply first, so scaling blends colours by their coverage.
         let converter = factory.CreateFormatConverter().map_err(os)?;

@@ -8,10 +8,16 @@ use std::sync::Arc;
 
 use super::canvas::Color;
 
-/// Larger files are not read.
+/// Larger files are not read; a compressed SVG (.svgz) is not inflated beyond this either.
 const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 /// Larger results are refused, whatever the source says.
 const MAX_SIDE: u32 = 8192;
+/// Larger raster sources are refused before decoding: a decoder reads the whole source, so a
+/// small, well-compressed file could otherwise ask for gigabytes.
+const MAX_SOURCE_PIXELS: u64 = 64 * 1024 * 1024;
+/// Rasters embedded in an SVG (data URLs) are skipped above this: resvg decodes them whole, at
+/// their own size, while rendering.
+const MAX_EMBEDDED_PIXELS: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ImageError {
@@ -175,10 +181,10 @@ pub fn decode_image(bytes: &[u8], height: Option<u32>) -> Result<Bitmap, ImageEr
     }
 }
 
-/// The size of a `width`×`height` image scaled to `target` px tall, or `None` if it is too
-/// large either way.
+/// The size of a `width`×`height` image scaled to `target` px tall, or `None` if the result
+/// is too large either way. Only the result counts: an SVG may declare any size.
 pub(crate) fn scaled_size(width: u32, height: u32, target: Option<u32>) -> Option<(u32, u32)> {
-    if width == 0 || height == 0 || width > MAX_SIDE * 8 || height > MAX_SIDE * 8 {
+    if width == 0 || height == 0 {
         return None;
     }
     let size = match target {
@@ -191,14 +197,78 @@ pub(crate) fn scaled_size(width: u32, height: u32, target: Option<u32>) -> Optio
     (size.0 <= MAX_SIDE && size.1 <= MAX_SIDE).then_some(size)
 }
 
+/// [`scaled_size`] for a raster image, whose decoder reads the whole source: sources above
+/// [`MAX_SOURCE_PIXELS`] are refused too.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn raster_size(width: u32, height: u32, target: Option<u32>) -> Option<(u32, u32)> {
+    if u64::from(width) * u64::from(height) > MAX_SOURCE_PIXELS {
+        return None;
+    }
+    scaled_size(width, height, target)
+}
+
+/// Inflates a compressed SVG (.svgz), refusing more than [`MAX_FILE_BYTES`] of text.
+fn inflate(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
+    use std::io::Read;
+    let mut text = Vec::new();
+    flate2::read::GzDecoder::new(bytes)
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut text)
+        .map_err(|e| ImageError::Invalid(e.to_string()))?;
+    if text.len() as u64 > MAX_FILE_BYTES {
+        return Err(ImageError::TooLarge);
+    }
+    Ok(text)
+}
+
+/// The SVG options: images referenced by path are not loaded; embedded (data URL) ones are,
+/// within limits, since resvg decodes them whole: a raster up to [`MAX_EMBEDDED_PIXELS`], a
+/// compressed SVG inflated with a cap (a nested SVG gets the same options).
+fn svg_options() -> resvg::usvg::Options<'static> {
+    use resvg::usvg::{self, ImageHrefResolver, ImageKind};
+
+    let mut options = usvg::Options::default();
+    options.image_href_resolver.resolve_string = Box::new(|_, _| None);
+    let embedded = ImageHrefResolver::default_data_resolver();
+    options.image_href_resolver.resolve_data = Box::new(move |mime, data, options| {
+        if data.starts_with(&[0x1F, 0x8B]) {
+            let text = inflate(&data).ok()?;
+            return usvg::Tree::from_data_nested(&text, options)
+                .ok()
+                .map(ImageKind::SVG);
+        }
+        let kind = embedded(mime, data, options)?;
+        let pixels = match &kind {
+            ImageKind::SVG(_) => return Some(kind),
+            ImageKind::JPEG(raster)
+            | ImageKind::PNG(raster)
+            | ImageKind::GIF(raster)
+            | ImageKind::WEBP(raster) => imagesize::blob_size(raster)
+                .ok()
+                .map(|size| (size.width as u64).saturating_mul(size.height as u64))?,
+        };
+        if pixels > MAX_EMBEDDED_PIXELS {
+            tracing::warn!("an image embedded in an SVG is too large ({pixels} px); skipped");
+            return None;
+        }
+        Some(kind)
+    });
+    options
+}
+
 fn render_svg(bytes: &[u8], height: Option<u32>) -> Result<Bitmap, ImageError> {
     use resvg::{tiny_skia, usvg};
 
-    let mut options = usvg::Options::default();
-    // Images referenced by path are not loaded; embedded (data URL) images are.
-    options.image_href_resolver.resolve_string = Box::new(|_, _| None);
-    let tree =
-        usvg::Tree::from_data(bytes, &options).map_err(|e| ImageError::Invalid(e.to_string()))?;
+    // Inflated here, with a cap; usvg would inflate it whole.
+    let inflated;
+    let bytes = if bytes.starts_with(&[0x1F, 0x8B]) {
+        inflated = inflate(bytes)?;
+        &inflated[..]
+    } else {
+        bytes
+    };
+    let tree = usvg::Tree::from_data(bytes, &svg_options())
+        .map_err(|e| ImageError::Invalid(e.to_string()))?;
     let size = tree.size();
     let (own_width, own_height) = (size.width().ceil() as u32, size.height().ceil() as u32);
     let (width, height) = scaled_size(own_width, own_height, height).ok_or(ImageError::TooLarge)?;
@@ -304,6 +374,54 @@ mod tests {
         assert_eq!(scaled_size(0, 10, None), None);
         assert_eq!(scaled_size(100_000, 10, Some(10)), None);
         assert_eq!(scaled_size(9000, 10, None), None);
+        // A huge source drawn small is fine for SVG; a raster decoder would read it whole.
+        assert_eq!(scaled_size(100_000, 100_000, Some(28)), Some((28, 28)));
+        assert_eq!(raster_size(100_000, 100_000, Some(28)), None);
+        assert_eq!(raster_size(65_536, 65_536, Some(28)), None);
+        assert_eq!(raster_size(8000, 8000, Some(28)), Some((28, 28)));
+    }
+
+    /// `svg` as a gzip stream (.svgz).
+    fn gzip(svg: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(svg).expect("in memory");
+        encoder.finish().expect("in memory")
+    }
+
+    #[test]
+    fn compressed_svg_is_inflated_with_a_cap() {
+        let svgz = decode_image(&gzip(SQUARE.as_bytes()), None).expect("decoded");
+        assert_eq!((svgz.width(), svgz.height()), (16, 8));
+        // 33 MB of whitespace after the SVG compresses to a few KB.
+        let mut bomb = SQUARE.as_bytes().to_vec();
+        bomb.resize(MAX_FILE_BYTES as usize + 1024, b' ');
+        assert!(matches!(
+            decode_image(&gzip(&bomb), None),
+            Err(ImageError::TooLarge)
+        ));
+    }
+
+    #[test]
+    fn embedded_images_are_limited() {
+        // PNG headers, all a size check reads: 1,000,000² px would take terabytes decoded.
+        let png = |w: u32, h: u32| {
+            let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+            png.extend_from_slice(&w.to_be_bytes());
+            png.extend_from_slice(&h.to_be_bytes());
+            png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
+            Arc::new(png)
+        };
+        let options = svg_options();
+        let resolve = &options.image_href_resolver.resolve_data;
+        assert!(resolve("image/png", png(1_000_000, 1_000_000), &options).is_none());
+        assert!(resolve("image/png", png(16, 8), &options).is_some());
+        // A compressed nested SVG is inflated with the same cap.
+        let mut bomb = SQUARE.as_bytes().to_vec();
+        bomb.resize(MAX_FILE_BYTES as usize + 1024, b' ');
+        assert!(resolve("image/svg+xml", Arc::new(gzip(&bomb)), &options).is_none());
+        let nested = gzip(SQUARE.as_bytes());
+        assert!(resolve("image/svg+xml", Arc::new(nested), &options).is_some());
     }
 
     #[test]

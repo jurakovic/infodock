@@ -163,12 +163,14 @@ impl Sensor for Image {
             return;
         };
         let scale = canvas.scale();
-        let r = cx.rect;
+        // On whole physical px, so the bitmap is copied pixel for pixel, not blurred (at 150 %
+        // a 7 px padding is 10.5 px).
+        let (left, top) = (canvas.snap(cx.rect.left), canvas.snap(cx.rect.top));
         let dest = RectF::new(
-            r.left,
-            r.top,
-            r.left + bitmap.width() as f32 / scale,
-            r.top + bitmap.height() as f32 / scale,
+            left,
+            top,
+            left + bitmap.width() as f32 / scale,
+            top + bitmap.height() as f32 / scale,
         );
         canvas.draw_bitmap(bitmap, dest, self.props.opacity.min(100) as f32 / 100.0);
     }
@@ -220,6 +222,23 @@ mod tests {
         });
         assert_eq!(width, 28.0);
         assert_eq!(sensor.bitmap.as_ref().map(Bitmap::height), Some(41));
+        // Drawn from a whole physical px: 7 logical px is 10.5, so 11 (7.33 logical).
+        let mut canvas = crate::platform::recording::RecordingCanvas::new(1.5);
+        let rect = RectF::new(7.0, 0.0, 35.0, 28.0);
+        sensor.draw(
+            &mut canvas,
+            &DrawCtx {
+                theme: &theme(),
+                rect,
+            },
+        );
+        assert!(
+            canvas
+                .dump()
+                .starts_with("bitmap 41×41 into 7.33,0 27.33×27.33"),
+            "{}",
+            canvas.dump()
+        );
     }
 
     #[test]

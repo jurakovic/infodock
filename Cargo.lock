@@ -2193,7 +2193,9 @@ version = "0.1.0"
 dependencies = [
  "embed-resource",
  "fastrand",
+ "flate2",
  "global-hotkey",
+ "imagesize",
  "png",
  "raw-window-handle",
  "resvg",
