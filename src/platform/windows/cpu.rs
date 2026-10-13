@@ -124,6 +124,12 @@ impl Drop for WinCpu {
     }
 }
 
+/// The logical processors of all processor groups.
+pub fn logical_processors() -> u32 {
+    // SAFETY: plain query.
+    unsafe { GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) }.max(1)
+}
+
 fn ticks(time: FILETIME) -> u64 {
     (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime)
 }
@@ -137,8 +143,7 @@ impl CpuReader for WinCpu {
             // SAFETY: collects the open query's counters.
             unsafe { PdhCollectQueryData(self.query) };
         }
-        // SAFETY: plain query.
-        let logical = unsafe { GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) };
+        let logical = logical_processors();
         Some(CpuReading {
             times: CpuTimes {
                 idle: ticks(idle),
@@ -147,7 +152,7 @@ impl CpuReader for WinCpu {
             },
             total: self.total(),
             cores: self.cores(),
-            logical: logical.max(1),
+            logical,
         })
     }
 }

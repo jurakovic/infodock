@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::model::FONT_STYLES;
 use crate::config::model::SensorInstance;
-use crate::i18n::t;
+use crate::i18n::{t, t_args};
 use crate::sensors::Props;
 use crate::sensors::registry::Registry;
 use crate::sensors::schema::{self, FieldKind, PropField};
@@ -80,6 +80,8 @@ pub struct Form {
     changes: Props,
     /// Fields whose last edit was invalid: they show an error and block saving (SPEC §6.7).
     invalid: BTreeSet<&'static str>,
+    /// This computer's logical processors, for `cpuSeries` fields.
+    processors: u32,
 }
 
 impl Form {
@@ -95,7 +97,13 @@ impl Form {
             props,
             changes: Props::new(),
             invalid: BTreeSet::new(),
+            processors: 1,
         })
+    }
+
+    /// Sets the number of logical processors `cpuSeries` fields offer (SPEC §9.9).
+    pub fn set_processors(&mut self, processors: u32) {
+        self.processors = processors.max(1);
     }
 
     pub fn changes(&self) -> &Props {
@@ -210,6 +218,12 @@ impl Form {
                     .unwrap_or("#FFFFFF")
                     .to_owned();
             }
+            FieldKind::CpuSeries => {
+                let current = value.as_str().unwrap_or("total");
+                let series = cpu_series(self.processors, current);
+                row.index = series.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
+                row.options = series.into_iter().map(|(_, label)| label).collect();
+            }
             _ => {}
         }
         Some(row)
@@ -247,6 +261,17 @@ impl Form {
                 }
             }
             FieldKind::FontStyle => FONT_STYLES.get(index).map(|s| Value::from(*s)),
+            FieldKind::CpuSeries => {
+                let current = self
+                    .props
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .unwrap_or("total");
+                cpu_series(self.processors, current)
+                    .into_iter()
+                    .nth(index)
+                    .map(|(value, _)| Value::from(value))
+            }
             _ => None,
         };
         value.is_some_and(|v| self.set(key, v))
@@ -279,6 +304,7 @@ fn kind(field: &PropField) -> Option<RowKind> {
         FieldKind::Color => RowKind::Color,
         FieldKind::ColorMode { .. } => RowKind::ColorMode,
         FieldKind::File { .. } => RowKind::File,
+        FieldKind::CpuSeries => RowKind::Choice,
         FieldKind::Folder => RowKind::Folder,
         FieldKind::Drive { .. }
         | FieldKind::NetAdapter
@@ -296,6 +322,35 @@ fn font_options(fonts: &[String], current: &str) -> Vec<String> {
         options.push(current.to_owned());
     }
     options
+}
+
+/// The series a CPU dual graph offers (SPEC §9.9), as (value, label): total, user, system and
+/// each logical processor; a stored processor this computer lacks stays listed, marked as
+/// unavailable.
+fn cpu_series(processors: u32, current: &str) -> Vec<(String, String)> {
+    let mut series: Vec<(String, String)> = [
+        ("total", "sensor.cpu.series.total"),
+        ("user", "sensor.cpu.series.user"),
+        ("system", "sensor.cpu.series.system"),
+    ]
+    .into_iter()
+    .map(|(value, label)| (value.to_owned(), t(label)))
+    .collect();
+    let processor = |i: u32, key: &str| t_args(key, &[("n", &(i + 1).to_string())]);
+    series.extend(
+        (0..processors).map(|i| (format!("core{i}"), processor(i, "sensor.cpu.series.core"))),
+    );
+    if !series.iter().any(|(value, _)| value == current)
+        && let Some(i) = current
+            .strip_prefix("core")
+            .and_then(|n| n.parse::<u32>().ok())
+    {
+        series.push((
+            current.to_owned(),
+            processor(i, "sensor.cpu.series.missing"),
+        ));
+    }
+    series
 }
 
 /// The file types a `file` field accepts, e.g. `["png", "jpg"]`.
@@ -445,11 +500,44 @@ mod tests {
             props: schema::resolve(&SCHEMA, &Props::new(), &Props::new()).0,
             changes: Props::new(),
             invalid: BTreeSet::new(),
+            processors: 1,
         };
         assert!(!form.set("color", json!("#12")));
         assert!(!form.valid());
         assert!(form.set("custom", json!(false)));
         assert!(form.valid(), "the colour is hidden now");
+    }
+
+    #[test]
+    fn cpu_series_list_this_computers_processors() {
+        let stored = json!({ "bottomSeries": "core7" });
+        let mut form =
+            Form::open(registry(), &instance("cpu-graph-dual", stored), false).expect("known");
+        form.set_processors(2);
+        let rows = form.rows(&fonts());
+        let top = rows.iter().find(|r| r.key == "topSeries").expect("top");
+        assert_eq!(
+            top.options,
+            [
+                "Total",
+                "User tasks",
+                "System",
+                "Processor 1",
+                "Processor 2"
+            ]
+        );
+        assert_eq!(top.index, 3, "core0");
+        let bottom = rows
+            .iter()
+            .find(|r| r.key == "bottomSeries")
+            .expect("bottom");
+        assert_eq!(
+            bottom.options.last().map(String::as_str),
+            Some("Processor 8 (not on this computer: shows the total)")
+        );
+        assert_eq!(bottom.index, 5);
+        assert!(form.choose("bottomSeries", 4, &fonts()));
+        assert_eq!(form.changes()["bottomSeries"], json!("core1"));
     }
 
     #[test]

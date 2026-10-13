@@ -71,8 +71,12 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
         let state = open.window.global::<ui::SettingsState>();
         let config = app.store.get();
         let instance = config.layout.all().find(|s| s.id == id);
-        let Some((form, kind)) =
-            instance.and_then(|i| Form::open(registry(), i, new).map(|f| (f, i.kind.clone())))
+        let Some((form, kind)) = instance
+            .and_then(|i| Form::open(registry(), i, new).map(|f| (f, i.kind.clone())))
+            .map(|(mut form, kind)| {
+                form.set_processors(app.platform.logical_processors());
+                (form, kind)
+            })
         else {
             state.set_save_error(t("settings.props.missing").into());
             state.set_page(2);

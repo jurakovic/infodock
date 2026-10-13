@@ -74,15 +74,24 @@ pub const GRAPH_OPACITY: PropField = PropField::new(
 const STANDARD_BACKGROUND: Color = Color::BLACK;
 const STANDARD_GRID: Color = Color::rgba(0xA0, 0xFF, 0x9B, 1.0);
 
-/// A graph's look, as stored (the fields above but the interval).
+/// A plot's look, as stored: its width, background and grid (SPEC §9.8). Single-series
+/// graphs add their column colour ([`GraphStyle`]); dual graphs one per series.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GraphStyle {
+pub struct PlotStyle {
     pub width: u32,
     pub bk_color: ColorChoice,
     pub bk_opacity: u32,
     pub grid_color: ColorChoice,
     pub grid_opacity: u32,
+}
+
+/// A single-series graph's look, as stored.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphStyle {
+    #[serde(flatten)]
+    pub plot: PlotStyle,
     pub graph_color: ColorChoice,
     pub graph_opacity: u32,
 }
@@ -91,7 +100,17 @@ fn opacity(percent: u32) -> f32 {
     percent.min(100) as f32 / 100.0
 }
 
-impl GraphStyle {
+/// How a series' columns are coloured from its stored colour mode and opacity; Standard is the
+/// sensor text colour (SPEC §8.4).
+pub fn columns(choice: &ColorChoice, opacity_percent: u32, theme: &Theme) -> Columns {
+    let alpha = opacity(opacity_percent);
+    match choice.mode {
+        ColorModeKind::Dynamic => Columns::Dynamic(alpha),
+        _ => Columns::Solid(color::resolve(choice, theme.sensor_text, 0.0).with_alpha(alpha)),
+    }
+}
+
+impl PlotStyle {
     /// The plot's width: 50–150, rounded down to a multiple of 5 (SPEC §9.8).
     pub fn plot_width(&self) -> f32 {
         (self.width.clamp(50, 150) / 5 * 5) as f32
@@ -105,16 +124,20 @@ impl GraphStyle {
                 .with_alpha(opacity(self.grid_opacity)),
         }
     }
+}
 
-    /// The columns' colour; Standard is the sensor text colour (SPEC §8.4).
+impl GraphStyle {
+    pub fn plot_width(&self) -> f32 {
+        self.plot.plot_width()
+    }
+
+    pub fn backdrop(&self) -> Backdrop {
+        self.plot.backdrop()
+    }
+
+    /// The columns' colour.
     pub fn columns(&self, theme: &Theme) -> Columns {
-        let alpha = opacity(self.graph_opacity);
-        match self.graph_color.mode {
-            ColorModeKind::Dynamic => Columns::Dynamic(alpha),
-            _ => Columns::Solid(
-                color::resolve(&self.graph_color, theme.sensor_text, 0.0).with_alpha(alpha),
-            ),
-        }
+        columns(&self.graph_color, self.graph_opacity, theme)
     }
 }
 

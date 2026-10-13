@@ -1,11 +1,13 @@
-//! `cpu-meter` and `cpu-graph` — the processors' load (SPEC §9.7–9.8) on the `cpu` topic, as
-//! a meter or a graph, with the hint all CPU sensors share; a click opens Task Manager.
+//! `cpu-meter`, `cpu-graph` and `cpu-graph-dual` — the processors' load (SPEC §9.7–9.9) on the
+//! `cpu` topic, as a meter or a graph of one or two series, with the hint all CPU sensors
+//! share; a click opens Task Manager.
 
 use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::common::graph::{self, GraphStyle, GraphText, Growth};
+use super::common::dual_graph::{self, Series};
+use super::common::graph::{self, GraphStyle, GraphText, Growth, PlotStyle};
 use super::common::history::History;
 use super::common::meter::Meter;
 use super::format::{Numbers, percent, percent_digits};
@@ -15,7 +17,7 @@ use super::{
     SensorType, State, color, typed,
 };
 use crate::i18n::{t, t_count};
-use crate::platform::Canvas;
+use crate::platform::{Canvas, Capability};
 use crate::sampler::{CpuSample, Sample, Topic, TopicRequest};
 
 /// Task Manager, opened by a click (SPEC §9.7).
@@ -41,6 +43,72 @@ const GRAPH_SCHEMA: &[PropField] = &[
     graph::GRAPH_COLOR,
     graph::GRAPH_OPACITY,
 ];
+
+const DUAL_SCHEMA: &[PropField] = &[
+    graph::INTERVAL,
+    graph::WIDTH,
+    graph::BK_COLOR,
+    graph::BK_OPACITY,
+    graph::GRID_COLOR,
+    graph::GRID_OPACITY,
+    PropField::new(
+        "topSeries",
+        FieldKind::CpuSeries,
+        "sensor.cpuDual.field.topSeries",
+        Lit::Str("core0"),
+    ),
+    PropField::new(
+        "bottomSeries",
+        FieldKind::CpuSeries,
+        "sensor.cpuDual.field.bottomSeries",
+        Lit::Str("core1"),
+    ),
+    PropField::new(
+        "topColor",
+        FieldKind::ColorMode { dynamic: true },
+        "sensor.dual.field.topColor",
+        Lit::ColorMode("custom", "#20B7FF"),
+    ),
+    PropField::new(
+        "topOpacity",
+        FieldKind::Opacity { min: 20 },
+        "sensor.dual.field.topOpacity",
+        Lit::Int(86),
+    ),
+    PropField::new(
+        "bottomColor",
+        FieldKind::ColorMode { dynamic: true },
+        "sensor.dual.field.bottomColor",
+        Lit::ColorMode("custom", "#FFAD5B"),
+    ),
+    PropField::new(
+        "bottomOpacity",
+        FieldKind::Opacity { min: 20 },
+        "sensor.dual.field.bottomOpacity",
+        Lit::Int(86),
+    ),
+    PropField::new(
+        "flipBottom",
+        FieldKind::Bool,
+        "sensor.dual.field.flipBottom",
+        Lit::Bool(true),
+    )
+    .describe("sensor.dual.field.flipBottom.help"),
+];
+
+/// A series' value in `sample` (SPEC §9.9): `total`, `user`, `system` or `core<i>`; a
+/// processor this computer lacks shows the total.
+fn series_value(series: &str, sample: &CpuSample) -> f32 {
+    match series {
+        "user" => sample.user,
+        "system" => sample.kernel,
+        core => core
+            .strip_prefix("core")
+            .and_then(|i| i.parse::<usize>().ok())
+            .and_then(|i| sample.cores.get(i).copied())
+            .unwrap_or(sample.total),
+    }
+}
 
 /// The hint of every CPU sensor (SPEC §9.7): the processor count, the busy, user, system and
 /// idle shares with one decimal, and what a click does. User and system are clamped so that
@@ -295,6 +363,137 @@ impl Sensor for CpuGraph {
     }
 }
 
+pub struct CpuDualType;
+
+impl SensorType for CpuDualType {
+    fn id(&self) -> &'static str {
+        "cpu-graph-dual"
+    }
+
+    fn category(&self) -> Category {
+        Category::System
+    }
+
+    fn name(&self) -> &'static str {
+        "sensor.cpuDual.name"
+    }
+
+    fn description(&self) -> &'static str {
+        "sensor.cpuDual.description"
+    }
+
+    fn requires(&self) -> &'static [Capability] {
+        &[Capability::PerCoreCpu]
+    }
+
+    fn legacy_types(&self) -> &'static [&'static str] {
+        &["DockCPUGraphDual"]
+    }
+
+    fn schema(&self) -> &'static [PropField] {
+        DUAL_SCHEMA
+    }
+
+    fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
+        let props: DualProps = typed(props)?;
+        let columns = props.plot.plot_width() as usize;
+        Ok(Box::new(CpuDual {
+            props,
+            sample: None,
+            top: History::new(columns),
+            bottom: History::new(columns),
+            text: None,
+        }))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DualProps {
+    interval: u64,
+    #[serde(flatten)]
+    plot: PlotStyle,
+    top_series: String,
+    bottom_series: String,
+    top_color: ColorChoice,
+    top_opacity: u32,
+    bottom_color: ColorChoice,
+    bottom_opacity: u32,
+    flip_bottom: bool,
+}
+
+struct CpuDual {
+    props: DualProps,
+    sample: Option<CpuSample>,
+    top: History,
+    bottom: History,
+    text: Option<GraphText>,
+}
+
+impl Sensor for CpuDual {
+    fn measure(&mut self, cx: &LayoutCtx) -> f32 {
+        let label = t("sensor.cpu.labelDual");
+        let text = GraphText::new(
+            cx.text,
+            cx.theme,
+            &label,
+            &value(self.sample.as_ref()),
+            &percent(100.0),
+        );
+        let width = text.sensor_width(self.props.plot.plot_width());
+        self.text = Some(text);
+        width
+    }
+
+    fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
+        let p = &self.props;
+        let plot = graph::plot_rect(cx.rect, p.plot.plot_width());
+        graph::draw_backdrop(canvas, plot, p.plot.backdrop());
+        let top = Series {
+            history: &self.top,
+            max: 100.0,
+            columns: graph::columns(&p.top_color, p.top_opacity, cx.theme),
+        };
+        let bottom = Series {
+            history: &self.bottom,
+            max: 100.0,
+            columns: graph::columns(&p.bottom_color, p.bottom_opacity, cx.theme),
+        };
+        dual_graph::draw(canvas, plot, &top, &bottom, p.flip_bottom);
+        if let Some(text) = &self.text {
+            text.draw(canvas, cx);
+        }
+    }
+
+    fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
+        shared_hint(self.sample.as_ref(), cx)
+    }
+
+    fn click(&mut self, cx: &SensorCtx) -> ClickResult {
+        cx.platform.open(TASK_MANAGER);
+        ClickResult::Handled
+    }
+
+    fn accessible_value(&self, _cx: &SensorCtx) -> String {
+        value(self.sample.as_ref())
+    }
+
+    fn topics(&self) -> Vec<TopicRequest> {
+        topics(self.props.interval)
+    }
+
+    fn on_sample(&mut self, _topic: &Topic, sample: &Sample, _cx: &SensorCtx) -> bool {
+        let Some(cpu) = cpu(sample) else {
+            return false;
+        };
+        self.top.push(series_value(&self.props.top_series, cpu));
+        self.bottom
+            .push(series_value(&self.props.bottom_series, cpu));
+        self.sample = Some(cpu.clone());
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -421,6 +620,33 @@ mod tests {
         );
         assert!(dump.contains("#A0FF9B"), "{dump}");
         assert!(dump.contains("fill rect 49,2 1×24 #FF0000/55%"), "{dump}");
+    }
+
+    #[test]
+    fn dual_graph_shows_two_series() {
+        let h = Harness::new();
+        let mut dual = create(&CpuDualType, json!({ "bottomSeries": "core7" }));
+        let sample = Sample::Cpu(CpuSample {
+            total: 30.0,
+            cores: vec![100.0, 50.0],
+            logical: 2,
+            ..CpuSample::default()
+        });
+        dual.on_sample(&Topic::Cpu, &sample, &h.ctx());
+        let (width, dump) = h.drawn(dual.as_mut());
+        assert_eq!(width, 75.0);
+        let lines: Vec<&str> = dump.lines().collect();
+        // Halves of 11.5 px (2..13.5 and 14.5..26, snapped to whole px): core0 at 100 % fills
+        // the top one up from the middle; core7 does not exist here, so the bottom shows the
+        // total (30 %, 3.45 px) down from the middle.
+        assert_eq!(lines[0], "fill rect 49,2 1×12 #20B7FF/86%");
+        assert_eq!(lines[1], "fill rect 49,15 1×3 #FFAD5B/86%");
+        assert!(lines[2].starts_with("text \"CPUs\""), "{dump}");
+        let user = CpuSample {
+            user: 7.0,
+            ..CpuSample::default()
+        };
+        assert_eq!(series_value("user", &user), 7.0);
     }
 
     #[test]

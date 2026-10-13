@@ -210,3 +210,4 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] *New sensor… ▸ System ▸ CPU Meter*: a thin bar filling with the load and `CPU` / `37%`; *Colour* → *Dynamic* turns it green, yellow and red with the load.
 - [ ] Graph properties: *Width* 50–150 in steps of 5; background and grid colours and opacities (both off by default); *Graph colour* → *Dynamic* colours each column by its value; *Update every* 1–10 s slows the scrolling.
 - [ ] After sleep and wake, the first values are sensible (no spike or drop to 0).
+- [ ] *New sensor… ▸ System ▸ CPU Graph (dual)*: processor 1 in blue growing up from the middle, processor 2 in orange growing down; `CPUs` / `37%` beside them. Properties list *Total*, *User tasks*, *System* and each of your processors for *Top shows* and *Bottom shows*; *Bottom grows down* off makes the orange graph grow up from the bottom edge.

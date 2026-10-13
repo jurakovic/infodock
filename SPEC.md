@@ -811,6 +811,8 @@ All properties of §9.8 except graphColor/graphOpacity, plus:
 
 View: Dual graph, label "CPUs", value `{total}%`. A `core<i>` series whose processor does not exist on this machine (e.g. `core1` on a single-processor system, or a layout imported from a larger machine) shows total instead, and the Properties dialog marks that selection as unavailable. On single-processor systems the picker adds the note "This computer has one processor; both halves show the same data." Hint and click as §9.7.
 
+Implementation: `topSeries`/`bottomSeries` are `cpuSeries` fields (`total`, `user`, `system`, `core<i>`); Settings lists Total, User tasks, System and *Processor 1…N* for this computer's logical processors (`Platform::logical_processors`), and a stored processor it lacks as *Processor n (not on this computer: shows the total)*. The single-processor note in the picker is not shown yet.
+
 ### 9.10 `memory-meter` / `memory-graph` — Memory  (System; `DockMemMeter`, `DockMemGraph`)
 
 Meter: interval (1–60, default 2), color. Graph: as §9.8 (interval 1–10, default 1), plus:

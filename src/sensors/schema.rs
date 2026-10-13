@@ -110,6 +110,9 @@ pub enum FieldKind {
     NetAdapter,
     /// A battery index.
     Battery,
+    /// A CPU series: `total`, `user`, `system` or `core<i>` (SPEC §9.9). Settings lists this
+    /// computer's processors.
+    CpuSeries,
     /// Internal values; not shown, any JSON.
     Hidden,
 }
@@ -243,6 +246,14 @@ pub fn check(field: &PropField, value: &Value) -> Option<Value> {
             _ => None,
         },
         FieldKind::Battery => value.as_u64().map(Value::from),
+        FieldKind::CpuSeries => value
+            .as_str()
+            .filter(|s| {
+                matches!(*s, "total" | "user" | "system")
+                    || s.strip_prefix("core")
+                        .is_some_and(|n| !n.is_empty() && n.parse::<u32>().is_ok())
+            })
+            .map(Value::from),
         FieldKind::Hidden => Some(value.clone()),
     }
 }

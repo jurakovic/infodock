@@ -31,6 +31,7 @@ impl Platform for WindowsPlatform {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             appbar: true,
+            per_core_cpu: true,
             ..Capabilities::default()
         }
     }
@@ -45,6 +46,10 @@ impl Platform for WindowsPlatform {
 
     fn cpu_reader(&self) -> Option<Box<dyn super::CpuReader>> {
         Some(Box::new(cpu::WinCpu::new()))
+    }
+
+    fn logical_processors(&self) -> u32 {
+        cpu::logical_processors()
     }
 
     fn local_time(&self) -> LocalTime {

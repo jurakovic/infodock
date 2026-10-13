@@ -135,6 +135,10 @@ pub trait Platform: Send + Sync {
     fn font_families(&self) -> Vec<String> {
         Vec::new()
     }
+    /// The number of logical processors, e.g. for the CPU dual graph's series (SPEC §9.9).
+    fn logical_processors(&self) -> u32 {
+        std::thread::available_parallelism().map_or(1, |n| n.get() as u32)
+    }
     /// A reader of the processors' load, for the `cpu` topic; `None` where there is none.
     fn cpu_reader(&self) -> Option<Box<dyn CpuReader>> {
         None
