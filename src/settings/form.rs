@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use super::model::FONT_STYLES;
 use crate::config::model::SensorInstance;
 use crate::i18n::{t, t_args};
-use crate::platform::{DriveKind, Volume};
+use crate::platform::{DriveKind, NetInterface, Volume};
 use crate::sensors::Props;
 use crate::sensors::registry::Registry;
 use crate::sensors::schema::{self, FieldKind, PropField};
@@ -85,6 +85,8 @@ pub struct Form {
     processors: u32,
     /// This computer's volumes, for `drive` fields.
     volumes: Vec<Volume>,
+    /// This computer's network connections, for `netAdapter` fields.
+    adapters: Vec<NetInterface>,
 }
 
 impl Form {
@@ -102,6 +104,7 @@ impl Form {
             invalid: BTreeSet::new(),
             processors: 1,
             volumes: Vec::new(),
+            adapters: Vec::new(),
         })
     }
 
@@ -116,6 +119,18 @@ impl Form {
         self.schema
             .iter()
             .any(|f| matches!(f.kind, FieldKind::Drive { .. }))
+    }
+
+    /// Whether a field picks a network connection, so the form needs the list.
+    pub fn has_adapter_field(&self) -> bool {
+        self.schema
+            .iter()
+            .any(|f| matches!(f.kind, FieldKind::NetAdapter))
+    }
+
+    /// Sets the connections `netAdapter` fields offer (SPEC §8.2).
+    pub fn set_adapters(&mut self, adapters: Vec<NetInterface>) {
+        self.adapters = adapters;
     }
 
     /// Sets the volumes `drive` fields offer (SPEC §8.2).
@@ -247,6 +262,11 @@ impl Form {
                 row.index = drives.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = drives.into_iter().map(|(_, label)| label).collect();
             }
+            FieldKind::NetAdapter => {
+                let adapters = adapters(&self.adapters, &value);
+                row.index = adapters.iter().position(|(v, _)| *v == value).unwrap_or(0) as i32;
+                row.options = adapters.into_iter().map(|(_, label)| label).collect();
+            }
             _ => {}
         }
         Some(row)
@@ -302,6 +322,13 @@ impl Form {
                     .nth(index)
                     .map(|(value, _)| Value::from(value))
             }
+            FieldKind::NetAdapter => {
+                let current = self.props.get(key).cloned().unwrap_or(Value::Null);
+                adapters(&self.adapters, &current)
+                    .into_iter()
+                    .nth(index)
+                    .map(|(value, _)| value)
+            }
             _ => None,
         };
         value.is_some_and(|v| self.set(key, v))
@@ -322,7 +349,7 @@ impl Form {
 }
 
 /// How Settings edits `field`; `None` for fields it does not show (hidden ones, and the
-/// adapter and battery pickers, which arrive with their sensors in M2 and M3).
+/// battery picker, which arrives with its sensor in M3).
 fn kind(field: &PropField) -> Option<RowKind> {
     Some(match field.kind {
         FieldKind::Text { .. } => RowKind::Text,
@@ -334,9 +361,9 @@ fn kind(field: &PropField) -> Option<RowKind> {
         FieldKind::Color => RowKind::Color,
         FieldKind::ColorMode { .. } => RowKind::ColorMode,
         FieldKind::File { .. } => RowKind::File,
-        FieldKind::CpuSeries | FieldKind::Drive { .. } => RowKind::Choice,
+        FieldKind::CpuSeries | FieldKind::Drive { .. } | FieldKind::NetAdapter => RowKind::Choice,
         FieldKind::Folder => RowKind::Folder,
-        FieldKind::NetAdapter | FieldKind::Battery | FieldKind::Hidden => return None,
+        FieldKind::Battery | FieldKind::Hidden => return None,
     })
 }
 
@@ -410,6 +437,34 @@ fn drives(volumes: &[Volume], hide_optical: bool, current: &str) -> Vec<(String,
         drives.push((current.to_owned(), label));
     }
     drives
+}
+
+/// The connections a `netAdapter` field offers, as (stored value, label): Automatic (`null`),
+/// then this computer's connections as `{ id, name }` named like `Wi-Fi (Intel(R) …)`; a
+/// stored connection that is not there stays listed, marked so.
+fn adapters(interfaces: &[NetInterface], current: &Value) -> Vec<(Value, String)> {
+    let mut adapters = vec![(Value::Null, t("sensor.network.automatic"))];
+    adapters.extend(interfaces.iter().map(|i| {
+        let value = json!({ "id": i.id, "name": i.alias });
+        let label = if i.description.is_empty() || i.description == i.alias {
+            i.alias.clone()
+        } else {
+            t_args(
+                "sensor.network.hint.named",
+                &[("alias", &i.alias), ("description", &i.description)],
+            )
+        };
+        (value, label)
+    }));
+    let id = current.get("id").and_then(Value::as_str);
+    if let Some(id) = id
+        && !interfaces.iter().any(|i| i.id == id)
+    {
+        let name = current.get("name").and_then(Value::as_str).unwrap_or(id);
+        let label = t_args("sensor.network.missing", &[("name", name)]);
+        adapters.push((current.clone(), label));
+    }
+    adapters
 }
 
 /// The file types a `file` field accepts, e.g. `["png", "jpg"]`.
@@ -561,6 +616,7 @@ mod tests {
             invalid: BTreeSet::new(),
             processors: 1,
             volumes: Vec::new(),
+            adapters: Vec::new(),
         };
         assert!(!form.set("color", json!("#12")));
         assert!(!form.valid());
@@ -629,8 +685,42 @@ mod tests {
     }
 
     #[test]
+    fn adapters_list_automatic_and_this_computers_connections() {
+        let stored = json!({ "adapter": { "id": "GONE", "name": "Ethernet 2" } });
+        let mut form =
+            Form::open(registry(), &instance("network-graph", stored), false).expect("known");
+        assert!(form.has_adapter_field() && !form.has_drive_field());
+        let wifi = NetInterface {
+            id: "WIFI".into(),
+            alias: "Wi-Fi".into(),
+            description: "Intel(R) Wi-Fi 6E AX211".into(),
+            ..NetInterface::default()
+        };
+        form.set_adapters(vec![wifi]);
+        let rows = form.rows(&fonts());
+        let adapter = rows.iter().find(|r| r.key == "adapter").expect("adapter");
+        assert_eq!(adapter.kind, RowKind::Choice);
+        assert_eq!(
+            adapter.options,
+            [
+                "Automatic",
+                "Wi-Fi (Intel(R) Wi-Fi 6E AX211)",
+                "Ethernet 2 (not connected)"
+            ]
+        );
+        assert_eq!(adapter.index, 2);
+        assert!(form.choose("adapter", 1, &fonts()));
+        assert_eq!(
+            form.changes()["adapter"],
+            json!({ "id": "WIFI", "name": "Wi-Fi" })
+        );
+        assert!(form.choose("adapter", 0, &fonts()));
+        assert_eq!(form.changes()["adapter"], Value::Null, "Automatic");
+    }
+
+    #[test]
     fn unknown_types_have_no_form() {
-        assert!(Form::open(registry(), &instance("network-graph", json!({})), false).is_none());
+        assert!(Form::open(registry(), &instance("mail", json!({})), false).is_none());
     }
 
     #[test]

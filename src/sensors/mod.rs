@@ -16,6 +16,7 @@ pub mod disk;
 pub mod format;
 pub mod image;
 pub mod memory;
+pub mod network;
 pub mod ops;
 pub mod placeholder;
 pub mod registry;

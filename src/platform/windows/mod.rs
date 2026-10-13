@@ -11,6 +11,7 @@ mod locale;
 mod memory;
 mod menu;
 mod monitors;
+mod net;
 pub mod render;
 pub mod shell;
 pub mod text;
@@ -68,6 +69,14 @@ impl Platform for WindowsPlatform {
 
     fn disk_space(&self, root: &str) -> Option<super::DiskSpace> {
         disk::space(root)
+    }
+
+    fn net_interfaces(&self) -> Vec<super::NetInterface> {
+        net::interfaces()
+    }
+
+    fn net_interface(&self, id: Option<&str>) -> Option<super::NetInterface> {
+        net::interface(id)
     }
 
     fn local_time(&self) -> LocalTime {

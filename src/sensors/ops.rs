@@ -222,7 +222,7 @@ mod tests {
                 &mut c,
                 registry(),
                 &CTX,
-                "network-graph",
+                "mail",
                 Zone::Left,
                 0,
                 &Props::new()
@@ -286,8 +286,13 @@ mod tests {
         assert_eq!(err.to_string(), "invalid props for image: opacity, size");
         assert!(update(&mut c, registry(), &CTX, "s_nope", &Props::new()).is_err());
         // Placeholders (unknown types) cannot be edited.
-        let network = c.layout.left[2].id.clone();
-        assert!(update(&mut c, registry(), &CTX, &network, &Props::new()).is_err());
+        let mail = SensorInstance {
+            id: "s_mail".into(),
+            kind: "mail".into(),
+            props: Props::new(),
+        };
+        c.layout.left.push(mail);
+        assert!(update(&mut c, registry(), &CTX, "s_mail", &Props::new()).is_err());
     }
 
     #[test]

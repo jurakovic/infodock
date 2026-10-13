@@ -179,7 +179,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 ## M2 — System sensors (in progress)
 
-The first-run placeholders become real sensors one by one. The M0 and M1 checks above still apply.
+The first-run placeholders are real sensors now. The M0 and M1 checks above still apply.
 
 **Time** (since M2 S6)
 
@@ -229,4 +229,12 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] *New sensor… ▸ System ▸ Disk Meter*: `HD: C:\` with the used share, within 1 % of Explorer ▸ This PC (the bar shows the used fraction). Hover: *Disk Meter for C:\*, *Total Space*, *Free Space* and *Disk Space Used*; click: the drive opens in Explorer.
 - [ ] Properties: *Drive* lists your drives by label or kind (`Local Disk (C:)`), without optical drives; *Show* → free percent, used size and free size (the sizes under the label); a *Title* replaces `HD: C:\`; *Update every* 10–300 s.
 - [ ] Pick a USB stick, then remove it: within the interval the meter shows `n/a` with its bar dimmed, the hint says the drive is not available, a click does nothing, and no "insert a disk" dialog appears. The properties keep it as `E:\ (not connected)`. Plug it back in: values return.
+
+**Network** (since M2 S14)
+
+- [ ] The first-run *network-graph* placeholder is now a network graph: receive in blue growing up from the middle, send in orange growing down, and the two rates beside it (`1.24 MB/s` over `86.0 KB/s`). During a large download the receive rate matches Task Manager ▸ Performance ▸ Wi-Fi/Ethernet *Receive* (and Resource Monitor ▸ Network ▸ *Network Activity* in total) within a few percent.
+- [ ] The graphs scale to the largest rate in view (at least 1 KB/s); hover: *Adapter: Wi-Fi (Intel(R) …)*, *Status: active*, receive and send with *max.* (the scale in use), and *Click to open Network Connections*; click: Network Connections opens.
+- [ ] Properties: *Connection* lists *Automatic* and your connections (no loopback); pick one, save, and the graph shows only it. *Maximum* `12500000` fixes both scales at 100 Mbit/s (`max. 11.9 MB/s`), `12500000,2500000` each; the colours, opacities and *Send grows down* work as for the CPU dual graph.
+- [ ] Automatic follows the connection to the internet: switch from Wi-Fi to Ethernet (or connect a VPN) and the hint's adapter changes within a second, without a spike. Unplug the chosen adapter: *Status: inactive* and 0 rates; the properties keep it as `… (not connected)`.
+- [ ] After sleep and wake, no spike in the first values.
 

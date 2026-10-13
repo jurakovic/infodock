@@ -11,8 +11,7 @@ use crate::config::model::{Layout, SensorInstance};
 use crate::i18n::t;
 use crate::platform::{Capabilities, Capability};
 
-/// The sensor types of this version. The system sensors arrive in M2, launchers and hardware
-/// in M3.
+/// The sensor types of this version. Launchers and hardware arrive in M3.
 static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
     Registry::new(vec![
         &super::text::TextType,
@@ -26,6 +25,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::memory::SWAP_METER,
         &super::memory::SWAP_GRAPH,
         &super::disk::DiskMeterType,
+        &super::network::NetworkGraphType,
         &super::date::DateType,
         &super::time::TimeType,
         &super::uptime::UptimeType,

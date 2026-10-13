@@ -12,6 +12,9 @@ pub enum Topic {
     Swap,
     /// `disk/<X:\>`: one volume, by its root.
     Disk(String),
+    /// `net/<id|auto>`: one network interface by id, or `None` for the one carrying the
+    /// default route.
+    Net(Option<String>),
 }
 
 /// A sensor's wish to receive `topic` at least every `interval`.
@@ -29,6 +32,7 @@ pub enum Sample {
     Memory(MemorySample),
     Swap(SwapSample),
     Disk(DiskSample),
+    Net(NetSample),
 }
 
 /// `cpu`: the processors' load, each 0–100 (SPEC Appendix A).
@@ -73,6 +77,27 @@ pub struct DiskSample {
     pub present: bool,
     pub total: u64,
     pub free: u64,
+}
+
+/// `net/<id|auto>`: a network interface's traffic (SPEC Appendix A).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NetSample {
+    /// The interface exists (for Automatic: something carries the default route); otherwise
+    /// the rest is empty.
+    pub present: bool,
+    pub id: String,
+    pub alias: String,
+    pub description: String,
+    pub up: bool,
+    /// Bytes per second since the previous reading.
+    pub rx_rate: f64,
+    pub tx_rate: f64,
+    /// Bytes since the interface started.
+    pub rx_total: u64,
+    pub tx_total: u64,
+    /// Link speeds, bits per second.
+    pub link_rx: u64,
+    pub link_tx: u64,
 }
 
 /// `uptime`: when the system started.

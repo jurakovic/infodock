@@ -847,6 +847,18 @@ mod screenshots {
         render("settings-properties-disk");
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&disk).is_none());
+        // The first-run network graph: Automatic and this computer's connections.
+        let network = app
+            .store
+            .get()
+            .layout
+            .all()
+            .find(|s| s.kind == "network-graph")
+            .map(|s| s.id.clone())
+            .expect("the first-run network graph");
+        super::properties::open_form(&app, &network, false);
+        render_sized("settings-properties-network", 1000);
+        state.invoke_props_cancel();
 
         // The picker (SPEC §6.6): next to the logo, with Text selected; then a search.
         let place = super::picker::Place::Next(logo.clone());

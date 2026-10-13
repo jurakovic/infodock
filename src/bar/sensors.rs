@@ -418,17 +418,17 @@ mod tests {
         ));
         sensors.update_layout(&layout_ctx(&theme, 1.0), 800.0);
         let places: Vec<(f32, f32)> = sensors.places().iter().map(|p| (p.1, p.2)).collect();
-        // The network graph is a placeholder until M2 S14: label × 5 px + 8; the logo is 27 px wide. Date and Time
+        // Fixed metrics: 5 px per character at 10 px; the logo is 27 px wide. Date and Time
         // show nothing until their first wake-up reads the clock.
         assert_eq!(
             places,
             [
-                (7.0, 75.0),   // CPU Graph: 50 px plot, 5 px gap, "100%"
-                (92.0, 28.0),  // Memory Meter: the bar, the gap and "100%"
-                (130.0, 73.0), // network-graph
-                (382.0, 27.0), // logo: round((800 − 37) / 2)
-                (783.0, 0.0),  // date
-                (793.0, 0.0)   // time, ending 7 px from the right
+                (7.0, 75.0),    // CPU Graph: 50 px plot, 5 px gap, "100%"
+                (92.0, 28.0),   // Memory Meter: the bar, the gap and "100%"
+                (130.0, 100.0), // Network Graph: 50 px plot, 5 px gap, "1023 MB/s"
+                (382.0, 27.0),  // logo: round((800 − 37) / 2)
+                (783.0, 0.0),   // date
+                (793.0, 0.0)    // time, ending 7 px from the right
             ]
         );
         let mut canvas = RecordingCanvas::new(1.0);
@@ -444,7 +444,7 @@ mod tests {
             .collect();
         assert_eq!(
             order,
-            ["CPU", "", "RAM", "", "network-graph", "logo"],
+            ["CPU", "", "RAM", "", "", "", "logo"],
             "the centre zone is drawn last"
         );
     }

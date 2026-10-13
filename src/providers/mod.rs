@@ -4,11 +4,12 @@
 mod cpu;
 mod disk;
 mod memory;
+mod net;
 mod swap;
 mod uptime;
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use crate::platform::Platform;
 use crate::sampler::{Sample, Topic};
@@ -18,6 +19,7 @@ pub struct Providers {
     platform: Arc<dyn Platform>,
     /// Created on first use; `None` inside when the platform has no reader.
     cpu: Option<Option<cpu::Cpu>>,
+    net: net::Net,
 }
 
 impl Providers {
@@ -25,15 +27,18 @@ impl Providers {
         Self {
             platform,
             cpu: None,
+            net: net::Net::default(),
         }
     }
 
     /// The system resumed from sleep: providers that read deltas start from a new baseline
-    /// (the first CPU reading after resume is discarded, Appendix A).
+    /// (the first CPU reading after resume is discarded, network rates start at 0; Appendix
+    /// A).
     pub fn resume(&mut self) {
         if let Some(Some(cpu)) = &mut self.cpu {
             cpu.resume();
         }
+        self.net.resume();
     }
 
     /// Reads `topic` now; `None` if it cannot be read.
@@ -59,6 +64,10 @@ impl Providers {
                 .page_files()
                 .map(|files| Sample::Swap(swap::sample(&files))),
             Topic::Disk(root) => Some(Sample::Disk(disk::sample(self.platform.disk_space(root)))),
+            Topic::Net(id) => {
+                let interface = self.platform.net_interface(id.as_deref());
+                Some(Sample::Net(self.net.sample(id, interface, Instant::now())))
+            }
         }
     }
 }

@@ -78,6 +78,9 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
                 if form.has_drive_field() {
                     form.set_volumes(app.platform.volumes());
                 }
+                if form.has_adapter_field() {
+                    form.set_adapters(app.platform.net_interfaces());
+                }
                 (form, kind)
             })
         else {

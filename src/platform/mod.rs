@@ -158,6 +158,25 @@ pub struct DiskSpace {
     pub free: u64,
 }
 
+/// A network interface (SPEC Appendix A, `net/<id|auto>`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NetInterface {
+    /// A stable id: the interface GUID.
+    pub id: String,
+    /// The connection's name, e.g. `Wi-Fi`.
+    pub alias: String,
+    /// The adapter, e.g. `Intel(R) Wi-Fi 6E AX211`.
+    pub description: String,
+    /// Connected (operational).
+    pub up: bool,
+    /// Bytes received and sent since the interface started.
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    /// Link speeds, bits per second.
+    pub link_rx: u64,
+    pub link_tx: u64,
+}
+
 /// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryStatus {
@@ -204,6 +223,17 @@ pub trait Platform: Send + Sync {
     /// `None` when there is none (no such drive, no medium inserted).
     fn disk_space(&self, root: &str) -> Option<DiskSpace> {
         let _ = root;
+        None
+    }
+    /// The network connections users know (no loopback or filter drivers), by name (SPEC §4.5:
+    /// lists of network adapters).
+    fn net_interfaces(&self) -> Vec<NetInterface> {
+        Vec::new()
+    }
+    /// The interface `id` now, or with `None` the one carrying the default route (SPEC §9.13
+    /// Automatic), for the `net/<id|auto>` topic; `None` when there is none.
+    fn net_interface(&self, id: Option<&str>) -> Option<NetInterface> {
+        let _ = id;
         None
     }
     /// The local wall-clock time; UTC where the platform does not know the time zone.

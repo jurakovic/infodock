@@ -898,6 +898,8 @@ Click to open Network Connections
 "max" is the scale currently in use. Status is `inactive` when the interface is down or missing.
 **Click**: `control.exe ncpa.cpl`.
 
+Implementation (`sensors/network.rs`, `providers/net.rs`, `platform/windows/net.rs`): the topic is `Topic::Net(Option<id>)`, `None` for Automatic. `Platform::net_interface` reads one interface per tick with `GetIfEntry2` (by the GUID, through its LUID; Automatic re-evaluates `GetBestInterfaceEx` for a public IPv4, else IPv6, address each tick, a route lookup that sends nothing); `Platform::net_interfaces` (`GetIfTable2`) lists the connections for Settings: no loopback or filter-driver views, hardware adapters and any other connected interface (VPNs), named by alias. The stored adapter is `{ id: <interface GUID>, name: <alias> }`. The provider keeps one baseline per topic: rates are byte deltas over the monotonic clock; the first reading, a counter that went back, Automatic moving to another interface and the first reading after resume give 0 and a new baseline. A missing interface is a sample with `present: false`. `bandwidth` takes bytes per second (`"in,out"` or one number); anything else scales automatically. The click opens `ncpa.cpl` (the same Control Panel item). The adapter control lists *Automatic* and the connections when the form opens, keeping a stored one that is not there as `… (not connected)`; the Layout manager shows the connection's name. The legacy `net-adapter` description match arrives with the legacy import (M4).
+
 ### 9.14 `battery` — Battery Life  (System; `DockBatteryLife`; requires `battery`)
 
 | Key | XML key | Type | Default | Options (XML value) |
@@ -1536,7 +1538,7 @@ Ordered by expected value; each item reuses the framework unchanged.
 | `swap` | `{ total, used, load }` (all page files together) | `NtQuerySystemInformation(SystemPageFileInformation)`: each page file's allocated size and use, in pages (`GetSystemInfo` page size) | `total == 0` → no page file |
 | `disk/<X:\>` | `{ present, total, free }` (kind and label come with `volumes`) | `GetDiskFreeSpaceExW`, `GetDriveTypeW`, `GetVolumeInformationW`, `SHGetFileInfoW(SHGFI_DISPLAYNAME)` | |
 | `volumes` | `Volume[]` | `GetLogicalDriveStringsW` + the above + bus type (`IOCTL_STORAGE_QUERY_PROPERTY`) for "ejectable" | Pushed on `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`/`DBT_DEVICEREMOVECOMPLETE`, volume type) |
-| `net/<id\|auto>` | `{ id, name, alias, description, up, rxRate, txRate, rxTotal, txTotal, linkRx, linkTx }` | `GetIfTable2` (`InOctets`, `OutOctets`, `OperStatus`, `ReceiveLinkSpeed`, `TransmitLinkSpeed`, `Alias`, `Description`); `GetBestInterfaceEx` for Automatic | Rates from QPC-timed deltas; a negative delta → 0 and new baseline |
+| `net/<id\|auto>` | `{ present, id, alias, description, up, rxRate, txRate, rxTotal, txTotal, linkRx, linkTx }` | `GetIfTable2` (`InOctets`, `OutOctets`, `OperStatus`, `ReceiveLinkSpeed`, `TransmitLinkSpeed`, `Alias`, `Description`); `GetBestInterfaceEx` for Automatic | Rates from QPC-timed deltas; a negative delta → 0 and new baseline |
 | `battery/<i>` | §9.14 | `starship-battery` (state, charge, time to full/empty, vendor/model) + `GetSystemPowerStatus` (AC line) | Also pushed on `PBT_APMPOWERSTATUSCHANGE` |
 | `wifi` | §9.15 | `wlanapi` | Also pushed on WLAN connect/disconnect notifications |
 | `uptime` | `{ bootUnixMs, uptimeSecs }` | `GetTickCount64` | |

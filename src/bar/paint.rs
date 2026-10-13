@@ -449,8 +449,7 @@ mod tests {
             }
         }
 
-        // Sensors (SPEC §16): the first-run layout (M2 types are placeholders until then) and
-        // the General sensors.
+        // Sensors (SPEC §16): the first-run layout and the General sensors.
         let mut general = Layout::default();
         let entry = |id: &str, kind: &str, props: serde_json::Value| SensorInstance {
             id: id.into(),
