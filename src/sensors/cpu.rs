@@ -97,7 +97,7 @@ const DUAL_SCHEMA: &[PropField] = &[
 ];
 
 /// A series' value in `sample` (SPEC §9.9): `total`, `user`, `system` or `core<i>`; a
-/// processor this computer lacks shows the total.
+/// processor this computer lacks, or one that could not be read (NaN), shows the total.
 fn series_value(series: &str, sample: &CpuSample) -> f32 {
     match series {
         "user" => sample.user,
@@ -106,6 +106,7 @@ fn series_value(series: &str, sample: &CpuSample) -> f32 {
             .strip_prefix("core")
             .and_then(|i| i.parse::<usize>().ok())
             .and_then(|i| sample.cores.get(i).copied())
+            .filter(|v| v.is_finite())
             .unwrap_or(sample.total),
     }
 }
@@ -647,6 +648,13 @@ mod tests {
             ..CpuSample::default()
         };
         assert_eq!(series_value("user", &user), 7.0);
+        let unread = CpuSample {
+            total: 30.0,
+            cores: vec![f32::NAN, 50.0],
+            ..CpuSample::default()
+        };
+        assert_eq!(series_value("core0", &unread), 30.0, "could not be read");
+        assert_eq!(series_value("core1", &unread), 50.0, "keeps its place");
     }
 
     #[test]

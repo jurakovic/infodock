@@ -21,9 +21,18 @@ use crate::platform::NetInterface;
 const HARDWARE_INTERFACE: u8 = 1;
 const FILTER_INTERFACE: u8 = 2;
 
+/// A GUID as `GUID::try_from` reads it back: `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`.
+fn guid_text(guid: &GUID) -> String {
+    let d = guid.data4;
+    format!(
+        "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+        guid.data1, guid.data2, guid.data3, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]
+    )
+}
+
 fn read(row: &MIB_IF_ROW2) -> NetInterface {
     NetInterface {
-        id: format!("{:?}", row.InterfaceGuid),
+        id: guid_text(&row.InterfaceGuid),
         alias: from_wide(&row.Alias),
         description: from_wide(&row.Description),
         up: row.OperStatus == IfOperStatusUp,
@@ -49,9 +58,11 @@ pub fn interfaces() -> Vec<NetInterface> {
     if unsafe { GetIfTable2(&mut table) } != NO_ERROR || table.is_null() {
         return Vec::new();
     }
-    // SAFETY: the table holds `NumEntries` rows from `Table` on.
+    // SAFETY: the table holds `NumEntries` rows from `Table` on; the pointer to them is taken
+    // without borrowing the declared one-row array.
     let rows = unsafe {
-        std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize)
+        let first = (&raw const (*table).Table).cast::<MIB_IF_ROW2>();
+        std::slice::from_raw_parts(first, (*table).NumEntries as usize)
     };
     let mut list: Vec<NetInterface> = Vec::new();
     for row in rows.iter().filter(|row| listed(row)) {
@@ -118,6 +129,14 @@ fn default_route() -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guids_round_trip() {
+        let guid = GUID::from_u128(0x0123_4567_89ab_cdef_0011_2233_4455_6677);
+        let text = guid_text(&guid);
+        assert_eq!(text, "01234567-89AB-CDEF-0011-223344556677");
+        assert_eq!(GUID::try_from(text.as_str()).ok(), Some(guid));
+    }
 
     /// Runs on the Windows CI runner (`cargo test -- --ignored`).
     #[test]

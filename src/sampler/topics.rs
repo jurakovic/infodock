@@ -44,7 +44,8 @@ pub struct CpuSample {
     pub user: f32,
     pub kernel: f32,
     pub idle: f32,
-    /// The busy share per logical processor; empty where unavailable.
+    /// The busy share per logical processor, in processor order; NaN for one that could not
+    /// be read; empty where unavailable.
     pub cores: Vec<f32>,
     pub logical: u32,
 }

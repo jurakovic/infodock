@@ -17,6 +17,11 @@ use crate::platform::{CpuReader, CpuReading, CpuTimes};
 const ALL_PROCESSOR_GROUPS: u16 = 0xFFFF;
 /// `ERROR_SUCCESS` for PDH calls.
 const OK: u32 = 0;
+/// A counter value's `CStatus`: `PDH_CSTATUS_VALID_DATA` and `PDH_CSTATUS_NEW_DATA` both carry
+/// data.
+fn valid(status: u32) -> bool {
+    status <= 1
+}
 /// `PDH_MORE_DATA`: the buffer is too small (the first call asks for its size).
 const MORE_DATA: u32 = 0x8000_07D2;
 
@@ -59,7 +64,7 @@ impl WinCpu {
         // SAFETY: the counter belongs to the open query; `value` is written on success.
         let status =
             unsafe { PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, None, &mut value) };
-        if status == OK && value.CStatus == OK {
+        if status == OK && valid(value.CStatus) {
             // SAFETY: PDH_FMT_DOUBLE fills the double member.
             Some(unsafe { value.Anonymous.doubleValue })
         } else {
@@ -68,6 +73,7 @@ impl WinCpu {
     }
 
     /// Per logical processor, in (group, number) order; instances are named `group,number`.
+    /// A processor whose value is not valid keeps its place as NaN, so the others keep theirs.
     fn cores(&self) -> Vec<f64> {
         let Some(counter) = self.cores else {
             return Vec::new();
@@ -100,14 +106,18 @@ impl WinCpu {
         let mut cores: Vec<((u32, u32), f64)> = buffer
             .iter()
             .take(count as usize)
-            .filter(|item| item.FmtValue.CStatus == OK)
             .filter_map(|item| {
                 // SAFETY: the name points into `buffer`, NUL-terminated.
                 let name = unsafe { item.szName.to_string() }.ok()?;
                 let (group, number) = name.split_once(',')?;
                 let key = (group.parse().ok()?, number.parse().ok()?);
-                // SAFETY: PDH_FMT_DOUBLE fills the double member.
-                Some((key, unsafe { item.FmtValue.Anonymous.doubleValue }))
+                let value = if valid(item.FmtValue.CStatus) {
+                    // SAFETY: PDH_FMT_DOUBLE fills the double member.
+                    unsafe { item.FmtValue.Anonymous.doubleValue }
+                } else {
+                    f64::NAN
+                };
+                Some((key, value))
             })
             .collect();
         cores.sort_by_key(|(key, _)| *key);
@@ -122,6 +132,16 @@ impl Drop for WinCpu {
             unsafe { PdhCloseQuery(self.query) };
         }
     }
+}
+
+/// Whether the per-processor utility counters can be read (SPEC §4.6 `per_core_cpu`); they
+/// cannot when the performance counters are broken (`lodctr /r` repairs them). Checked once.
+pub fn per_processor_counters() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        let cpu = WinCpu::new();
+        cpu.cores.is_some()
+    })
 }
 
 /// The logical processors of all processor groups.
@@ -154,5 +174,26 @@ impl CpuReader for WinCpu {
             cores: self.cores(),
             logical,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs on the Windows CI runner (`cargo test -- --ignored`).
+    #[test]
+    #[ignore = "reads this machine's processors"]
+    fn reads_the_utility_counters() {
+        let mut cpu = WinCpu::new();
+        assert!(cpu.total.is_some(), "the total counter");
+        // PDH needs two collections for a rate.
+        cpu.read().expect("readable");
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let reading = cpu.read().expect("readable");
+        let total = reading.total.expect("a total");
+        assert!((0.0..=1000.0).contains(&total), "{total}");
+        assert_eq!(reading.cores.len(), reading.logical as usize, "{reading:?}");
+        assert!(reading.cores.iter().all(|c| c.is_finite()), "{reading:?}");
     }
 }

@@ -67,6 +67,11 @@ impl Net {
     pub fn resume(&mut self) {
         self.baselines.clear();
     }
+
+    /// Nobody reads the topic `key` any more.
+    pub fn forget(&mut self, key: &Option<String>) {
+        self.baselines.remove(key);
+    }
 }
 
 /// Bytes per second received and sent since `previous`; 0 for a counter that went back.
@@ -150,6 +155,8 @@ mod tests {
         net.resume();
         let resumed = net.sample(&auto, Some(wifi(2100, 7000)), at(4));
         assert_eq!(resumed.rx_rate, 0.0, "a new baseline after resume");
+        net.forget(&auto);
+        assert!(net.baselines.is_empty());
 
         let gone = net.sample(&auto, None, at(5));
         assert_eq!(gone, NetSample::default());

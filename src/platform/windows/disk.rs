@@ -1,7 +1,9 @@
 //! Volumes and their free space (SPEC Appendix A, `disk/<X:\>` and `volumes`):
 //! `GetLogicalDriveStringsW`, `GetDriveTypeW`, `GetVolumeInformationW` and
 //! `GetDiskFreeSpaceExW`. A drive without a medium (an empty card reader or optical drive)
-//! fails quietly: the calls run with critical-error dialogs turned off for the thread.
+//! fails quietly: the calls run with critical-error dialogs turned off for the thread. Labels
+//! are read only from local drives that answer at once: a network drive whose server is away
+//! would block for the SMB timeout, and an optical drive may spin up.
 
 use windows::Win32::Storage::FileSystem::{
     GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW,
@@ -73,23 +75,32 @@ pub fn volumes() -> Vec<Volume> {
                 DRIVE_RAMDISK => DriveKind::Ram,
                 _ => DriveKind::Other,
             };
-            let mut name = [0u16; 261];
-            // SAFETY: a NUL-terminated root path and a writable name buffer; the rest is
-            // not asked for.
-            let label = unsafe {
-                GetVolumeInformationW(
-                    PCWSTR(path.as_ptr()),
-                    Some(&mut name),
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            }
-            .map_or_else(|_| String::new(), |()| from_wide(&name));
+            let local = matches!(
+                kind,
+                DriveKind::Fixed | DriveKind::Removable | DriveKind::Ram
+            );
+            let label = if local { label(&path) } else { String::new() };
             Volume { root, kind, label }
         })
         .collect()
+}
+
+/// The label of the volume at the NUL-terminated `path`; empty if it has none or no medium.
+fn label(path: &[u16]) -> String {
+    let mut name = [0u16; 261];
+    // SAFETY: a NUL-terminated root path and a writable name buffer; the rest is not asked
+    // for.
+    unsafe {
+        GetVolumeInformationW(
+            PCWSTR(path.as_ptr()),
+            Some(&mut name),
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+    .map_or_else(|_| String::new(), |()| from_wide(&name))
 }
 
 pub fn space(root: &str) -> Option<DiskSpace> {

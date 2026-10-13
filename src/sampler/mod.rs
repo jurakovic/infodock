@@ -101,6 +101,9 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                         to: Some(subscriber.clone()),
                     });
                 }
+                for topic in scheduler.take_removed() {
+                    providers.forget(&topic);
+                }
             }
             Ok(Message::Resume) => {
                 providers.resume();

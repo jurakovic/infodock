@@ -1,6 +1,7 @@
 //! Which topics to sample when (SPEC §4.4): each topic is sampled at the shortest interval its
-//! subscribers asked for and keeps its newest sample for subscribers that join later. Pure; the
-//! sampler thread supplies the clock.
+//! subscribers asked for and keeps its newest sample for subscribers that join later. All
+//! topics keep to one grid, counted from the first sample, so topics with whole-second
+//! intervals are read (and drawn) together. Pure; the sampler thread supplies the clock.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -29,14 +30,27 @@ impl<S> Entry<S> {
 
 pub struct Scheduler<K, S> {
     topics: HashMap<K, Entry<S>>,
+    /// The first sample; every cadence is counted from it.
+    epoch: Option<Instant>,
+    /// Topics whose last subscriber left, for [`Scheduler::take_removed`].
+    removed: Vec<K>,
 }
 
 impl<K, S> Default for Scheduler<K, S> {
     fn default() -> Self {
         Self {
             topics: HashMap::new(),
+            epoch: None,
+            removed: Vec::new(),
         }
     }
+}
+
+/// The first point after `at` of the grid of `interval` from `epoch`.
+fn grid_after(epoch: Instant, interval: Duration, at: Instant) -> Instant {
+    let step = interval.as_nanos().max(1);
+    let steps = at.saturating_duration_since(epoch).as_nanos() / step + 1;
+    epoch + Duration::from_nanos(u64::try_from(steps * step).unwrap_or(u64::MAX))
 }
 
 impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
@@ -68,8 +82,8 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
                 .and_modify(|d| *d = (*d).min(interval))
                 .or_insert(interval);
             // A shorter interval applies from the last sample on.
-            if let Some(last) = entry.last {
-                entry.next = entry.next.min(last + entry.interval());
+            if let (Some(last), Some(epoch)) = (entry.last, self.epoch) {
+                entry.next = entry.next.min(grid_after(epoch, entry.interval(), last));
             }
             if let Some(sample) = &entry.latest
                 && !catch_up.iter().any(|(t, _)| t == topic)
@@ -77,8 +91,23 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
                 catch_up.push((topic.clone(), sample.clone()));
             }
         }
+        for (topic, entry) in &self.topics {
+            if entry.subscribers.is_empty() {
+                self.removed.push(topic.clone());
+            }
+        }
         self.topics.retain(|_, entry| !entry.subscribers.is_empty());
         catch_up
+    }
+
+    /// The topics nobody subscribes to any more since the last call, so their providers can
+    /// drop what they keep between readings.
+    pub fn take_removed(&mut self) -> Vec<K> {
+        let subscribed = &self.topics;
+        let mut removed = std::mem::take(&mut self.removed);
+        // Left and joined again meanwhile: still in use.
+        removed.retain(|topic| !subscribed.contains_key(topic));
+        removed
     }
 
     /// After the system resumed: every topic is due now, and the cadence starts again from the
@@ -99,15 +128,14 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
     }
 
     /// Records that `topic` was sampled at `now` (`None`: it could not be read) and schedules
-    /// the next sample, keeping the cadence unless the sample came more than an interval late.
+    /// the next sample at the grid's next point for its interval.
     pub fn sampled(&mut self, topic: &K, now: Instant, sample: Option<S>) {
+        let epoch = *self.epoch.get_or_insert(now);
         let Some(entry) = self.topics.get_mut(topic) else {
             return;
         };
-        let interval = entry.interval();
         entry.last = Some(now);
-        let next = entry.next + interval;
-        entry.next = if next > now { next } else { now + interval };
+        entry.next = grid_after(epoch, entry.interval(), now);
         if sample.is_some() {
             entry.latest = sample;
         }
@@ -151,15 +179,42 @@ mod tests {
         assert_eq!(s.next_due(), Some(t0 + SEC));
         assert!(s.due(t0 + SEC / 2).is_empty());
 
-        // The fast subscriber leaves: the slower interval applies after the next sample.
+        // The fast subscriber leaves: the slower interval applies after the next sample, on
+        // the grid from the first sample.
         s.subscribe("b", &[], t0 + SEC / 2);
         assert_eq!(s.due(t0 + SEC), ["cpu"]);
         s.sampled(&"cpu", t0 + SEC, Some(2));
-        assert_eq!(s.next_due(), Some(t0 + 3 * SEC));
+        assert_eq!(s.next_due(), Some(t0 + 2 * SEC));
+        assert!(s.take_removed().is_empty());
 
-        // The last subscriber leaves: nothing is sampled.
+        // The last subscriber leaves: nothing is sampled, and the topic is reported once.
         s.subscribe("a", &[], t0 + SEC);
         assert_eq!(s.next_due(), None);
+        assert_eq!(s.take_removed(), ["cpu"]);
+        assert!(s.take_removed().is_empty());
+    }
+
+    #[test]
+    fn topics_keep_to_one_grid() {
+        let t0 = Instant::now();
+        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        s.subscribe("a", &requests(&[("cpu", 1000)]), t0);
+        s.sampled(&"cpu", t0, Some(1));
+        // Memory joins 300 ms later (opening the CPU counters took that long): read at once,
+        // then on the same whole seconds as the CPU.
+        let later = t0 + Duration::from_millis(300);
+        s.subscribe("b", &requests(&[("memory", 2000)]), later);
+        assert_eq!(s.due(later), ["memory"]);
+        s.sampled(&"memory", later, Some(1));
+        assert_eq!(s.next_due(), Some(t0 + SEC));
+        s.sampled(&"cpu", t0 + SEC, Some(2));
+        let mut due = s.due(t0 + 2 * SEC);
+        due.sort_unstable();
+        assert_eq!(due, ["cpu", "memory"]);
+        // Leaving and joining again before anyone asked: not removed.
+        s.subscribe("b", &[], later);
+        s.subscribe("b", &requests(&[("memory", 2000)]), later);
+        assert!(s.take_removed().is_empty());
     }
 
     #[test]

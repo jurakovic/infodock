@@ -34,7 +34,7 @@ impl Platform for WindowsPlatform {
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             appbar: true,
-            per_core_cpu: true,
+            per_core_cpu: cpu::per_processor_counters(),
             ..Capabilities::default()
         }
     }

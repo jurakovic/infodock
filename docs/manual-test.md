@@ -228,6 +228,7 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 - [ ] *New sensor… ▸ System ▸ Disk Meter*: `HD: C:\` with the used share, within 1 % of Explorer ▸ This PC (the bar shows the used fraction). Hover: *Disk Meter for C:\*, *Total Space*, *Free Space* and *Disk Space Used*; click: the drive opens in Explorer.
 - [ ] Properties: *Drive* lists your drives by label or kind (`Local Disk (C:)`), without optical drives; *Show* → free percent, used size and free size (the sizes under the label); a *Title* replaces `HD: C:\`; *Update every* 10–300 s.
+- [ ] A Disk Meter on a mapped network drive whose server is off (or disconnect from the network): the drive shows `n/a` after a while, and meanwhile the CPU and network graphs keep moving (the sampler is not held up). Opening its properties does not freeze Settings.
 - [ ] Pick a USB stick, then remove it: within the interval the meter shows `n/a` with its bar dimmed, the hint says the drive is not available, a click does nothing, and no "insert a disk" dialog appears. The properties keep it as `E:\ (not connected)`. Plug it back in: values return.
 
 **Network** (since M2 S14)
@@ -238,3 +239,7 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 - [ ] Automatic follows the connection to the internet: switch from Wi-Fi to Ethernet (or connect a VPN) and the hint's adapter changes within a second, without a spike. Unplug the chosen adapter: *Status: inactive* and 0 rates; the properties keep it as `… (not connected)`.
 - [ ] After sleep and wake, no spike in the first values.
 
+**Budgets** (M2 S15)
+
+- [ ] Task Manager ▸ Details, *CPU* column, the first-run layout: Infodock stays at 0–1 % on a 4-core machine (§14.1: ≤ 0.5 % on average over a minute; CI measures it too).
+- [ ] *Memory* column: within the budget at idle, and still after the first chime, a click on the CPU graph (Task Manager opens) and on the Date (date settings open): the audio and shell libraries those load must not push it over 30 MB.

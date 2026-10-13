@@ -49,6 +49,7 @@ pub fn sample(previous: CpuTimes, now: &CpuReading) -> CpuSample {
         }
     };
     let busy = share(all - idle);
+    // NaN (a processor that could not be read) stays NaN and keeps its place.
     let percent = |value: f64| value.clamp(0.0, 100.0) as f32;
     CpuSample {
         total: now.total.map_or(busy, percent),
