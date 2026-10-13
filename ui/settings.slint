@@ -240,7 +240,8 @@ component Row inherits VerticalLayout {
 }
 
 // A slider with its value and unit shown next to it, saved when released. `unit` is a message
-// key with a `{value}` placeholder, e.g. "common.px".
+// key with a `{value}` placeholder, e.g. "common.px". Dragging moves in any amount, so the value
+// is shown rounded to `step` and snaps to it on release: what is shown is what is saved.
 component ValueSlider inherits HorizontalLayout {
     in property <string> label;
     in property <float> minimum;
@@ -249,6 +250,10 @@ component ValueSlider inherits HorizontalLayout {
     in property <string> unit: "common.px";
     in-out property <float> value;
     callback released(value: int);
+
+    function stepped(v: float) -> int {
+        return Math.round(v / root.step) * root.step;
+    }
 
     spacing: 10px;
     Slider {
@@ -259,7 +264,8 @@ component ValueSlider inherits HorizontalLayout {
         value <=> root.value;
         accessible-label: root.label;
         released(v) => {
-            root.released(Math.round(v / root.step) * root.step);
+            root.value = root.stepped(v);
+            root.released(root.value);
         }
     }
 
@@ -267,7 +273,7 @@ component ValueSlider inherits HorizontalLayout {
         width: 64px;
         vertical-alignment: center;
         horizontal-alignment: right;
-        text: I18n.tr-with(root.unit, "value", Math.round(root.value));
+        text: I18n.tr-with(root.unit, "value", root.stepped(root.value));
         color: Palette.foreground;
     }
 }
@@ -1321,6 +1327,8 @@ export component SettingsWindow inherits Window {
     min-width: 560px;
     min-height: 420px;
     background: Palette.background;
+    // The page last shown, to go back to when the navigation is left without a selection.
+    property <int> shown-page: 0;
 
     HorizontalLayout {
         VerticalLayout {
@@ -1336,7 +1344,13 @@ export component SettingsWindow inherits Window {
                 current-item <=> SettingsState.page;
                 accessible-label: I18n.tr("settings.nav.label");
                 changed current-item => {
-                    SettingsState.page-changed(self.current-item);
+                    // Ctrl+Space unselects the current item; the page stays.
+                    if self.current-item < 0 {
+                        self.current-item = root.shown-page;
+                    } else if self.current-item != root.shown-page {
+                        root.shown-page = self.current-item;
+                        SettingsState.page-changed(self.current-item);
+                    }
                 }
             }
         }

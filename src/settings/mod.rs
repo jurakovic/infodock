@@ -410,7 +410,7 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
     let current = app.store.get().settings;
     let next = apply_settings_patch(&current, patch).map_err(SaveError::Config)?;
     if next.hotkey != current.hotkey {
-        hotkey::set(&next.hotkey).map_err(SaveError::Hotkey)?;
+        hotkey::set(&next.hotkey, false).map_err(SaveError::Hotkey)?;
     }
     app.store
         .update(|c| {
@@ -497,8 +497,9 @@ fn record_hotkey(window: &ui::SettingsWindow, app: &Arc<App>) {
 /// the previous hotkey stays (SPEC §6.5). Registering first also retries a saved hotkey that
 /// failed at start-up.
 fn apply_hotkey(app: &Arc<App>, accelerator: &str) {
-    let result = hotkey::set(accelerator);
-    if result.is_ok() && app.store.get().settings.hotkey != accelerator {
+    let configured = app.store.get().settings.hotkey == accelerator;
+    let result = hotkey::set(accelerator, configured);
+    if result.is_ok() && !configured {
         save(
             app,
             model::patch("hotkey", Value::String(accelerator.to_owned())),
@@ -615,18 +616,19 @@ mod screenshots {
         state.set_layout_confirm(SharedString::new());
         // Drag memory-meter (lines: # Left 89, cpu 133, memory 177, network 221, # Centre 265)
         // onto the lower half of network-graph: it moves to the end of the left zone.
-        let pointer = |event: fn(LogicalPosition) -> WindowEvent, y: f32| {
-            window.dispatch_event(event(LogicalPosition::new(300.0, y)));
+        let pointer = |event: fn(LogicalPosition) -> WindowEvent, x: f32, y: f32| {
+            window.dispatch_event(event(LogicalPosition::new(x, y)));
         };
         pointer(
             |position| WindowEvent::PointerPressed {
                 position,
                 button: PointerEventButton::Left,
             },
+            300.0,
             199.0,
         );
         for y in [210.0, 235.0, 250.0] {
-            pointer(|position| WindowEvent::PointerMoved { position }, y);
+            pointer(|position| WindowEvent::PointerMoved { position }, 300.0, y);
         }
         render_sized("settings-sensors-drag", 1000);
         pointer(
@@ -634,6 +636,7 @@ mod screenshots {
                 position,
                 button: PointerEventButton::Left,
             },
+            300.0,
             250.0,
         );
         let kinds: Vec<_> = app
@@ -692,11 +695,55 @@ mod screenshots {
         let (general, bar, popups) = (27.0, 67.0, 147.0);
         let nav = |y: f32| click(49.0, y);
 
+        // Ctrl+Space in the navigation unselects its item; the page stays.
+        key(Key::Tab.into());
+        window.dispatch_event(WindowEvent::KeyPressed {
+            text: Key::Control.into(),
+        });
+        key(' '.into());
+        window.dispatch_event(WindowEvent::KeyReleased {
+            text: Key::Control.into(),
+        });
+        settle();
+        assert_eq!(state.get_page(), 0);
+
         // Leaving General ends recording the hotkey.
         state.set_recording_hotkey(true);
         nav(bar);
         assert_eq!(state.get_page(), 1);
         assert!(!state.get_recording_hotkey());
+
+        // A dragged slider snaps to its step (10 px for the width) when released, so it shows
+        // what is saved.
+        state.set_mode(1);
+        settle();
+        pointer(
+            |position| WindowEvent::PointerPressed {
+                position,
+                button: PointerEventButton::Left,
+            },
+            532.0,
+            143.0,
+        );
+        pointer(
+            |position| WindowEvent::PointerMoved { position },
+            573.0,
+            143.0,
+        );
+        pointer(
+            |position| WindowEvent::PointerReleased {
+                position,
+                button: PointerEventButton::Left,
+            },
+            573.0,
+            143.0,
+        );
+        settle();
+        let width = state.get_floating_width();
+        assert_eq!(width % 10.0, 0.0, "{width}");
+        let floating = app.store.get().settings.bar.floating;
+        assert_eq!(floating.map(|f| f.width as f32), Some(width));
+        state.set_mode(0);
 
         // A colour is saved as soon as it is valid; one left incomplete is not shown again.
         nav(popups);
@@ -728,6 +775,13 @@ mod screenshots {
         // A typed path and colour are what Save stores.
         retype(690.0, 203.0, "#123abc");
         retype(525.0, 92.0, r"C:\Pictures\logo.png");
+        // A path picked with Browse replaces the typed one, and typing goes on from it.
+        super::properties::set_path(&app, "image", r"C:\Pictures\other.png".into());
+        settle();
+        click(525.0, 92.0);
+        key(Key::End.into());
+        (0..3).for_each(|_| key(Key::Backspace.into()));
+        "svg".chars().for_each(|c| key(c.into()));
         click(723.0, 380.0);
         assert_eq!(state.get_page(), 2);
         let config = app.store.get();
@@ -737,7 +791,7 @@ mod screenshots {
             .find(|s| s.id == logo)
             .expect("logo")
             .props;
-        assert_eq!(props.get("image"), Some(&json!(r"C:\Pictures\logo.png")));
+        assert_eq!(props.get("image"), Some(&json!(r"C:\Pictures\other.svg")));
         let color = json!({ "mode": "custom", "color": "#123ABC" });
         assert_eq!(props.get("color"), Some(&color));
         let text = app

@@ -51,7 +51,7 @@ pub fn init(app: &Arc<App>) {
             on_pressed(&handler_app);
         }
     }));
-    let _ = set(&app.store.get().settings.hotkey);
+    let _ = set(&app.store.get().settings.hotkey, true);
 }
 
 fn on_pressed(app: &Arc<App>) {
@@ -120,12 +120,19 @@ pub fn accelerator(modifiers: Modifiers, code: &str) -> Result<String, String> {
 }
 
 /// Registers `accelerator` in place of the current hotkey. On failure the previous hotkey stays
-/// registered and the error is returned (and kept for [`error`]). Main thread only.
-pub fn set(accelerator: &str) -> Result<(), String> {
+/// registered and the error is returned. It is kept for [`error`] only when `accelerator` is the
+/// `configured` hotkey: a refused new combination leaves the configured one as it was. Main
+/// thread only.
+pub fn set(accelerator: &str, configured: bool) -> Result<(), String> {
     let result = register(accelerator);
-    state().error = result.as_ref().err().cloned();
-    if let Err(e) = &result {
-        tracing::warn!("hotkey {accelerator:?} not registered: {e}");
+    match &result {
+        Ok(()) => state().error = None,
+        Err(e) => {
+            tracing::warn!("hotkey {accelerator:?} not registered: {e}");
+            if configured {
+                state().error = Some(e.clone());
+            }
+        }
     }
     result
 }
@@ -224,6 +231,24 @@ mod tests {
     fn keys_the_os_cannot_register_are_refused() {
         assert!(accelerator(mods(true, false, false, false), "IntlBackslash").is_err());
         assert!(accelerator(mods(true, false, false, false), "F25").is_err());
+    }
+
+    #[test]
+    fn keeps_errors_of_the_configured_hotkey_only() {
+        // No manager on this thread, so registering fails.
+        assert!(set("Ctrl+Alt+K", false).is_err());
+        assert_eq!(
+            error(),
+            None,
+            "a refused new combination is not the configured hotkey"
+        );
+        assert!(set("Ctrl+Alt+K", true).is_err());
+        assert!(error().is_some(), "the configured hotkey is not registered");
+        // Refusing another combination keeps the configured hotkey's error.
+        let configured = error();
+        assert!(set("Ctrl+Alt+J", false).is_err());
+        assert_eq!(error(), configured);
+        state().error = None;
     }
 
     #[test]

@@ -226,11 +226,16 @@ fn browse(app: &Arc<App>, key: &str) {
             all_files: &all_files,
         },
     );
-    let Some(path) = picked else {
-        return;
-    };
-    edit(app, |form, _| form.set(key, Value::String(path.clone())));
-    // Show the chosen path even if the field was typed in.
+    if let Some(path) = picked {
+        set_path(app, key, path);
+    }
+}
+
+/// Sets the path field `key` to a picked `path` and shows it.
+pub(super) fn set_path(app: &Arc<App>, key: &str, path: String) {
+    edit(app, |form, _| form.set(key, Value::String(path)));
+    // Typing into the box replaced its binding to the row, so updating the row would not show
+    // the path: the row is replaced instead, which builds a new box.
     WINDOW.with(|w| {
         let Ok(w) = w.try_borrow() else {
             return;
@@ -239,8 +244,11 @@ fn browse(app: &Arc<App>, key: &str) {
             && let Some(state) = open.form.as_ref()
             && let Some(i) = state.rows.iter().position(|r| r.key == key)
         {
-            let window = open.window.global::<ui::SettingsState>();
-            window.get_props().set_row_data(i, prop_row(&state.rows[i]));
+            let model = open.window.global::<ui::SettingsState>().get_props();
+            if let Some(rows) = model.as_any().downcast_ref::<VecModel<ui::PropRow>>() {
+                rows.remove(i);
+                rows.insert(i, prop_row(&state.rows[i]));
+            }
         }
     });
 }
