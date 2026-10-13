@@ -176,3 +176,15 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 - [ ] Hover the icon: the tooltip reads *Infodock*.
 - [ ] Restart Explorer (Task Manager ▸ *Windows Explorer* ▸ Restart): the tray icon comes back.
 - [ ] Quit from the tray: the icon disappears at once (no ghost icon until hovered).
+
+## M2 — System sensors (in progress)
+
+The first-run placeholders become real sensors one by one. The M0 and M1 checks above still apply.
+
+**Time** (since M2 S6)
+
+- [ ] The first-run *time* placeholder is now a clock: the hour large, the minutes small and raised to its right; on an en-US system with *am*/*pm* under the minutes (a 12-hour clock), on a 24-hour regional format without. It turns to the next minute within a moment of the system clock.
+- [ ] Properties: *24-hour clock* switches the format; *Show seconds* shows `H:MM` large with the seconds small, updating every second; the bar does not shift as the digits change (it may when the hour gains a digit).
+- [ ] Hover: the hint shows today's long date in the regional format. Click: Settings ▸ Time & language ▸ Date & time opens.
+- [ ] *Chime* → *Every 15 minutes*: a soft two-tone chime plays at :00, :15, :30 and :45, not at other minutes, and not right after starting Infodock or waking the computer.
+- [ ] Change the time zone or the system time: the clock follows at once. Sleep and wake the computer: the clock is right at once.

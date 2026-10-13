@@ -121,6 +121,10 @@ pub trait Platform: Send + Sync {
     fn open(&self, target: &str) {
         tracing::info!("opening {target:?} is not supported on this platform");
     }
+    /// Plays a WAV sound in the background, e.g. the Time sensor's chime (SPEC §9.5).
+    fn play_sound(&self, wav: &'static [u8]) {
+        let _ = wav;
+    }
     /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
     /// UI language's for `Ui`. English (United States) where the platform cannot tell.
     fn locale(&self, which: DateLocale) -> Locale {

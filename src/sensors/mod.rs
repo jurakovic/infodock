@@ -18,6 +18,7 @@ pub mod registry;
 pub mod schema;
 pub mod spacer;
 pub mod text;
+pub mod time;
 
 use std::time::Instant;
 

@@ -840,8 +840,8 @@ mod screenshots {
         super::picker::open_picker(&app, place);
         state.set_picker_selected(2);
         render("settings-picker");
-        state.set_picker_search("time".into());
-        state.invoke_picker_searched("time".into());
+        state.set_picker_search("zzz".into());
+        state.invoke_picker_searched("zzz".into());
         assert_eq!(state.get_picker_selected(), -1);
         render("settings-picker-search");
         // Add opens the new sensor's properties, after the logo.
@@ -859,13 +859,13 @@ mod screenshots {
         settle();
         key('e'.into());
         assert_eq!(state.get_picker_selected(), 0, "Image");
-        (0..3).for_each(|_| key(Key::DownArrow.into()));
-        assert_eq!(state.get_picker_selected(), 2, "Text, the last");
+        (0..4).for_each(|_| key(Key::DownArrow.into()));
+        assert_eq!(state.get_picker_selected(), 3, "Time, the last");
         key(Key::UpArrow.into());
-        assert_eq!(state.get_picker_selected(), 1, "Spacer");
+        assert_eq!(state.get_picker_selected(), 2, "Text");
         key(Key::Return.into());
         assert_eq!(state.get_page(), super::properties::PAGE);
-        assert_eq!(app.store.get().layout.center[1].kind, "spacer");
+        assert_eq!(app.store.get().layout.center[1].kind, "text");
         state.invoke_props_cancel();
         assert_eq!(app.store.get().layout.center.len(), 1);
         super::WINDOW.with(|w| w.borrow_mut().take());

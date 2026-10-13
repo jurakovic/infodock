@@ -311,14 +311,16 @@ mod tests {
     fn lists_types_by_category_and_name() {
         let entries = entries(registry(), &Capabilities::default());
         let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["Image", "Spacer", "Text"]);
+        assert_eq!(names, ["Image", "Spacer", "Text", "Time"]);
         assert_eq!(
             lines(&entries, ""),
             [
                 Line::Heading("General".into()),
                 Line::Entry(0),
                 Line::Entry(1),
-                Line::Entry(2)
+                Line::Entry(2),
+                Line::Heading("Info".into()),
+                Line::Entry(3)
             ]
         );
     }

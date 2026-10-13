@@ -60,6 +60,22 @@ impl Platform for WindowsPlatform {
         shell::open(target);
     }
 
+    fn play_sound(&self, wav: &'static [u8]) {
+        use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
+        // SAFETY: with SND_MEMORY the "name" is the sound in memory; it is static, so it
+        // outlives the asynchronous playback.
+        let played = unsafe {
+            PlaySoundW(
+                PCWSTR(wav.as_ptr().cast()),
+                None,
+                SND_MEMORY | SND_ASYNC | SND_NODEFAULT,
+            )
+        };
+        if !played.as_bool() {
+            tracing::warn!("could not play a sound");
+        }
+    }
+
     fn font_families(&self) -> Vec<String> {
         text::font_families().unwrap_or_else(|e| {
             tracing::warn!("the font list is not available: {e}");
