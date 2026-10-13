@@ -5,6 +5,7 @@ mod dialog;
 mod hint;
 pub mod image;
 pub mod instance;
+mod locale;
 mod menu;
 mod monitors;
 pub mod render;
@@ -19,7 +20,8 @@ use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::core::{PCWSTR, w};
 
-use super::{Capabilities, Color, MonitorInfo, OsAppearance, Platform};
+use super::{Capabilities, Color, Locale, MonitorInfo, OsAppearance, Platform};
+use crate::config::model::DateLocale;
 
 pub struct WindowsPlatform;
 
@@ -33,6 +35,10 @@ impl Platform for WindowsPlatform {
 
     fn monitors(&self) -> Vec<MonitorInfo> {
         monitors::list()
+    }
+
+    fn locale(&self, which: DateLocale) -> Locale {
+        locale::read(which)
     }
 
     fn font_families(&self) -> Vec<String> {

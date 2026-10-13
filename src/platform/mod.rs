@@ -2,12 +2,13 @@
 //! can be added without touching sensors. Windows lives in `windows/`; every other OS gets the
 //! portable stub in `stub.rs` (enough to develop and test on Linux).
 //!
-//! The spec's `Shell`, `Icons`, `Power`, `Devices` and `Locale` traits are added with the
-//! milestones that need them (M2–M3).
+//! The spec's `Shell`, `Icons`, `Power` and `Devices` traits are added with the milestones that
+//! need them (M2–M3); the locale is plain data (`locale.rs`).
 
 pub mod bitmap;
 pub mod canvas;
 pub mod geometry;
+pub mod locale;
 pub mod recording;
 #[cfg(not(windows))]
 mod stub;
@@ -21,10 +22,11 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::config::model::{BarMode, Edge, FloatingRect, Material, Settings, ZOrder};
+use crate::config::model::{BarMode, DateLocale, Edge, FloatingRect, Material, Settings, ZOrder};
 pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
 pub use canvas::{Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF};
 pub use geometry::{MonitorInfo, Rect};
+pub use locale::Locale;
 pub use text::{Font, TextEngine, TextLayout, TextStyle};
 
 /// Which sensors and features exist on this system (SPEC §4.6). Flags turn on as their
@@ -102,6 +104,12 @@ pub trait Platform: Send + Sync {
     /// the platform cannot list them.
     fn font_families(&self) -> Vec<String> {
         Vec::new()
+    }
+    /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
+    /// UI language's for `Ui`. English (United States) where the platform cannot tell.
+    fn locale(&self, which: DateLocale) -> Locale {
+        let _ = which;
+        Locale::en_us()
     }
 }
 
