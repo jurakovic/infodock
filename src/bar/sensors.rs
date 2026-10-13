@@ -423,9 +423,9 @@ mod tests {
         assert_eq!(
             places,
             [
-                (7.0, 53.0),   // cpu-graph
-                (70.0, 68.0),  // memory-meter
-                (148.0, 73.0), // network-graph
+                (7.0, 75.0),   // CPU Graph: 50 px plot, 5 px gap, "100%"
+                (92.0, 68.0),  // memory-meter
+                (170.0, 73.0), // network-graph
                 (382.0, 27.0), // logo: round((800 − 37) / 2)
                 (783.0, 0.0),  // date
                 (793.0, 0.0)   // time, ending 7 px from the right
@@ -444,7 +444,7 @@ mod tests {
             .collect();
         assert_eq!(
             order,
-            ["cpu-graph", "memory-meter", "network-graph", "logo"],
+            ["CPU", "", "memory-meter", "network-graph", "logo"],
             "the centre zone is drawn last"
         );
     }
@@ -616,7 +616,9 @@ mod tests {
         }
 
         fn on_sample(&mut self, _topic: &Topic, sample: &Sample, _cx: &SensorCtx) -> bool {
-            let Sample::Uptime(uptime) = sample;
+            let Sample::Uptime(uptime) = sample else {
+                return false;
+            };
             let minutes = uptime.uptime_secs / 60;
             let changed = minutes != self.minutes;
             self.minutes = minutes;

@@ -222,7 +222,7 @@ mod tests {
                 &mut c,
                 registry(),
                 &CTX,
-                "cpu-graph",
+                "network-graph",
                 Zone::Left,
                 0,
                 &Props::new()
@@ -286,8 +286,8 @@ mod tests {
         assert_eq!(err.to_string(), "invalid props for image: opacity, size");
         assert!(update(&mut c, registry(), &CTX, "s_nope", &Props::new()).is_err());
         // Placeholders (unknown types) cannot be edited.
-        let cpu = c.layout.left[0].id.clone();
-        assert!(update(&mut c, registry(), &CTX, &cpu, &Props::new()).is_err());
+        let network = c.layout.left[2].id.clone();
+        assert!(update(&mut c, registry(), &CTX, &network, &Props::new()).is_err());
     }
 
     #[test]

@@ -311,7 +311,19 @@ mod tests {
     fn lists_types_by_category_and_name() {
         let entries = entries(registry(), &Capabilities::default());
         let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["Image", "Spacer", "Text", "Date", "Time", "Uptime"]);
+        assert_eq!(
+            names,
+            [
+                "Image",
+                "Spacer",
+                "Text",
+                "Date",
+                "Time",
+                "Uptime",
+                "CPU Graph",
+                "CPU Meter"
+            ]
+        );
         assert_eq!(
             lines(&entries, ""),
             [
@@ -322,7 +334,10 @@ mod tests {
                 Line::Heading("Info".into()),
                 Line::Entry(3),
                 Line::Entry(4),
-                Line::Entry(5)
+                Line::Entry(5),
+                Line::Heading("System".into()),
+                Line::Entry(6),
+                Line::Entry(7)
             ]
         );
     }

@@ -231,7 +231,7 @@ mod tests {
         let entries = bar_menu(&settings, registry(), &Capabilities::default());
         assert_eq!(
             labels(&entries)[0],
-            "New sensor ▸ [General ▸ [Image, Spacer, Text], Info ▸ [Date, Time, Uptime]]"
+            "New sensor ▸ [General ▸ [Image, Spacer, Text], Info ▸ [Date, Time, Uptime], System ▸ [CPU Graph, CPU Meter]]"
         );
         let MenuEntry::Submenu { entries, .. } = &entries[0] else {
             panic!("a submenu");

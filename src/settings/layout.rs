@@ -276,7 +276,7 @@ mod tests {
             shown(&lines),
             [
                 "# Left",
-                "0 cpu-graph: Not available in this version",
+                "0 CPU Graph: ",
                 "1 memory-meter: Not available in this version",
                 "2 network-graph: Not available in this version",
                 "# Centre",
@@ -285,7 +285,8 @@ mod tests {
                 "(No sensors)",
             ]
         );
-        assert!(!lines[1].editable);
+        assert!(lines[1].editable, "the CPU graph");
+        assert!(!lines[2].editable, "a placeholder");
         assert!(lines[5].editable);
     }
 

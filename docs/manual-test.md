@@ -202,3 +202,11 @@ The first-run placeholders become real sensors one by one. The M0 and M1 checks 
 - [ ] *New sensor… ▸ Info ▸ Uptime*: it shows `Uptime: 3d 04h 12m` (days only when there are any), matching Task Manager ▸ Performance ▸ *Up time*, and turns to the next minute on time.
 - [ ] Hover: the uptime in words. After a restart of the computer, the hint also shows *Longest uptime* from before (it is stored at most 10 minutes behind).
 - [ ] Properties: *Text before* empty shows only the uptime; font, style, size and shadow work as for Text.
+
+**CPU** (since M2 S9)
+
+- [ ] The first-run *cpu-graph* placeholder is now a CPU graph: a 50 px plot scrolling left once a second with green columns, and `CPU` / `37%` beside it. Its value stays within 3 % of Task Manager ▸ Performance ▸ CPU *Utilization* (open both side by side, load the CPU with a build or a video).
+- [ ] Hover: `8 CPUs use` (your count of logical processors), activity, user, system and idle with one decimal, and *Click to open Task Manager*; click: Task Manager opens.
+- [ ] *New sensor… ▸ System ▸ CPU Meter*: a thin bar filling with the load and `CPU` / `37%`; *Colour* → *Dynamic* turns it green, yellow and red with the load.
+- [ ] Graph properties: *Width* 50–150 in steps of 5; background and grid colours and opacities (both off by default); *Graph colour* → *Dynamic* colours each column by its value; *Update every* 1–10 s slows the scrolling.
+- [ ] After sleep and wake, the first values are sensible (no spike or drop to 0).

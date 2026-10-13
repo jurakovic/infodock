@@ -18,6 +18,8 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::text::TextType,
         &super::image::ImageType,
         &super::spacer::SpacerType,
+        &super::cpu::CpuMeterType,
+        &super::cpu::CpuGraphType,
         &super::date::DateType,
         &super::time::TimeType,
         &super::uptime::UptimeType,

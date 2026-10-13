@@ -795,6 +795,8 @@ One decimal. User and system are clamped so that their sum does not exceed 100.
 
 View: Graph with label "CPU" and value `{total}%`. Hint and click as §9.7.
 
+Implementation (`sensors/cpu.rs`, `providers/cpu.rs`, `platform/windows/cpu.rs`): the platform's `CpuReader` (owned by the sampler thread) reads `GetSystemTimes` and a PDH query opened once with `\Processor Information(_Total)\% Processor Utility` and the same per processor (`(*)`, instances `group,number`); the provider turns two readings into the sample (user, kernel without idle, idle from the time deltas; the busy share from the utility counter, else from the times; all clamped to 0–100), discarding the first reading after a start or resume. Graphs share their properties and look (`common/graph.rs` `GraphStyle`): the width rounds down to a multiple of 5, Standard background is black, Standard grid `#A0FF9B`, Standard columns the sensor text colour. Before the first sample the value line is empty.
+
 ### 9.9 `cpu-graph-dual` — CPU Graph (dual)  (System; `DockCPUGraphDual`; requires `per_core_cpu`)
 
 All properties of §9.8 except graphColor/graphOpacity, plus:

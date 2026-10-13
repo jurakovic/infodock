@@ -2,12 +2,121 @@
 //! over an optional background and grid, with a two-line block to its right. The CPU, Memory
 //! and Swap graphs draw one series; the dual graph (`dual_graph.rs`) two.
 
+use serde::Deserialize;
+
 use super::history::History;
 use super::two_line::{self, Align, TwoLine};
 use crate::bar::theme::Theme;
 use crate::platform::{Canvas, Color, RectF, TextEngine};
-use crate::sensors::DrawCtx;
 use crate::sensors::color;
+use crate::sensors::schema::{FieldKind, Lit, PropField};
+use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx};
+
+/// The properties every graph has (SPEC §9.8), for the types' schemas.
+pub const INTERVAL: PropField = PropField::new(
+    "interval",
+    FieldKind::Interval {
+        min: 1.0,
+        max: 10.0,
+    },
+    "sensor.field.interval",
+    Lit::Int(1),
+);
+pub const WIDTH: PropField = PropField::new(
+    "width",
+    FieldKind::Slider {
+        min: 50.0,
+        max: 150.0,
+        step: 5.0,
+        unit: Some("common.px"),
+    },
+    "sensor.graph.field.width",
+    Lit::Int(50),
+);
+pub const BK_COLOR: PropField = PropField::new(
+    "bkColor",
+    FieldKind::ColorMode { dynamic: false },
+    "sensor.graph.field.bkColor",
+    Lit::ColorMode("standard", "#000000"),
+);
+pub const BK_OPACITY: PropField = PropField::new(
+    "bkOpacity",
+    FieldKind::Opacity { min: 0 },
+    "sensor.graph.field.bkOpacity",
+    Lit::Int(0),
+);
+pub const GRID_COLOR: PropField = PropField::new(
+    "gridColor",
+    FieldKind::ColorMode { dynamic: false },
+    "sensor.graph.field.gridColor",
+    Lit::ColorMode("standard", "#A0FF9B"),
+);
+pub const GRID_OPACITY: PropField = PropField::new(
+    "gridOpacity",
+    FieldKind::Opacity { min: 0 },
+    "sensor.graph.field.gridOpacity",
+    Lit::Int(0),
+);
+pub const GRAPH_COLOR: PropField = PropField::new(
+    "graphColor",
+    FieldKind::ColorMode { dynamic: true },
+    "sensor.graph.field.graphColor",
+    Lit::ColorMode("custom", "#00FF00"),
+);
+pub const GRAPH_OPACITY: PropField = PropField::new(
+    "graphOpacity",
+    FieldKind::Opacity { min: 20 },
+    "sensor.graph.field.graphOpacity",
+    Lit::Int(55),
+);
+
+/// The standard colours of a graph's background and grid (SPEC §9.8).
+const STANDARD_BACKGROUND: Color = Color::BLACK;
+const STANDARD_GRID: Color = Color::rgba(0xA0, 0xFF, 0x9B, 1.0);
+
+/// A graph's look, as stored (the fields above but the interval).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphStyle {
+    pub width: u32,
+    pub bk_color: ColorChoice,
+    pub bk_opacity: u32,
+    pub grid_color: ColorChoice,
+    pub grid_opacity: u32,
+    pub graph_color: ColorChoice,
+    pub graph_opacity: u32,
+}
+
+fn opacity(percent: u32) -> f32 {
+    percent.min(100) as f32 / 100.0
+}
+
+impl GraphStyle {
+    /// The plot's width: 50–150, rounded down to a multiple of 5 (SPEC §9.8).
+    pub fn plot_width(&self) -> f32 {
+        (self.width.clamp(50, 150) / 5 * 5) as f32
+    }
+
+    pub fn backdrop(&self) -> Backdrop {
+        Backdrop {
+            background: color::resolve(&self.bk_color, STANDARD_BACKGROUND, 0.0)
+                .with_alpha(opacity(self.bk_opacity)),
+            grid: color::resolve(&self.grid_color, STANDARD_GRID, 0.0)
+                .with_alpha(opacity(self.grid_opacity)),
+        }
+    }
+
+    /// The columns' colour; Standard is the sensor text colour (SPEC §8.4).
+    pub fn columns(&self, theme: &Theme) -> Columns {
+        let alpha = opacity(self.graph_opacity);
+        match self.graph_color.mode {
+            ColorModeKind::Dynamic => Columns::Dynamic(alpha),
+            _ => Columns::Solid(
+                color::resolve(&self.graph_color, theme.sensor_text, 0.0).with_alpha(alpha),
+            ),
+        }
+    }
+}
 
 /// Between the plot and the text, logical px.
 pub const GAP: f32 = 5.0;

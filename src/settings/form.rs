@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn unknown_types_have_no_form() {
-        assert!(Form::open(registry(), &instance("cpu-graph", json!({})), false).is_none());
+        assert!(Form::open(registry(), &instance("network-graph", json!({})), false).is_none());
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+mod cpu;
 mod dialog;
 mod hint;
 pub mod image;
@@ -40,6 +41,10 @@ impl Platform for WindowsPlatform {
 
     fn locale(&self, which: DateLocale) -> Locale {
         locale::read(which)
+    }
+
+    fn cpu_reader(&self) -> Option<Box<dyn super::CpuReader>> {
+        Some(Box::new(cpu::WinCpu::new()))
     }
 
     fn local_time(&self) -> LocalTime {

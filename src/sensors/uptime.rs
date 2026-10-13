@@ -213,7 +213,9 @@ impl Sensor for Uptime {
     }
 
     fn on_sample(&mut self, _topic: &Topic, sample: &Sample, _cx: &SensorCtx) -> bool {
-        let Sample::Uptime(sample) = sample;
+        let Sample::Uptime(sample) = sample else {
+            return false;
+        };
         let now = Instant::now();
         let before = self.text(now);
         self.reading = Some((sample.uptime_secs, now));

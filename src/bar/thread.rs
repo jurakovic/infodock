@@ -1097,6 +1097,8 @@ mod tests {
         logic.frame(&window, Instant::now() + Duration::from_secs(1));
         window.frames.set(0);
         window.slides.borrow_mut().clear();
+        // The start's subscriptions (the CPU graph) are not what tests look for.
+        host.calls.lock().unwrap_or_else(|e| e.into_inner()).clear();
         logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
         (logic, window, host, config)
     }
@@ -1595,8 +1597,8 @@ mod tests {
     #[test]
     fn placeholders_explain_themselves() {
         let (mut logic, window, _, _) = bar(Settings::default());
-        // The first placeholder (cpu-graph) starts at the edge padding.
-        hover(&mut logic, &window, PointF::new(10.0, 14.0));
+        // The first placeholder (memory-meter) follows the CPU graph.
+        hover(&mut logic, &window, PointF::new(100.0, 14.0));
         hint_timer(&mut logic, &window);
         let hint = window.hint.borrow().clone().expect("shown");
         assert!(

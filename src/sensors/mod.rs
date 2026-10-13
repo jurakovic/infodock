@@ -9,6 +9,7 @@
 
 pub mod color;
 pub mod common;
+pub mod cpu;
 pub mod date;
 pub mod dates;
 pub mod format;

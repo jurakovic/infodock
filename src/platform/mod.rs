@@ -93,6 +93,36 @@ impl Default for OsAppearance {
     }
 }
 
+/// Processor times since the system started, in 100 ns units (`GetSystemTimes`); kernel time
+/// includes idle time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CpuTimes {
+    pub idle: u64,
+    pub kernel: u64,
+    pub user: u64,
+}
+
+/// One reading of the processors (SPEC Appendix A, `cpu`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CpuReading {
+    pub times: CpuTimes,
+    /// The busy share of all processors as Task Manager shows it (`% Processor Utility`,
+    /// 0–100); `None` on the first reading, which has nothing to compare with, or where the
+    /// counter cannot be read.
+    pub total: Option<f64>,
+    /// The same per logical processor, in processor order; empty where unavailable.
+    pub cores: Vec<f64>,
+    /// The number of logical processors.
+    pub logical: u32,
+}
+
+/// Reads the processors. Owned by the sampler thread, so counters are opened once and reused
+/// (SPEC §14.1).
+pub trait CpuReader: Send {
+    /// `None` if nothing could be read.
+    fn read(&mut self) -> Option<CpuReading>;
+}
+
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// All active monitors, physical pixels.
@@ -104,6 +134,10 @@ pub trait Platform: Send + Sync {
     /// the platform cannot list them.
     fn font_families(&self) -> Vec<String> {
         Vec::new()
+    }
+    /// A reader of the processors' load, for the `cpu` topic; `None` where there is none.
+    fn cpu_reader(&self) -> Option<Box<dyn CpuReader>> {
+        None
     }
     /// The local wall-clock time; UTC where the platform does not know the time zone.
     fn local_time(&self) -> crate::sensors::dates::LocalTime {
