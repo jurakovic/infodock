@@ -629,6 +629,8 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 
 **History** (`common/history.rs`): fixed-capacity ring buffer of `f32`; resizing keeps the newest samples.
 
+Implementation notes: the meter's value column fits `100%` as formatted (§8.6) or the value if wider; its bar and fill edges sit on whole physical px. Graph grid lines are one physical px, the vertical ones every 5 px from the plot's left, the horizontal ones every 5 px from its bottom; transparent layers are not drawn. Column edges are snapped, so at 150 % columns are alternately 2 and 1 physical px wide. A graph's text column fits the sensor's reserve (e.g. `100%`) or its text, and both lines end at the sensor's right edge.
+
 ### 8.4 Colour modes and the dynamic gradient
 
 * `standard`: use the sensor text colour (meters: 59 % opacity); follows global settings.
