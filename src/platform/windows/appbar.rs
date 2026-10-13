@@ -101,6 +101,14 @@ struct UiState {
     target: Option<Rect>,
     /// A placement is running; a nested request is re-posted instead of run re-entrantly.
     busy: bool,
+    /// How far the window is shown below its place (above: negative) while it rises or slides
+    /// out (SPEC §5.5). A placement that changes nothing keeps it; a new one starts in place.
+    offset: i32,
+}
+
+/// `rect` moved down by `dy` px.
+fn shifted(rect: Rect, dy: i32) -> Rect {
+    Rect::new(rect.left, rect.top + dy, rect.right, rect.bottom + dy)
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -237,16 +245,20 @@ impl Shared {
 
         let (fullscreen, raised) = self.ui(|u| (u.fullscreen, u.raised));
         let insert_after = insert_after(req, fullscreen, raised, self.is_topmost());
-        self.set_window_pos(insert_after, rect, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-
-        let changed = self.ui(|u| {
+        let (changed, offset) = self.ui(|u| {
             let changed = u
                 .applied
                 .as_ref()
                 .is_none_or(|(r, a)| r != req || *a != rect);
-            u.applied = Some((req.clone(), rect));
-            changed
+            if changed {
+                u.offset = 0;
+            }
+            (changed, u.offset)
         });
+        // A repeated placement during the rise keeps the window where the rise has it.
+        let shown = shifted(rect, offset);
+        self.set_window_pos(insert_after, shown, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        self.ui(|u| u.applied = Some((req.clone(), rect)));
         if changed {
             tracing::info!(
                 "bar placed at {rect:?} on {} (scale {})",
@@ -263,13 +275,15 @@ impl Shared {
     }
 
     /// Shows the bar `dy` px off its place (the rise animation, SPEC §5.5). The placement stays
-    /// as it is, so the next one puts the bar back.
+    /// as it is: one that changes nothing keeps the offset, a new one puts the bar in place.
     pub(super) fn slide(&self, dy: i32) {
-        let Some((_, rect)) = self.ui(|u| u.applied.clone()) else {
+        let Some((_, rect)) = self.ui(|u| {
+            u.offset = dy;
+            u.applied.clone()
+        }) else {
             return;
         };
-        let rect = Rect::new(rect.left, rect.top + dy, rect.right, rect.bottom + dy);
-        self.set_window_pos(HWND_TOP, rect, SWP_NOACTIVATE | SWP_NOZORDER);
+        self.set_window_pos(HWND_TOP, shifted(rect, dy), SWP_NOACTIVATE | SWP_NOZORDER);
     }
 
     /// Moves a floating bar by physical px while the user drags it (SPEC §5.1). The request

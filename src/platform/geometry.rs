@@ -157,7 +157,7 @@ pub fn floating_rect<'a>(
     height: u32,
 ) -> Option<(Rect, &'a MonitorInfo)> {
     let monitor = match floating {
-        Some(f) => monitor_at(monitors, f.x, f.y)?,
+        Some(f) => monitor_for(monitors, f, height)?,
         None => select_monitor(monitors, selection)?,
     };
     let work = monitor.work_area;
@@ -180,15 +180,38 @@ pub fn floating_rect<'a>(
     Some((Rect::new(x, y, x + w, y + h), monitor))
 }
 
-/// The monitor containing the point, else the nearest one.
-fn monitor_at(monitors: &[MonitorInfo], x: i32, y: i32) -> Option<&MonitorInfo> {
+/// The monitor a floating bar at `f` belongs to: the one holding the largest share of it (its
+/// size depends on each monitor's scale, so shares are compared, not areas), else the one
+/// nearest to its top-left corner. In `i64`, since a hand-edited position may be anything.
+fn monitor_for(monitors: &[MonitorInfo], f: FloatingRect, height: u32) -> Option<&MonitorInfo> {
+    let (x, y) = (i64::from(f.x), i64::from(f.y));
+    let share = |m: &MonitorInfo| {
+        let w = i64::from(to_physical(f.width, m.scale)).max(1);
+        let h = i64::from(to_physical(height, m.scale)).max(1);
+        let b = m.bounds;
+        let across = (x + w).min(i64::from(b.right)) - x.max(i64::from(b.left));
+        let down = (y + h).min(i64::from(b.bottom)) - y.max(i64::from(b.top));
+        (across.max(0) * down.max(0)) as f64 / (w * h) as f64
+    };
+    let mut best: Option<(&MonitorInfo, f64)> = None;
+    for m in monitors {
+        let s = share(m);
+        if s > 0.0 && best.is_none_or(|(_, b)| s > b) {
+            best = Some((m, s));
+        }
+    }
     let distance = |m: &MonitorInfo| {
         let b = m.bounds;
-        let dx = (b.left - x).max(x - (b.right - 1)).max(0);
-        let dy = (b.top - y).max(y - (b.bottom - 1)).max(0);
-        i64::from(dx) * i64::from(dx) + i64::from(dy) * i64::from(dy)
+        let dx = (i64::from(b.left) - x)
+            .max(x - i64::from(b.right - 1))
+            .max(0);
+        let dy = (i64::from(b.top) - y)
+            .max(y - i64::from(b.bottom - 1))
+            .max(0);
+        dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy))
     };
-    monitors.iter().min_by_key(|m| distance(m))
+    best.map(|(m, _)| m)
+        .or_else(|| monitors.iter().min_by_key(|m| distance(m)))
 }
 
 /// The monitor edge nearer to the middle of `rect`: where hints of a floating bar open away
@@ -347,9 +370,20 @@ mod tests {
         );
         // Partly off the work area: pulled back in.
         assert_eq!(
-            at(1700, 1030, 600),
+            at(1500, 1030, 600),
             Some((Rect::new(1320, 1012, 1920, 1040), "A".into()))
         );
+        // Mostly on the right monitor, though its left end is on the left one: on the right.
+        assert_eq!(
+            at(1700, 1030, 600),
+            Some((Rect::new(1920, 1030, 2820, 1072), "B".into()))
+        );
+        // A hand-edited position far off: the nearest monitor, without overflowing.
+        assert_eq!(
+            at(i32::MIN, i32::MIN, 300).map(|(_, m)| m),
+            Some("A".into())
+        );
+        assert_eq!(at(i32::MAX, 0, 300).map(|(_, m)| m), Some("B".into()));
         // Off every monitor: onto the nearest one.
         assert_eq!(at(-500, 500, 300).map(|(r, _)| r.left), Some(0));
         // Wider than the monitor: as wide as its work area.

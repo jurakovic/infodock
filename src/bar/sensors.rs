@@ -8,7 +8,7 @@ use std::time::Instant;
 use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
-use crate::platform::{Canvas, Capabilities, Platform, RectF};
+use crate::platform::{Canvas, Capabilities, Platform, RectF, TextEngine};
 use crate::sampler::{Delivery, TopicRequest};
 use crate::sensors::registry::Registry;
 use crate::sensors::{ClickResult, DrawCtx, HintContent, LayoutCtx, Sensor, SensorCtx, State};
@@ -72,9 +72,10 @@ pub(super) struct BarSensors {
     pressed: Option<String>,
     /// The zones must be placed again.
     relayout: bool,
-    /// The bar width and scale of the last layout.
+    /// The bar width, scale and the theme's padding and gap of the last layout.
     bar_width: f32,
     scale: f32,
+    spacing: (f32, f32),
 }
 
 impl BarSensors {
@@ -141,8 +142,8 @@ impl BarSensors {
         }
     }
 
-    /// Measures the sensors that need it and places the zones if a width, the bar width or the
-    /// scale changed.
+    /// Measures the sensors that need it and places the zones if a width, the bar width, the
+    /// scale or the spacing (Sensor spacing, SPEC §10.4) changed.
     pub fn update_layout(&mut self, cx: &LayoutCtx, bar_width: f32) {
         if cx.scale != self.scale {
             // Images are decoded at their physical size.
@@ -156,7 +157,8 @@ impl BarSensors {
             p.width = width;
             p.dirty = false;
         }
-        if resized || self.relayout || bar_width != self.bar_width {
+        let spacing = (cx.theme.pad, cx.theme.gap);
+        if resized || self.relayout || bar_width != self.bar_width || spacing != self.spacing {
             let widths: Zones = self
                 .zones
                 .each_ref()
@@ -168,7 +170,21 @@ impl BarSensors {
                 }
             }
             self.bar_width = bar_width;
+            self.spacing = spacing;
             self.relayout = false;
+        }
+    }
+
+    /// Measures and places what changed now, with the scale and bar width of the last layout,
+    /// rather than at the next paint; e.g. before a hint is placed next to its sensor.
+    pub fn refresh_layout(&mut self, theme: &Theme, text: &dyn TextEngine) {
+        if self.scale > 0.0 {
+            let cx = LayoutCtx {
+                theme,
+                text,
+                scale: self.scale,
+            };
+            self.update_layout(&cx, self.bar_width);
         }
     }
 
@@ -601,6 +617,29 @@ mod tests {
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         let widths: Vec<f32> = sensors.places().iter().map(|p| p.2).collect();
         assert_eq!(widths, [12.0, 12.0, 10.0]);
+    }
+
+    #[test]
+    fn a_new_spacing_places_the_sensors_again() {
+        let mut theme = theme();
+        let config = Config::first_run("1.0.0");
+        let mut sensors = BarSensors::default();
+        sensors.sync(
+            &config.layout,
+            &config.state,
+            &Capabilities::default(),
+            registry(),
+        );
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 800.0);
+        let xs =
+            |sensors: &BarSensors| -> Vec<f32> { sensors.places().iter().map(|p| p.1).collect() };
+        let before = xs(&sensors);
+        // A theme change marks every sensor dirty; the widths stay, the gap does not.
+        theme.gap += 4.0;
+        sensors.invalidate_all();
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 800.0);
+        let after = xs(&sensors);
+        assert_eq!(after[1] - before[1], 4.0, "{before:?} → {after:?}");
     }
 
     #[test]

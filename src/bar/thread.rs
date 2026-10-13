@@ -100,6 +100,9 @@ pub(super) struct BarLogic {
     rise_pending: bool,
     /// Sliding out before an edge change; redocks when done.
     sliding_out: bool,
+    /// The offset last given to [`BarWindow::slide`]; `None` after a new placement, which puts
+    /// the window in its place.
+    slid: Option<i32>,
     platform: Arc<dyn Platform>,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
@@ -166,6 +169,7 @@ impl BarLogic {
             shown: Fade::at(if animate { 0.0 } else { 1.0 }, Instant::now()),
             rise_pending: true,
             sliding_out: false,
+            slid: None,
             platform,
             commands,
             host,
@@ -380,12 +384,22 @@ impl BarLogic {
             } else {
                 0
             };
-            window.slide(dy);
+            // Highlight-only frames leave the window where it is.
+            if self.slid != Some(dy) {
+                self.slid = Some(dy);
+                window.slide(dy);
+            }
         }
         if self.sliding_out && !self.shown.running(now) {
             self.sliding_out = false;
             self.rise_pending = true;
             self.host.redock();
+            // Already placed at the edge it docks to (the edge changed back meanwhile, or a
+            // placement came during the slide): no new placement follows, so it rises now.
+            let edge = self.settings.bar.edge;
+            if self.geometry.as_ref().is_some_and(|g| g.edge == edge) {
+                self.rise(window);
+            }
         }
         if self.highlight.running(now) || self.shown.running(now) {
             window.set_timer(TimerId::Frame, Some(anim::FRAME));
@@ -536,11 +550,14 @@ impl BarLogic {
             self.apply_hint(window, step);
             return;
         }
-        if let Some(id) = self.hover.shown().map(str::to_owned)
-            && !self.show_hint(window, &id)
-        {
-            self.hover.nothing_shown();
-            window.hide_hint();
+        if let Some(id) = self.hover.shown().map(str::to_owned) {
+            // The hint is placed by its sensor, which may have moved: place the sensors now
+            // rather than at the next paint.
+            self.sensors.refresh_layout(&self.theme, self.text.as_ref());
+            if !self.show_hint(window, &id) {
+                self.hover.nothing_shown();
+                window.hide_hint();
+            }
         }
     }
 
@@ -845,6 +862,7 @@ impl BarHandler for BarLogic {
             }
             UiEvent::Placed(geometry) => {
                 self.geometry = Some(geometry);
+                self.slid = None;
                 window.invalidate();
                 self.rise(window);
                 self.refresh_hint(window);
@@ -876,7 +894,13 @@ impl BarHandler for BarLogic {
             canvas.push_opacity(opacity);
         }
         let highlight = self.highlight.value(now);
-        paint_bar(canvas, size, &self.theme, self.settings.bar.edge, highlight);
+        // The edge it is placed on: the nearer one for a floating bar, the old one while it
+        // slides out (SPEC §12.2).
+        let edge = self
+            .geometry
+            .as_ref()
+            .map_or(self.settings.bar.edge, |g| g.edge);
+        paint_bar(canvas, size, &self.theme, edge, highlight);
         self.sensors.draw(canvas, &self.theme, size.height);
         // The placer: a 2 px line in the accent colour where the dragged sensor would go
         // (SPEC §6.2, §12.2).
@@ -1187,6 +1211,10 @@ mod tests {
         let done = Instant::now() + RISE;
         logic.frame(&window, done);
         assert_eq!(window.slides.borrow().last(), Some(&0));
+        // Frames that move nothing (e.g. for the hover highlight) leave the window where it is.
+        let slides = window.slides.borrow().len();
+        logic.frame(&window, done + Duration::from_millis(16));
+        assert_eq!(window.slides.borrow().len(), slides);
         let mut canvas = RecordingCanvas::new(1.0);
         logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
         assert!(!canvas.dump().starts_with("opacity"));
@@ -1196,6 +1224,14 @@ mod tests {
         top.settings.bar.edge = Edge::Top;
         logic.apply_config(&window, top);
         assert!(!host.calls().contains(&"redock".to_owned()));
+        // Still at the bottom: the hairline stays on its top side.
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        assert!(
+            canvas.dump().contains("fill rect 0,0 1200×1 "),
+            "{}",
+            canvas.dump()
+        );
         logic.frame(&window, Instant::now() + RISE);
         assert_eq!(window.slides.borrow().last(), Some(&28));
         assert!(host.calls().contains(&"redock".to_owned()));
@@ -1206,6 +1242,25 @@ mod tests {
         geometry.rect = Rect::new(0, 0, 1200, 28);
         logic.on_event(&window, UiEvent::Placed(geometry));
         assert_eq!(window.slides.borrow().first(), Some(&-28));
+    }
+
+    #[test]
+    fn an_edge_changed_back_during_the_slide_out_rises_again() {
+        let mut settings = Settings::default();
+        settings.bar.animations = crate::config::model::Animations::On;
+        let (mut logic, window, host, config) = rising_bar(settings);
+        logic.frame(&window, Instant::now() + RISE);
+        // To the top and back before the slide-out ends: the placement stays at the bottom,
+        // so no new one is reported.
+        let mut top = config.clone();
+        top.settings.bar.edge = Edge::Top;
+        logic.apply_config(&window, top);
+        logic.apply_config(&window, config);
+        logic.frame(&window, Instant::now() + RISE);
+        assert!(host.calls().contains(&"redock".to_owned()));
+        assert_eq!(logic.shown.target(), 1.0, "it rises");
+        logic.frame(&window, Instant::now() + 2 * RISE);
+        assert_eq!(window.slides.borrow().last(), Some(&0));
     }
 
     #[test]
@@ -1466,6 +1521,29 @@ mod tests {
         );
         // Kept on screen: 7 px from the monitor's left edge, less the shadow margin.
         assert_eq!(hint.0.left, 1);
+    }
+
+    #[test]
+    fn a_live_hint_follows_its_sensor() {
+        let (mut logic, window, _, config) = bar(Settings::default());
+        hover(&mut logic, &window, LOGO);
+        hint_timer(&mut logic, &window);
+        let before = window.hint.borrow().clone().expect("shown").0;
+        // A sensor added in front of the logo moves it to the right.
+        let mut config = config;
+        let text = SensorInstance {
+            id: "s_text".into(),
+            kind: "text".into(),
+            props: serde_json::json!({ "text": "Hello" })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        };
+        config.layout.center.insert(0, text);
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        let after = window.hint.borrow().clone().expect("still shown").0;
+        assert!(after.left > before.left, "{before:?} → {after:?}");
     }
 
     fn drag_to(logic: &mut BarLogic, window: &FakeWindow, from: PointF, to: PointF) -> bool {

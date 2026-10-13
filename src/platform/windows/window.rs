@@ -67,12 +67,17 @@ use crate::platform::{
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
 /// Private: [`UiWaker::wake`] was called.
 const WM_WAKE: u32 = WM_APP + 1;
-/// Window timer ids: the bar logic's timers ([`BarWindow::set_timer`]) and the hint's fade.
+/// Window timer ids: the bar logic's timers ([`BarWindow::set_timer`]), the hint's fade and
+/// drawing again after a failed frame.
 const WAKE_TIMER: usize = 1;
 const HINT_TIMER: usize = 2;
 const DRAG_TIMER: usize = 3;
 const FADE_TIMER: usize = 4;
 const FRAME_TIMER: usize = 5;
+const RETRY_TIMER: usize = 6;
+/// A failed frame (e.g. a lost render target) is drawn again after this long: soon, but not at
+/// once, so a failure that persists does not keep the bar thread busy.
+const RETRY_MS: u32 = 250;
 
 fn timer_id(id: TimerId) -> usize {
     match id {
@@ -227,6 +232,12 @@ impl WindowState {
             WM_CAPTURECHANGED if lparam.0 != hwnd.0 as isize => {
                 self.dispatch(UiEvent::CaptureLost);
             }
+            WM_TIMER if wparam.0 == RETRY_TIMER => {
+                // SAFETY: plain call on our own window.
+                let _ = unsafe { KillTimer(Some(hwnd), RETRY_TIMER) };
+                self.invalidate();
+                return LRESULT(0);
+            }
             WM_TIMER if wparam.0 == FADE_TIMER => {
                 let going_on = matches!(self.hint.get(), Some(Ok(hint)) if hint.fade_step());
                 if !going_on {
@@ -236,7 +247,7 @@ impl WindowState {
                 return LRESULT(0);
             }
             WM_SIZE | WM_DPICHANGED => self.invalidate(),
-            WM_SETTINGCHANGE if is_color_set_change(lparam) => {
+            WM_SETTINGCHANGE if is_appearance_change(wparam, lparam) => {
                 self.dispatch(UiEvent::AppearanceChanged);
             }
             WM_THEMECHANGED | WM_DWMCOLORIZATIONCOLORCHANGED => {
@@ -318,7 +329,10 @@ impl WindowState {
         if renderer.is_none() {
             match Renderer::new() {
                 Ok(r) => *renderer = Some(r),
-                Err(e) => return self.report_render_error(&e),
+                Err(e) => {
+                    self.report_render_error(&e);
+                    return self.retry_render();
+                }
             }
         }
         let Some(renderer) = renderer.as_mut() else {
@@ -333,14 +347,21 @@ impl WindowState {
             Ok(frame) => unsafe {
                 if let Err(e) = BitBlt(hdc, 0, 0, width, height, Some(frame), 0, 0, SRCCOPY) {
                     self.report_render_error(&e);
+                    self.retry_render();
                 }
             },
             Err(e) => {
                 self.report_render_error(&e);
                 // A lost render target is re-created on the next frame.
-                self.repaint.set(true);
+                self.retry_render();
             }
         }
+    }
+
+    /// Draws the bar again shortly after a failed frame; nothing else may ask for one.
+    fn retry_render(&self) {
+        // SAFETY: plain call on our own window; a timer with the same id is replaced.
+        unsafe { SetTimer(Some(self.hwnd()), RETRY_TIMER, RETRY_MS, None) };
     }
 
     /// The pointer position in `lparam` (client px) in logical px.
@@ -499,7 +520,13 @@ fn modifiers() -> Modifiers {
 }
 
 /// `WM_SETTINGCHANGE` for light/dark mode, accent colour or transparency effects.
-fn is_color_set_change(lparam: LPARAM) -> bool {
+/// A `WM_SETTINGCHANGE` that can change the bar's look: the colour set (dark mode, accent,
+/// transparency) or *Animation effects*, which `animations: auto` follows (SPEC §5.5).
+fn is_appearance_change(wparam: WPARAM, lparam: LPARAM) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::SPI_SETCLIENTAREAANIMATION;
+    if wparam.0 == SPI_SETCLIENTAREAANIMATION.0 as usize {
+        return true;
+    }
     if lparam.0 == 0 {
         return false;
     }
