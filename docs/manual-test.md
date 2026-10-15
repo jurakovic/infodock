@@ -278,3 +278,9 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] The same with the portable `infodock.exe` on a machine where Infodock was never installed: the toast shows too (named *Infodock*).
 - [ ] The Settings window's taskbar button groups with a pinned Infodock shortcut (installed build).
 - [ ] `%LOCALAPPDATA%\app.infodock.desktop\logs`: the start-up log lists the capabilities. A laptop: `battery: true` and `wifi: true` (with Wi-Fi hardware); a desktop without Wi-Fi: `wifi: false`.
+
+**Power** (since M3 S3)
+
+- [ ] *New sensor… ▸ Launchers ▸ Power*: the sleep icon (21 px); hover: *Sleep*. Properties: *Action* lists Lock, Sign out, Switch user, Sleep, Hibernate (only with hibernation turned on: `powercfg /hibernate on`), Shut down, Restart; each changes the icon. *Close apps without asking* shows only for Sign out, Shut down and Restart.
+- [ ] Click with *Ask first* on: a dialog asks "Do you really want to … this computer?" with the action on its button; Cancel and Esc do nothing. With *Ask first* off, the click acts at once.
+- [ ] Each mode does what it says: Lock shows the lock screen; Sign out signs out (open Notepad with unsaved text: Windows asks, unless *Close apps without asking*); Switch user shows the sign-in screen and the session is still there after signing in again; Sleep sleeps (on a Modern Standby laptop: the screen turns off and it goes to standby), and the bar is fine after waking; Hibernate hibernates; Shut down and Restart do so (Notepad with unsaved text: Windows waits for it, unless forced).

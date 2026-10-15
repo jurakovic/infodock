@@ -19,6 +19,7 @@ pub mod memory;
 pub mod network;
 pub mod ops;
 pub mod placeholder;
+pub mod power;
 pub mod registry;
 pub mod schema;
 pub mod shortcut;
@@ -293,12 +294,23 @@ impl MenuItem {
     }
 }
 
+/// A question the bar asks in a native dialog before a sensor acts (SPEC §6.4, §9.21).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Question {
+    /// The main text, e.g. "Do you really want to shut down this computer?".
+    pub message: String,
+    /// The confirming button, e.g. "Shut down".
+    pub action: String,
+}
+
 /// What a click did (SPEC §8.1). Popups arrive with the sensors that open them (M3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClickResult {
     /// The sensor has no click action.
     None,
     Handled,
+    /// The bar asks this first and calls [`Sensor::confirmed`] if the user agrees.
+    Confirm(Question),
 }
 
 /// A placed sensor. Lives on the bar thread; re-created when its props change (SPEC §8.1).
@@ -314,6 +326,11 @@ pub trait Sensor {
     /// The click action (SPEC §6.1); called only when the Lock rules allow clicks.
     fn click(&mut self, _cx: &SensorCtx) -> ClickResult {
         ClickResult::None
+    }
+    /// The user agreed to the [`ClickResult::Confirm`] question of its last click; returns
+    /// whether what it shows changed.
+    fn confirmed(&mut self, _cx: &SensorCtx) -> Dirty {
+        false
     }
     /// Its own items for the sensor menu (SPEC §6.4), shown between *Remove sensor* and
     /// *Tools*; the menu is built each time it opens.

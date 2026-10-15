@@ -30,6 +30,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::time::TimeType,
         &super::uptime::UptimeType,
         &super::shortcut::ShortcutType,
+        &super::power::PowerType,
     ])
 });
 

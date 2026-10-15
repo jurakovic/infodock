@@ -50,7 +50,7 @@ impl Platform for WindowsPlatform {
                         .is_some_and(|p| p.is_dir()),
                     wifi: wlan::has_interface(),
                     battery: power::has_battery(),
-                    power_modes: Vec::new(),
+                    power_modes: power::modes(),
                     // Ejecting needs no hardware to exist; Eject USB lists what there is.
                     eject: true,
                     per_core_cpu: cpu::per_processor_counters(),
@@ -129,6 +129,10 @@ impl Platform for WindowsPlatform {
 
     fn notify(&self, title: &str, body: &str) {
         toast::notify(title, body);
+    }
+
+    fn power(&self, action: super::PowerAction, force: bool) {
+        power::power(action, force);
     }
 
     fn play_sound(&self, wav: &'static [u8]) {

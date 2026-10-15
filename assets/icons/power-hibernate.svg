@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Placeholder (SPEC Appendix C): a Power mode icon; monochrome white. -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">
+    <path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/>
+    <path d="M9.5 4.5 12 6.5l2.5-2M9.5 19.5 12 17.5l2.5 2"/>
+  </g>
+</svg>

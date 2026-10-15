@@ -372,6 +372,7 @@ mod tests {
                 "Swap Graph",
                 "Swap Meter",
                 "Network Graph",
+                "Power",
                 "Shortcut"
             ]
         );
@@ -397,7 +398,8 @@ mod tests {
                 Line::Heading("Network".into()),
                 Line::Entry(13),
                 Line::Heading("Launchers".into()),
-                Line::Entry(14)
+                Line::Entry(14),
+                Line::Entry(15)
             ]
         );
     }

@@ -1092,6 +1092,8 @@ Hint: the mode name. Click: if `confirm`, a native dialog ("Do you really want t
 | hibernate | `SetSuspendState(TRUE, FALSE, FALSE)`; offered only if `GetPwrCapabilities().HiberFilePresent` |
 | shut down / restart | enable `SeShutdownPrivilege` (`AdjustTokenPrivileges`), then `InitiateShutdownW(…, SHUTDOWN_POWEROFF \| SHUTDOWN_RESTART [\| SHUTDOWN_FORCE_OTHERS], reason)` |
 
+Implementation (`sensors/power.rs`, `platform/windows/power.rs`): mode ids `lock`, `signOut`, `switchUser`, `sleep`, `hibernate`, `shutDown`, `restart` (the `powerMode` field type lists the modes in `capabilities.power_modes`, plus the stored one if this computer lacks it). `capabilities.power_modes` holds every mode except sleep, offered when `GetPwrCapabilities` reports S1–S3 or Modern Standby (`AoAc`), and hibernate, offered with `SystemS4` and a hibernation file. On Modern Standby without S1–S3 there is no sleep call, so sleep turns the displays off (`WM_SYSCOMMAND` / `SC_MONITORPOWER` to all windows), after which the computer goes to standby. *Force* is shown, and applies, only for sign out, shut down and restart. The confirmation is the bar's native dialog: the click returns `ClickResult::Confirm` with the question and the mode name as the button, and the sensor acts in `confirmed` when the user agrees. Actions run on a short-lived thread, since sleep returns only once the computer wakes and the bar thread must keep answering the broadcasts before it sleeps; failures are logged. The reason for sign out, shut down and restart is "other, planned".
+
 ### 9.22 `eject-usb` — Eject USB  (Launchers; `DockUSB`; requires `eject`)
 
 | Key | XML key | Type | Default |

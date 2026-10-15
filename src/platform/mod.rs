@@ -40,6 +40,7 @@ pub struct Capabilities {
     pub start_menu: bool,
     pub wifi: bool,
     pub battery: bool,
+    /// The [`PowerAction`] ids this system offers, in menu order.
     pub power_modes: Vec<String>,
     pub eject: bool,
     pub per_core_cpu: bool,
@@ -210,6 +211,49 @@ impl<'a> Launch<'a> {
     }
 }
 
+/// What the Power sensor does (SPEC §9.21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PowerAction {
+    Lock,
+    SignOut,
+    /// The sign-in screen, keeping the session.
+    SwitchUser,
+    Sleep,
+    Hibernate,
+    ShutDown,
+    Restart,
+}
+
+impl PowerAction {
+    /// In menu order.
+    pub const ALL: [Self; 7] = [
+        Self::Lock,
+        Self::SignOut,
+        Self::SwitchUser,
+        Self::Sleep,
+        Self::Hibernate,
+        Self::ShutDown,
+        Self::Restart,
+    ];
+
+    /// The id in the config and in [`Capabilities::power_modes`].
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Lock => "lock",
+            Self::SignOut => "signOut",
+            Self::SwitchUser => "switchUser",
+            Self::Sleep => "sleep",
+            Self::Hibernate => "hibernate",
+            Self::ShutDown => "shutDown",
+            Self::Restart => "restart",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.id() == id)
+    }
+}
+
 /// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryStatus {
@@ -305,6 +349,12 @@ pub trait Platform: Send + Sync {
     fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
         let _ = (path, px);
         None
+    }
+    /// Locks, signs out, switches user, sleeps, hibernates, shuts down or restarts (SPEC
+    /// §9.21), in the background; `force` closes apps without asking (sign out, shut down,
+    /// restart). Failures are logged.
+    fn power(&self, action: PowerAction, force: bool) {
+        tracing::info!("{action:?} (force: {force}) is not supported on this platform");
     }
     /// Shows a notification from Infodock (SPEC §7.4): a toast with `title` (e.g. the
     /// sensor's) and `body`, in the background; failures are logged.

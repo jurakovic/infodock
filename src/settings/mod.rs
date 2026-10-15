@@ -860,6 +860,18 @@ mod screenshots {
         render_sized("settings-properties-shortcut", 900);
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&shortcut).is_none());
+        // Power: the modes this computer offers (none on Linux: only the stored one).
+        let power = app
+            .add_sensor(
+                "power",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &power, true);
+        render("settings-properties-power");
+        state.invoke_props_cancel();
         // The first-run network graph: Automatic and this computer's connections.
         let network = app
             .store

@@ -90,6 +90,8 @@ pub struct Form {
     volumes: Vec<Volume>,
     /// This computer's network connections, for `netAdapter` fields.
     adapters: Vec<NetInterface>,
+    /// The power modes this computer offers, for `powerMode` fields.
+    power_modes: Vec<String>,
 }
 
 impl Form {
@@ -109,7 +111,13 @@ impl Form {
             processors: 1,
             volumes: Vec::new(),
             adapters: Vec::new(),
+            power_modes: Vec::new(),
         })
+    }
+
+    /// Sets the power modes `powerMode` fields offer (SPEC §9.21).
+    pub fn set_power_modes(&mut self, modes: Vec<String>) {
+        self.power_modes = modes;
     }
 
     /// Sets the number of logical processors `cpuSeries` fields offer (SPEC §9.9).
@@ -266,6 +274,12 @@ impl Form {
                 row.index = drives.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = drives.into_iter().map(|(_, label)| label).collect();
             }
+            FieldKind::PowerMode => {
+                let current = value.as_str().unwrap_or("");
+                let modes = power_modes(&self.power_modes, self.opened_str(field.key));
+                row.index = modes.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
+                row.options = modes.into_iter().map(|(_, label)| label).collect();
+            }
             FieldKind::NetAdapter => {
                 let adapters = adapters(&self.adapters, self.opened.get(field.key));
                 row.index = adapters
@@ -325,6 +339,10 @@ impl Form {
                 .into_iter()
                 .nth(index)
                 .map(|(value, _)| value),
+            FieldKind::PowerMode => power_modes(&self.power_modes, self.opened_str(key))
+                .into_iter()
+                .nth(index)
+                .map(|(value, _)| Value::from(value)),
             _ => None,
         };
         value.is_some_and(|v| self.set(key, v))
@@ -362,7 +380,10 @@ fn kind(field: &PropField) -> Option<RowKind> {
         FieldKind::Color => RowKind::Color,
         FieldKind::ColorMode { .. } => RowKind::ColorMode,
         FieldKind::File { .. } => RowKind::File,
-        FieldKind::CpuSeries | FieldKind::Drive { .. } | FieldKind::NetAdapter => RowKind::Choice,
+        FieldKind::CpuSeries
+        | FieldKind::Drive { .. }
+        | FieldKind::NetAdapter
+        | FieldKind::PowerMode => RowKind::Choice,
         FieldKind::Folder => RowKind::Folder,
         FieldKind::Battery | FieldKind::Hidden => return None,
     })
@@ -370,6 +391,17 @@ fn kind(field: &PropField) -> Option<RowKind> {
 
 /// "Default" (the global sensor font, SPEC §8.2), the installed families, and `current` if it
 /// is not installed.
+/// The power modes offered, as `(id, label)`, in menu order; the stored mode stays listed when
+/// this computer lacks it (e.g. hibernate after hibernation was turned off).
+fn power_modes(offered: &[String], stored: &str) -> Vec<(String, String)> {
+    crate::platform::PowerAction::ALL
+        .into_iter()
+        .map(|a| a.id())
+        .filter(|id| offered.iter().any(|o| o == id) || *id == stored)
+        .map(|id| (id.to_owned(), t(&format!("sensor.power.mode.{id}"))))
+        .collect()
+}
+
 fn font_options(fonts: &[String], current: &str) -> Vec<String> {
     let mut options = vec![t("settings.props.font.default")];
     options.extend(fonts.iter().cloned());
@@ -622,11 +654,33 @@ mod tests {
             processors: 1,
             volumes: Vec::new(),
             adapters: Vec::new(),
+            power_modes: Vec::new(),
         };
         assert!(!form.set("color", json!("#12")));
         assert!(!form.valid());
         assert!(form.set("custom", json!(false)));
         assert!(form.valid(), "the colour is hidden now");
+    }
+
+    #[test]
+    fn power_modes_list_what_this_computer_offers() {
+        let instance = SensorInstance {
+            id: "s_p".into(),
+            kind: "power".into(),
+            props: json!({ "mode": "hibernate" })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        };
+        let mut form = Form::open(registry(), &instance, false).expect("a known type");
+        form.set_power_modes(vec!["lock".into(), "sleep".into(), "shutDown".into()]);
+        let rows = form.rows(&[]);
+        // Hibernate is stored, so it stays listed though this computer cannot hibernate.
+        assert_eq!(rows[0].options, ["Lock", "Sleep", "Hibernate", "Shut down"]);
+        assert_eq!(rows[0].index, 2);
+        assert!(form.choose("mode", 3, &[]));
+        assert_eq!(form.changes()["mode"], json!("shutDown"));
+        assert!(form.rows(&[])[2].visible, "force applies to shutting down");
     }
 
     #[test]

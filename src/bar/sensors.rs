@@ -302,7 +302,7 @@ impl BarSensors {
         p.sensor.hint(&env.ctx(id))
     }
 
-    /// Clicks sensor `id`; returns whether it changed what it shows.
+    /// Clicks sensor `id`.
     pub fn click(&mut self, id: &str, env: &Env) -> ClickResult {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
             return ClickResult::None;
@@ -327,6 +327,17 @@ impl BarSensors {
             return false;
         };
         let dirty = p.sensor.on_menu(item, &env.ctx(id));
+        p.dirty |= dirty;
+        dirty
+    }
+
+    /// Tells sensor `id` the user agreed to its click's question; returns whether what it
+    /// shows changed.
+    pub fn confirmed(&mut self, id: &str, env: &Env) -> bool {
+        let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
+            return false;
+        };
+        let dirty = p.sensor.confirmed(&env.ctx(id));
         p.dirty |= dirty;
         dirty
     }

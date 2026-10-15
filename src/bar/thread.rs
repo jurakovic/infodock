@@ -654,8 +654,17 @@ impl BarLogic {
             alt: modifiers.alt,
             animate: self.animate,
         };
-        if self.sensors.click(&press.id, &env) == ClickResult::Handled {
-            window.invalidate();
+        match self.sensors.click(&press.id, &env) {
+            ClickResult::None => {}
+            ClickResult::Handled => window.invalidate(),
+            // Asked first (SPEC §9.21); the sensor acts only if the user agrees.
+            ClickResult::Confirm(question) => {
+                if window.confirm(&question.message, &question.action)
+                    && self.sensors.confirmed(&press.id, &env)
+                {
+                    window.invalidate();
+                }
+            }
         }
     }
 
@@ -1516,6 +1525,27 @@ mod tests {
         assert!(dimmed(&mut logic));
         release(&mut logic, &window, LOGO);
         assert!(!dimmed(&mut logic));
+    }
+
+    #[test]
+    fn a_click_that_asks_first_waits_for_the_answer() {
+        let (mut logic, window, _host, mut config) = bar(Settings::default());
+        // A Power sensor in the logo's place.
+        let logo = &mut config.layout.center[0];
+        logo.kind = "power".into();
+        logo.props = serde_json::json!({ "mode": "shutDown" })
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        assert_eq!(
+            *window.confirmed.borrow(),
+            ["Do you really want to shut down this computer?"]
+        );
     }
 
     #[test]

@@ -113,6 +113,9 @@ pub enum FieldKind {
     /// A CPU series: `total`, `user`, `system` or `core<i>` (SPEC §9.9). Settings lists this
     /// computer's processors.
     CpuSeries,
+    /// A power mode id (`lock`, `sleep`, `shutDown` …; SPEC §9.21). Settings lists the modes
+    /// this computer offers.
+    PowerMode,
     /// Internal values; not shown, any JSON.
     Hidden,
 }
@@ -261,6 +264,10 @@ pub fn check(field: &PropField, value: &Value) -> Option<Value> {
                     || s.strip_prefix("core")
                         .is_some_and(|n| !n.is_empty() && n.parse::<u32>().is_ok())
             })
+            .map(Value::from),
+        FieldKind::PowerMode => value
+            .as_str()
+            .filter(|s| crate::platform::PowerAction::from_id(s).is_some())
             .map(Value::from),
         FieldKind::Hidden => Some(value.clone()),
     }
@@ -521,6 +528,10 @@ mod tests {
             Some(json!({ "id": "{1}", "name": "Ethernet" }))
         );
         assert_eq!(check(&f(FieldKind::Battery), &json!(-1)), None);
+        let mode = f(FieldKind::PowerMode);
+        assert_eq!(check(&mode, &json!("shutDown")), Some(json!("shutDown")));
+        assert_eq!(check(&mode, &json!("explode")), None);
+        assert_eq!(check(&mode, &json!(5)), None);
         assert_eq!(
             check(&f(FieldKind::Hidden), &json!([1, 2])),
             Some(json!([1, 2]))

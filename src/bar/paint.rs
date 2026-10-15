@@ -623,8 +623,9 @@ mod tests {
                 serde_json::json!({ "drive": "Q:\\", "mode": "freeBytes" }),
             ),
         ];
-        // Launchers (SPEC §9.17): a program, a folder, a web address, a tinted program, a
-        // bare program name and a missing target (inactive).
+        // Launchers (SPEC §9.17, §9.21): Shortcuts to a program, a folder, a web address, a
+        // tinted program, a bare program name and a missing target (inactive); every Power
+        // mode, the last at 50 %.
         let launchers = Layout {
             left: vec![
                 entry(
@@ -659,6 +660,17 @@ mod tests {
                     "l6",
                     "shortcut",
                     serde_json::json!({ "target": "Q:\\Gone\\tool.exe" }),
+                ),
+                entry("p1", "power", serde_json::json!({ "mode": "lock" })),
+                entry("p2", "power", serde_json::json!({ "mode": "signOut" })),
+                entry("p3", "power", serde_json::json!({ "mode": "switchUser" })),
+                entry("p4", "power", serde_json::json!({})),
+                entry("p5", "power", serde_json::json!({ "mode": "hibernate" })),
+                entry("p6", "power", serde_json::json!({ "mode": "shutDown" })),
+                entry(
+                    "p7",
+                    "power",
+                    serde_json::json!({ "mode": "restart", "opacity": 50 }),
                 ),
             ],
             ..Layout::default()
@@ -701,14 +713,14 @@ mod tests {
                 &launchers,
                 Settings::default(),
                 dark,
-                300.0,
+                500.0,
             ),
             (
                 "bar-launchers-light",
                 &launchers,
                 Settings::default(),
                 light,
-                300.0,
+                500.0,
             ),
         ] {
             let theme = Theme::resolve(&settings, os);
