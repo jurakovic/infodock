@@ -411,8 +411,9 @@ impl Sensor for Shortcut {
         if *path != self.props.target || self.kind == Some(sample.kind) {
             return false;
         }
-        // A target that appeared (or changed) has another icon.
-        self.refresh_icon = true;
+        // A target that appeared, went or changed has another icon; the first sample only
+        // says what the icon already shows.
+        self.refresh_icon |= self.kind.is_some();
         self.kind = Some(sample.kind);
         true
     }

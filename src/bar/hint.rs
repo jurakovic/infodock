@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use super::placement::{Anchor, Placement, place, place_left_edge};
+use super::placement::{Anchor, Placement, place, place_left_edge, place_right_edge};
 use super::theme::Theme;
 use crate::config::model::Edge;
 use crate::platform::{
@@ -157,6 +157,7 @@ impl HintFrame {
         let place = match align {
             PopupAlign::Center => place,
             PopupAlign::LeftEdge => place_left_edge,
+            PopupAlign::RightEdge => place_right_edge,
         };
         let Placement { x, y, pointer_x } =
             place(anchor, content, POINTER.width, theme.popup_radius);
@@ -343,7 +344,12 @@ impl Hover {
 
     /// A click, a press, a menu or a drag.
     pub fn dismiss(&mut self) -> Step {
-        self.dismissed = self.hovered.take().or_else(|| self.shown.clone());
+        // Dismissed again (a click that opens a popup): the earlier sensor stays dismissed.
+        self.dismissed = self
+            .hovered
+            .take()
+            .or_else(|| self.shown.clone())
+            .or_else(|| self.dismissed.take());
         self.pending = None;
         match self.shown.take() {
             Some(_) => Step::Hide,

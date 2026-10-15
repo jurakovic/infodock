@@ -70,6 +70,27 @@ pub fn place_left_edge(anchor: &Anchor, size: SizeF, pointer_width: f32, radius:
     }
 }
 
+/// Placement with the right edge at the sensor's right edge (a [`place_left_edge`] popup
+/// being resized while it sits so), kept on the monitor.
+pub fn place_right_edge(
+    anchor: &Anchor,
+    size: SizeF,
+    pointer_width: f32,
+    radius: f32,
+) -> Placement {
+    let center = (anchor.rect.left + anchor.rect.right) / 2.0;
+    let min_x = anchor.monitor.left + MARGIN;
+    let max_x = anchor.monitor.right - MARGIN - size.width;
+    let x = (anchor.rect.right - size.width).min(max_x).max(min_x);
+    let low = radius + 1.0;
+    let high = size.width - radius - 1.0 - pointer_width;
+    Placement {
+        x,
+        y: place(anchor, size, pointer_width, radius).y,
+        pointer_x: (center - x - pointer_width / 2.0).min(high).max(low),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

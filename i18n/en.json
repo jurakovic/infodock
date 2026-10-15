@@ -424,6 +424,7 @@
   "sensor.power.field.confirm.help": "Asks before acting, so a stray click does nothing.",
   "sensor.power.field.force": "Close apps without asking",
   "sensor.power.field.force.help": "Unsaved work in open apps is lost.",
+  "sensor.power.unavailable": "{mode} is not available on this computer",
   "sensor.power.mode.lock": "Lock",
   "sensor.power.mode.signOut": "Sign out",
   "sensor.power.mode.switchUser": "Switch user",

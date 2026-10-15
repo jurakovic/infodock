@@ -81,6 +81,8 @@ enum Command {
     EndPreview(String),
     /// A sample from the sampler thread (SPEC §4.4).
     Sample(Delivery),
+    /// The bar was hidden (tray, hotkey): its hint and popup close.
+    Hidden,
 }
 
 /// Cross-thread handle to the bar.
@@ -167,6 +169,9 @@ impl BarController {
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
             self.apply(&settings);
+            if !visible {
+                self.send(Command::Hidden);
+            }
         }
     }
 

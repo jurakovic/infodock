@@ -269,7 +269,8 @@ pub fn status(sample: &BatterySample, assume: Option<f32>) -> Status {
     }
     if !sample.ac_online {
         return Status::Draining {
-            low: sample.percent < LOW,
+            // Whole percentages, as shown (SPEC §9.14).
+            low: sample.percent.round() < LOW,
         };
     }
     let charging = match assume {
@@ -368,7 +369,9 @@ impl Tracker {
                     Some(t) => t + (estimate - t) / FULL_STEPS,
                 });
             }
-        } else {
+        } else if !s.ac_online {
+            // Unplugged: the next charge is a new one. On AC a charge that pauses (full, or
+            // Windows holding near full) goes on, so the alert is not repeated.
             self.charge = None;
             self.alerted = false;
         }
@@ -1088,6 +1091,10 @@ mod tests {
             *h.platform.0.lock().expect("lock"),
             ["Battery: Battery at 91% — you can unplug the charger"]
         );
+        // Full and charging again on AC (99 % ↔ 100 %): the same charge, no new alert.
+        h.feed(&mut battery, sample(100.0, true, BatteryState::Full));
+        h.feed(&mut battery, sample(99.0, true, BatteryState::Charging));
+        assert_eq!(h.platform.0.lock().expect("lock").len(), 1);
         // Unplugged and charging again: a new charge, a new alert.
         h.feed(&mut battery, sample(91.0, false, BatteryState::Discharging));
         h.feed(&mut battery, sample(92.0, true, BatteryState::Charging));

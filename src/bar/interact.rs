@@ -103,6 +103,9 @@ pub struct Press {
     pub at: PointF,
     /// The pointer moved past [`DRAG_THRESHOLD`]: releasing is no click.
     pub moved: bool,
+    /// It closed this sensor's popup, so releasing it does not open the popup again, however
+    /// long it was held (SPEC §7.2).
+    pub closed_popup: bool,
 }
 
 impl Press {
@@ -111,6 +114,7 @@ impl Press {
             id,
             at,
             moved: false,
+            closed_popup: false,
         }
     }
 

@@ -170,7 +170,9 @@ pub fn band_channel(mhz: u32) -> Option<(&'static str, u32)> {
         2484 => ("sensor.wifi.band.2", 14),
         2412..=2472 => ("sensor.wifi.band.2", (mhz - 2407) / 5),
         5000..=5925 => ("sensor.wifi.band.5", (mhz - 5000) / 5),
-        5926..=7125 => ("sensor.wifi.band.6", (mhz - 5950) / 5),
+        // 6 GHz: channel n at 5950 + 5n MHz, and channel 2 below them at 5935 MHz.
+        5935 => ("sensor.wifi.band.6", 2),
+        5955..=7125 => ("sensor.wifi.band.6", (mhz - 5950) / 5),
         _ => return None,
     })
 }
@@ -449,6 +451,8 @@ mod tests {
         assert_eq!(band_channel(2484), Some(("sensor.wifi.band.2", 14)));
         assert_eq!(band_channel(5180), Some(("sensor.wifi.band.5", 36)));
         assert_eq!(band_channel(5955), Some(("sensor.wifi.band.6", 1)));
+        assert_eq!(band_channel(5935), Some(("sensor.wifi.band.6", 2)));
+        assert_eq!(band_channel(5940), None, "between the bands' grids");
         assert_eq!(band_channel(900), None);
         assert_eq!(quality_from_rssi(-58), 84);
         assert_eq!((quality_from_rssi(-110), quality_from_rssi(-40)), (0, 100));

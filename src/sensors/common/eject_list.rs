@@ -61,11 +61,19 @@ pub fn ejectable(volumes: &[Volume]) -> Vec<Volume> {
         .collect()
 }
 
-/// Something the pointer or keyboard can act on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Something the pointer or keyboard can act on: a drive's *Eject* button (by its root, so a
+/// mark stays on its drive when others come or go), or the footer.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Target {
-    Eject(usize),
+    Eject(String),
     Footer,
+}
+
+/// A drive as its size is kept: a new medium in the same letter is another drive.
+type SizeKey = (String, String);
+
+fn size_key(volume: &Volume) -> SizeKey {
+    (volume.root.clone(), volume.label.clone())
 }
 
 struct RowView {
@@ -103,10 +111,12 @@ pub struct EjectList {
     /// The drives as shown, and the generation they came from.
     volumes: Vec<Volume>,
     generation: Option<u64>,
-    /// Total sizes by root as read; `None` while being read or when unknown.
-    sizes: HashMap<String, Option<u64>>,
-    sizes_tx: Sender<(String, Option<u64>)>,
-    sizes_rx: Receiver<(String, Option<u64>)>,
+    /// Total sizes as read; `None` when unknown (asked again when the drives change).
+    sizes: HashMap<SizeKey, Option<u64>>,
+    /// Sizes being read.
+    asked: HashSet<SizeKey>,
+    sizes_tx: Sender<(SizeKey, Option<u64>)>,
+    sizes_rx: Receiver<(SizeKey, Option<u64>)>,
     /// Roots being ejected, until their result comes back.
     ejecting: HashSet<String>,
     ejected_tx: Sender<String>,
@@ -127,6 +137,7 @@ impl EjectList {
             volumes: Vec::new(),
             generation: None,
             sizes: HashMap::new(),
+            asked: HashSet::new(),
             sizes_tx,
             sizes_rx,
             ejecting: HashSet::new(),
@@ -143,8 +154,15 @@ impl EjectList {
     /// Sizes known in advance, for screenshots.
     #[cfg(test)]
     pub fn preset_sizes(&mut self, sizes: &[(&str, u64)]) {
+        let drives = self
+            .drives
+            .lock()
+            .map(|d| d.volumes.clone())
+            .unwrap_or_default();
         for (root, total) in sizes {
-            self.sizes.insert((*root).to_owned(), Some(*total));
+            if let Some(volume) = drives.iter().find(|v| v.root == *root) {
+                self.sizes.insert(size_key(volume), Some(*total));
+            }
         }
     }
 
@@ -159,40 +177,42 @@ impl EjectList {
         self.generation = Some(drives.generation);
         self.volumes = drives.volumes.clone();
         drop(drives);
-        // The marked button stays on its drive, or goes when the drive did.
-        if let Some(Target::Eject(i)) = self.current
-            && i >= self.volumes.len()
-        {
-            self.current = None;
+        // The marked and pressed buttons stay on their drive, or go when the drive did.
+        let present = |root: &str| self.volumes.iter().any(|v| v.root == root);
+        for target in [&mut self.current, &mut self.pressed] {
+            if matches!(target, Some(Target::Eject(root)) if !present(root)) {
+                *target = None;
+            }
         }
-        self.ejecting
-            .retain(|root| self.volumes.iter().any(|v| &v.root == root));
+        self.ejecting.retain(|root| present(root));
+        // Sizes of drives that went, and ones that could not be read, are read again.
+        let keys: HashSet<SizeKey> = self.volumes.iter().map(size_key).collect();
+        self.sizes
+            .retain(|key, total| total.is_some() && keys.contains(key));
         true
     }
 
-    /// Starts reading the sizes not asked for yet.
+    /// Starts reading the sizes not known or asked for yet.
     fn read_sizes(&mut self, cx: &PopupCtx) {
-        let roots: Vec<String> = self
+        let keys: Vec<SizeKey> = self
             .volumes
             .iter()
-            .map(|v| v.root.clone())
-            .filter(|root| !self.sizes.contains_key(root))
+            .map(size_key)
+            .filter(|key| !self.sizes.contains_key(key) && !self.asked.contains(key))
             .collect();
-        if roots.is_empty() {
+        if keys.is_empty() {
             return;
         }
-        for root in &roots {
-            self.sizes.insert(root.clone(), None);
-        }
+        self.asked.extend(keys.iter().cloned());
         let platform = Arc::clone(cx.platform);
         let waker = cx.waker.clone();
         let tx = self.sizes_tx.clone();
         let spawned = std::thread::Builder::new()
             .name("drive-sizes".into())
             .spawn(move || {
-                for root in roots {
-                    let total = platform.disk_space(&root).map(|s| s.total);
-                    if tx.send((root, total)).is_err() {
+                for key in keys {
+                    let total = platform.disk_space(&key.0).map(|s| s.total);
+                    if tx.send((key, total)).is_err() {
                         return;
                     }
                 }
@@ -203,9 +223,9 @@ impl EjectList {
         }
     }
 
-    /// Ejects row `index`'s drive in the background; the result is a notification (SPEC §9.22).
-    fn eject(&mut self, index: usize, cx: &PopupCtx) -> PopupReply {
-        let Some(volume) = self.volumes.get(index) else {
+    /// Ejects drive `root` in the background; the result is a notification (SPEC §9.22).
+    fn eject(&mut self, root: &str, cx: &PopupCtx) -> PopupReply {
+        let Some(volume) = self.volumes.iter().find(|v| v.root == root) else {
             return PopupReply::Nothing;
         };
         if !self.ejecting.insert(volume.root.clone()) {
@@ -232,7 +252,7 @@ impl EjectList {
 
     fn activate(&mut self, target: Target, cx: &PopupCtx) -> PopupReply {
         match target {
-            Target::Eject(i) => self.eject(i, cx),
+            Target::Eject(root) => self.eject(&root, cx),
             Target::Footer => {
                 let (program, args) = HOTPLUG;
                 cx.platform.launch(&Launch {
@@ -276,7 +296,8 @@ impl EjectList {
         let rect = self.button_rect(index)?;
         let inside =
             (rect.left..rect.right).contains(&at.x) && (rect.top..rect.bottom).contains(&at.y);
-        (inside && !self.view.rows[index].ejecting).then_some(Target::Eject(index))
+        (inside && !self.view.rows[index].ejecting)
+            .then(|| Target::Eject(self.volumes[index].root.clone()))
     }
 
     /// The targets in keyboard order: the buttons of drives not being ejected, then the footer.
@@ -285,7 +306,7 @@ impl EjectList {
             .iter()
             .enumerate()
             .filter(|(_, v)| !self.ejecting.contains(&v.root))
-            .map(|(i, _)| Target::Eject(i))
+            .map(|(_, v)| Target::Eject(v.root.clone()))
             .chain(std::iter::once(Target::Footer))
             .collect()
     }
@@ -294,7 +315,8 @@ impl EjectList {
         let targets = self.targets();
         let at = self
             .current
-            .and_then(|c| targets.iter().position(|t| *t == c));
+            .as_ref()
+            .and_then(|c| targets.iter().position(|t| t == c));
         let last = targets.len() - 1;
         let next = match (key, at) {
             (Key::Home | Key::PageUp, _) | (Key::Down, None) => 0,
@@ -303,7 +325,7 @@ impl EjectList {
             (Key::Up, Some(i)) => i.saturating_sub(1),
             _ => return PopupReply::Nothing,
         };
-        self.current = Some(targets[next]);
+        self.current = targets.into_iter().nth(next);
         PopupReply::Redraw
     }
 }
@@ -337,7 +359,7 @@ impl Popup for EjectList {
                 let button = cx.text.layout(label, &style);
                 let size = self
                     .sizes
-                    .get(&volume.root)
+                    .get(&size_key(volume))
                     .copied()
                     .flatten()
                     .map(|total| {
@@ -412,7 +434,9 @@ impl Popup for EjectList {
                 rect: button,
                 radius: BUTTON_RADIUS,
             };
-            if self.current == Some(Target::Eject(i)) {
+            let marked =
+                matches!(&self.current, Some(Target::Eject(root)) if *root == self.volumes[i].root);
+            if marked {
                 canvas.fill(&shape, &view.highlight.into());
             }
             let outline = text.with_alpha(text.a * if row.ejecting { 0.2 } else { 0.4 });
@@ -484,7 +508,7 @@ impl Popup for EjectList {
             },
             PopupInput::Key {
                 key: Key::Enter, ..
-            } => match self.current {
+            } => match self.current.clone() {
                 Some(target) => self.activate(target, cx),
                 None => PopupReply::Nothing,
             },
@@ -496,8 +520,9 @@ impl Popup for EjectList {
     /// Drives that came or went, sizes read, and ejects that finished.
     fn poll(&mut self, _cx: &PopupCtx) -> PopupReply {
         let mut changed = self.refresh();
-        while let Ok((root, total)) = self.sizes_rx.try_recv() {
-            self.sizes.insert(root, total);
+        while let Ok((key, total)) = self.sizes_rx.try_recv() {
+            self.asked.remove(&key);
+            self.sizes.insert(key, total);
             changed = true;
         }
         while let Ok(root) = self.ejected_rx.try_recv() {
@@ -652,7 +677,34 @@ mod tests {
             texts(&drawn(&list)),
             ["STICK (E:)", "Eject", "Safely Remove Hardware…"]
         );
+        // Once the size readings are in, nothing more changes.
+        std::thread::sleep(Duration::from_millis(50));
+        list.poll(&h.ctx());
+        list.layout(&h.ctx());
         assert_eq!(list.poll(&h.ctx()), PopupReply::Nothing);
+    }
+
+    #[test]
+    fn the_mark_stays_on_its_drive() {
+        let h = Harness::new();
+        let (mut list, drives) = list(vec![stick("E:\\", "STICK"), stick("G:\\", "")]);
+        list.layout(&h.ctx());
+        let key = |key| PopupInput::Key {
+            key,
+            modifiers: Modifiers::default(),
+        };
+        list.input(&key(Key::Down), &h.ctx());
+        assert_eq!(list.current, Some(Target::Eject("E:\\".into())));
+        // E: goes: nothing is marked, so Enter ejects nothing else.
+        {
+            let mut drives = drives.lock().expect("lock");
+            drives.volumes.remove(0);
+            drives.generation += 1;
+        }
+        list.poll(&h.ctx());
+        assert_eq!(list.current, None);
+        assert_eq!(list.input(&key(Key::Enter), &h.ctx()), PopupReply::Nothing);
+        assert!(h.platform.log().is_empty());
     }
 
     #[test]
@@ -678,7 +730,7 @@ mod tests {
             modifiers: Modifiers::default(),
         };
         assert_eq!(list.input(&key(Key::Down), &h.ctx()), PopupReply::Redraw);
-        assert_eq!(list.current, Some(Target::Eject(0)));
+        assert_eq!(list.current, Some(Target::Eject("E:\\".into())));
         list.input(&key(Key::Down), &h.ctx());
         assert_eq!(list.current, Some(Target::Footer));
         let dump = drawn(&list);
@@ -689,6 +741,6 @@ mod tests {
             ["launch rundll32.exe args=shell32.dll,Control_RunDLL hotplug.dll dir= admin=false"]
         );
         list.input(&key(Key::Home), &h.ctx());
-        assert_eq!(list.current, Some(Target::Eject(0)));
+        assert_eq!(list.current, Some(Target::Eject("E:\\".into())));
     }
 }

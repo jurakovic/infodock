@@ -10,7 +10,7 @@ use super::{
     Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Question, Sensor, SensorCtx,
     SensorType, State, typed,
 };
-use crate::i18n::t;
+use crate::i18n::{t, t_args};
 use crate::platform::{Canvas, PowerAction};
 
 /// The icon height, logical px (SPEC §9.21).
@@ -145,11 +145,19 @@ impl Sensor for Power {
         }
     }
 
-    fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
-        Some(HintContent::Text(name(self.action)))
+    fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
+        Some(HintContent::Text(if self.offered(cx) {
+            name(self.action)
+        } else {
+            t_args("sensor.power.unavailable", &[("mode", &name(self.action))])
+        }))
     }
 
+    /// Nothing, for a mode this computer lacks (a config from another machine).
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
+        if !self.offered(cx) {
+            return ClickResult::None;
+        }
         if !self.props.confirm {
             return self.act(cx);
         }
@@ -170,6 +178,16 @@ impl Sensor for Power {
 }
 
 impl Power {
+    /// Whether this computer offers the mode (`capabilities.power_modes`, SPEC §9.21).
+    fn offered(&self, cx: &SensorCtx) -> bool {
+        let id = self.action.id();
+        cx.platform
+            .capabilities()
+            .power_modes
+            .iter()
+            .any(|mode| mode == id)
+    }
+
     fn act(&self, cx: &SensorCtx) -> ClickResult {
         let force = self.props.force && FORCEABLE.contains(&Lit::Str(self.action.id()));
         cx.platform.power(self.action, force);
@@ -203,8 +221,16 @@ mod tests {
     struct Recorder(Mutex<Vec<String>>);
 
     impl Platform for Recorder {
+        /// Every mode but hibernate.
         fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
+            Capabilities {
+                power_modes: PowerAction::ALL
+                    .into_iter()
+                    .filter(|a| *a != PowerAction::Hibernate)
+                    .map(|a| a.id().to_owned())
+                    .collect(),
+                ..Capabilities::default()
+            }
         }
         fn monitors(&self) -> Vec<MonitorInfo> {
             Vec::new()
@@ -334,5 +360,21 @@ mod tests {
             PowerType.summary(&props("hibernate")),
             Some("Hibernate".into())
         );
+    }
+
+    #[test]
+    fn a_mode_this_computer_lacks_does_nothing() {
+        let mut sensor = create(json!({ "mode": "hibernate", "confirm": false }));
+        let platform = Recorder::default();
+        with_ctx(&platform, |cx| {
+            assert_eq!(
+                sensor.hint(cx),
+                Some(HintContent::Text(
+                    "Hibernate is not available on this computer".into()
+                ))
+            );
+            assert_eq!(sensor.click(cx), ClickResult::None);
+        });
+        assert!(platform.0.lock().expect("lock").is_empty());
     }
 }

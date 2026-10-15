@@ -21,6 +21,9 @@ pub enum PopupAlign {
     /// Its left edge at the sensor's left edge; its right edge at the sensor's right edge when
     /// that would overflow the monitor.
     LeftEdge,
+    /// Its right edge at the sensor's right edge: the bar keeps a [`PopupAlign::LeftEdge`]
+    /// popup so while it is resized, so it does not flip sides under the pointer.
+    RightEdge,
 }
 
 /// What an input or a wake-up changed.

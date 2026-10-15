@@ -9,7 +9,7 @@ use super::hint::{self, HintFrame};
 use super::placement::Anchor;
 use super::theme::Theme;
 use crate::platform::{Canvas, PointF, PopupInput, SizeF};
-use crate::sensors::popup::Popup;
+use crate::sensors::popup::{Popup, PopupAlign};
 
 /// A sensor whose popup has just closed ignores clicks this long, so the click that closed it
 /// does not open it again (SPEC §7.2).
@@ -32,6 +32,19 @@ pub fn room(anchor: &Anchor) -> SizeF {
         (m.width() - 2.0 * (MARGIN + PADDING)).max(0.0),
         (beside - frame).max(0.0),
     )
+}
+
+/// The widest content that fits on the monitor beside `anchor` with its left edge at the
+/// sensor's (or, with `free_left`, its right edge at the sensor's), logical px: the room of a
+/// popup whose grip is dragged, so it keeps its side.
+pub fn room_beside(anchor: &Anchor, free_left: bool) -> f32 {
+    let m = anchor.monitor;
+    let reach = if free_left {
+        anchor.rect.right - (m.left + MARGIN)
+    } else {
+        m.right - MARGIN - anchor.rect.left
+    };
+    (reach - 2.0 * PADDING).max(0.0)
 }
 
 /// An open popup.
@@ -92,13 +105,17 @@ impl Open {
         }
     }
 
-    /// Frames content of `size` at `anchor`.
+    /// Frames content of `size` at `anchor`. While the popup captures the pointer (a grip is
+    /// dragged), it stays on the side it was lined up on.
     pub fn place(&mut self, size: SizeF, anchor: &Anchor, theme: &Theme) {
-        let align = self.popup.align();
+        let mut align = self.popup.align();
+        if self.captured && self.free_left && align == PopupAlign::LeftEdge {
+            align = PopupAlign::RightEdge;
+        }
         let frame = HintFrame::framed(size, anchor, theme, PADDING, align);
         let left = frame.window.left + frame.bubble.left;
         // Lined up on the left unless its right edge had to be.
-        self.free_left = align == crate::sensors::popup::PopupAlign::LeftEdge
+        self.free_left = matches!(align, PopupAlign::LeftEdge | PopupAlign::RightEdge)
             && (left - anchor.rect.left).abs() > 0.5;
         self.monitor_height = anchor.monitor.height();
         self.frame = Some(frame);
@@ -236,5 +253,46 @@ mod tests {
                 modifiers: Modifiers::default(),
             }
         );
+    }
+
+    #[test]
+    fn a_popup_being_resized_keeps_its_side() {
+        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let mut open = Open {
+            owner: "f".into(),
+            popup: Box::new(Square),
+            frame: None,
+            room: SizeF::new(0.0, 0.0),
+            monitor_height: 0.0,
+            free_left: false,
+            captured: false,
+        };
+        let bar = RectF::new(0.0, 1052.0, 1920.0, 1080.0);
+        let anchor = Anchor {
+            rect: RectF::new(1700.0, bar.top, 1721.0, bar.bottom),
+            bar,
+            monitor: RectF::new(0.0, 0.0, 1920.0, 1080.0),
+            edge: Edge::Bottom,
+        };
+        let left = |open: &Open| {
+            let frame = open.frame.expect("placed");
+            frame.window.left + frame.bubble.left
+        };
+        // Left-aligned while it fits; while its grip is dragged, no wider than that side.
+        open.place(SizeF::new(100.0, 50.0), &anchor, &theme);
+        assert_eq!(left(&open), 1700.0);
+        assert_eq!(room_beside(&anchor, false), 1920.0 - 7.0 - 1700.0 - 8.0);
+        // Too wide to fit: right-aligned; dragged narrower, it stays so.
+        open.place(SizeF::new(400.0, 50.0), &anchor, &theme);
+        assert!(open.free_left);
+        open.captured = true;
+        open.place(SizeF::new(150.0, 50.0), &anchor, &theme);
+        assert!(open.free_left);
+        assert_eq!(left(&open) + 150.0 + 8.0, 1721.0, "right edges lined up");
+        // Released: lined up on the left again.
+        open.captured = false;
+        open.place(SizeF::new(150.0, 50.0), &anchor, &theme);
+        assert!(!open.free_left);
+        assert_eq!(room_beside(&anchor, true), 1721.0 - 7.0 - 8.0);
     }
 }

@@ -37,7 +37,7 @@ use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction};
 use crate::sensors::format::Numbers;
 use crate::sensors::ops::index_after_removal;
-use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
+use crate::sensors::popup::{Popup, PopupAlign, PopupCtx, PopupReply};
 use crate::sensors::registry::registry;
 use crate::sensors::{ClickResult, LayoutCtx, State};
 
@@ -276,6 +276,7 @@ impl BarLogic {
         // the bar never takes it (§7.2).
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
+        let had_popup = self.popups.owner().map(str::to_owned);
         self.close_popup(window);
         let Some(hit) = self.sensors.hit(at.x) else {
             if self.settings.bar.mode == BarMode::Floating && !self.settings.locked {
@@ -294,7 +295,11 @@ impl BarLogic {
         if self.sensors.set_pressed(Some(&hit.entry.id)) {
             window.invalidate();
         }
-        self.press = Some(Press::new(hit.entry.id, at));
+        let closed_popup = had_popup.as_deref() == Some(hit.entry.id.as_str());
+        self.press = Some(Press {
+            closed_popup,
+            ..Press::new(hit.entry.id, at)
+        });
     }
 
     fn pointer_moved(&mut self, window: &dyn BarWindow, at: PointF) {
@@ -348,8 +353,12 @@ impl BarLogic {
         }
         let over = self.sensors.hit(at.x).map(|h| h.entry.id);
         self.set_hovered(window, over.clone());
-        // No hints over an open popup.
-        let over = over.filter(|_| self.settings.popups_enabled && self.popups.open.is_none());
+        // No hints over an open popup; the hover state waits, so the sensor whose popup closes
+        // stays without its hint while the pointer remains over it (SPEC §7.1).
+        if self.popups.open.is_some() {
+            return;
+        }
+        let over = over.filter(|_| self.settings.popups_enabled);
         let popups = &self.settings.popups;
         let step = self.hover.over(
             over.as_deref(),
@@ -693,8 +702,9 @@ impl BarLogic {
         if press.moved || !over || !self.clicks_allowed(modifiers.alt) {
             return;
         }
-        // The press that closed this sensor's popup does not open it again (SPEC §7.2).
-        if self.popups.guarded(&press.id, Instant::now()) {
+        // The press that closed this sensor's popup does not open it again, nor does a click
+        // right after its popup closed by losing the focus (SPEC §7.2).
+        if press.closed_popup || self.popups.guarded(&press.id, Instant::now()) {
             return;
         }
         let env = Env {
@@ -857,18 +867,22 @@ impl BarLogic {
             self.close_popup(window);
             return;
         };
-        let room = popup::room(&anchor);
+        let mut room = popup::room(&anchor);
         let edge = anchor.edge;
         let Some(open) = self.popups.open.as_mut() else {
             return;
         };
+        // A grip being dragged: no wider than its side has room for, so it does not flip.
+        if open.captured && open.popup.align() == PopupAlign::LeftEdge {
+            room.width = room.width.min(popup::room_beside(&anchor, open.free_left));
+        }
         let cx = PopupCtx {
             theme: &self.theme,
             settings: &self.settings,
             text: self.text.as_ref(),
             scale,
             platform: &self.platform,
-            icons: &self.icons,
+            icons: &self.icons.transient(),
             waker: &self.waker,
             room,
             monitor_height: anchor.monitor.height(),
@@ -958,7 +972,7 @@ impl BarLogic {
             text: self.text.as_ref(),
             scale,
             platform: &self.platform,
-            icons: &self.icons,
+            icons: &self.icons.transient(),
             waker: &self.waker,
             room: open.room,
             monitor_height: open.monitor_height,
@@ -1159,6 +1173,14 @@ impl BarLogic {
 }
 
 impl BarLogic {
+    /// The bar was hidden: nothing may stay on screen pointing at a bar that is gone.
+    fn hidden(&mut self, window: &dyn BarWindow) {
+        self.cancel_drag(window);
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
+        self.close_popup(window);
+    }
+
     /// Another app's drag enters the bar: the hint closes, and the items the bar can take are
     /// kept for the drop (SPEC §6.3).
     fn drag_enter(&mut self, window: &dyn BarWindow, items: &[crate::platform::DragItem]) {
@@ -1366,6 +1388,7 @@ impl BarHandler for BarLogic {
                             layout_changed |= self.previews.remove(&id).is_some();
                         }
                         Command::Sample(delivery) => self.deliver(window, &delivery),
+                        Command::Hidden => self.hidden(window),
                     }
                 }
                 // Icons that arrived: the sensors (and a popup) that asked for them measure again.
@@ -2034,7 +2057,10 @@ mod tests {
         struct NoPower(Mutex<Vec<String>>);
         impl Platform for NoPower {
             fn capabilities(&self) -> crate::platform::Capabilities {
-                Default::default()
+                crate::platform::Capabilities {
+                    power_modes: vec!["shutDown".into()],
+                    ..Default::default()
+                }
             }
             fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
                 Vec::new()
@@ -2791,6 +2817,57 @@ mod tests {
         logic.open_popup(&window, &id, Box::new(probe));
         hover(&mut logic, &window, PointF::new(LOGO.x + 1.0, 14.0));
         assert_eq!(window.hint_timer.get(), None);
+    }
+
+    #[test]
+    fn after_a_popup_no_reopening_hint_and_hiding_the_bar_closes_it() {
+        let dir = crate::sensors::common::folder_browser::tests::sample_folder();
+        let (mut logic, window, _host, mut config) = bar(Settings::default());
+        let logo = &mut config.layout.center[0];
+        logo.kind = "folder-menu".into();
+        logo.props = serde_json::json!({ "folder": dir.path().to_string_lossy() })
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        assert!(window.popup.borrow().is_some(), "opened");
+        // A slow click on the sensor closes its popup and does not open it again.
+        press(&mut logic, &window, LOGO, false);
+        assert!(window.popup.borrow().is_none(), "closed by the press");
+        std::thread::sleep(super::popup::GUARD + Duration::from_millis(50));
+        release(&mut logic, &window, LOGO);
+        assert!(window.popup.borrow().is_none(), "not opened again");
+        // Opened again; moving over the bar meanwhile and closing it with Esc: the pointer is
+        // still on the sensor, so its hint stays away.
+        logic.on_event(&window, UiEvent::PointerMove(LOGO));
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        assert!(window.popup.borrow().is_some());
+        window.hint_timer.set(None);
+        logic.on_event(
+            &window,
+            UiEvent::PointerMove(PointF::new(LOGO.x + 1.0, 14.0)),
+        );
+        logic.on_event(
+            &window,
+            UiEvent::Popup(PopupInput::Key {
+                key: Key::Escape,
+                modifiers: Modifiers::default(),
+            }),
+        );
+        logic.on_event(&window, UiEvent::PointerMove(LOGO));
+        assert_eq!(window.hint_timer.get(), None, "no hint on its way");
+        // Hiding the bar (tray, hotkey) closes an open popup.
+        std::thread::sleep(super::popup::GUARD);
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        assert!(window.popup.borrow().is_some());
+        logic.hidden(&window);
+        assert!(window.popup.borrow().is_none());
     }
 
     #[test]
