@@ -450,6 +450,16 @@ mod tests {
                     tx_rate: f64::from(9e4 * (1.0 + wave(4.0, 2.0))),
                     ..NetSample::default()
                 }),
+                // Battery 1 is on battery power with 2:41 left; battery 2 is not there.
+                Topic::Battery(index) => Sample::Battery(crate::sampler::BatterySample {
+                    present: *index == 0,
+                    name: "Battery".into(),
+                    percent: 73.0,
+                    ac_online: false,
+                    state: crate::platform::BatteryState::Discharging,
+                    time_to_empty: Some(std::time::Duration::from_secs(161 * 60)),
+                    time_to_full: None,
+                }),
                 Topic::RecycleBin => Sample::RecycleBin(crate::platform::RecycleBin {
                     items: 12,
                     bytes: 431 << 20,
@@ -478,6 +488,7 @@ mod tests {
                         topic: topic.clone(),
                         sample: Arc::new(sample(topic, i)),
                         to: None,
+                        pushed: false,
                     };
                     sensors.deliver(&delivery, env, now);
                 }
@@ -592,8 +603,9 @@ mod tests {
             entry("h", "image", serde_json::json!({ "opacity": 40 })),
         ];
         // Every system sensor, with made-up samples: CPU, memory and dual graph on the left,
-        // network and uptime in the centre, swap, disks (Q:\ is absent) and the Recycle Bin
-        // on the right.
+        // network, uptime and batteries (the last one absent) in the centre, swap, disks (Q:\
+        // is absent) and the Recycle Bin on the right. The CI runner has no battery, so the
+        // capability is assumed.
         let mut system = Layout::default();
         let dynamic = serde_json::json!({ "mode": "dynamic", "color": "#FFFFFF" });
         system.left = vec![
@@ -614,6 +626,13 @@ mod tests {
         system.center = vec![
             entry("s6", "network-graph", serde_json::json!({ "width": 80 })),
             entry("s7", "uptime", serde_json::json!({})),
+            entry("s13", "battery", serde_json::json!({})),
+            entry(
+                "s14",
+                "battery",
+                serde_json::json!({ "onBatteryShow": "time" }),
+            ),
+            entry("s15", "battery", serde_json::json!({ "battery": 1 })),
         ];
         system.right = vec![
             entry("s8", "swap-meter", serde_json::json!({})),
@@ -736,10 +755,14 @@ mod tests {
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
                 let size = SizeF::new(bar_width, theme.bar_height as f32);
                 let mut sensors = BarSensors::default();
+                let caps = crate::platform::Capabilities {
+                    battery: true,
+                    ..platform.capabilities()
+                };
                 sensors.sync(
                     layout,
                     &Default::default(),
-                    &platform.capabilities(),
+                    &caps,
                     crate::sensors::registry::registry(),
                 );
                 let env = crate::bar::sensors::Env {

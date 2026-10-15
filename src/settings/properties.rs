@@ -83,6 +83,10 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
                 if form.has_adapter_field() {
                     form.set_adapters(app.platform.net_interfaces());
                 }
+                if form.has_battery_field() {
+                    let status = app.platform.power_status().unwrap_or_default();
+                    form.set_batteries(status.batteries.into_iter().map(|b| b.name).collect());
+                }
                 (form, kind)
             })
         else {

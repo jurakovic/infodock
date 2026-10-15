@@ -675,6 +675,8 @@ impl BarLogic {
                 }
             }
         }
+        // A click may change what a sensor shows for good (SPEC §9.14).
+        self.store_states();
     }
 
     /// The bar or sensor menu at `at` (SPEC §6.4), and what its command does.
@@ -868,10 +870,13 @@ impl BarLogic {
         self.arm_timer(window);
     }
 
-    /// Hands the state sensors want stored to the host (SPEC §11.2).
+    /// Hands the state and props sensors want stored to the host (SPEC §11.2, §9.14).
     fn store_states(&mut self) {
         for (id, state) in self.sensors.take_states() {
             self.host.set_sensor_state(&id, state);
+        }
+        for (id, changes) in self.sensors.take_props() {
+            self.host.update_sensor(&id, changes);
         }
     }
 
@@ -1016,6 +1021,7 @@ impl BarHandler for BarLogic {
                 self.clock_changed(window);
             }
             UiEvent::DevicesChanged => self.host.changed(Change::Devices),
+            UiEvent::PowerChanged => self.host.changed(Change::Power),
             UiEvent::Activate => self.host.activate(),
             UiEvent::TrayClick => self.host.toggle_bar(),
             UiEvent::TrayMenu => self.tray_menu(window),
@@ -1202,6 +1208,12 @@ mod tests {
         }
         fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
             self.log(format!("state {id} {}", serde_json::Value::Object(state)));
+        }
+        fn update_sensor(&self, id: &str, changes: crate::sensors::Props) {
+            self.log(format!(
+                "update {id} {}",
+                serde_json::Value::Object(changes)
+            ));
         }
     }
 
@@ -1449,6 +1461,7 @@ mod tests {
                 topic: Topic::Uptime,
                 sample: Arc::new(sample),
                 to: None,
+                pushed: false,
             },
         );
         assert!(
@@ -1812,6 +1825,7 @@ mod tests {
                 topic: Topic::Cpu,
                 sample: Arc::new(cpu),
                 to: None,
+                pushed: false,
             },
         );
         assert!(window.hint.borrow().is_none(), "not shown again");

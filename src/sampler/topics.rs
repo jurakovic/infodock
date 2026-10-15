@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::platform::{PathKind, RecycleBin, Volume};
+use crate::platform::{BatteryState, PathKind, RecycleBin, Volume};
 
 /// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -23,6 +23,8 @@ pub enum Topic {
     Volumes,
     /// `recycle-bin`: what the Recycle Bin holds on all drives (SPEC §9.16).
     RecycleBin,
+    /// `battery/<i>`: one battery by its place in the system's list (SPEC §9.14).
+    Battery(u32),
 }
 
 /// Something that changed before the topics it concerns are due again: an OS notification or
@@ -33,6 +35,8 @@ pub enum Change {
     Devices,
     /// Items went into the Recycle Bin, or it was emptied.
     RecycleBin,
+    /// The power line or a battery's charge changed (`PBT_APMPOWERSTATUSCHANGE`).
+    Power,
 }
 
 impl Topic {
@@ -42,12 +46,15 @@ impl Topic {
         match change {
             Change::Devices => matches!(self, Self::Volumes | Self::Disk(_) | Self::Path(_)),
             Change::RecycleBin => *self == Self::RecycleBin,
+            Change::Power => matches!(self, Self::Battery(_)),
         }
     }
 }
 
 /// The drive list is read this often besides when drives arrive or go (SPEC §4.4).
 pub const VOLUMES_EVERY: Duration = Duration::from_secs(60);
+/// Batteries are read this often besides when the power status changes (SPEC §9.14).
+pub const BATTERY_EVERY: Duration = Duration::from_secs(10);
 
 /// A sensor's wish to receive `topic` at least every `interval`.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +76,24 @@ pub enum Sample {
     /// The drives with letters, in letter order.
     Volumes(Vec<Volume>),
     RecycleBin(RecycleBin),
+    Battery(BatterySample),
+}
+
+/// `battery/<i>`: one battery and the power line (SPEC §9.14).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BatterySample {
+    /// The battery exists; otherwise only `ac_online` means something.
+    pub present: bool,
+    /// Its vendor and model; empty when unknown.
+    pub name: String,
+    /// Its charge, 0–100.
+    pub percent: f32,
+    /// The computer runs on AC power.
+    pub ac_online: bool,
+    pub state: BatteryState,
+    /// The battery's own estimates, while discharging or charging.
+    pub time_to_empty: Option<Duration>,
+    pub time_to_full: Option<Duration>,
 }
 
 /// `path/<path>`: what the path names now.
@@ -160,4 +185,7 @@ pub struct Delivery {
     /// Only this subscriber, which has just subscribed and gets the newest sample; `None` for
     /// every subscriber of the topic.
     pub to: Option<String>,
+    /// Read at once because something changed (a [`Change`]), out of the topic's cadence:
+    /// news for every subscriber, however recently it took a sample.
+    pub pushed: bool,
 }

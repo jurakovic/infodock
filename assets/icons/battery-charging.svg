@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19 23">
+  <!-- Placeholder (SPEC Appendix C): the charging overlay, a bolt with a dark edge so it reads
+       on the level fill; white is tinted with the sensor text colour, black stays. -->
+  <path d="M10.6 5.6 L5.6 13.4 L9.1 13.4 L8.2 19.2 L13.4 11 L9.9 11 Z" fill="#FFFFFF" stroke="#000000" stroke-width="0.9" stroke-linejoin="round"/>
+</svg>

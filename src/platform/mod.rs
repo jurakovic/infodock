@@ -243,6 +243,40 @@ impl<'a> Launch<'a> {
     }
 }
 
+/// What a battery is doing (SPEC §9.14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatteryState {
+    Charging,
+    Discharging,
+    /// Full, on AC power.
+    Full,
+    /// On AC power but held below full, e.g. by a charge limit.
+    NotCharging,
+    Unknown,
+}
+
+/// One battery now (SPEC Appendix A `battery/<i>`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BatteryReading {
+    /// Its vendor and model as the battery reports them; empty when it says nothing.
+    pub name: String,
+    /// Its charge, 0–100.
+    pub percent: f32,
+    pub state: BatteryState,
+    /// What the battery estimates from its rate; `None` unless discharging or charging.
+    pub time_to_empty: Option<std::time::Duration>,
+    pub time_to_full: Option<std::time::Duration>,
+}
+
+/// The batteries and the power line (SPEC Appendix A `battery/<i>`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PowerStatus {
+    /// Running on AC power.
+    pub ac_online: bool,
+    /// In the order the system lists them.
+    pub batteries: Vec<BatteryReading>,
+}
+
 /// What the Recycle Bin holds on all drives (SPEC §9.16, Appendix A `recycle-bin`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RecycleBin {
@@ -388,6 +422,12 @@ pub trait Platform: Send + Sync {
     /// slow, so the bar asks for it on a worker thread.
     fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
         let _ = (path, px);
+        None
+    }
+    /// The batteries and whether the computer runs on AC power, for the `battery/<i>` topics
+    /// and Settings' battery lists; `None` where it cannot be read. Batteries can be slow to
+    /// answer, so it is read off the sampler thread.
+    fn power_status(&self) -> Option<PowerStatus> {
         None
     }
     /// What the Recycle Bin holds on all drives, for the `recycle-bin` topic; `None` where it
@@ -676,6 +716,8 @@ pub enum UiEvent {
     /// A drive arrived or went: a disk plugged in or removed, a disc inserted or ejected, a
     /// network drive mapped or disconnected.
     DevicesChanged,
+    /// The power line or a battery's charge changed (SPEC §9.14).
+    PowerChanged,
     /// A second launch asked this instance to show itself (SPEC §6.5).
     Activate,
     /// The tray icon was clicked or selected with the keyboard (SPEC §6.5).

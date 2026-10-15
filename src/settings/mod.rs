@@ -892,6 +892,18 @@ mod screenshots {
         super::properties::open_form(&app, &disk, true);
         render("settings-properties-disk-launcher");
         state.invoke_props_cancel();
+        // Battery: this computer's batteries (none on Linux: only the stored one, marked).
+        let battery = app
+            .add_sensor(
+                "battery",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &battery, true);
+        render_sized("settings-properties-battery", 900);
+        state.invoke_props_cancel();
         // The first-run network graph: Automatic and this computer's connections.
         let network = app
             .store

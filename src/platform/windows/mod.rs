@@ -1,6 +1,7 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+mod battery;
 mod com;
 mod cpu;
 mod device;
@@ -131,6 +132,10 @@ impl Platform for WindowsPlatform {
 
     fn notify(&self, title: &str, body: &str) {
         toast::notify(title, body);
+    }
+
+    fn power_status(&self) -> Option<super::PowerStatus> {
+        battery::status()
     }
 
     fn recycle_bin(&self) -> Option<super::RecycleBin> {

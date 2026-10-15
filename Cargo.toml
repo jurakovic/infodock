@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A compact system-information and launcher bar for the desktop"
 license = "MIT"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 publish = false
 
 [lib]
@@ -55,6 +55,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
 
 [target.'cfg(windows)'.dependencies]
+# Batteries for the `battery/<i>` topic (SPEC Appendix A): charge, state, times, names.
+starship-battery = "0.12"
 raw-window-handle = "0.6"
 window-vibrancy = "0.8"
 # Points and matrices of the Direct2D API; the version the `windows` crate uses.

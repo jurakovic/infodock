@@ -7,6 +7,7 @@
 //! sampler (M1 S10), clicks and menus with the interaction slices (M1 S5–S8, M3 S2), drops with
 //! M3, and `from_legacy` with the legacy import (M4).
 
+pub mod battery;
 pub mod color;
 pub mod common;
 pub mod cpu;
@@ -372,6 +373,17 @@ pub trait Sensor {
     /// record; the bar asks after samples and wake-ups, and each change is taken once.
     fn take_state(&mut self) -> Option<State> {
         None
+    }
+    /// Props it changed itself, to be saved (SPEC §9.14: a click toggles what the Battery
+    /// shows), as the changed keys; the bar asks after clicks, and each change is taken once.
+    fn take_props(&mut self) -> Option<Props> {
+        None
+    }
+    /// Takes changed props in place, keeping what it has gathered (e.g. the Battery's charging
+    /// history), and returns `true`; with `false` (the default) the bar creates it anew.
+    /// `props` are resolved.
+    fn reconfigure(&mut self, _props: &Props) -> bool {
+        false
     }
     /// The wall clock jumped: the time or time zone changed, or the system resumed. Clocks
     /// read the time again and move their wake-ups (SPEC §9.4–9.5).

@@ -92,6 +92,8 @@ pub struct Form {
     adapters: Vec<NetInterface>,
     /// The power modes this computer offers, for `powerMode` fields.
     power_modes: Vec<String>,
+    /// This computer's batteries by name, in the system's order, for `battery` fields.
+    batteries: Vec<String>,
 }
 
 impl Form {
@@ -112,7 +114,20 @@ impl Form {
             volumes: Vec::new(),
             adapters: Vec::new(),
             power_modes: Vec::new(),
+            batteries: Vec::new(),
         })
+    }
+
+    /// Whether a field picks a battery, so the form needs the batteries.
+    pub fn has_battery_field(&self) -> bool {
+        self.schema
+            .iter()
+            .any(|f| matches!(f.kind, FieldKind::Battery))
+    }
+
+    /// Sets the batteries `battery` fields offer, by name in the system's order (SPEC §8.2).
+    pub fn set_batteries(&mut self, names: Vec<String>) {
+        self.batteries = names;
     }
 
     /// Sets the power modes `powerMode` fields offer (SPEC §9.21).
@@ -280,6 +295,12 @@ impl Form {
                 row.index = modes.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = modes.into_iter().map(|(_, label)| label).collect();
             }
+            FieldKind::Battery => {
+                let current = value.as_u64().unwrap_or(0);
+                let list = batteries(&self.batteries, self.opened_index(field.key));
+                row.index = list.iter().position(|(v, _)| *v == current).unwrap_or(0) as i32;
+                row.options = list.into_iter().map(|(_, label)| label).collect();
+            }
             FieldKind::NetAdapter => {
                 let adapters = adapters(&self.adapters, self.opened.get(field.key));
                 row.index = adapters
@@ -343,6 +364,10 @@ impl Form {
                 .into_iter()
                 .nth(index)
                 .map(|(value, _)| Value::from(value)),
+            FieldKind::Battery => batteries(&self.batteries, self.opened_index(key))
+                .into_iter()
+                .nth(index)
+                .map(|(value, _)| Value::from(value)),
             _ => None,
         };
         value.is_some_and(|v| self.set(key, v))
@@ -351,6 +376,11 @@ impl Form {
     /// The text of `key` when the form opened.
     fn opened_str(&self, key: &str) -> &str {
         self.opened.get(key).and_then(Value::as_str).unwrap_or("")
+    }
+
+    /// The number of `key` when the form opened.
+    fn opened_index(&self, key: &str) -> u64 {
+        self.opened.get(key).and_then(Value::as_u64).unwrap_or(0)
     }
 
     /// Sets a colour-mode row to the mode at `index` with `color` (`#RRGGBB`).
@@ -367,8 +397,7 @@ impl Form {
     }
 }
 
-/// How Settings edits `field`; `None` for fields it does not show (hidden ones, and the
-/// battery picker, which arrives with its sensor in M3).
+/// How Settings edits `field`; `None` for fields it does not show (hidden ones).
 fn kind(field: &PropField) -> Option<RowKind> {
     Some(match field.kind {
         FieldKind::Text { .. } => RowKind::Text,
@@ -383,9 +412,10 @@ fn kind(field: &PropField) -> Option<RowKind> {
         FieldKind::CpuSeries
         | FieldKind::Drive { .. }
         | FieldKind::NetAdapter
-        | FieldKind::PowerMode => RowKind::Choice,
+        | FieldKind::PowerMode
+        | FieldKind::Battery => RowKind::Choice,
         FieldKind::Folder => RowKind::Folder,
-        FieldKind::Battery | FieldKind::Hidden => return None,
+        FieldKind::Hidden => return None,
     })
 }
 
@@ -451,6 +481,35 @@ fn drives(volumes: &[Volume], hide_optical: bool, stored: &str) -> Vec<(String, 
         drives.push((stored.to_owned(), label));
     }
     drives
+}
+
+/// The batteries a `battery` field offers, as (index, label): `1. {name}` for each of this
+/// computer's batteries (`1. Battery` when it has no name); a `stored` battery it lacks stays
+/// listed, marked so.
+fn batteries(names: &[String], stored: u64) -> Vec<(u64, String)> {
+    let number = |i: u64| (i + 1).to_string();
+    let mut list: Vec<(u64, String)> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let i = i as u64;
+            let name = if name.is_empty() {
+                t("sensor.battery.name")
+            } else {
+                name.clone()
+            };
+            let label = t_args(
+                "sensor.battery.option",
+                &[("n", &number(i)), ("name", &name)],
+            );
+            (i, label)
+        })
+        .collect();
+    if !list.iter().any(|(i, _)| *i == stored) {
+        let label = t_args("sensor.battery.option.missing", &[("n", &number(stored))]);
+        list.push((stored, label));
+    }
+    list
 }
 
 /// A `netAdapter` value's id; `None` for Automatic.
@@ -639,6 +698,7 @@ mod tests {
             volumes: Vec::new(),
             adapters: Vec::new(),
             power_modes: Vec::new(),
+            batteries: Vec::new(),
         };
         assert!(!form.set("color", json!("#12")));
         assert!(!form.valid());
@@ -705,6 +765,31 @@ mod tests {
         let rows = form.rows(&fonts());
         let top = rows.iter().find(|r| r.key == "topSeries").expect("top");
         assert!(top.options.last().is_some_and(|o| o.contains("4294967296")));
+    }
+
+    #[test]
+    fn batteries_are_numbered_with_their_names() {
+        let instance = SensorInstance {
+            id: "b".into(),
+            kind: "battery".into(),
+            props: json!({ "battery": 2 })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        };
+        let mut form = Form::open(registry(), &instance, false).expect("known type");
+        assert!(form.has_battery_field() && !form.has_drive_field());
+        form.set_batteries(vec!["SMP 5B10".into(), String::new()]);
+        let rows = form.rows(&fonts());
+        let battery = rows.iter().find(|r| r.key == "battery").expect("battery");
+        assert_eq!(battery.kind, RowKind::Choice);
+        assert_eq!(
+            battery.options,
+            ["1. SMP 5B10", "2. Battery", "3. (not connected)"]
+        );
+        assert_eq!(battery.index, 2);
+        assert!(form.choose("battery", 0, &fonts()));
+        assert_eq!(form.changes()["battery"], json!(0));
     }
 
     #[test]

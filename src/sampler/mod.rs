@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use scheduler::Scheduler;
 pub use topics::{
-    Change, CpuSample, Delivery, DiskSample, MemorySample, NetSample, PathSample, Sample,
-    SwapSample, Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
+    BATTERY_EVERY, BatterySample, Change, CpuSample, Delivery, DiskSample, MemorySample, NetSample,
+    PathSample, Sample, SwapSample, Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
 };
 
 use crate::providers::Providers;
@@ -107,6 +107,8 @@ impl Pending {
 
 fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Delivery)) {
     let mut scheduler: Scheduler<Topic, Arc<Sample>> = Scheduler::default();
+    // What changed since the last readings: the topics they concern are read now, pushed.
+    let mut changes: Vec<Change> = Vec::new();
     loop {
         let message = match scheduler.next_due() {
             Some(at) => queue.recv_timeout(at.saturating_duration_since(Instant::now())),
@@ -126,6 +128,7 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                         topic,
                         sample,
                         to: Some(subscriber.clone()),
+                        pushed: false,
                     });
                 }
                 for topic in scheduler.take_removed() {
@@ -138,6 +141,7 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
             }
             Ok(Message::Changed(change)) => {
                 scheduler.refresh(Instant::now(), |topic| topic.follows(change));
+                changes.push(change);
             }
             Ok(Message::Shutdown) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {}
@@ -150,10 +154,12 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                     topic: topic.clone(),
                     sample: Arc::clone(sample),
                     to: None,
+                    pushed: changes.iter().any(|&c| topic.follows(c)),
                 });
             }
             scheduler.sampled(&topic, now, sample);
         }
+        changes.clear();
     }
 }
 
@@ -230,6 +236,8 @@ mod tests {
         sampler.changed(Change::Devices);
         let again = rx.recv_timeout(wait).expect("read again");
         assert_eq!((again.topic, again.to), (Topic::Volumes, None));
+        assert!(again.pushed, "news for every subscriber");
+        assert!(!first.pushed);
         sampler.shutdown();
         thread.join().expect("the thread ends");
     }

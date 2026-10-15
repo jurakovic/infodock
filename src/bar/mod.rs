@@ -57,6 +57,9 @@ pub trait BarHost: Send + Sync {
     fn changed(&self, change: Change);
     /// Stores sensor `id`'s runtime state in the config (SPEC §11.2), e.g. the uptime record.
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State);
+    /// Saves props sensor `id` changed itself (`changes`: the changed keys), e.g. what a
+    /// Battery shows after a click (SPEC §9.14).
+    fn update_sensor(&self, id: &str, changes: crate::sensors::Props);
 }
 
 /// Work for the bar thread, queued by [`BarController`].

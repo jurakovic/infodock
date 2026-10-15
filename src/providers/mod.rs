@@ -1,6 +1,7 @@
 //! Providers read the system data behind the topics (SPEC §4.4, Appendix A). They run on the
 //! sampler thread and reach the OS only through [`Platform`].
 
+mod battery;
 mod cpu;
 mod disk;
 mod memory;
@@ -12,7 +13,7 @@ mod worker;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use crate::platform::{Platform, RecycleBin, Volume};
+use crate::platform::{Platform, PowerStatus, RecycleBin, Volume};
 use crate::sampler::{DiskSample, PathSample, Sample, Topic};
 use worker::SlowReader;
 
@@ -29,6 +30,8 @@ pub struct Providers {
     volumes: Option<Option<SlowReader<Vec<Volume>>>>,
     /// The same for the Recycle Bin (one key, `""`), which can take a while to count.
     recycle_bin: Option<Option<SlowReader<Option<RecycleBin>>>>,
+    /// The same for the batteries (one key, `""`), whose firmware can be slow to answer.
+    power: Option<Option<SlowReader<Option<PowerStatus>>>>,
     net: net::Net,
 }
 
@@ -41,6 +44,7 @@ impl Providers {
             paths: None,
             volumes: None,
             recycle_bin: None,
+            power: None,
             net: net::Net::default(),
         }
     }
@@ -82,6 +86,11 @@ impl Providers {
             Topic::RecycleBin => {
                 if let Some(Some(bin)) = &mut self.recycle_bin {
                     bin.forget("");
+                }
+            }
+            Topic::Battery(_) => {
+                if let Some(Some(power)) = &mut self.power {
+                    power.forget("");
                 }
             }
             Topic::Net(id) => self.net.forget(id),
@@ -146,6 +155,15 @@ impl Providers {
                     SlowReader::new("recycle-bin", move |_| platform.recycle_bin())
                 });
                 bin.as_mut()?.sample("").flatten().map(Sample::RecycleBin)
+            }
+            Topic::Battery(index) => {
+                let platform = &self.platform;
+                let power = self.power.get_or_insert_with(|| {
+                    let platform = Arc::clone(platform);
+                    SlowReader::new("batteries", move |_| platform.power_status())
+                });
+                let status = power.as_mut()?.sample("").flatten()?;
+                Some(Sample::Battery(battery::sample(&status, *index)))
             }
             Topic::Net(id) => {
                 let interface = self.platform.net_interface(id.as_deref());

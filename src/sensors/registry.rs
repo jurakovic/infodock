@@ -33,6 +33,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::power::PowerType,
         &super::disk_launcher::DiskType,
         &super::recycle_bin::RecycleBinType,
+        &super::battery::BatteryType,
     ])
 });
 
@@ -119,6 +120,25 @@ impl Registry {
             tracing::error!("sensor type {} cannot read its props: {e}", ty.id());
             Box::new(Placeholder::unsupported(t(ty.name())))
         })
+    }
+
+    /// Gives `sensor`, created for an entry of the same type, the changed props of `instance`
+    /// in place; `false` if it must be created anew (its type cannot run here, or the sensor
+    /// cannot take them so).
+    pub fn reconfigure(
+        &self,
+        instance: &SensorInstance,
+        sensor: &mut dyn Sensor,
+        caps: &Capabilities,
+    ) -> bool {
+        let Some(ty) = self.get(&instance.kind) else {
+            return false;
+        };
+        if !Self::available(ty, caps) {
+            return false;
+        }
+        let (props, _) = schema::resolve(ty.schema(), &instance.props, &Props::new());
+        sensor.reconfigure(&props)
     }
 
     /// Stores the machine-derived props that entries of known types lack (SPEC §11.2), so a

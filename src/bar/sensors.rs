@@ -13,8 +13,8 @@ use crate::sampler::{ChangeSink, Delivery, Topic, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
 use crate::sensors::{
-    ClickResult, DrawCtx, HintContent, IconSource, LayoutCtx, MenuId, MenuItem, Sensor, SensorCtx,
-    State,
+    ClickResult, DrawCtx, HintContent, IconSource, LayoutCtx, MenuId, MenuItem, Props, Sensor,
+    SensorCtx, State,
 };
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
@@ -111,32 +111,47 @@ impl BarSensors {
             .map(|p| (p.entry.id.clone(), p))
             .collect();
         let mut created = false;
+        let mut reconfigured = false;
         let entries = [&layout.left, &layout.center, &layout.right];
         for (zone, entries) in self.zones.iter_mut().zip(entries) {
             for entry in entries {
-                let placed = match old.remove(&entry.id) {
-                    Some(p) if p.entry.kind == entry.kind && p.entry.props == entry.props => p,
-                    _ => {
-                        created = true;
-                        self.created.push(entry.id.clone());
-                        let empty = State::new();
-                        let state = state.get(&entry.id).unwrap_or(&empty);
-                        let sensor = registry.create(entry, state, caps);
-                        Placed {
-                            entry: entry.clone(),
-                            topics: sensor.topics(),
-                            taken: Vec::new(),
-                            sensor,
-                            width: 0.0,
-                            x: 0.0,
-                            dirty: true,
+                // Same props: kept. Changed props: kept if the sensor takes them in place.
+                let kept = old
+                    .remove(&entry.id)
+                    .filter(|p| p.entry.kind == entry.kind)
+                    .and_then(|mut p| {
+                        if p.entry.props == entry.props {
+                            return Some(p);
                         }
+                        if !registry.reconfigure(entry, p.sensor.as_mut(), caps) {
+                            return None;
+                        }
+                        reconfigured = true;
+                        p.entry = entry.clone();
+                        p.topics = p.sensor.topics();
+                        p.dirty = true;
+                        Some(p)
+                    });
+                let placed = kept.unwrap_or_else(|| {
+                    created = true;
+                    self.created.push(entry.id.clone());
+                    let empty = State::new();
+                    let state = state.get(&entry.id).unwrap_or(&empty);
+                    let sensor = registry.create(entry, state, caps);
+                    Placed {
+                        entry: entry.clone(),
+                        topics: sensor.topics(),
+                        taken: Vec::new(),
+                        sensor,
+                        width: 0.0,
+                        x: 0.0,
+                        dirty: true,
                     }
-                };
+                });
                 zone.push(placed);
             }
         }
-        let changed = created || self.ids() != before;
+        let changed = created || reconfigured || self.ids() != before;
         self.relayout |= changed;
         changed
     }
@@ -310,7 +325,10 @@ impl BarSensors {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
             return ClickResult::None;
         };
-        p.sensor.click(&env.ctx(id))
+        let result = p.sensor.click(&env.ctx(id));
+        // What it shows may have changed, e.g. a Battery switching to the time left.
+        p.dirty |= result == ClickResult::Handled;
+        result
     }
 
     /// Sensor `id`'s own menu items (SPEC §6.4).
@@ -374,6 +392,13 @@ impl BarSensors {
             .collect()
     }
 
+    /// The props sensors changed themselves and want saved (SPEC §9.14), by id.
+    pub fn take_props(&mut self) -> Vec<(String, Props)> {
+        self.all_mut()
+            .filter_map(|p| p.sensor.take_props().map(|c| (p.entry.id.clone(), c)))
+            .collect()
+    }
+
     /// Tells every sensor the wall clock jumped (SPEC §9.4–9.5); returns whether what any of
     /// them shows changed.
     pub fn clock_changed(&mut self, now: Instant, env: &Env) -> bool {
@@ -420,6 +445,7 @@ impl BarSensors {
             let last = p.taken.iter_mut().find(|(t, _)| *t == delivery.topic);
             let early = request.interval.mul_f32(0.25).min(EARLY);
             let on_time = delivery.to.is_some()
+                || delivery.pushed
                 || last.as_ref().is_none_or(|(_, at)| {
                     now.saturating_duration_since(*at) + early >= request.interval
                 });
@@ -731,6 +757,75 @@ mod tests {
         assert_eq!(sensors.menu("c", &env)[0].label, "Count (1)");
     }
 
+    #[test]
+    fn a_sensor_saves_its_own_props_and_takes_them_back_in_place() {
+        let theme = theme();
+        let settings = Settings::default();
+        let platform = crate::platform::current();
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+            animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
+        };
+        let caps = Capabilities {
+            battery: true,
+            ..Capabilities::default()
+        };
+        let mut layout = Layout {
+            left: vec![entry("b", "battery", json!({}))],
+            ..Layout::default()
+        };
+        let mut sensors = BarSensors::default();
+        sensors.sync(&layout, &BTreeMap::new(), &caps, registry());
+        assert_eq!(sensors.take_created(), ["b"]);
+        let on_battery = crate::sampler::BatterySample {
+            present: true,
+            name: String::new(),
+            percent: 73.0,
+            ac_online: false,
+            state: crate::platform::BatteryState::Discharging,
+            time_to_empty: None,
+            time_to_full: None,
+        };
+        let delivery = Delivery {
+            topic: Topic::Battery(0),
+            sample: std::sync::Arc::new(Sample::Battery(on_battery)),
+            to: None,
+            pushed: false,
+        };
+        sensors.deliver(&delivery, &env, Instant::now());
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+        // A click switches to the time left and asks for it to be saved.
+        assert_eq!(sensors.click("b", &env), ClickResult::Handled);
+        assert!(sensors.is_dirty("b"), "measured again");
+        let saved = sensors.take_props();
+        assert_eq!(
+            saved,
+            [(
+                "b".to_owned(),
+                json!({ "onBatteryShow": "time" })
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default()
+            )]
+        );
+        assert!(sensors.take_props().is_empty(), "taken once");
+        // The saved props come back with the config: the same sensor takes them.
+        layout.left[0].props = saved[0].1.clone();
+        assert!(sensors.sync(&layout, &BTreeMap::new(), &caps, registry()));
+        assert!(sensors.take_created().is_empty(), "not created anew");
+        // Another battery: created anew.
+        layout.left[0].props = json!({ "battery": 1 })
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        sensors.sync(&layout, &BTreeMap::new(), &caps, registry());
+        assert_eq!(sensors.take_created(), ["b"]);
+    }
+
     /// Shows the uptime in whole minutes, from samples.
     struct Uptime {
         minutes: u64,
@@ -812,6 +907,7 @@ mod tests {
                 read_at: Instant::now(),
             })),
             to: to.map(str::to_owned),
+            pushed: false,
         };
         // A catch-up reaches only its subscriber.
         let t0 = Instant::now();
@@ -835,6 +931,12 @@ mod tests {
         );
         let nearly = t0 + 3 * minute - Duration::from_millis(400);
         assert!(sensors.deliver(&delivery(300, None), &env, nearly));
+        // A reading pushed by a change is news for everyone, however soon it comes.
+        let pushed = Delivery {
+            pushed: true,
+            ..delivery(420, None)
+        };
+        assert!(sensors.deliver(&pushed, &env, nearly + Duration::from_secs(1)));
     }
 
     #[test]

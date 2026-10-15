@@ -312,3 +312,14 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] Right-click: *Open Recycle Bin* and *Empty Recycle Bin* between *Remove sensor* and *Tools*. *Empty Recycle Bin* asks as Windows does (unless confirmation is off in the Recycle Bin's properties), plays the sound, and the sensor shows *empty* within a second, not at the next interval. Cancelling leaves it as it was. With the bin empty, the item is greyed out.
 - [ ] *Image when empty* / *Image when full* replace the icons; *Colour* → *Custom* tints the built-in ones; *Opacity* fades the icon only. A light bar (Windows light mode): the built-in icon is dark.
 - [ ] A computer with a large Recycle Bin (thousands of items) or a sleeping second disk: the bar keeps responding while the count is read.
+
+**Battery** (since M3 S7; a laptop)
+
+- [ ] *New sensor… ▸ System ▸ Battery*: the battery icon (19×23) with its level coloured red → yellow → green by charge, the state above the percentage: *In Use 73%* on battery, *Low Battery* below 15 %, *Charging*, *Full*. The charging bolt and the charged plug show over the level; the level's top edge is lighter except when nearly full. CI renders it (73 %, and an absent second battery) in `bar-system*.png`.
+- [ ] Unplug and plug the charger: the state changes within a second or two, not only every 10 s. The hint follows: name, *Capacity is 73%*, *2:41 Remaining* (or *Calculating Time Remaining*), and after unplugging while Infodock runs, *0:05 Already In Use*, counting up.
+- [ ] Click on battery: the value switches to the time left (`~ 2:41`, `*` while unknown) and stays so after restarting Infodock; Settings shows *On battery, show* → *Time left*. Click again: back to the percentage. While charging the click switches *While charging, show* between the percentage and the time until full.
+- [ ] *Smooth the time left* on: the time left moves smoothly instead of jumping when the load changes (start and stop a video).
+- [ ] *Time until full* → *Calculated*: while charging, `*` until the charge has grown a percent, then a time that settles; it survives a click on the sensor (the estimate is not reset).
+- [ ] *Charged at* 80 % with Windows' battery care (or a vendor charge limit) holding at 80 %: *Full*, no percentage. With *As Windows reports it*: *Full 80%*.
+- [ ] *Tell me to unplug above* 90 %: charging past 90 % shows one toast *Battery at 91% — you can unplug the charger*; unplug and plug in again above 90 %: one more.
+- [ ] Properties ▸ *Battery* lists `1. {vendor model}` for each battery; a laptop with two batteries shows both, and the second one's sensor shows its own charge. A desktop: the sensor is not offered (no battery capability).

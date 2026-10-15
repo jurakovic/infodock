@@ -279,6 +279,17 @@ impl BarHost for AppHost {
         self.0.sampler.changed(change);
     }
 
+    /// Saved without ending a preview, which goes on showing what Settings edits.
+    fn update_sensor(&self, id: &str, changes: Props) {
+        let app = &self.0;
+        let result = app
+            .store
+            .update(|c| ops::update(c, registry(), &app.defaults(), id, &changes));
+        if let Err(e) = result {
+            tracing::warn!("sensor {id} could not save {changes:?}: {e}");
+        }
+    }
+
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
         let result = self.0.store.update(|c| {
             // A sensor removed meanwhile keeps no state.
