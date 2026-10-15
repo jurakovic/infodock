@@ -25,7 +25,12 @@ impl Device {
     /// only).
     pub(super) fn open_volume(root: &str, access: u32) -> Option<Self> {
         let letter = root.trim_end_matches('\\');
-        let path = HSTRING::from(format!(r"\\.\{letter}"));
+        Self::open(&format!(r"\\.\{letter}"), access)
+    }
+
+    /// Opens the device at `path` (a volume or a device interface) with `access`.
+    pub(super) fn open(path: &str, access: u32) -> Option<Self> {
+        let path = HSTRING::from(path);
         // SAFETY: a valid path; the handle is closed on drop.
         unsafe {
             CreateFileW(

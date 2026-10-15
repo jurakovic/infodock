@@ -511,6 +511,13 @@ pub(crate) mod test_support {
                 .expect("lock")
                 .push(format!("open {target}"));
         }
+        fn eject(&self, root: &str, report: crate::platform::EjectReport) {
+            let (title, body) = report(&Ok(()));
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("eject {root}: {title}: {body}"));
+        }
         fn launch(&self, launch: &crate::platform::Launch) {
             self.log.lock().expect("lock").push(format!(
                 "launch {} args={} dir={} admin={}",

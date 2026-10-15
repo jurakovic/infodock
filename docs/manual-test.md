@@ -294,3 +294,12 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] A Shortcut whose target is on the USB stick: it dims and comes back with the stick within a second or two.
 - [ ] Open a Disk Meter's properties, then plug a USB stick in: the *Drive* list gains it without reopening the form, and the chosen drive stays chosen.
 - [ ] Map a network drive (`net use Z: \\server\share`) and disconnect it: a Disk on Z: follows.
+
+**Eject** (since M3 S5)
+
+- [ ] Right-click a Disk on a USB stick: *Eject* sits between *Remove sensor* and *Tools*. Choose it: within a few seconds a toast *STICK (E:) can be safely removed.*, the Disk dims, and Explorer no longer lists the drive. The stick's light goes off (or Windows' *Safely Remove Hardware* no longer lists it).
+- [ ] Open a file on the stick in Notepad (or `cd` into it in a Command Prompt), then *Eject*: a toast says it is in use (naming the program when Windows does), and the stick stays.
+- [ ] A USB hard disk (Windows shows it as a local disk): *Eject* is offered and works; an internal disk's Disk has no *Eject*.
+- [ ] A DVD drive with a disc: *Eject* opens the tray and the toast says it can be removed; with a file from the disc open, it is in use.
+- [ ] An SD card in a laptop's built-in reader: *Eject* removes the card (the reader stays), with the toast.
+- [ ] No Windows dialog of its own ("Problem Ejecting USB Mass Storage Device") appears in any of these.

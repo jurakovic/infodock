@@ -1033,7 +1033,7 @@ Implementation (`sensors/shortcut.rs`): `runAs` ids `normal` / `administrator`. 
 Topic `volumes` (event-driven list). View: the drive icon only.
 Hint: `Open '{display name}'` (or the title). Click: open the drive. Menu: **Eject** for removable and optical drives (§9.22; on success the toast "{name} can be safely removed", on failure a toast with the reason, e.g. "in use by {app}"). Inactive while the drive is absent; an optical drive without media stays active, with the hint `{name} — no media`.
 
-Implementation (`sensors/disk_launcher.rs`): the display name is the one the drive lists use (§9.12): the label or kind with the letter, `Local Disk (C:)`, so naming never waits for a network server or a disc; before the first `volumes` sample it is the drive itself. The icon is the drive's shell icon at bar height − 4, centred (the built-in drive icon when the shell has none, e.g. for an absent drive), read again when the drive arrives, goes, or a medium is inserted or removed. Hints: `Open '{name}'` (only the name when clicks need Alt), `{name} — no media` (also for an empty card reader), `{drive} is not connected` while absent; a click on an absent drive does nothing.
+Implementation (`sensors/disk_launcher.rs`): the *Eject* item appears while the drive is there and the drive list marks it `ejectable` (removable and optical drives, disks on USB, FireWire, SD or MMC). The display name is the one the drive lists use (§9.12): the label or kind with the letter, `Local Disk (C:)`, so naming never waits for a network server or a disc; before the first `volumes` sample it is the drive itself. The icon is the drive's shell icon at bar height − 4, centred (the built-in drive icon when the shell has none, e.g. for an absent drive), read again when the drive arrives, goes, or a medium is inserted or removed. Hints: `Open '{name}'` (only the name when clicks need Alt), `{name} — no media` (also for an empty card reader), `{drive} is not connected` while absent; a click on an absent drive does nothing.
 
 ### 9.19 `folder-menu` — Folder Menu  (Launchers; `TurboFolder`)
 
@@ -1110,6 +1110,8 @@ Click → interactive popup, kind `eject-list`: one row per ejectable volume (re
 2. `CM_Request_Device_EjectW(devInst, &vetoType, vetoName, …)`; map a veto to a message ("in use by {vetoName}").
 3. Optical media: `FSCTL_LOCK_VOLUME` + `FSCTL_DISMOUNT_VOLUME`, then `IOCTL_STORAGE_EJECT_MEDIA`.
 4. Fallback: invoke the shell "Eject" verb via `IContextMenu` on the drive item.
+
+Implementation (`platform/windows/eject.rs`, `sensors/common/eject.rs`): `Platform::eject(root, report)` runs on a short-lived thread and shows the notification `report` words from the result, with the drive's name as the title: "{name} can be safely removed.", "{name} is in use by {app}. Close it and try again." (or without the app when the veto names a device rather than a program), "{name} cannot be ejected.", "{name} could not be ejected." Only volumes the drive list marks `ejectable` are touched, so an internal disk is never asked to go. The disk's device node is found by matching `IOCTL_STORAGE_GET_DEVICE_NUMBER` of the volume against the disk (or CD-ROM) interfaces; from its parent up (at most 8 levels), the first node with `CM_DEVCAP_REMOVABLE` is ejected, with the veto name buffer given so Windows shows no dialog of its own; a veto is retried twice, 500 ms apart. Media in a reader without a removable node above it (an internal SD slot) are ejected like optical media. A veto is reported at once; other failures fall back to the shell verb.
 
 ---
 

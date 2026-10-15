@@ -6,6 +6,7 @@ mod cpu;
 mod device;
 mod dialog;
 mod disk;
+mod eject;
 mod hint;
 mod icons;
 pub mod image;
@@ -134,6 +135,21 @@ impl Platform for WindowsPlatform {
 
     fn power(&self, action: super::PowerAction, force: bool) {
         power::power(action, force);
+    }
+
+    fn eject(&self, root: &str, report: super::EjectReport) {
+        let root = root.to_owned();
+        let spawned = std::thread::Builder::new()
+            .name("eject".into())
+            .spawn(move || {
+                let result = eject::eject(&root);
+                tracing::info!("eject {root}: {result:?}");
+                let (title, body) = report(&result);
+                toast::notify(&title, &body);
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("could not start ejecting a drive: {e}");
+        }
     }
 
     fn play_sound(&self, wav: &'static [u8]) {

@@ -171,6 +171,20 @@ impl Volume {
     }
 }
 
+/// Why a drive was not ejected (SPEC §9.22).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EjectError {
+    /// A program or service has it open; its name when Windows says.
+    InUse(Option<String>),
+    /// Not a drive that can be ejected (an internal disk), or not connected.
+    NotEjectable,
+    /// Something else went wrong.
+    Failed(String),
+}
+
+/// Words an eject's result as a notification: its title and body (SPEC §9.18, §9.22).
+pub type EjectReport = Box<dyn FnOnce(&Result<(), EjectError>) -> (String, String) + Send>;
+
 /// A volume's size and free space, bytes (SPEC Appendix A, `disk/<X:\>`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DiskSpace {
@@ -373,6 +387,13 @@ pub trait Platform: Send + Sync {
     /// restart). Failures are logged.
     fn power(&self, action: PowerAction, force: bool) {
         tracing::info!("{action:?} (force: {force}) is not supported on this platform");
+    }
+    /// Ejects drive `root` (`E:\`) in the background (SPEC §9.22) and shows the notification
+    /// `report` makes of the result.
+    fn eject(&self, root: &str, report: EjectReport) {
+        tracing::info!("ejecting {root} is not supported on this platform");
+        let (title, body) = report(&Err(EjectError::NotEjectable));
+        self.notify(&title, &body);
     }
     /// Shows a notification from Infodock (SPEC §7.4): a toast with `title` (e.g. the
     /// sensor's) and `body`, in the background; failures are logged.

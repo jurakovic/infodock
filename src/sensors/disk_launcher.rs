@@ -1,19 +1,22 @@
 //! `disk` — opens a drive (SPEC §9.18). The bar shows the drive's shell icon; the `volumes`
 //! topic tells whether the drive is there and holds a medium. An absent drive is inactive; an
-//! optical or removable drive without a medium stays active and says so.
+//! optical or removable drive without a medium stays active and says so. The menu ejects a
+//! drive that can be ejected, with the result as a notification.
 
 use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::common::eject;
 use super::common::icon::{self, Icon};
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, ColorChoice, ColorModeKind, DefaultsCtx, DrawCtx, HintContent,
-    IconSource, LayoutCtx, Props, Sensor, SensorCtx, SensorType, ShellIcon, State, typed,
+    IconSource, LayoutCtx, MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, ShellIcon,
+    State, typed,
 };
-use crate::i18n::t_args;
+use crate::i18n::{t, t_args};
 use crate::platform::{Bitmap, Canvas, Color, Volume, load_image};
 use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
@@ -21,6 +24,8 @@ use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 const DRIVE: &[u8] = include_bytes!("../../assets/icons/drive.svg");
 /// The drive when the machine lists none (and the static default).
 const FALLBACK_DRIVE: &str = "C:\\";
+/// The *Eject* menu item.
+const EJECT: MenuId = 0;
 
 const SCHEMA: &[PropField] = &[
     PropField::new(
@@ -265,6 +270,26 @@ impl Sensor for Disk {
         self.name()
     }
 
+    /// *Eject* for a drive that can be ejected and is there (SPEC §9.18).
+    fn menu(&self, _cx: &SensorCtx) -> Vec<MenuItem> {
+        if self.present().is_some_and(|v| v.ejectable) {
+            vec![MenuItem::new(EJECT, t("sensor.diskLauncher.menu.eject"))]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn on_menu(&mut self, item: MenuId, cx: &SensorCtx) -> bool {
+        if item == EJECT {
+            let name = self.name();
+            cx.platform.eject(
+                &self.props.drive,
+                Box::new(move |result| eject::notice(&name, result)),
+            );
+        }
+        false
+    }
+
     fn topics(&self) -> Vec<TopicRequest> {
         vec![TopicRequest {
             topic: Topic::Volumes,
@@ -463,6 +488,27 @@ mod tests {
         h.settings.locked = true;
         h.settings.clicks_when_locked = ClicksWhenLocked::AltOnly;
         assert_eq!(h.hint(&sensor), "MOVIE (D:)");
+    }
+
+    #[test]
+    fn ejectable_drives_offer_eject_with_a_notification() {
+        let h = Harness::new();
+        let mut sensor = create(json!({ "drive": "E:\\" }));
+        assert!(sensor.menu(&h.ctx()).is_empty(), "not known yet");
+        let stick = Volume::new("E:\\", DriveKind::Removable, "STICK");
+        sensor.on_sample(&Topic::Volumes, &volumes(vec![stick]), &h.ctx());
+        let menu = sensor.menu(&h.ctx());
+        assert_eq!(menu, [MenuItem::new(EJECT, "Eject")]);
+        assert!(!sensor.on_menu(EJECT, &h.ctx()));
+        assert_eq!(
+            h.platform.log(),
+            ["eject E:\\: STICK (E:): STICK (E:) can be safely removed."]
+        );
+        // A fixed internal disk has none.
+        let mut fixed = create(json!({ "drive": "C:\\" }));
+        let c = Volume::new("C:\\", DriveKind::Fixed, "");
+        fixed.on_sample(&Topic::Volumes, &volumes(vec![c]), &h.ctx());
+        assert!(fixed.menu(&h.ctx()).is_empty());
     }
 
     #[test]
