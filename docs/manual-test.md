@@ -256,7 +256,9 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 ## M3 — Launchers & hardware
 
-The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.png` in `infodock-screenshots`) with this machine's shell icons; the checks here cover clicking, the shell and real devices.
+Exit criteria (SPEC §17): every §9.14–9.22 behaviour below passes; dragging a link from Edge or Chrome creates a web Shortcut, or a `.url` file in a Folder Menu.
+
+The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.png` in `infodock-screenshots`) with this machine's shell icons and the popups (`popup-folder*`, `popup-start-menu`, `popup-eject`); the checks here cover clicking, the shell, drag & drop and real devices.
 
 **Shortcut** (since M3 S1)
 
@@ -381,3 +383,22 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] A link from Edge or Chrome onto a Folder Menu: *Create shortcut to 'https://…' in 'Downloads'*; the drop makes `Example Domain.url` (a page without a title: its address with `:/.?=&` as `-`), which opens the page.
 - [ ] Files onto the Recycle Bin sensor: it darkens, *Delete 'report.pdf'* or *Delete 3 items*; the drop moves them to the Recycle Bin (asking first if the Recycle Bin's properties say so), and the count goes up at once.
 - [ ] A link onto the Recycle Bin, or a drive onto a Folder Menu: the placer shows instead, and the drop makes a new sensor next to it. Onto any other sensor (a clock, the Start Menu): the placer, new sensors.
+
+**Budgets** (M3 S15)
+
+- [ ] Task Manager ▸ Details with a Folder Menu, the Start Menu, Eject USB and a few Shortcuts on the bar: *Memory* stays within 30 MB at idle, after opening each popup once, and after a drag from Explorer over the bar (the drag image helper and OLE load then). CI measured the first-run layout at 12.7 MB idle, 15.9 MB with Settings open, 14.4 MB after closing it, 0.039 % CPU (`b8d5d9e`).
+- [ ] Scroll quickly through a folder of a few thousand files (`C:\Windows\System32`) in a Folder Menu: the bar's Shortcut and Disk icons never blink; the rows' icons fill in for what shows, not for every row passed.
+
+**Close-out fixes** (M3 S15)
+
+- [ ] Move a file from a folder on C: onto a Folder Menu for another folder on C:: it moves once, Explorer shows it gone from the source, and nothing is deleted twice (no error). The same onto the Recycle Bin: the file is in the Recycle Bin (restorable), not deleted for good.
+- [ ] Drag a few hundred files from a network share over the bar and a Folder Menu: the bar and the drag stay smooth; dropping them on the bar's empty part asks the share only then.
+- [ ] A Disk Meter or Disk on a mapped drive whose server is off, next to one on C:: C:'s keeps updating at its interval. Plug in a USB stick: Eject USB and a Disk on its letter show it within a couple of seconds, even when the stick is slow to mount.
+- [ ] Eject a stick with a file open in Notepad: the toast names *notepad.exe* (or says it is in use); with a Command Prompt `cd` into it, it says it is in use without a program. A card reader in a USB-C dock or monitor: *Eject* takes out the card (or says it cannot), never the dock's keyboard and network.
+- [ ] A laptop whose system disk is eMMC (often small cheap laptops): C: is not in Eject USB and its Disk has no *Eject*.
+- [ ] Sleep and Hibernate from the Power sensor as a standard user work (no logged error *1314*). A config copied from a machine with hibernation, on one without: the Hibernate sensor's hint says it is not available here, and a click does nothing.
+- [ ] Resize a Folder Menu that sits near the screen's right edge: widening it until it no longer fits beside the sensor stops at the screen edge (no jump to the other side); a list lined up on the right narrows from the left without jumping.
+- [ ] A laptop on AC at 99–100 % with the unplug alert set: one toast per plugging in, not one each time the charge flaps.
+- [ ] A Wi-Fi 6E network on channel 2 (6 GHz): the hint says *6 GHz, channel 2*.
+- [ ] Open a Folder Menu, then hide the bar with the hotkey: the list goes too. Press the sensor of an open list and hold for a second before releasing: the list closes and stays closed. Close a list with Esc while the pointer is on its sensor: no hint until the pointer leaves and comes back.
+- [ ] Eject USB with two sticks: mark the first with ↓, eject it with Enter; when it leaves, nothing is marked and Enter does nothing. Swap a stick for a bigger one in the same letter: the size updates.
