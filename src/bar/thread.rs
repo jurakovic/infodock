@@ -1072,6 +1072,8 @@ mod tests {
         /// The rise animation's offsets.
         slides: RefCell<Vec<i32>>,
         escape: Cell<bool>,
+        /// Answer confirmations with Cancel.
+        decline: Cell<bool>,
         /// The shown hint: where, and what it draws.
         hint: RefCell<Option<(Rect, String)>>,
     }
@@ -1121,7 +1123,7 @@ mod tests {
         }
         fn confirm(&self, message: &str, _action: &str) -> bool {
             self.confirmed.borrow_mut().push(message.to_owned());
-            true
+            !self.decline.get()
         }
     }
 
@@ -1533,7 +1535,33 @@ mod tests {
 
     #[test]
     fn a_click_that_asks_first_waits_for_the_answer() {
+        /// Records power actions instead of taking them: this test runs on Windows too.
+        #[derive(Default)]
+        struct NoPower(Mutex<Vec<String>>);
+        impl Platform for NoPower {
+            fn capabilities(&self) -> crate::platform::Capabilities {
+                Default::default()
+            }
+            fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
+                Vec::new()
+            }
+            fn appearance(&self) -> OsAppearance {
+                OsAppearance::default()
+            }
+            fn uptime(&self) -> Duration {
+                Duration::ZERO
+            }
+            fn power(&self, action: crate::platform::PowerAction, _force: bool) {
+                self.0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(format!("{action:?}"));
+            }
+        }
+
         let (mut logic, window, _host, mut config) = bar(Settings::default());
+        let power = Arc::new(NoPower::default());
+        logic.platform = Arc::clone(&power) as Arc<dyn Platform>;
         // A Power sensor in the logo's place.
         let logo = &mut config.layout.center[0];
         logo.kind = "power".into();
@@ -1544,12 +1572,21 @@ mod tests {
         logic.apply_config(&window, config);
         logic.sync_sensors(&window);
         logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        let actions = || power.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        // Declined: nothing happens.
+        window.decline.set(true);
         press(&mut logic, &window, LOGO, false);
         release(&mut logic, &window, LOGO);
         assert_eq!(
             *window.confirmed.borrow(),
             ["Do you really want to shut down this computer?"]
         );
+        assert!(actions().is_empty());
+        // Confirmed: the action is taken.
+        window.decline.set(false);
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        assert_eq!(actions(), ["ShutDown"]);
     }
 
     #[test]
