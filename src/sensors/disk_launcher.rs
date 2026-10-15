@@ -12,12 +12,11 @@ use super::common::eject;
 use super::common::icon::{self, Icon};
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, ColorModeKind, DefaultsCtx, DrawCtx, HintContent,
-    IconSource, LayoutCtx, MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, ShellIcon,
-    State, typed,
+    Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, IconSource, LayoutCtx,
+    MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, ShellIcon, State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, Canvas, Color, Volume, load_image};
+use crate::platform::{Bitmap, Canvas, Volume, load_image};
 use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
 /// The icon when the shell has none, e.g. for an absent drive (Appendix C).
@@ -194,17 +193,18 @@ impl Disk {
 
     /// The icon `px` physical px tall: the custom image, or the drive's shell icon (the
     /// built-in drive icon when it has none). `None` while loading.
-    fn bitmap(&mut self, px: u32, icons: &dyn IconSource) -> Option<Bitmap> {
+    /// The bitmap says whether it is one of Infodock's built-in icons.
+    fn bitmap(&mut self, px: u32, icons: &dyn IconSource) -> Option<(Bitmap, bool)> {
         if let Some(image) = self.custom_image(px) {
-            return Some(image);
+            return Some((image, false));
         }
         if std::mem::take(&mut self.refresh_icon) {
             icons.forget(&self.props.drive);
         }
         match icons.shell_icon(&self.props.drive, px) {
-            ShellIcon::Ready(icon) => Some(icon),
+            ShellIcon::Ready(icon) => Some((icon, false)),
             ShellIcon::Loading => None,
-            ShellIcon::None => Icon::svg(DRIVE, px),
+            ShellIcon::None => Icon::svg(DRIVE, px).map(|b| (b, true)),
         }
     }
 }
@@ -214,15 +214,12 @@ impl Sensor for Disk {
         // As a Shortcut: bar height − 4, centred.
         let logical = cx.theme.bar_height.saturating_sub(4).max(1) as f32;
         let px = icon::physical(logical, cx.scale);
-        let tint = match self.props.color.mode {
-            ColorModeKind::Custom => Color::from_hex(&self.props.color.color),
-            ColorModeKind::Standard | ColorModeKind::Dynamic => None,
-        };
         let opacity = self.props.opacity.min(100) as f32 / 100.0;
         let inactive = self.inactive().then_some(cx.theme.inactive);
-        self.icon = self
-            .bitmap(px, cx.icons)
-            .map(|bitmap| Icon::new(bitmap, tint, opacity, inactive));
+        self.icon = self.bitmap(px, cx.icons).map(|(bitmap, built_in)| {
+            let tint = icon::tint(&self.props.color, built_in, cx.theme);
+            Icon::new(bitmap, tint, opacity, inactive)
+        });
         self.icon
             .as_ref()
             .map_or((px as f32 / cx.scale).ceil(), |i| i.width(cx.scale))

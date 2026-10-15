@@ -647,7 +647,7 @@ Implementation notes: the meter's value column fits `100%` as formatted (§8.6) 
   v < 0.5:  R = round(v × 510), G = 255, B = 0
   v ≥ 0.5:  R = 255, G = round((1 − v) × 510), B = 0
   ```
-* Icon sensors offer only Standard/Custom: Custom **tints** the icon (§12.3 tint algorithm); Standard leaves it unchanged.
+* Icon sensors offer only Standard/Custom: Custom **tints** the icon (§12.3 tint algorithm); Standard leaves it unchanged. Implementation (`sensors/common/icon.rs`): unchanged means shell icons and the user's own images; Infodock's built-in icons (logo, globe, generic app, drive, Power modes) are monochrome white, so with Standard they take the sensor text colour and read on a light bar too.
 
 ### 8.5 Inactive rendering
 

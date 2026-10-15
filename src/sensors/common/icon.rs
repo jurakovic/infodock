@@ -2,9 +2,19 @@
 //! size, centred vertically, optionally tinted (Custom colour, §8.4), drawn at the sensor's
 //! opacity; an inactive sensor's icon fades or takes the inactive colour.
 
-use crate::bar::theme::Inactive;
+use crate::bar::theme::{Inactive, Theme};
 use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
-use crate::sensors::DrawCtx;
+use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx};
+
+/// The colour an icon is tinted with (SPEC §8.4): Custom tints any icon. Standard leaves shell
+/// icons and the user's own images as they are, and gives Infodock's built-in icons, which are
+/// monochrome white, the sensor text colour, so they read on a light bar too.
+pub fn tint(choice: &ColorChoice, built_in: bool, theme: &Theme) -> Option<Color> {
+    match choice.mode {
+        ColorModeKind::Custom => Color::from_hex(&choice.color),
+        ColorModeKind::Standard | ColorModeKind::Dynamic => built_in.then_some(theme.sensor_text),
+    }
+}
 
 /// The icon size in physical px for `logical` px at `scale`.
 pub fn physical(logical: f32, scale: f32) -> u32 {
@@ -105,6 +115,22 @@ mod tests {
             drawn(&icon, 1.5),
             "bitmap 36×36 into 7.33,2 24×24 opacity 0.5\n"
         );
+    }
+
+    #[test]
+    fn built_in_icons_follow_the_text_colour() {
+        let theme = theme();
+        let standard = ColorChoice {
+            mode: ColorModeKind::Standard,
+            color: "#FF0000".into(),
+        };
+        assert_eq!(tint(&standard, true, &theme), Some(theme.sensor_text));
+        assert_eq!(tint(&standard, false, &theme), None, "shell icons stay");
+        let custom = ColorChoice {
+            mode: ColorModeKind::Custom,
+            ..standard
+        };
+        assert_eq!(tint(&custom, false, &theme), Color::from_hex("#FF0000"));
     }
 
     #[test]

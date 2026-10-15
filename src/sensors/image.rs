@@ -4,11 +4,13 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use super::common::icon;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ColorChoice, ColorModeKind, DrawCtx, HintContent, LayoutCtx, Props, Sensor,
-    SensorCtx, SensorType, State, typed,
+    Category, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType,
+    State, typed,
 };
+use crate::bar::theme::Theme;
 use crate::i18n::t;
 use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image, load_image};
 
@@ -80,6 +82,7 @@ impl SensorType for ImageType {
         Ok(Box::new(Image {
             props: typed(props)?,
             bitmap: None,
+            loaded: None,
         }))
     }
 
@@ -114,27 +117,31 @@ struct Image {
     props: ImageProps,
     /// Decoded at the bar's physical height − 1 px.
     bitmap: Option<Bitmap>,
+    /// The height and sensor text colour `bitmap` was made for.
+    loaded: Option<(u32, Color)>,
 }
 
 impl Image {
-    /// The image `height` physical px tall, tinted; the logo if the file cannot be read.
-    fn load(&self, height: u32) -> Option<Bitmap> {
-        let decoded = if self.props.image.is_empty() {
-            decode_image(LOGO, Some(height))
-        } else {
-            load_image(Path::new(&self.props.image), Some(height)).or_else(|e| {
-                tracing::warn!("image {:?} cannot be shown: {e}", self.props.image);
-                decode_image(LOGO, Some(height))
-            })
+    /// The image `height` physical px tall, tinted; the logo if the file cannot be read. The
+    /// logo is built in, so with Standard colour it takes the sensor text colour (SPEC §8.4).
+    fn load(&self, height: u32, theme: &Theme) -> Option<Bitmap> {
+        let file = (!self.props.image.is_empty())
+            .then(|| load_image(Path::new(&self.props.image), Some(height)))
+            .and_then(|loaded| {
+                loaded
+                    .map_err(|e| {
+                        tracing::warn!("image {:?} cannot be shown: {e}", self.props.image)
+                    })
+                    .ok()
+            });
+        let built_in = file.is_none();
+        let bitmap = match file {
+            Some(bitmap) => bitmap,
+            None => decode_image(LOGO, Some(height))
+                .map_err(|e| tracing::error!("the logo cannot be decoded: {e}"))
+                .ok()?,
         };
-        let bitmap = decoded
-            .map_err(|e| tracing::error!("the logo cannot be decoded: {e}"))
-            .ok()?;
-        let tint = match self.props.color.mode {
-            ColorModeKind::Custom => Color::from_hex(&self.props.color.color),
-            ColorModeKind::Standard | ColorModeKind::Dynamic => None,
-        };
-        Some(match tint {
+        Some(match icon::tint(&self.props.color, built_in, theme) {
             Some(tint) => bitmap.tinted(tint),
             None => bitmap,
         })
@@ -150,8 +157,11 @@ impl Sensor for Image {
         // The image is one px less than the bar tall, keeping its aspect ratio (SPEC §9.2).
         let logical = cx.theme.bar_height.saturating_sub(1).max(1) as f32;
         let height = (logical * cx.scale).round().max(1.0) as u32;
-        if self.bitmap.as_ref().is_none_or(|b| b.height() != height) {
-            self.bitmap = self.load(height);
+        // Loaded again for another size or text colour (the logo follows it).
+        let key = (height, cx.theme.sensor_text);
+        if self.loaded != Some(key) {
+            self.bitmap = self.load(height, cx.theme);
+            self.loaded = Some(key);
         }
         self.bitmap
             .as_ref()
@@ -201,6 +211,7 @@ mod tests {
         Image {
             props: typed(&props).expect("valid props"),
             bitmap: None,
+            loaded: None,
         }
     }
 

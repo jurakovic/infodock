@@ -133,7 +133,9 @@ impl Sensor for Power {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
         let px = icon::physical(ICON, cx.scale);
         let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        self.icon = Icon::svg(svg(self.action), px).map(|b| Icon::new(b, None, opacity, None));
+        // Built-in and monochrome: in the sensor text colour (SPEC §8.4).
+        let tint = Some(cx.theme.sensor_text);
+        self.icon = Icon::svg(svg(self.action), px).map(|b| Icon::new(b, tint, opacity, None));
         self.icon.as_ref().map_or(ICON, |i| i.width(cx.scale))
     }
 
@@ -252,6 +254,42 @@ mod tests {
             assert_eq!(measure(sensor.as_mut()), 21.0, "{action:?}");
             assert!(!name(action).starts_with("sensor."), "{action:?}");
         }
+    }
+
+    #[test]
+    fn the_icon_takes_the_text_colour_so_it_reads_on_a_light_bar() {
+        let light = crate::bar::theme::Theme::resolve(
+            &Settings::default(),
+            crate::platform::OsAppearance {
+                dark: false,
+                ..Default::default()
+            },
+        );
+        let stored = json!({});
+        let (props, _) = resolve(SCHEMA, stored.as_object().expect("object"), &Props::new());
+        let mut sensor = Power {
+            props: crate::sensors::typed(&props).expect("valid props"),
+            action: PowerAction::Sleep,
+            icon: None,
+        };
+        sensor.measure(&crate::sensors::LayoutCtx {
+            theme: &light,
+            text: &crate::platform::recording::FixedMetrics,
+            scale: 1.0,
+            numbers: Default::default(),
+            icons: &crate::sensors::NoIcons,
+        });
+        let bitmap = sensor.icon.as_ref().expect("an icon").bitmap();
+        // Every fully opaque pixel is the dark text colour, not white.
+        let opaque: Vec<_> = bitmap
+            .pixels()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|px| px[3] == 255)
+            .collect();
+        assert!(!opaque.is_empty());
+        assert!(opaque.iter().all(|px| px[0] < 64), "dark on a light bar");
     }
 
     #[test]
