@@ -15,6 +15,7 @@ use super::interact::{self, DropTarget, Press};
 use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
 use super::placement::Anchor;
+use super::popup::{self, Open, PopupHost};
 use super::sensors::{BarSensors, Env};
 use super::theme::Theme;
 use super::tray::{self, TrayCommand};
@@ -27,12 +28,13 @@ use crate::config::model::{
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::platform::{
-    BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
-    PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
+    BarGeometry, BarHandler, BarWindow, Canvas, Key, Modifiers, OsAppearance, Platform, PointF,
+    PointerButton, PopupInput, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::ops::index_after_removal;
+use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
 use crate::sensors::registry::registry;
 use crate::sensors::{ClickResult, LayoutCtx, State};
 
@@ -50,6 +52,17 @@ struct Drag {
     source: (Zone, usize),
     /// Where it would go; none until the pointer moved.
     target: Option<DropTarget>,
+}
+
+/// `rect` in logical screen px as physical px at `scale`.
+fn physical_rect(rect: RectF, scale: f32) -> Rect {
+    let physical = |v: f32| (v * scale).round() as i32;
+    Rect::new(
+        physical(rect.left),
+        physical(rect.top),
+        physical(rect.right),
+        physical(rect.bottom),
+    )
 }
 
 /// A zone as Settings routes name it.
@@ -75,6 +88,10 @@ pub(super) struct BarLogic {
     moving: Option<Moving>,
     /// When the hover hint shows and hides.
     hover: Hover,
+    /// The open interactive popup (SPEC §7.2).
+    popups: PopupHost,
+    /// Wakes this thread from workers, e.g. a popup's.
+    waker: UiWaker,
     /// Where the bar is; hints are placed from it.
     geometry: Option<BarGeometry>,
     sensors: BarSensors,
@@ -168,6 +185,8 @@ impl BarLogic {
             drag: None,
             moving: None,
             hover: Hover::default(),
+            popups: PopupHost::default(),
+            waker: waker.clone(),
             geometry: None,
             sensors: BarSensors::default(),
             text: crate::platform::text_engine(),
@@ -235,9 +254,11 @@ impl BarLogic {
     /// A left press on a sensor dims it until release, if it can lead to a click or a drag
     /// (SPEC §6.1).
     fn pointer_down(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
-        // Any click closes the hint (SPEC §7.1).
+        // Any click closes the hint (SPEC §7.1) and an open popup, which keeps the focus since
+        // the bar never takes it (§7.2).
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
+        self.close_popup(window);
         let Some(hit) = self.sensors.hit(at.x) else {
             if self.settings.bar.mode == BarMode::Floating && !self.settings.locked {
                 window.capture_pointer(true);
@@ -309,7 +330,8 @@ impl BarLogic {
         }
         let over = self.sensors.hit(at.x).map(|h| h.entry.id);
         self.set_hovered(window, over.clone());
-        let over = over.filter(|_| self.settings.popups_enabled);
+        // No hints over an open popup.
+        let over = over.filter(|_| self.settings.popups_enabled && self.popups.open.is_none());
         let popups = &self.settings.popups;
         let step = self.hover.over(
             over.as_deref(),
@@ -515,28 +537,11 @@ impl BarLogic {
         }
     }
 
-    /// Shows (or updates) sensor `id`'s hint above or below it (SPEC §7.1, §7.3); `false` if
-    /// it has none.
-    fn show_hint(&self, window: &dyn BarWindow, id: &str) -> bool {
-        let Some(geometry) = &self.geometry else {
-            return false;
-        };
-        let env = Env {
-            settings: &self.settings,
-            theme: &self.theme,
-            platform: self.platform.as_ref(),
-            alt: false,
-            animate: self.animate,
-            changes: &self.changes,
-        };
-        let (Some(content), Some((x, width))) =
-            (self.sensors.hint(id, &env), self.sensors.place_of(id))
-        else {
-            return false;
-        };
-        let Some(body) = HintBody::new(content, self.text.as_ref(), &self.theme) else {
-            return false;
-        };
+    /// Sensor `id`'s place on the screen, for placing its hint or popup (SPEC §7.3), in logical
+    /// px, and the monitor's scale; `None` before the bar is placed or without that sensor.
+    fn anchor(&self, id: &str) -> Option<(Anchor, f32)> {
+        let geometry = self.geometry.as_ref()?;
+        let (x, width) = self.sensors.place_of(id)?;
         let scale = geometry.scale as f32;
         let logical = |r: Rect| {
             RectF::new(
@@ -553,14 +558,29 @@ impl BarLogic {
             monitor: logical(geometry.monitor.bounds),
             edge: geometry.edge,
         };
+        Some((anchor, scale))
+    }
+
+    /// Shows (or updates) sensor `id`'s hint above or below it (SPEC §7.1, §7.3); `false` if
+    /// it has none.
+    fn show_hint(&self, window: &dyn BarWindow, id: &str) -> bool {
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+            animate: self.animate,
+            changes: &self.changes,
+        };
+        let (Some(content), Some((anchor, scale))) = (self.sensors.hint(id, &env), self.anchor(id))
+        else {
+            return false;
+        };
+        let Some(body) = HintBody::new(content, self.text.as_ref(), &self.theme) else {
+            return false;
+        };
         let frame = HintFrame::new(body.size(), &anchor, &self.theme);
-        let physical = |v: f32| (v * scale).round() as i32;
-        let rect = Rect::new(
-            physical(frame.window.left),
-            physical(frame.window.top),
-            physical(frame.window.right),
-            physical(frame.window.bottom),
-        );
+        let rect = physical_rect(frame.window, scale);
         let theme = &self.theme;
         window.show_hint(rect, scale, &mut |canvas| {
             hint::paint(canvas, &frame, &body, theme);
@@ -655,6 +675,10 @@ impl BarLogic {
         if press.moved || !over || !self.clicks_allowed(modifiers.alt) {
             return;
         }
+        // The press that closed this sensor's popup does not open it again (SPEC §7.2).
+        if self.popups.guarded(&press.id, Instant::now()) {
+            return;
+        }
         let env = Env {
             settings: &self.settings,
             theme: &self.theme,
@@ -674,6 +698,7 @@ impl BarLogic {
                     window.invalidate();
                 }
             }
+            ClickResult::Popup(popup) => self.open_popup(window, &press.id, popup),
         }
         // A click may change what a sensor shows for good (SPEC §9.14).
         self.store_states();
@@ -683,6 +708,7 @@ impl BarLogic {
     fn context_menu(&mut self, window: &dyn BarWindow, at: PointF) {
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
+        self.close_popup(window);
         self.cancel_drag(window);
         let caps = self.platform.capabilities();
         let hit = self.sensors.hit(at.x);
@@ -778,6 +804,159 @@ impl BarLogic {
         }
     }
 
+    /// Opens `popup` for sensor `id` next to it (SPEC §7.2): the hint closes, the sensor shows
+    /// its active state, and the popup window takes the focus.
+    fn open_popup(&mut self, window: &dyn BarWindow, id: &str, popup: Box<dyn Popup>) {
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
+        self.close_popup(window);
+        self.popups.open = Some(Open {
+            owner: id.to_owned(),
+            popup,
+            frame: None,
+            room: SizeF::new(0.0, 0.0),
+        });
+        if self.sensors.set_active(Some(id)) {
+            window.invalidate();
+        }
+        self.relayout_popup(window);
+        self.arm_popup_timer(window);
+    }
+
+    /// Lays the open popup out, places it next to its sensor and shows it; closes it when its
+    /// sensor is gone.
+    fn relayout_popup(&mut self, window: &dyn BarWindow) {
+        let Some(owner) = self.popups.owner().map(str::to_owned) else {
+            return;
+        };
+        // Placed by its sensor, which may have moved.
+        self.sensors
+            .refresh_layout(&self.theme, self.text.as_ref(), &self.icons);
+        let Some((anchor, scale)) = self.anchor(&owner) else {
+            self.close_popup(window);
+            return;
+        };
+        let room = popup::room(&anchor);
+        let Some(open) = self.popups.open.as_mut() else {
+            return;
+        };
+        let cx = PopupCtx {
+            theme: &self.theme,
+            settings: &self.settings,
+            text: self.text.as_ref(),
+            scale,
+            platform: self.platform.as_ref(),
+            icons: &self.icons,
+            waker: &self.waker,
+            room,
+            now: Instant::now(),
+        };
+        let size = open.popup.layout(&cx);
+        open.room = room;
+        open.place(size, &anchor, &self.theme);
+        self.render_popup(window);
+    }
+
+    /// Draws the open popup again where it is.
+    fn render_popup(&self, window: &dyn BarWindow) {
+        let (Some(open), Some(geometry)) = (&self.popups.open, &self.geometry) else {
+            return;
+        };
+        let Some(frame) = open.frame else {
+            return;
+        };
+        let scale = geometry.scale as f32;
+        let theme = &self.theme;
+        window.show_popup(physical_rect(frame.window, scale), scale, &mut |canvas| {
+            popup::paint(canvas, open, theme);
+        });
+    }
+
+    /// Closes the open popup, if any: its window hides, its sensor's active state ends, and
+    /// the sensor ignores clicks for a moment (SPEC §7.2).
+    fn close_popup(&mut self, window: &dyn BarWindow) {
+        let Some(mut open) = self.popups.close(Instant::now()) else {
+            return;
+        };
+        window.hide_popup();
+        window.set_timer(TimerId::Popup, None);
+        if let Some(changes) = open.popup.take_props() {
+            self.host.update_sensor(&open.owner, changes);
+        }
+        if self.sensors.set_active(None) {
+            window.invalidate();
+        }
+    }
+
+    /// Carries out what the popup asked for after an input, a wake-up or a poll.
+    fn popup_reply(&mut self, window: &dyn BarWindow, reply: PopupReply) {
+        if let Some(open) = self.popups.open.as_mut()
+            && let Some(changes) = open.popup.take_props()
+        {
+            let owner = open.owner.clone();
+            self.host.update_sensor(&owner, changes);
+        }
+        match reply {
+            PopupReply::Nothing => {}
+            PopupReply::Redraw => self.render_popup(window),
+            PopupReply::Relayout => self.relayout_popup(window),
+            PopupReply::Close => self.close_popup(window),
+        }
+        self.arm_popup_timer(window);
+    }
+
+    /// Runs `f` on the open popup with its context; `None` when none is open.
+    fn with_popup(
+        &mut self,
+        f: impl FnOnce(&mut Open, &PopupCtx) -> PopupReply,
+    ) -> Option<PopupReply> {
+        let scale = self.geometry.as_ref().map_or(1.0, |g| g.scale as f32);
+        let open = self.popups.open.as_mut()?;
+        let cx = PopupCtx {
+            theme: &self.theme,
+            settings: &self.settings,
+            text: self.text.as_ref(),
+            scale,
+            platform: self.platform.as_ref(),
+            icons: &self.icons,
+            waker: &self.waker,
+            room: open.room,
+            now: Instant::now(),
+        };
+        Some(f(open, &cx))
+    }
+
+    /// Input in the popup window: Esc closes it (SPEC §7.2), the rest goes to the popup.
+    fn popup_input(&mut self, window: &dyn BarWindow, input: PopupInput) {
+        if matches!(
+            input,
+            PopupInput::Key {
+                key: Key::Escape,
+                ..
+            }
+        ) {
+            self.close_popup(window);
+            return;
+        }
+        let reply = self.with_popup(|open, cx| {
+            let input = open.to_content(input);
+            open.popup.input(&input, cx)
+        });
+        if let Some(reply) = reply {
+            self.popup_reply(window, reply);
+        }
+    }
+
+    /// Sets the popup timer to the open popup's next wake-up.
+    fn arm_popup_timer(&self, window: &dyn BarWindow) {
+        let now = Instant::now();
+        let at = self.popups.open.as_ref().and_then(|o| o.popup.wake_at());
+        window.set_timer(
+            TimerId::Popup,
+            at.map(|at| at.saturating_duration_since(now)),
+        );
+    }
+
     /// Re-resolves the theme; applies a changed material and repaints if anything changed.
     fn refresh_theme(&mut self, window: &dyn BarWindow) {
         self.animate = anim::enabled(self.settings.bar.animations, self.appearance.animations);
@@ -792,6 +971,7 @@ impl BarLogic {
             self.sensors.invalidate_all();
             window.invalidate();
             self.refresh_hint(window);
+            self.relayout_popup(window);
         }
     }
 
@@ -818,6 +998,8 @@ impl BarLogic {
             self.store_states();
             window.invalidate();
             self.refresh_hint(window);
+            // Its sensor may have moved, or gone.
+            self.relayout_popup(window);
         }
         let subscriptions = self.sensors.subscriptions();
         let created = self.sensors.take_created();
@@ -923,6 +1105,11 @@ impl BarLogic {
             }
             TimerId::Drag => {}
             TimerId::Frame => self.frame(window, Instant::now()),
+            TimerId::Popup => {
+                if let Some(reply) = self.with_popup(|open, cx| open.popup.on_wake(cx)) {
+                    self.popup_reply(window, reply);
+                }
+            }
         }
     }
 }
@@ -954,10 +1141,15 @@ impl BarHandler for BarLogic {
                         Command::Sample(delivery) => self.deliver(window, &delivery),
                     }
                 }
-                // Icons that arrived: the sensors that asked for them measure again.
+                // Icons that arrived: the sensors (and a popup) that asked for them measure again.
                 if self.icons.receive() {
                     self.sensors.invalidate_all();
                     window.invalidate();
+                    self.relayout_popup(window);
+                }
+                // Work from the popup's own threads, e.g. a folder listing.
+                if let Some(reply) = self.with_popup(|open, cx| open.popup.poll(cx)) {
+                    self.popup_reply(window, reply);
                 }
                 // Samples alone change neither the theme nor the tray.
                 if configured {
@@ -986,6 +1178,8 @@ impl BarHandler for BarLogic {
                 ..
             } => self.context_menu(window, at),
             UiEvent::PointerLeave => self.pointer_left(window),
+            UiEvent::Popup(input) => self.popup_input(window, input),
+            UiEvent::PopupDeactivated => self.close_popup(window),
             UiEvent::CaptureLost => {
                 self.cancel_drag(window);
                 self.end_moving(window);
@@ -1006,11 +1200,13 @@ impl BarHandler for BarLogic {
                 window.invalidate();
                 self.rise(window);
                 self.refresh_hint(window);
+                self.relayout_popup(window);
             }
-            // Full-screen apps hide the hint (SPEC §5.3); popups arrive in M3.
+            // Full-screen apps close the hint and the popup (SPEC §5.3).
             UiEvent::Fullscreen(true) => {
                 let step = self.hover.dismiss();
                 self.apply_hint(window, step);
+                self.close_popup(window);
             }
             UiEvent::Fullscreen(false) => {}
             UiEvent::CloseRequested => self.host.quit(),
@@ -1097,6 +1293,10 @@ mod tests {
         decline: Cell<bool>,
         /// The shown hint: where, and what it draws.
         hint: RefCell<Option<(Rect, String)>>,
+        /// The shown popup: where, and what it draws; and how often it was drawn.
+        popup: RefCell<Option<(Rect, String)>>,
+        popup_draws: Cell<u32>,
+        popup_timer: Cell<Option<std::time::Duration>>,
     }
 
     impl BarWindow for FakeWindow {
@@ -1111,6 +1311,7 @@ mod tests {
             match id {
                 TimerId::Hint => self.hint_timer.set(delay),
                 TimerId::Frame => self.frames.set(self.frames.get() + 1),
+                TimerId::Popup => self.popup_timer.set(delay),
                 _ => {}
             }
         }
@@ -1118,6 +1319,15 @@ mod tests {
             let mut canvas = RecordingCanvas::new(scale);
             paint(&mut canvas);
             *self.hint.borrow_mut() = Some((rect, canvas.dump()));
+        }
+        fn show_popup(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+            let mut canvas = RecordingCanvas::new(scale);
+            paint(&mut canvas);
+            *self.popup.borrow_mut() = Some((rect, canvas.dump()));
+            self.popup_draws.set(self.popup_draws.get() + 1);
+        }
+        fn hide_popup(&self) {
+            *self.popup.borrow_mut() = None;
         }
         fn hide_hint(&self) {
             *self.hint.borrow_mut() = None;
@@ -1924,5 +2134,181 @@ mod tests {
             PointF::new(350.0, 14.0)
         ));
         assert!(host.calls().is_empty());
+    }
+
+    /// What reaches a [`Probe`].
+    type Log = Rc<RefCell<Vec<String>>>;
+
+    /// A 100 × 50 popup that logs what reaches it and answers with `reply`.
+    struct Probe {
+        log: Log,
+        reply: Rc<Cell<PopupReply>>,
+        wake: Option<Instant>,
+        props: Option<crate::sensors::Props>,
+    }
+
+    impl Popup for Probe {
+        fn kind(&self) -> &'static str {
+            "probe"
+        }
+        fn layout(&mut self, cx: &PopupCtx) -> SizeF {
+            self.log
+                .borrow_mut()
+                .push(format!("layout in {}×{}", cx.room.width, cx.room.height));
+            SizeF::new(100.0, 50.0)
+        }
+        fn draw(&self, canvas: &mut dyn Canvas, origin: PointF, _theme: &Theme) {
+            canvas.fill_rect(
+                RectF::new(origin.x, origin.y, origin.x + 100.0, origin.y + 50.0),
+                crate::platform::Color::rgba(1, 2, 3, 1.0),
+            );
+        }
+        fn input(&mut self, input: &PopupInput, _cx: &PopupCtx) -> PopupReply {
+            self.log.borrow_mut().push(format!("{input:?}"));
+            self.reply.get()
+        }
+        fn wake_at(&self) -> Option<Instant> {
+            self.wake
+        }
+        fn on_wake(&mut self, _cx: &PopupCtx) -> PopupReply {
+            self.log.borrow_mut().push("wake".into());
+            self.wake = None;
+            PopupReply::Close
+        }
+        fn poll(&mut self, _cx: &PopupCtx) -> PopupReply {
+            self.log.borrow_mut().push("poll".into());
+            PopupReply::Nothing
+        }
+        fn take_props(&mut self) -> Option<crate::sensors::Props> {
+            self.props.take()
+        }
+    }
+
+    fn new_probe() -> (Probe, Log, Rc<Cell<PopupReply>>) {
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let reply = Rc::new(Cell::new(PopupReply::Nothing));
+        let probe = Probe {
+            log: Rc::clone(&log),
+            reply: Rc::clone(&reply),
+            wake: None,
+            props: None,
+        };
+        (probe, log, reply)
+    }
+
+    #[test]
+    fn a_popup_opens_next_to_its_sensor_and_takes_input() {
+        let (mut logic, window, _, config) = bar(Settings::default());
+        let logo = config.layout.center[0].id.clone();
+        let (probe, log, reply) = new_probe();
+        logic.open_popup(&window, &logo, Box::new(probe));
+        // Centred above the logo (its centre at 596): 100 × 50 content, 4 px padding, the 7 px
+        // pointer and a 6 px shadow around it.
+        let (rect, dump) = window.popup.borrow().clone().expect("shown");
+        assert_eq!(rect, Rect::new(536, 981, 656, 1058));
+        assert!(dump.contains("fill rect 10,10 100×50 #010203"), "{dump}");
+        assert_eq!(
+            log.borrow()[0],
+            "layout in 1178×1024",
+            "the room above the bar"
+        );
+        // The logo shows its active state.
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        assert!(canvas.dump().contains("#FFFFFF/16%"), "{}", canvas.dump());
+
+        // Input arrives from the content's corner; a redraw keeps the place.
+        reply.set(PopupReply::Redraw);
+        let draws = window.popup_draws.get();
+        logic.on_event(
+            &window,
+            UiEvent::Popup(PopupInput::PointerMove(PointF::new(20.0, 30.0))),
+        );
+        assert_eq!(
+            log.borrow().last().map(String::as_str),
+            Some("PointerMove(PointF { x: 10.0, y: 20.0 })")
+        );
+        assert_eq!(window.popup_draws.get(), draws + 1);
+        // Work arriving: polled.
+        logic.on_event(&window, UiEvent::Wake);
+        assert_eq!(log.borrow().last().map(String::as_str), Some("poll"));
+
+        // Esc closes it, without reaching the popup.
+        let input = |key| {
+            UiEvent::Popup(PopupInput::Key {
+                key,
+                modifiers: Modifiers::default(),
+            })
+        };
+        logic.on_event(&window, input(Key::Escape));
+        assert!(window.popup.borrow().is_none());
+        assert!(!log.borrow().iter().any(|l| l.contains("Escape")));
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        assert!(!canvas.dump().contains("#FFFFFF/16%"), "no longer active");
+    }
+
+    #[test]
+    fn a_popup_closes_on_blur_on_request_and_on_a_press() {
+        let (mut logic, window, host, config) = bar(Settings::default());
+        let logo = config.layout.center[0].id.clone();
+        let (probe, _, _) = new_probe();
+        logic.open_popup(&window, &logo, Box::new(probe));
+        logic.on_event(&window, UiEvent::PopupDeactivated);
+        assert!(logic.popups.owner().is_none(), "closed on blur");
+
+        // Asked to close, e.g. after opening a file; what it changed is saved.
+        let (mut probe, _, reply) = new_probe();
+        probe.props = Some(
+            serde_json::json!({ "popupWidth": 300 })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        );
+        logic.open_popup(&window, &logo, Box::new(probe));
+        reply.set(PopupReply::Close);
+        logic.on_event(&window, UiEvent::Popup(PopupInput::Char('a')));
+        assert!(window.popup.borrow().is_none());
+        assert!(
+            host.calls()
+                .contains(&format!(r#"update {logo} {{"popupWidth":300}}"#)),
+            "{:?}",
+            host.calls()
+        );
+
+        // A wake-up it asked for.
+        let (mut probe, log, _) = new_probe();
+        probe.wake = Some(Instant::now());
+        logic.open_popup(&window, &logo, Box::new(probe));
+        assert_eq!(window.popup_timer.get(), Some(Duration::ZERO));
+        logic.on_event(&window, UiEvent::Timer(TimerId::Popup));
+        assert_eq!(log.borrow().last().map(String::as_str), Some("wake"));
+        assert!(window.popup.borrow().is_none(), "it asked to close");
+        assert_eq!(window.popup_timer.get(), None);
+    }
+
+    #[test]
+    fn the_press_that_closes_a_popup_does_not_reopen_it() {
+        let (mut logic, window, _host, mut config) = bar(Settings::default());
+        // A Power sensor (which asks first) in the logo's place shows whether a click arrives.
+        let logo = &mut config.layout.center[0];
+        logo.kind = "power".into();
+        let id = logo.id.clone();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        window.decline.set(true);
+        let (probe, _, _) = new_probe();
+        logic.open_popup(&window, &id, Box::new(probe));
+        // The press closes the popup; the click it ends is ignored.
+        press(&mut logic, &window, LOGO, false);
+        assert!(window.popup.borrow().is_none());
+        release(&mut logic, &window, LOGO);
+        assert!(window.confirmed.borrow().is_empty(), "no click");
+        // No hints show while a popup is open.
+        let (probe, _, _) = new_probe();
+        logic.open_popup(&window, &id, Box::new(probe));
+        hover(&mut logic, &window, PointF::new(LOGO.x + 1.0, 14.0));
+        assert_eq!(window.hint_timer.get(), None);
     }
 }

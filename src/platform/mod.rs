@@ -780,6 +780,56 @@ pub enum UiEvent {
     },
     /// Another window took the pointer capture.
     CaptureLost,
+    /// Input in the popup window (SPEC §7.2).
+    Popup(PopupInput),
+    /// The popup window lost the activation: another window was clicked or activated, or it
+    /// was asked to close (Alt+F4). It is hidden already.
+    PopupDeactivated,
+}
+
+/// A key the popup window passes on (SPEC §9.19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Up,
+    Down,
+    Left,
+    Right,
+    Enter,
+    Escape,
+    Backspace,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+}
+
+/// Input in the popup window, logical px from its top-left corner.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PopupInput {
+    PointerMove(PointF),
+    PointerLeave,
+    PointerDown {
+        button: PointerButton,
+        at: PointF,
+        modifiers: Modifiers,
+    },
+    PointerUp {
+        button: PointerButton,
+        at: PointF,
+        modifiers: Modifiers,
+    },
+    /// The wheel turned by `lines` text lines (the system's lines per notch; positive scrolls
+    /// towards the top), with the pointer at `at`.
+    Wheel {
+        lines: f32,
+        at: PointF,
+    },
+    Key {
+        key: Key,
+        modifiers: Modifiers,
+    },
+    /// A character typed, e.g. for jumping to a name (never a control character).
+    Char(char),
 }
 
 /// The bar logic's timers; each runs independently.
@@ -793,6 +843,8 @@ pub enum TimerId {
     Drag,
     /// The next frame of a bar animation (SPEC §5.5).
     Frame,
+    /// The open popup's next wake-up: an animation frame, or work it waits for (SPEC §7.2).
+    Popup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -886,6 +938,12 @@ pub trait BarWindow {
     /// at `scale`: fading in when it was hidden, updated in place when it was shown.
     fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas));
     fn hide_hint(&self);
+    /// Shows the popup window (SPEC §7.2) at `rect` (physical screen px) with what `paint`
+    /// draws at `scale` and gives it the keyboard focus: fading in when it was hidden, updated
+    /// in place (and moved) when it was shown. Its input arrives as [`UiEvent::Popup`].
+    fn show_popup(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas));
+    /// Hides the popup window; no [`UiEvent::PopupDeactivated`] follows.
+    fn hide_popup(&self);
     /// While captured, pointer events keep coming when the pointer leaves the window.
     fn capture_pointer(&self, capture: bool);
     /// Whether Esc is held now, read without focus (the bar never takes it; SPEC §6.2).

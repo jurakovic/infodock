@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
-use crate::platform::{Canvas, Capabilities, Platform, RectF, TextEngine};
+use crate::platform::{Brush, Canvas, Capabilities, Platform, RectF, Shape, TextEngine};
 use crate::sampler::{ChangeSink, Delivery, Topic, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
@@ -19,6 +19,11 @@ use crate::sensors::{
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
 const PRESSED_OPACITY: f32 = 0.6;
+/// The highlight behind a sensor whose popup is open (SPEC §7.2): the text colour this faint,
+/// reaching this far beyond the sensor, with these corners.
+const ACTIVE_ALPHA: f32 = 0.16;
+const ACTIVE_REACH: f32 = 3.0;
+const ACTIVE_RADIUS: f32 = 4.0;
 /// A broadcast sample this much before a sensor's interval is over still counts as on time,
 /// at most (samples come on a grid, give or take a few ms).
 const EARLY: Duration = Duration::from_millis(500);
@@ -82,6 +87,8 @@ pub(super) struct BarSensors {
     zones: [Vec<Placed>; 3],
     /// Drawn dimmed while the pointer presses it (SPEC §6.1).
     pressed: Option<String>,
+    /// Drawn with a highlight behind it while its popup is open (SPEC §7.2).
+    active: Option<String>,
     /// The zones must be placed again.
     relayout: bool,
     /// Ids of the sensors created since [`Self::take_created`] was last called.
@@ -235,6 +242,19 @@ impl BarSensors {
         for zone in [0, 2, 1] {
             for p in &self.zones[zone] {
                 let rect = RectF::new(p.x, 0.0, p.x + p.width, bar_height);
+                if self.active.as_deref() == Some(p.entry.id.as_str()) {
+                    let x = (
+                        canvas.snap(rect.left - ACTIVE_REACH),
+                        canvas.snap(rect.right + ACTIVE_REACH),
+                    );
+                    canvas.fill(
+                        &Shape::RoundedRect {
+                            rect: RectF::new(x.0, 2.0, x.1, bar_height - 2.0),
+                            radius: ACTIVE_RADIUS,
+                        },
+                        &Brush::Solid(theme.sensor_text.with_alpha(ACTIVE_ALPHA)),
+                    );
+                }
                 let pressed = self.pressed.as_deref() == Some(p.entry.id.as_str());
                 if pressed {
                     canvas.push_opacity(PRESSED_OPACITY);
@@ -269,6 +289,16 @@ impl BarSensors {
     /// The bar width of the last layout, in logical px.
     pub fn bar_width(&self) -> f32 {
         self.bar_width
+    }
+
+    /// Highlights sensor `id` (or none) as the one whose popup is open; returns whether that
+    /// changed.
+    pub fn set_active(&mut self, id: Option<&str>) -> bool {
+        if self.active.as_deref() == id {
+            return false;
+        }
+        self.active = id.map(str::to_owned);
+        true
     }
 
     /// Dims sensor `id` (or none); returns whether that changed.

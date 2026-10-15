@@ -17,6 +17,7 @@ mod memory;
 mod menu;
 mod monitors;
 mod net;
+mod popup;
 mod power;
 pub mod render;
 pub mod shell;

@@ -5,12 +5,13 @@
 
 use std::time::Duration;
 
-use super::placement::{Anchor, Placement, place};
+use super::placement::{Anchor, Placement, place, place_left_edge};
 use super::theme::Theme;
 use crate::config::model::Edge;
 use crate::platform::{
     Brush, Canvas, Color, PointF, RectF, Shape, SizeF, TextEngine, TextLayout, TextStyle,
 };
+use crate::sensors::popup::PopupAlign;
 use crate::sensors::{HintContent, RichHint};
 
 /// Space between the bubble's edge and the text.
@@ -18,11 +19,11 @@ const PADDING: f32 = 6.0;
 /// The smallest bubble.
 const MIN_SIZE: SizeF = SizeF::new(30.0, 20.0);
 /// The pointer triangle's width and height.
-const POINTER: SizeF = SizeF::new(13.0, 7.0);
+pub(super) const POINTER: SizeF = SizeF::new(13.0, 7.0);
 /// Space between tab-separated columns.
 const COLUMN_GAP: f32 = 12.0;
 /// The shadow's reach around the bubble; also the window's margin when there is a shadow.
-const SHADOW: f32 = 6.0;
+pub(super) const SHADOW: f32 = 6.0;
 
 /// Text laid out in rows of cells.
 pub struct HintText {
@@ -136,11 +137,27 @@ pub struct HintFrame {
 impl HintFrame {
     /// Places a hint whose content is `size` at `anchor` (SPEC §7.1, §7.3).
     pub fn new(size: SizeF, anchor: &Anchor, theme: &Theme) -> Self {
+        Self::framed(size, anchor, theme, PADDING, PopupAlign::Center)
+    }
+
+    /// Places content of `size` with `padding` around it in its bubble, lined up with the
+    /// sensor as `align` says: hints and popups alike (SPEC §7.3).
+    pub fn framed(
+        size: SizeF,
+        anchor: &Anchor,
+        theme: &Theme,
+        padding: f32,
+        align: PopupAlign,
+    ) -> Self {
         let bubble = SizeF::new(
-            (size.width + 2.0 * PADDING).max(MIN_SIZE.width),
-            (size.height + 2.0 * PADDING).max(MIN_SIZE.height),
+            (size.width + 2.0 * padding).max(MIN_SIZE.width),
+            (size.height + 2.0 * padding).max(MIN_SIZE.height),
         );
         let content = SizeF::new(bubble.width, bubble.height + POINTER.height);
+        let place = match align {
+            PopupAlign::Center => place,
+            PopupAlign::LeftEdge => place_left_edge,
+        };
         let Placement { x, y, pointer_x } =
             place(anchor, content, POINTER.width, theme.popup_radius);
         let margin = if theme.popup_shadow { SHADOW } else { 0.0 };
@@ -193,6 +210,19 @@ fn fill_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, radius: f32, grow: f3
 
 /// Draws the hint into a cleared canvas the size of the frame's window.
 pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, body: &HintBody, theme: &Theme) {
+    paint_bubble(canvas, frame, theme);
+    let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);
+    let free = frame.bubble.height() - 2.0 * PADDING - body.size().height;
+    body.draw(
+        canvas,
+        PointF::new(origin.x, origin.y + (free / 2.0).max(0.0)),
+        theme,
+    );
+}
+
+/// Draws the bubble with its pointer and shadow, the frame of hints and popups, into a
+/// cleared canvas the size of the frame's window.
+pub fn paint_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, theme: &Theme) {
     let radius = theme.popup_radius;
     if theme.popup_shadow {
         // A soft shadow: rings fading outwards (SPEC §7.1).
@@ -209,13 +239,6 @@ pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, body: &HintBody, theme:
         }
     }
     fill_bubble(canvas, frame, radius, 0.0, theme.popup_background);
-    let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);
-    let free = frame.bubble.height() - 2.0 * PADDING - body.size().height;
-    body.draw(
-        canvas,
-        PointF::new(origin.x, origin.y + (free / 2.0).max(0.0)),
-        theme,
-    );
 }
 
 /// What the bar does about the hint after an event (see [`Hover`]).

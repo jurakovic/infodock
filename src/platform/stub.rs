@@ -67,6 +67,10 @@ impl BarWindow for NoWindow {
 
     fn hide_hint(&self) {}
 
+    fn show_popup(&self, _rect: Rect, _scale: f32, _paint: &mut dyn FnMut(&mut dyn Canvas)) {}
+
+    fn hide_popup(&self) {}
+
     fn capture_pointer(&self, _capture: bool) {}
 
     fn escape_down(&self) -> bool {

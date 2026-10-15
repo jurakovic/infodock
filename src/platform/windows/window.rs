@@ -57,6 +57,7 @@ use super::dialog;
 use super::hint::HintWindow;
 use super::instance::activate_message;
 use super::menu;
+use super::popup::PopupWindow;
 use super::render::Renderer;
 use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
@@ -77,6 +78,8 @@ const DRAG_TIMER: usize = 3;
 const FADE_TIMER: usize = 4;
 const FRAME_TIMER: usize = 5;
 const RETRY_TIMER: usize = 6;
+const POPUP_TIMER: usize = 7;
+const POPUP_FADE_TIMER: usize = 8;
 /// A failed frame (e.g. a lost render target) is drawn again after this long: soon, but not at
 /// once, so a failure that persists does not keep the bar thread busy.
 const RETRY_MS: u32 = 250;
@@ -87,6 +90,7 @@ fn timer_id(id: TimerId) -> usize {
         TimerId::Hint => HINT_TIMER,
         TimerId::Drag => DRAG_TIMER,
         TimerId::Frame => FRAME_TIMER,
+        TimerId::Popup => POPUP_TIMER,
     }
 }
 
@@ -112,6 +116,8 @@ struct WindowState {
     tracking_leave: Cell<bool>,
     /// Created on first use; `Err` once creating it failed.
     hint: OnceCell<std::result::Result<HintWindow, ()>>,
+    /// The same for the popup window.
+    popup: OnceCell<std::result::Result<PopupWindow, ()>>,
 }
 
 impl WindowState {
@@ -218,7 +224,12 @@ impl WindowState {
                 // Handled here, so no WM_CONTEXTMENU follows the right button.
                 return LRESULT(0);
             }
-            WM_TIMER if matches!(wparam.0, WAKE_TIMER | HINT_TIMER | DRAG_TIMER | FRAME_TIMER) => {
+            WM_TIMER
+                if matches!(
+                    wparam.0,
+                    WAKE_TIMER | HINT_TIMER | DRAG_TIMER | FRAME_TIMER | POPUP_TIMER
+                ) =>
+            {
                 // One-shot: the handler sets the next one.
                 // SAFETY: plain call on our own window.
                 let _ = unsafe { KillTimer(Some(hwnd), wparam.0) };
@@ -226,6 +237,7 @@ impl WindowState {
                     WAKE_TIMER => TimerId::Wake,
                     HINT_TIMER => TimerId::Hint,
                     DRAG_TIMER => TimerId::Drag,
+                    POPUP_TIMER => TimerId::Popup,
                     _ => TimerId::Frame,
                 };
                 self.dispatch(UiEvent::Timer(id));
@@ -251,6 +263,14 @@ impl WindowState {
                 // SAFETY: plain call on our own window.
                 let _ = unsafe { KillTimer(Some(hwnd), RETRY_TIMER) };
                 self.invalidate();
+                return LRESULT(0);
+            }
+            WM_TIMER if wparam.0 == POPUP_FADE_TIMER => {
+                let going_on = matches!(self.popup.get(), Some(Ok(popup)) if popup.fade_step());
+                if !going_on {
+                    // SAFETY: plain call on our own window.
+                    let _ = unsafe { KillTimer(Some(hwnd), POPUP_FADE_TIMER) };
+                }
                 return LRESULT(0);
             }
             WM_TIMER if wparam.0 == FADE_TIMER => {
@@ -513,6 +533,35 @@ impl BarWindow for WindowState {
             hint.hide();
         }
     }
+
+    fn show_popup(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+        let popup = self.popup.get_or_init(|| {
+            // SAFETY: the state is leaked when the bar window is created and never freed.
+            let state: &'static WindowState = unsafe { &*std::ptr::from_ref(self) };
+            let sink = Box::new(move |event| state.dispatch(event));
+            PopupWindow::new(self.hwnd(), sink).map_err(|e| {
+                tracing::warn!("the popup window could not be created: {e}");
+            })
+        });
+        let Ok(popup) = popup else {
+            return;
+        };
+        match popup.show(rect, scale, paint) {
+            Ok(true) => {
+                // About 60 steps a second while it fades in.
+                // SAFETY: plain call on our own window.
+                unsafe { SetTimer(Some(self.hwnd()), POPUP_FADE_TIMER, 16, None) };
+            }
+            Ok(false) => {}
+            Err(e) => tracing::debug!("the popup could not be shown: {e}"),
+        }
+    }
+
+    fn hide_popup(&self) {
+        if let Some(Ok(popup)) = self.popup.get() {
+            popup.hide();
+        }
+    }
 }
 
 /// The bar window as a raw window handle, for `window-vibrancy`.
@@ -645,6 +694,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         render_failed: Cell::new(false),
         tracking_leave: Cell::new(false),
         hint: OnceCell::new(),
+        popup: OnceCell::new(),
     }));
     let title = HSTRING::from(t("app.name"));
     // SAFETY: creates our own window; `state` outlives it.

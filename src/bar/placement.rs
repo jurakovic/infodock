@@ -49,6 +49,27 @@ pub fn place(anchor: &Anchor, size: SizeF, pointer_width: f32, radius: f32) -> P
     Placement { x, y, pointer_x }
 }
 
+/// Places popup content like [`place`], but with its left edge at the sensor's left edge, or
+/// its right edge at the sensor's right edge when that would overflow the monitor (SPEC §9.19).
+pub fn place_left_edge(anchor: &Anchor, size: SizeF, pointer_width: f32, radius: f32) -> Placement {
+    let center = (anchor.rect.left + anchor.rect.right) / 2.0;
+    let min_x = anchor.monitor.left + MARGIN;
+    let max_x = anchor.monitor.right - MARGIN - size.width;
+    let x = if anchor.rect.left <= max_x {
+        anchor.rect.left
+    } else {
+        anchor.rect.right - size.width
+    };
+    let x = x.min(max_x).max(min_x);
+    let low = radius + 1.0;
+    let high = size.width - radius - 1.0 - pointer_width;
+    Placement {
+        x,
+        y: place(anchor, size, pointer_width, radius).y,
+        pointer_x: (center - x - pointer_width / 2.0).min(high).max(low),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +107,19 @@ mod tests {
     fn below_a_top_bar() {
         let p = place(&anchor(900.0, 960.0, Edge::Top), SIZE, 13.0, 8.0);
         assert_eq!(p.y, 28.0);
+    }
+
+    #[test]
+    fn popups_can_line_up_with_the_sensors_left_edge() {
+        let p = place_left_edge(&anchor(900.0, 960.0, Edge::Bottom), SIZE, 13.0, 8.0);
+        assert_eq!((p.x, p.y), (900.0, 1005.0));
+        assert_eq!(p.pointer_x, 23.5, "pointing at the sensor's centre");
+        // Near the right edge: its right edge at the sensor's.
+        let p = place_left_edge(&anchor(1850.0, 1880.0, Edge::Bottom), SIZE, 13.0, 8.0);
+        assert_eq!(p.x, 1780.0);
+        // Wider than the room either way: kept on the monitor.
+        let p = place_left_edge(&anchor(1900.0, 1913.0, Edge::Top), SIZE, 13.0, 8.0);
+        assert_eq!((p.x, p.y), (1813.0, 28.0));
     }
 
     #[test]

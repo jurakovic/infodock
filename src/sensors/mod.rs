@@ -21,6 +21,7 @@ pub mod memory;
 pub mod network;
 pub mod ops;
 pub mod placeholder;
+pub mod popup;
 pub mod power;
 pub mod recycle_bin;
 pub mod registry;
@@ -311,14 +312,37 @@ pub struct Question {
     pub action: String,
 }
 
-/// What a click did (SPEC §8.1). Popups arrive with the sensors that open them (M3).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What a click did (SPEC §8.1).
 pub enum ClickResult {
     /// The sensor has no click action.
     None,
     Handled,
     /// The bar asks this first and calls [`Sensor::confirmed`] if the user agrees.
     Confirm(Question),
+    /// The bar shows this popup next to the sensor (SPEC §7.2).
+    Popup(Box<dyn popup::Popup>),
+}
+
+impl PartialEq for ClickResult {
+    /// Popups are never equal.
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::None, Self::None) | (Self::Handled, Self::Handled) => true,
+            (Self::Confirm(a), Self::Confirm(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Debug for ClickResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => f.write_str("None"),
+            Self::Handled => f.write_str("Handled"),
+            Self::Confirm(q) => f.debug_tuple("Confirm").field(q).finish(),
+            Self::Popup(p) => write!(f, "Popup({})", p.kind()),
+        }
+    }
 }
 
 /// A placed sensor. Lives on the bar thread; re-created when its props change (SPEC §8.1).
