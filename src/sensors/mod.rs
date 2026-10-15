@@ -15,6 +15,7 @@ pub mod date;
 pub mod dates;
 pub mod disk;
 pub mod disk_launcher;
+pub mod folder_menu;
 pub mod format;
 pub mod image;
 pub mod memory;
@@ -552,6 +553,12 @@ pub(crate) mod test_support {
                 .lock()
                 .expect("lock")
                 .push(format!("open {target}"));
+        }
+        fn reveal(&self, path: &str) {
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("reveal {path}"));
         }
         fn eject(&self, root: &str, report: crate::platform::EjectReport) {
             let (title, body) = report(&Ok(()));

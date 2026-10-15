@@ -904,6 +904,19 @@ mod screenshots {
         super::properties::open_form(&app, &battery, true);
         render_sized("settings-properties-battery", 900);
         state.invoke_props_cancel();
+        // Folder Menu: the folder, title, image, colour, opacity and hidden files (its list size
+        // is not shown).
+        let folder = app
+            .add_sensor(
+                "folder-menu",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &folder, true);
+        render("settings-properties-folder-menu");
+        state.invoke_props_cancel();
         // The first-run network graph: Automatic and this computer's connections.
         let network = app
             .store

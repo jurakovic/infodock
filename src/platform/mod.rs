@@ -315,6 +315,54 @@ pub struct RecycleBin {
     pub bytes: u64,
 }
 
+/// An entry of a folder (SPEC §9.19).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirItem {
+    pub name: String,
+    pub path: String,
+    /// A folder (or a link to one), not a file.
+    pub folder: bool,
+    /// Hidden, or a system file.
+    pub hidden: bool,
+}
+
+/// Compares names as Explorer sorts them: ignoring case, with runs of digits by their value
+/// (`File 2` before `File 10`). The platform-neutral stand-in for `CompareStringEx`.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (a.peek().copied(), b.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let run = |chars: &mut std::iter::Peekable<std::str::Chars>| {
+                    let mut digits = String::new();
+                    while let Some(c) = chars.peek().copied().filter(char::is_ascii_digit) {
+                        digits.push(c);
+                        chars.next();
+                    }
+                    digits.trim_start_matches('0').to_owned()
+                };
+                let (x, y) = (run(&mut a), run(&mut b));
+                let order = x.len().cmp(&y.len()).then_with(|| x.cmp(&y));
+                if order != Ordering::Equal {
+                    return order;
+                }
+            }
+            (Some(x), Some(y)) => {
+                let order = x.to_lowercase().cmp(y.to_lowercase());
+                if order != Ordering::Equal {
+                    return order;
+                }
+                a.next();
+                b.next();
+            }
+        }
+    }
+}
+
 /// What the Power sensor does (SPEC §9.21).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerAction {
@@ -446,6 +494,32 @@ pub trait Platform: Send + Sync {
             Ok(_) => PathKind::File,
             Err(_) => PathKind::Missing,
         }
+    }
+    /// The entries of folder `path`, unsorted; why not when it cannot be read. It may wait
+    /// for a network server, so it runs off the bar thread (SPEC §9.19).
+    fn list_dir(&self, path: &str) -> Result<Vec<DirItem>, String> {
+        let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+        Ok(entries
+            .filter_map(Result::ok)
+            .map(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let path = entry.path();
+                DirItem {
+                    folder: path.is_dir(),
+                    hidden: name.starts_with('.'),
+                    path: path.to_string_lossy().into_owned(),
+                    name,
+                }
+            })
+            .collect())
+    }
+    /// Compares two names as the shell sorts them (SPEC §9.19).
+    fn compare_names(&self, a: &str, b: &str) -> std::cmp::Ordering {
+        natural_cmp(a, b)
+    }
+    /// Shows `path` selected in its folder in Explorer, in the background (SPEC §9.19).
+    fn reveal(&self, path: &str) {
+        tracing::info!("revealing {path:?} is not supported on this platform");
     }
     /// The shell's icon for a file, folder or drive, `px` physical px square (a `.lnk` shows
     /// its target's icon); `None` where it has none or the platform has no shell. It may be
@@ -998,4 +1072,28 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
     return windows::window::start_bar_thread(make_handler);
     #[cfg(not(windows))]
     return stub::start_bar_thread(make_handler);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cmp::Ordering;
+
+    use super::natural_cmp;
+
+    #[test]
+    fn names_sort_as_explorer_sorts_them() {
+        let mut names = vec![
+            "file10", "File2", "file1", "alpha", "Beta", "file02b", "file2a",
+        ];
+        names.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(
+            names,
+            [
+                "alpha", "Beta", "file1", "File2", "file2a", "file02b", "file10"
+            ]
+        );
+        assert_eq!(natural_cmp("Report", "report"), Ordering::Equal);
+        assert_eq!(natural_cmp("a", "ab"), Ordering::Less);
+        assert_eq!(natural_cmp("v1.10", "v1.9"), Ordering::Greater);
+    }
 }

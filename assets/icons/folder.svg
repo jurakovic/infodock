@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Placeholder (SPEC Appendix C): the Folder Menu's icon, and a folder row's icon when the
+       shell has none; monochrome white, tinted with the text colour. -->
+  <path d="M2.5 6.2 Q2.5 4.5 4.2 4.5 L9.2 4.5 L11.4 6.8 L19.8 6.8 Q21.5 6.8 21.5 8.5 L21.5 9.2 L2.5 9.2 Z" fill="#FFFFFF" opacity="0.7"/>
+  <path d="M2.5 9.2 L21.5 9.2 L21.5 18 Q21.5 19.7 19.8 19.7 L4.2 19.7 Q2.5 19.7 2.5 18 Z" fill="#FFFFFF"/>
+</svg>

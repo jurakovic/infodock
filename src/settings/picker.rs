@@ -373,6 +373,7 @@ mod tests {
                 "Swap Meter",
                 "Network Graph",
                 "Disk",
+                "Folder Menu",
                 "Power",
                 "Shortcut"
             ]
@@ -401,7 +402,8 @@ mod tests {
                 Line::Heading("Launchers".into()),
                 Line::Entry(14),
                 Line::Entry(15),
-                Line::Entry(16)
+                Line::Entry(16),
+                Line::Entry(17)
             ]
         );
     }

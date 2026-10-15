@@ -3,6 +3,7 @@
 //! shared `popup` window, which the bar frames (bubble, pointer, shadow), places next to the
 //! sensor and shows; it closes on blur, Esc, a second click on its sensor, or when it asks to.
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::{IconSource, Props};
@@ -39,7 +40,8 @@ pub struct PopupCtx<'a> {
     pub text: &'a dyn TextEngine,
     /// Physical px per logical px.
     pub scale: f32,
-    pub platform: &'a dyn Platform,
+    /// Shared, so a popup's own workers can use it too.
+    pub platform: &'a Arc<dyn Platform>,
     /// Shell icons, read on the bar's worker; a popup gets *loading* and is laid out again
     /// when they arrive.
     pub icons: &'a dyn IconSource,

@@ -65,3 +65,33 @@ pub fn read(which: DateLocale) -> Locale {
     }
     locale
 }
+
+/// Compares two names as Explorer sorts them (SPEC §9.19): in the user's locale, ignoring case,
+/// digits by their value. Falls back to the platform-neutral order if Windows cannot compare.
+pub fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    use windows::Win32::Globalization::{
+        CSTR_GREATER_THAN, CSTR_LESS_THAN, CompareStringEx, LINGUISTIC_IGNORECASE,
+        SORT_DIGITSASNUMBERS,
+    };
+    let (wide_a, wide_b): (Vec<u16>, Vec<u16>) =
+        (a.encode_utf16().collect(), b.encode_utf16().collect());
+    // SAFETY: two UTF-16 slices with their lengths; no locale name means the user's locale.
+    let result = unsafe {
+        CompareStringEx(
+            PCWSTR::null(),
+            LINGUISTIC_IGNORECASE | SORT_DIGITSASNUMBERS,
+            &wide_a,
+            &wide_b,
+            None,
+            None,
+            None,
+        )
+    };
+    match result {
+        CSTR_LESS_THAN => Ordering::Less,
+        CSTR_GREATER_THAN => Ordering::Greater,
+        r if r.0 == 0 => crate::platform::natural_cmp(a, b),
+        _ => Ordering::Equal,
+    }
+}

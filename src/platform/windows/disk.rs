@@ -3,11 +3,13 @@
 //! `GetDiskFreeSpaceExW`. A drive without a medium (an empty card reader or optical drive)
 //! fails quietly: the calls run with critical-error dialogs turned off for the thread. Labels
 //! are read only from local drives that answer at once: a network drive whose server is away
-//! would block for the SMB timeout, and an optical drive may spin up.
+//! would block for the SMB timeout, and an optical drive may spin up. Folder listings (SPEC
+//! §9.19) and path checks run the same way.
 
 use windows::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_DIRECTORY, GetDiskFreeSpaceExW, GetDriveTypeW, GetFileAttributesW,
-    GetLogicalDriveStringsW, GetVolumeInformationW, INVALID_FILE_ATTRIBUTES,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, GetDiskFreeSpaceExW,
+    GetDriveTypeW, GetFileAttributesW, GetLogicalDriveStringsW, GetVolumeInformationW,
+    INVALID_FILE_ATTRIBUTES,
 };
 use windows::Win32::System::Diagnostics::Debug::{
     SEM_FAILCRITICALERRORS, SEM_NOOPENFILEERRORBOX, SetThreadErrorMode, THREAD_ERROR_MODE,
@@ -15,7 +17,7 @@ use windows::Win32::System::Diagnostics::Debug::{
 use windows::core::PCWSTR;
 
 use super::from_wide;
-use crate::platform::{DiskSpace, DriveKind, PathKind, Volume};
+use crate::platform::{DirItem, DiskSpace, DriveKind, PathKind, Volume};
 
 /// `GetDriveTypeW` results.
 const DRIVE_NO_ROOT_DIR: u32 = 1;
@@ -130,6 +132,27 @@ pub fn path_kind(path: &str) -> PathKind {
     } else {
         PathKind::File
     }
+}
+
+/// The entries of folder `path` with their attributes (no "insert a disk" dialogs): links to
+/// folders (junctions) count as folders.
+pub fn list_dir(path: &str) -> Result<Vec<DirItem>, String> {
+    use std::os::windows::fs::MetadataExt;
+    let _quiet = QuietErrors::new();
+    let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
+    Ok(entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            // From the directory listing itself: no further call per entry.
+            let attributes = entry.metadata().ok()?.file_attributes();
+            Some(DirItem {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                path: entry.path().to_string_lossy().into_owned(),
+                folder: attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0,
+                hidden: attributes & (FILE_ATTRIBUTE_HIDDEN.0 | FILE_ATTRIBUTE_SYSTEM.0) != 0,
+            })
+        })
+        .collect())
 }
 
 pub fn space(root: &str) -> Option<DiskSpace> {

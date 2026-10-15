@@ -282,7 +282,7 @@ mod tests {
         let entries = bar_menu(&settings, registry(), &Capabilities::default());
         assert_eq!(
             labels(&entries)[0],
-            "New sensor ▸ [General ▸ [Image, Spacer, Text], Info ▸ [Date, Time, Uptime], System ▸ [CPU Graph, CPU Meter, Disk Meter, Memory Graph, Memory Meter, Swap Graph, Swap Meter], Network ▸ [Network Graph], Launchers ▸ [Disk, Power, Shortcut]]"
+            "New sensor ▸ [General ▸ [Image, Spacer, Text], Info ▸ [Date, Time, Uptime], System ▸ [CPU Graph, CPU Meter, Disk Meter, Memory Graph, Memory Meter, Swap Graph, Swap Meter], Network ▸ [Network Graph], Launchers ▸ [Disk, Folder Menu, Power, Shortcut]]"
         );
         let MenuEntry::Submenu { entries, .. } = &entries[0] else {
             panic!("a submenu");

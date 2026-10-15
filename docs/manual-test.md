@@ -331,3 +331,12 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] Disconnect from the network: within a second the value is *offline* and the icon faint and crossed out (inactive); the hint says *Offline*. Reconnect: back within a second or two. Airplane mode: *Wi-Fi is turned off*.
 - [ ] Windows 11 24H2 or later, Settings ▸ Privacy & security ▸ Location off (or *Let desktop apps access your location* off): the label is *Wi-Fi*, the signal still shows, the hint adds *Allow location access to show the network name*, and the click opens the location settings. Turning location access on brings the name back.
 - [ ] A computer without Wi-Fi: *Wi-Fi Signal* is not offered in the picker.
+
+**Popup window and Folder Menu** (since M3 S9 and S10a)
+
+- [ ] *New sensor… ▸ Launchers ▸ Folder Menu*, *Folder* → your Downloads folder: the folder icon (21 px); hover: *Downloads*. Click: a list opens above the bar (below a top bar), its left edge at the sensor's (its right edge when there is no room), fading in; the sensor shows a faint highlight behind it while the list is open. CI renders it (`popup-folder*.png`, `C:\Windows`).
+- [ ] The list: the header *Downloads* with a 2 px light-blue line under it, folders first, then files, sorted as Explorer sorts them (`File 2` before `File 10`), each with its shell icon; shortcuts without `.lnk`/`.url`; no `desktop.ini`, no hidden files (with *Show hidden files* on, they show). An empty folder says *no items*; a folder on a server that is away says *Loading…*, then that it cannot be opened, and the bar keeps responding.
+- [ ] Hover highlights rows (light blue on the dark popup, dark blue on a light one); a click opens the file and closes the list; Alt+click shows it selected in Explorer; a click on the header opens the folder (Alt: reveals it). A folder row opens in Explorer (navigation comes with S10b).
+- [ ] Keys while the list is open (no click needed first): ↓ and ↑ move the highlight, Home/End/Page Up/Page Down jump, Enter opens, Esc closes. The wheel scrolls a long folder.
+- [ ] Closing: a click elsewhere (desktop, another window) closes it; a second click on the sensor closes it without reopening it; Alt+F4 closes it; a right-click on the bar closes it before the menu opens. No hints show while it is open.
+- [ ] Right-click the sensor: *Open folder* opens it in Explorer. 125 % and 150 % display scale: the list is sharp, icons included.

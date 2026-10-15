@@ -101,6 +101,18 @@ impl Platform for WindowsPlatform {
         disk::path_kind(path)
     }
 
+    fn list_dir(&self, path: &str) -> Result<Vec<super::DirItem>, String> {
+        disk::list_dir(path)
+    }
+
+    fn compare_names(&self, a: &str, b: &str) -> std::cmp::Ordering {
+        locale::compare_names(a, b)
+    }
+
+    fn reveal(&self, path: &str) {
+        shell::reveal(path);
+    }
+
     fn net_interfaces(&self) -> Vec<super::NetInterface> {
         net::interfaces()
     }

@@ -10,8 +10,9 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
     FOLDERID_RecycleBinFolder, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog,
-    IFileOpenDialog, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, SHEmptyRecycleBinW,
-    SHGetKnownFolderIDList, SHQUERYRBINFO, SHQueryRecycleBinW, SIGDN_FILESYSPATH, ShellExecuteExW,
+    IFileOpenDialog, ILCreateFromPathW, ILFree, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
+    SHEmptyRecycleBinW, SHGetKnownFolderIDList, SHOpenFolderAndSelectItems, SHQUERYRBINFO,
+    SHQueryRecycleBinW, SIGDN_FILESYSPATH, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result, w};
@@ -125,6 +126,33 @@ pub fn empty_recycle_bin(done: Box<dyn FnOnce() + Send>) {
         });
     if let Err(e) = spawned {
         tracing::warn!("could not start emptying the Recycle Bin: {e}");
+    }
+}
+
+/// Shows `path` selected in its folder in Explorer (`SHOpenFolderAndSelectItems`), on a
+/// short-lived thread with COM; failures are logged.
+pub fn reveal(path: &str) {
+    let path = path.to_owned();
+    let spawned = std::thread::Builder::new()
+        .name("reveal".into())
+        .spawn(move || {
+            super::com::enter();
+            let wide = HSTRING::from(path.as_str());
+            // SAFETY: the item list is created from a NUL-terminated path and freed below.
+            unsafe {
+                let item = ILCreateFromPathW(&wide);
+                if item.is_null() {
+                    tracing::warn!("could not reveal {path:?}: no such item");
+                    return;
+                }
+                if let Err(e) = SHOpenFolderAndSelectItems(item, None, 0) {
+                    tracing::warn!("could not reveal {path:?}: {e}");
+                }
+                ILFree(Some(item));
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("could not start revealing an item: {e}");
     }
 }
 

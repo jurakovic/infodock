@@ -845,7 +845,7 @@ impl BarLogic {
             settings: &self.settings,
             text: self.text.as_ref(),
             scale,
-            platform: self.platform.as_ref(),
+            platform: &self.platform,
             icons: &self.icons,
             waker: &self.waker,
             room,
@@ -917,7 +917,7 @@ impl BarLogic {
             settings: &self.settings,
             text: self.text.as_ref(),
             scale,
-            platform: self.platform.as_ref(),
+            platform: &self.platform,
             icons: &self.icons,
             waker: &self.waker,
             room: open.room,
@@ -2310,5 +2310,35 @@ mod tests {
         logic.open_popup(&window, &id, Box::new(probe));
         hover(&mut logic, &window, PointF::new(LOGO.x + 1.0, 14.0));
         assert_eq!(window.hint_timer.get(), None);
+    }
+
+    #[test]
+    fn a_folder_menu_opens_its_list_and_closes_on_esc() {
+        let dir = crate::sensors::common::folder_browser::tests::sample_folder();
+        let (mut logic, window, _host, mut config) = bar(Settings::default());
+        // A Folder Menu in the logo's place.
+        let logo = &mut config.layout.center[0];
+        logo.kind = "folder-menu".into();
+        logo.props = serde_json::json!({ "folder": dir.path().to_string_lossy() })
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        let (rect, dump) = window.popup.borrow().clone().expect("the list is shown");
+        assert!(dump.contains("\"report 10.pdf\""), "{dump}");
+        // 240 px wide, its left edge (inside the shadow) at the sensor's.
+        assert_eq!(rect.width(), 240 + 2 * 4 + 2 * 6);
+        let key = |key| {
+            UiEvent::Popup(PopupInput::Key {
+                key,
+                modifiers: Modifiers::default(),
+            })
+        };
+        logic.on_event(&window, key(Key::Escape));
+        assert!(window.popup.borrow().is_none());
     }
 }

@@ -873,5 +873,69 @@ mod tests {
                 save(&format!("{name}{suffix}"), &bitmap);
             }
         }
+
+        // The Folder Menu's list (SPEC §9.19): C:\Windows with this machine's shell icons,
+        // its left edge at the sensor's, the third row hovered.
+        use crate::bar::popup::{self, Open};
+        use crate::platform::{PopupInput, UiWaker};
+        use crate::sensors::common::folder_browser::{FolderBrowser, Options};
+        use crate::sensors::popup::PopupCtx;
+        let platform = crate::platform::current();
+        let icons = crate::sensors::DirectIcons(platform.as_ref());
+        let waker = UiWaker::new(|| {});
+        for (name, os) in [("popup-folder", dark), ("popup-folder-light", light)] {
+            let settings = Settings::default();
+            let theme = Theme::resolve(&settings, os);
+            let bar = RectF::new(0.0, 572.0, 800.0, 600.0);
+            let anchor = Anchor {
+                rect: RectF::new(300.0, bar.top, 321.0, bar.bottom),
+                bar,
+                monitor: RectF::new(0.0, 0.0, 800.0, 600.0),
+                edge: Edge::Bottom,
+            };
+            for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
+                let browser = FolderBrowser::new(Options {
+                    folder: "C:\\Windows".into(),
+                    title: "Windows".into(),
+                    show_hidden: false,
+                    width: 240.0,
+                    height: 320.0,
+                });
+                let mut open = Open {
+                    owner: "f".into(),
+                    popup: Box::new(browser),
+                    frame: None,
+                    room: popup::room(&anchor),
+                };
+                let cx = PopupCtx {
+                    theme: &theme,
+                    settings: &settings,
+                    text: text.as_ref(),
+                    scale,
+                    platform: &platform,
+                    icons: &icons,
+                    waker: &waker,
+                    room: open.room,
+                    now: std::time::Instant::now(),
+                };
+                open.popup.layout(&cx);
+                // A listing slower than the first wait arrives meanwhile.
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                open.popup.poll(&cx);
+                open.popup.layout(&cx);
+                let hover = PopupInput::PointerMove(crate::platform::PointF::new(60.0, 75.0));
+                open.popup.input(&hover, &cx);
+                let size = open.popup.layout(&cx);
+                open.place(size, &anchor, &theme);
+                let frame = open.frame.expect("placed");
+                let width = (frame.window.width() * scale).round() as u32;
+                let height = (frame.window.height() * scale).round() as u32;
+                let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
+                    popup::paint(canvas, &open, &theme)
+                })
+                .expect("rendered");
+                save(&format!("{name}{suffix}"), &bitmap);
+            }
+        }
     }
 }
