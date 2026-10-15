@@ -2429,8 +2429,45 @@ mod tests {
 
     #[test]
     fn a_folder_menu_takes_dropped_files_with_a_hint() {
-        use crate::platform::{DragItem, DropEffect, DropEffects};
+        use crate::platform::{DragItem, DropEffect, DropEffects, FileOp};
+        /// Records file operations instead of running them, and knows no volumes, so items
+        /// are copied on every OS: this test runs on Windows too.
+        #[derive(Default)]
+        struct NoFiles(Mutex<Vec<String>>);
+        impl Platform for NoFiles {
+            fn capabilities(&self) -> crate::platform::Capabilities {
+                Default::default()
+            }
+            fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
+                Vec::new()
+            }
+            fn appearance(&self) -> OsAppearance {
+                OsAppearance::default()
+            }
+            fn uptime(&self) -> Duration {
+                Duration::ZERO
+            }
+            fn volume_of(&self, _path: &str) -> Option<String> {
+                None
+            }
+            fn file_operation(
+                &self,
+                op: FileOp,
+                paths: Vec<String>,
+                _folder: String,
+                done: Box<dyn FnOnce() + Send>,
+            ) {
+                self.0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(format!("{op:?} {}", paths.len()));
+                done();
+            }
+        }
+
         let (mut logic, window, host, mut config) = bar(Settings::default());
+        let files = Arc::new(NoFiles::default());
+        logic.platform = Arc::clone(&files) as Arc<dyn Platform>;
         let target = tempfile::tempdir().expect("a temporary folder");
         let source = tempfile::tempdir().expect("a temporary folder");
         let file = source.path().join("report.pdf");
@@ -2452,7 +2489,7 @@ mod tests {
             modifiers: Modifiers::default(),
             allowed: DropEffects::ALL,
         };
-        // No volumes on this platform: another volume, so a copy.
+        // No volumes known: another volume, so a copy.
         assert_eq!(logic.on_drag(&window, enter), DropEffect::Copy);
         let (_, hint) = window.hint.borrow().clone().expect("the drop hint");
         assert!(hint.contains("\"Copy 'report.pdf' to 'Inbox'\""), "{hint}");
@@ -2494,6 +2531,10 @@ mod tests {
         assert_eq!(logic.on_drag(&window, drop), DropEffect::Copy);
         assert!(window.hint.borrow().is_none());
         assert!(host.calls().is_empty(), "no new sensors");
+        assert_eq!(
+            *files.0.lock().unwrap_or_else(|e| e.into_inner()),
+            ["Copy 1"]
+        );
         let mut canvas = RecordingCanvas::new(1.0);
         logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
         assert!(!canvas.dump().contains("#000000/78%"));
