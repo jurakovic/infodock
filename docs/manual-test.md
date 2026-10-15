@@ -323,3 +323,11 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] *Charged at* 80 % with Windows' battery care (or a vendor charge limit) holding at 80 %: *Full*, no percentage. With *As Windows reports it*: *Full 80%*.
 - [ ] *Tell me to unplug above* 90 %: charging past 90 % shows one toast *Battery at 91% — you can unplug the charger*; unplug and plug in again above 90 %: one more.
 - [ ] Properties ▸ *Battery* lists `1. {vendor model}` for each battery; a laptop with two batteries shows both, and the second one's sensor shows its own charge. A desktop: the sensor is not offered (no battery capability).
+
+**Wi-Fi** (since M3 S8; a computer with Wi-Fi)
+
+- [ ] *New sensor… ▸ Network ▸ Wi-Fi Signal*: the signal icon with the network name above `78%`; the icon's arcs follow the signal (walk away from the router). *Show* → *Signal in dBm*: `-58 dBm`; → *Network name*: the percentage (the name is above already), unless a *Title* is set. CI renders it in `bar-system*.png`.
+- [ ] Hover: *Wi-Fi Signal*, *Network: HomeNet*, *Info: 802.11ax, 5 GHz, channel 36, 1201 Mbps* (compare `netsh wlan show interfaces`), *Signal level*, *Signal percentage*, *Click to open the Wi-Fi settings*; the click opens them.
+- [ ] Disconnect from the network: within a second the value is *offline* and the icon faint and crossed out (inactive); the hint says *Offline*. Reconnect: back within a second or two. Airplane mode: *Wi-Fi is turned off*.
+- [ ] Windows 11 24H2 or later, Settings ▸ Privacy & security ▸ Location off (or *Let desktop apps access your location* off): the label is *Wi-Fi*, the signal still shows, the hint adds *Allow location access to show the network name*, and the click opens the location settings. Turning location access on brings the name back.
+- [ ] A computer without Wi-Fi: *Wi-Fi Signal* is not offered in the picker.

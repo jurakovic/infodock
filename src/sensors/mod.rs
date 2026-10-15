@@ -30,6 +30,7 @@ pub mod spacer;
 pub mod text;
 pub mod time;
 pub mod uptime;
+pub mod wifi;
 
 use std::time::Instant;
 

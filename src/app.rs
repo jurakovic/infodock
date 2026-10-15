@@ -10,7 +10,7 @@ use crate::config::{ConfigError, ConfigStore};
 use crate::platform::Platform;
 use crate::providers::Providers;
 use crate::sampler::{
-    Change, Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY,
+    Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY,
 };
 use crate::sensors::registry::registry;
 use crate::sensors::{DefaultsCtx, Props, ops};
@@ -69,7 +69,10 @@ impl App {
                 bar.deliver(delivery);
             }
         });
-        if let Err(e) = pending.start(Providers::new(Arc::clone(&self.platform)), deliver) {
+        let sampler = self.sampler.clone();
+        let providers = Providers::new(Arc::clone(&self.platform))
+            .with_changes(ChangeSink::new(move |change| sampler.changed(change)));
+        if let Err(e) = pending.start(providers, deliver) {
             tracing::error!("the sampler could not start: {e}");
         }
     }

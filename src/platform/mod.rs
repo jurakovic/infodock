@@ -277,6 +277,36 @@ pub struct PowerStatus {
     pub batteries: Vec<BatteryReading>,
 }
 
+/// The Wi-Fi connection now (SPEC §9.15, Appendix A `wifi`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WifiStatus {
+    /// A wireless interface exists.
+    pub available: bool,
+    /// Its radio is on (not in airplane mode, not switched off).
+    pub radio_on: bool,
+    pub connected: bool,
+    /// The network name; `None` when not connected, or when Windows withholds it.
+    pub ssid: Option<String>,
+    /// The signal quality, 0–100.
+    pub quality: u32,
+    pub rssi_dbm: Option<i32>,
+    /// The channel's centre frequency, MHz.
+    pub frequency_mhz: Option<u32>,
+    /// The link rate, Mbit/s.
+    pub link_mbps: Option<u32>,
+    /// The 802.11 standard, e.g. `802.11ax`.
+    pub phy: Option<&'static str>,
+    /// Windows needs location access to tell the network name (Windows 11 24H2 and later).
+    pub location_denied: bool,
+}
+
+/// Reads the Wi-Fi connection. Owned by the sampler thread, so the WLAN client stays open
+/// (and its notifications registered) while the `wifi` topic has subscribers.
+pub trait WifiReader: Send {
+    /// `None` if nothing could be read.
+    fn read(&mut self) -> Option<WifiStatus>;
+}
+
 /// What the Recycle Bin holds on all drives (SPEC §9.16, Appendix A `recycle-bin`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RecycleBin {
@@ -428,6 +458,13 @@ pub trait Platform: Send + Sync {
     /// and Settings' battery lists; `None` where it cannot be read. Batteries can be slow to
     /// answer, so it is read off the sampler thread.
     fn power_status(&self) -> Option<PowerStatus> {
+        None
+    }
+    /// A reader of the Wi-Fi connection for the `wifi` topic; `changed` is called from another
+    /// thread when Windows reports a connection, a disconnection or a radio change (SPEC
+    /// §9.15). `None` where there is no WLAN.
+    fn wifi_reader(&self, changed: Box<dyn Fn() + Send + Sync>) -> Option<Box<dyn WifiReader>> {
+        let _ = changed;
         None
     }
     /// What the Recycle Bin holds on all drives, for the `recycle-bin` topic; `None` where it

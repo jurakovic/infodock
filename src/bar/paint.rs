@@ -460,6 +460,18 @@ mod tests {
                     time_to_empty: Some(std::time::Duration::from_secs(161 * 60)),
                     time_to_full: None,
                 }),
+                Topic::Wifi => Sample::Wifi(crate::platform::WifiStatus {
+                    available: true,
+                    radio_on: true,
+                    connected: true,
+                    ssid: Some("HomeNet".into()),
+                    quality: 78,
+                    rssi_dbm: Some(-58),
+                    frequency_mhz: Some(5180),
+                    link_mbps: Some(1201),
+                    phy: Some("802.11ax"),
+                    location_denied: false,
+                }),
                 Topic::RecycleBin => Sample::RecycleBin(crate::platform::RecycleBin {
                     items: 12,
                     bytes: 431 << 20,
@@ -603,9 +615,9 @@ mod tests {
             entry("h", "image", serde_json::json!({ "opacity": 40 })),
         ];
         // Every system sensor, with made-up samples: CPU, memory and dual graph on the left,
-        // network, uptime and batteries (the last one absent) in the centre, swap, disks (Q:\
-        // is absent) and the Recycle Bin on the right. The CI runner has no battery, so the
-        // capability is assumed.
+        // network, uptime, batteries (the last one absent) and Wi-Fi in the centre, swap, disks
+        // (Q:\ is absent) and the Recycle Bin on the right. The CI runner has neither a battery
+        // nor Wi-Fi, so those capabilities are assumed.
         let mut system = Layout::default();
         let dynamic = serde_json::json!({ "mode": "dynamic", "color": "#FFFFFF" });
         system.left = vec![
@@ -633,6 +645,8 @@ mod tests {
                 serde_json::json!({ "onBatteryShow": "time" }),
             ),
             entry("s15", "battery", serde_json::json!({ "battery": 1 })),
+            entry("s16", "wifi", serde_json::json!({})),
+            entry("s17", "wifi", serde_json::json!({ "display": "dbm" })),
         ];
         system.right = vec![
             entry("s8", "swap-meter", serde_json::json!({})),
@@ -728,13 +742,13 @@ mod tests {
                 light,
                 700.0,
             ),
-            ("bar-system", &system, Settings::default(), dark, 1100.0),
+            ("bar-system", &system, Settings::default(), dark, 1400.0),
             (
                 "bar-system-light",
                 &system,
                 Settings::default(),
                 light,
-                1100.0,
+                1400.0,
             ),
             (
                 "bar-launchers",
@@ -757,6 +771,7 @@ mod tests {
                 let mut sensors = BarSensors::default();
                 let caps = crate::platform::Capabilities {
                     battery: true,
+                    wifi: true,
                     ..platform.capabilities()
                 };
                 sensors.sync(

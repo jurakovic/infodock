@@ -34,6 +34,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::disk_launcher::DiskType,
         &super::recycle_bin::RecycleBinType,
         &super::battery::BatteryType,
+        &super::wifi::WifiType,
     ])
 });
 

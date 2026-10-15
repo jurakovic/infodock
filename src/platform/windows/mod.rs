@@ -134,6 +134,13 @@ impl Platform for WindowsPlatform {
         toast::notify(title, body);
     }
 
+    fn wifi_reader(
+        &self,
+        changed: Box<dyn Fn() + Send + Sync>,
+    ) -> Option<Box<dyn super::WifiReader>> {
+        wlan::WinWifi::open(changed).map(|w| Box::new(w) as Box<dyn super::WifiReader>)
+    }
+
     fn power_status(&self) -> Option<super::PowerStatus> {
         battery::status()
     }

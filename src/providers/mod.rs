@@ -13,8 +13,8 @@ mod worker;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use crate::platform::{Platform, PowerStatus, RecycleBin, Volume};
-use crate::sampler::{DiskSample, PathSample, Sample, Topic};
+use crate::platform::{Platform, PowerStatus, RecycleBin, Volume, WifiReader};
+use crate::sampler::{Change, ChangeSink, DiskSample, PathSample, Sample, Topic};
 use worker::SlowReader;
 
 /// The providers of all topics, with whatever state they keep between readings.
@@ -32,6 +32,11 @@ pub struct Providers {
     recycle_bin: Option<Option<SlowReader<Option<RecycleBin>>>>,
     /// The same for the batteries (one key, `""`), whose firmware can be slow to answer.
     power: Option<Option<SlowReader<Option<PowerStatus>>>>,
+    /// Created on first use and dropped when nobody reads Wi-Fi; `None` inside where there is
+    /// no WLAN.
+    wifi: Option<Option<Box<dyn WifiReader>>>,
+    /// Where OS notifications that change topics go (Wi-Fi's), so they are read at once.
+    changes: ChangeSink,
     net: net::Net,
 }
 
@@ -45,8 +50,16 @@ impl Providers {
             volumes: None,
             recycle_bin: None,
             power: None,
+            wifi: None,
+            changes: ChangeSink::NONE,
             net: net::Net::default(),
         }
+    }
+
+    /// Reports changes the OS notifies (Wi-Fi connecting, disconnecting) to `changes`.
+    pub fn with_changes(mut self, changes: ChangeSink) -> Self {
+        self.changes = changes;
+        self
     }
 
     /// The system resumed from sleep: providers that read deltas start from a new baseline
@@ -93,6 +106,8 @@ impl Providers {
                     power.forget("");
                 }
             }
+            // Closes the WLAN client and its notifications.
+            Topic::Wifi => self.wifi = None,
             Topic::Net(id) => self.net.forget(id),
             Topic::Uptime | Topic::Memory | Topic::Swap => {}
         }
@@ -164,6 +179,14 @@ impl Providers {
                 });
                 let status = power.as_mut()?.sample("").flatten()?;
                 Some(Sample::Battery(battery::sample(&status, *index)))
+            }
+            Topic::Wifi => {
+                let (platform, changes) = (&self.platform, &self.changes);
+                let wifi = self.wifi.get_or_insert_with(|| {
+                    let changes = changes.clone();
+                    platform.wifi_reader(Box::new(move || changes.report(Change::Wifi)))
+                });
+                wifi.as_mut()?.read().map(Sample::Wifi)
             }
             Topic::Net(id) => {
                 let interface = self.platform.net_interface(id.as_deref());

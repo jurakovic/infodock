@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::platform::{BatteryState, PathKind, RecycleBin, Volume};
+use crate::platform::{BatteryState, PathKind, RecycleBin, Volume, WifiStatus};
 
 /// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,6 +25,8 @@ pub enum Topic {
     RecycleBin,
     /// `battery/<i>`: one battery by its place in the system's list (SPEC §9.14).
     Battery(u32),
+    /// `wifi`: the Wi-Fi connection (SPEC §9.15).
+    Wifi,
 }
 
 /// Something that changed before the topics it concerns are due again: an OS notification or
@@ -37,6 +39,8 @@ pub enum Change {
     RecycleBin,
     /// The power line or a battery's charge changed (`PBT_APMPOWERSTATUSCHANGE`).
     Power,
+    /// Wi-Fi connected, disconnected, roamed, or its radio was switched.
+    Wifi,
 }
 
 impl Topic {
@@ -47,6 +51,7 @@ impl Topic {
             Change::Devices => matches!(self, Self::Volumes | Self::Disk(_) | Self::Path(_)),
             Change::RecycleBin => *self == Self::RecycleBin,
             Change::Power => matches!(self, Self::Battery(_)),
+            Change::Wifi => *self == Self::Wifi,
         }
     }
 }
@@ -77,6 +82,7 @@ pub enum Sample {
     Volumes(Vec<Volume>),
     RecycleBin(RecycleBin),
     Battery(BatterySample),
+    Wifi(WifiStatus),
 }
 
 /// `battery/<i>`: one battery and the power line (SPEC §9.14).
