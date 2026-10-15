@@ -105,7 +105,7 @@ Order (D26): as in M2, each item brings the platform pieces its sensor needs; th
 - [ ] **S15a Screenshots and budgets**: CI's launcher and popup screenshots (`bar-launchers*`, `popup-*`) looked at and fixed where wrong; memory and idle CPU with the M3 code (§14.1), noted here
 - [x] **S15b Review**: three clean-context reviewers on the M3 diff (`86f5994..59b84b8`: platform, providers and sampler; sensors; bar, drag & drop and Settings); findings in `docs/review-m3.md`, checked against the code and grouped into S15c–S15e
 - [x] **S15c Drag & drop fixes**: `docs/review-m3.md` § S15c (optimized moves, no drive access while dragging, machine props of dropped sensors, ID list bounds, control characters in URLs)
-- [ ] **S15d Platform and provider fixes**: `docs/review-m3.md` § S15d (a worker per slow key and late answers, eject vetoes and the device to eject, the system disk, the suspend privilege, media locks)
+- [x] **S15d Platform and provider fixes**: `docs/review-m3.md` § S15d (a worker per slow key and late answers, eject vetoes and the device to eject, the system disk, the suspend privilege, media locks)
 - [ ] **S15e Sensor and bar fixes**: `docs/review-m3.md` § S15e (resize alignment, the battery alert, 6 GHz channels, the icon cache, the eject list, Shortcut icons, low battery, missing power modes, popups when the bar hides, hints and clicks after a popup)
 - [ ] **S15z M3 done**: the review's fixes in, `docs/manual-test.md` M3 final with checks for the fixes, CI green
 
