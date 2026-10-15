@@ -303,3 +303,12 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] A DVD drive with a disc: *Eject* opens the tray and the toast says it can be removed; with a file from the disc open, it is in use.
 - [ ] An SD card in a laptop's built-in reader: *Eject* removes the card (the reader stays), with the toast.
 - [ ] No Windows dialog of its own ("Problem Ejecting USB Mass Storage Device") appears in any of these.
+
+**Recycle Bin** (since M3 S6)
+
+- [ ] *New sensor… ▸ System ▸ Recycle Bin*: the bin icon with *Recycle Bin* above *empty*, *1 item* or *12 items*; the icon shows papers while it holds something. CI renders it (12 items) in `bar-system*.png`.
+- [ ] Delete a file in Explorer: within the interval (10 s by default) the count goes up; restore it from the Recycle Bin and the count goes down.
+- [ ] Hover: *Recycle Bin*, *Items: 12*, *Space used: 431 MB* (as Explorer's Recycle Bin properties count them), *Click to open the Recycle Bin*. Click: the Recycle Bin opens in Explorer.
+- [ ] Right-click: *Open Recycle Bin* and *Empty Recycle Bin* between *Remove sensor* and *Tools*. *Empty Recycle Bin* asks as Windows does (unless confirmation is off in the Recycle Bin's properties), plays the sound, and the sensor shows *empty* within a second, not at the next interval. Cancelling leaves it as it was. With the bin empty, the item is greyed out.
+- [ ] *Image when empty* / *Image when full* replace the icons; *Colour* → *Custom* tints the built-in ones; *Opacity* fades the icon only. A light bar (Windows light mode): the built-in icon is dark.
+- [ ] A computer with a large Recycle Bin (thousands of items) or a sleeping second disk: the bar keeps responding while the count is read.

@@ -291,6 +291,7 @@ mod tests {
             locked: false,
             alt: false,
             animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
             platform: platform.as_ref(),
         };
         assert_eq!(image(json!({})).hint(&cx), None);

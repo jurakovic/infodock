@@ -450,6 +450,10 @@ mod tests {
                     tx_rate: f64::from(9e4 * (1.0 + wave(4.0, 2.0))),
                     ..NetSample::default()
                 }),
+                Topic::RecycleBin => Sample::RecycleBin(crate::platform::RecycleBin {
+                    items: 12,
+                    bytes: 431 << 20,
+                }),
                 Topic::Uptime => Sample::Uptime(UptimeSample {
                     boot_unix_ms: 0,
                     uptime_secs: 3 * 86_400 + 4 * 3600 + 12 * 60,
@@ -588,7 +592,8 @@ mod tests {
             entry("h", "image", serde_json::json!({ "opacity": 40 })),
         ];
         // Every system sensor, with made-up samples: CPU, memory and dual graph on the left,
-        // network and uptime in the centre, swap and disks on the right (Q:\ is absent).
+        // network and uptime in the centre, swap, disks (Q:\ is absent) and the Recycle Bin
+        // on the right.
         let mut system = Layout::default();
         let dynamic = serde_json::json!({ "mode": "dynamic", "color": "#FFFFFF" });
         system.left = vec![
@@ -623,6 +628,7 @@ mod tests {
                 "disk-meter",
                 serde_json::json!({ "drive": "Q:\\", "mode": "freeBytes" }),
             ),
+            entry("s12", "recycle-bin", serde_json::json!({})),
         ];
         // Launchers (SPEC §9.17, §9.18, §9.21): Shortcuts to a program, a folder, a web
         // address, a tinted program, a bare program name and a missing target (inactive); the
@@ -742,6 +748,7 @@ mod tests {
                     platform: platform.as_ref(),
                     alt: false,
                     animate: false,
+                    changes: &crate::sampler::ChangeSink::NONE,
                 };
                 // The clocks read the time at their first wake-up; the others get samples.
                 sensors.wake(std::time::Instant::now(), &env);

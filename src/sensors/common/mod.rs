@@ -5,5 +5,6 @@ pub mod eject;
 pub mod graph;
 pub mod history;
 pub mod icon;
+pub mod icon_label;
 pub mod meter;
 pub mod two_line;

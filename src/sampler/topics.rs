@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::platform::{PathKind, Volume};
+use crate::platform::{PathKind, RecycleBin, Volume};
 
 /// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -21,12 +21,28 @@ pub enum Topic {
     Path(String),
     /// `volumes`: the drives; also pushed when one arrives or goes (SPEC §4.4, Appendix A).
     Volumes,
+    /// `recycle-bin`: what the Recycle Bin holds on all drives (SPEC §9.16).
+    RecycleBin,
+}
+
+/// Something that changed before the topics it concerns are due again: an OS notification or
+/// an action of a sensor. The sampler reads those topics at once (SPEC §4.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    /// A drive arrived or went, or a medium was inserted or removed.
+    Devices,
+    /// Items went into the Recycle Bin, or it was emptied.
+    RecycleBin,
 }
 
 impl Topic {
-    /// Whether a drive arriving or going may change this topic, so it is read again at once.
-    pub fn follows_devices(&self) -> bool {
-        matches!(self, Self::Volumes | Self::Disk(_) | Self::Path(_))
+    /// Whether `change` may change this topic, so it is read again at once: a drive arriving
+    /// or going changes the drive list, the disks and the paths on them.
+    pub fn follows(&self, change: Change) -> bool {
+        match change {
+            Change::Devices => matches!(self, Self::Volumes | Self::Disk(_) | Self::Path(_)),
+            Change::RecycleBin => *self == Self::RecycleBin,
+        }
     }
 }
 
@@ -52,6 +68,7 @@ pub enum Sample {
     Path(PathSample),
     /// The drives with letters, in letter order.
     Volumes(Vec<Volume>),
+    RecycleBin(RecycleBin),
 }
 
 /// `path/<path>`: what the path names now.

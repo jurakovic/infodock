@@ -9,7 +9,9 @@ use crate::config::model::{Settings, Zone};
 use crate::config::{ConfigError, ConfigStore};
 use crate::platform::Platform;
 use crate::providers::Providers;
-use crate::sampler::{Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY};
+use crate::sampler::{
+    Change, Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY,
+};
 use crate::sensors::registry::registry;
 use crate::sensors::{DefaultsCtx, Props, ops};
 use crate::settings;
@@ -273,8 +275,8 @@ impl BarHost for AppHost {
         self.0.sampler.resume();
     }
 
-    fn devices_changed(&self) {
-        self.0.sampler.devices_changed();
+    fn changed(&self, change: Change) {
+        self.0.sampler.changed(change);
     }
 
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {

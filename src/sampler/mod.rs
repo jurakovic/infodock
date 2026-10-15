@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use scheduler::Scheduler;
 pub use topics::{
-    CpuSample, Delivery, DiskSample, MemorySample, NetSample, PathSample, Sample, SwapSample,
-    Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
+    Change, CpuSample, Delivery, DiskSample, MemorySample, NetSample, PathSample, Sample,
+    SwapSample, Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
 };
 
 use crate::providers::Providers;
@@ -25,8 +25,7 @@ enum Message {
     },
     /// The system resumed from sleep.
     Resume,
-    /// A drive arrived or went.
-    Devices,
+    Changed(Change),
     Shutdown,
 }
 
@@ -34,6 +33,26 @@ enum Message {
 #[derive(Clone)]
 pub struct Sampler {
     messages: Sender<Message>,
+}
+
+/// Reports a [`Change`] from any thread, e.g. from the thread that emptied the Recycle Bin once
+/// it is done, so the sampler reads the topics it concerns at once (SPEC §4.4).
+#[derive(Clone)]
+pub struct ChangeSink(Option<Arc<dyn Fn(Change) + Send + Sync>>);
+
+impl ChangeSink {
+    /// Reports nowhere, for tests.
+    pub const NONE: Self = Self(None);
+
+    pub fn new(report: impl Fn(Change) + Send + Sync + 'static) -> Self {
+        Self(Some(Arc::new(report)))
+    }
+
+    pub fn report(&self, change: Change) {
+        if let Some(report) = &self.0 {
+            report(change);
+        }
+    }
 }
 
 /// A sampler whose thread has not started yet; subscriptions made meanwhile wait for it.
@@ -61,10 +80,10 @@ impl Sampler {
         let _ = self.messages.send(Message::Resume);
     }
 
-    /// A drive arrived or went: the topics that follow devices (volumes, disks, paths) are
-    /// read again at once (SPEC §4.4).
-    pub fn devices_changed(&self) {
-        let _ = self.messages.send(Message::Devices);
+    /// Something changed: the topics that follow it are read again at once (SPEC §4.4), e.g.
+    /// volumes, disks and paths when a drive arrived or went.
+    pub fn changed(&self, change: Change) {
+        let _ = self.messages.send(Message::Changed(change));
     }
 
     /// Ends the thread.
@@ -117,7 +136,9 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                 providers.resume();
                 scheduler.resume(Instant::now());
             }
-            Ok(Message::Devices) => scheduler.refresh(Instant::now(), Topic::follows_devices),
+            Ok(Message::Changed(change)) => {
+                scheduler.refresh(Instant::now(), |topic| topic.follows(change));
+            }
             Ok(Message::Shutdown) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {}
         }
@@ -206,7 +227,7 @@ mod tests {
         let first = rx.recv_timeout(wait).expect("the first list");
         assert!(matches!(*first.sample, Sample::Volumes(_)));
         // Not due for a minute, but a drive arrived.
-        sampler.devices_changed();
+        sampler.changed(Change::Devices);
         let again = rx.recv_timeout(wait).expect("read again");
         assert_eq!((again.topic, again.to), (Topic::Volumes, None));
         sampler.shutdown();

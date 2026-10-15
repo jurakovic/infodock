@@ -1,6 +1,6 @@
 //! Shell services (SPEC §4.6): starting programs, files and URIs for sensor clicks
-//! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), and the file
-//! and folder pickers Settings uses (`IFileOpenDialog`).
+//! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), the Recycle Bin
+//! (§9.16), and the file and folder pickers Settings uses (`IFileOpenDialog`).
 
 use windows::Win32::Foundation::{ERROR_CANCELLED, HWND};
 use windows::Win32::System::Com::{
@@ -10,13 +10,13 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
     FOLDERID_RecycleBinFolder, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog,
-    IFileOpenDialog, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, SHGetKnownFolderIDList,
-    SIGDN_FILESYSPATH, ShellExecuteExW,
+    IFileOpenDialog, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, SHEmptyRecycleBinW,
+    SHGetKnownFolderIDList, SHQUERYRBINFO, SHQueryRecycleBinW, SIGDN_FILESYSPATH, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result, w};
 
-use crate::platform::{Launch, PathRequest};
+use crate::platform::{Launch, PathRequest, RecycleBin};
 
 /// Starts `launch` as Explorer would, on a short-lived thread: the shell can take a moment (and
 /// show its own message when the target is missing, or ask for elevation), and the bar thread
@@ -86,6 +86,45 @@ pub fn has_recycle_bin() -> bool {
             }
             Err(_) => false,
         }
+    }
+}
+
+/// What the Recycle Bin holds on all drives (`SHQueryRecycleBinW` without a root); `None`
+/// (logged) if the shell cannot say.
+pub fn recycle_bin() -> Option<RecycleBin> {
+    super::com::enter();
+    let mut info = SHQUERYRBINFO {
+        cbSize: size_of::<SHQUERYRBINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: `info` is initialised with its size; a null root means all drives.
+    if let Err(e) = unsafe { SHQueryRecycleBinW(PCWSTR::null(), &mut info) } {
+        tracing::warn!("the Recycle Bin cannot be read: {e}");
+        return None;
+    }
+    Some(RecycleBin {
+        items: u64::try_from(info.i64NumItems).unwrap_or(0),
+        bytes: u64::try_from(info.i64Size).unwrap_or(0),
+    })
+}
+
+/// Empties the Recycle Bin of all drives on a short-lived thread, with the shell's own
+/// confirmation, progress and sound (SPEC §9.16), then calls `done`. Declining the
+/// confirmation, or an empty bin, is only logged.
+pub fn empty_recycle_bin(done: Box<dyn FnOnce() + Send>) {
+    let spawned = std::thread::Builder::new()
+        .name("recycle-bin".into())
+        .spawn(move || {
+            super::com::enter();
+            // SAFETY: no owner window, all drives, and flags 0: confirm, show progress, sound.
+            match unsafe { SHEmptyRecycleBinW(None, PCWSTR::null(), 0) } {
+                Ok(()) => tracing::info!("the Recycle Bin was emptied"),
+                Err(e) => tracing::info!("the Recycle Bin was not emptied: {e}"),
+            }
+            done();
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("could not start emptying the Recycle Bin: {e}");
     }
 }
 

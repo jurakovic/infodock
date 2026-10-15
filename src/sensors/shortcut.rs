@@ -519,6 +519,7 @@ mod tests {
                 locked: self.settings.locked,
                 alt: false,
                 animate: false,
+                changes: &crate::sampler::ChangeSink::NONE,
                 platform: &self.platform as &dyn Platform,
             }
         }

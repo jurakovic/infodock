@@ -12,7 +12,7 @@ mod worker;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use crate::platform::{Platform, Volume};
+use crate::platform::{Platform, RecycleBin, Volume};
 use crate::sampler::{DiskSample, PathSample, Sample, Topic};
 use worker::SlowReader;
 
@@ -27,6 +27,8 @@ pub struct Providers {
     paths: Option<Option<SlowReader<PathSample>>>,
     /// The same for the drive list (one key, `""`).
     volumes: Option<Option<SlowReader<Vec<Volume>>>>,
+    /// The same for the Recycle Bin (one key, `""`), which can take a while to count.
+    recycle_bin: Option<Option<SlowReader<Option<RecycleBin>>>>,
     net: net::Net,
 }
 
@@ -38,6 +40,7 @@ impl Providers {
             disks: None,
             paths: None,
             volumes: None,
+            recycle_bin: None,
             net: net::Net::default(),
         }
     }
@@ -74,6 +77,11 @@ impl Providers {
             Topic::Volumes => {
                 if let Some(Some(volumes)) = &mut self.volumes {
                     volumes.forget("");
+                }
+            }
+            Topic::RecycleBin => {
+                if let Some(Some(bin)) = &mut self.recycle_bin {
+                    bin.forget("");
                 }
             }
             Topic::Net(id) => self.net.forget(id),
@@ -130,6 +138,14 @@ impl Providers {
                     SlowReader::new("volumes", move |_| platform.volumes())
                 });
                 volumes.as_mut()?.sample("").map(Sample::Volumes)
+            }
+            Topic::RecycleBin => {
+                let platform = &self.platform;
+                let bin = self.recycle_bin.get_or_insert_with(|| {
+                    let platform = Arc::clone(platform);
+                    SlowReader::new("recycle-bin", move |_| platform.recycle_bin())
+                });
+                bin.as_mut()?.sample("").flatten().map(Sample::RecycleBin)
             }
             Topic::Net(id) => {
                 let interface = self.platform.net_interface(id.as_deref());

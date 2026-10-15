@@ -183,6 +183,7 @@ mod tests {
             locked: false,
             alt: false,
             animate,
+            changes: &crate::sampler::ChangeSink::NONE,
             platform: platform.as_ref(),
         };
         let mut sensor = create(json!({}));

@@ -225,7 +225,7 @@ Controls bind two-way to the `SettingsState` global. Rust fills it from the conf
 1. On start, Rust loads the config and starts the sampler thread and the bar thread. The bar thread creates the bar window and the tray icon and instantiates one sensor per layout entry through the registry.
 2. For each sensor, the bar thread asks its type for **topic requests** (`topics(props)`), e.g. `{ topic: "cpu", interval_ms: 1000 }`, and subscribes once per *(sensor, topic)*. The **scheduler** keeps the subscriber set per topic and samples at the **minimum** requested interval. Every sample goes to the bar thread's queue; slower subscribers simply use the newest sample: the bar hands a sample to a sensor only once the sensor's own interval has passed since the last one it took (a quarter of the interval early, at most 500 ms, still counts), so a 5 s graph keeps its time scale next to a 1 s meter on the same topic; a catch-up always reaches its sensor.
 3. Providers are **shared**: ten CPU sensors cost one CPU sample per tick.
-4. Event-driven topics (`volumes`, `battery`, `wifi`, `recycle-bin` after actions) push immediately when the OS notifies. Implementation: the OS notification reaches the bar window, the bar tells the sampler, and the sampler makes the topics it concerns due at once (`Scheduler::refresh`); a drive arriving or going refreshes `volumes`, every `disk/…` and every `path/…`.
+4. Event-driven topics (`volumes`, `battery`, `wifi`, `recycle-bin` after actions) push immediately when the OS notifies. Implementation: the OS notification reaches the bar window, the bar tells the sampler, and the sampler makes the topics it concerns due at once (`Scheduler::refresh`); a drive arriving or going refreshes `volumes`, every `disk/…` and every `path/…`. What changed is named (`Change`: devices, Recycle Bin, …); a sensor reports what its own action changed through `SensorCtx::changes`, a handle it can pass to the thread that finishes the action (emptying the Recycle Bin, §9.16).
 5. Sensors that need no system data (Text, Image, Spacer, Date, Time) ask for a **wake-up time** instead (e.g. the next minute boundary). The bar thread keeps one timer for the earliest wake-up of all sensors.
 6. When a sample or wake-up changes what a sensor shows, it marks itself dirty. The bar thread re-measures dirty sensors, re-runs the layout only if a width changed, and redraws, coalescing to at most one frame per 16 ms. An open hint updates from the same sensor (rebuilt only when that sensor changed or moved, so an open calendar is not laid out again for every CPU sample).
 7. Graph **history lives in the sensor instance**: a ring buffer of raw values (not pixels). It is not persisted.
@@ -569,6 +569,7 @@ pub trait Sensor {
 pub struct SensorCtx<'a> {
     pub id: &'a str, pub settings: &'a Settings, pub theme: &'a Theme,
     pub locked: bool, pub alt: bool, pub platform: &'a dyn Platform,
+    pub changes: &'a ChangeSink,                          // what its actions changed (§4.4)
     /* set_state(patch), update_props(patch), notify(title, body), open_settings(route), t(key, args) */
 }
 
@@ -632,7 +633,7 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 * Colour and opacity per series (`topColor`/`topOpacity`, `bottomColor`/`bottomOpacity`).
 * Values are normalised to 0..1 per series by the owning sensor.
 
-**Icon + two-line** (`common/icon_label.rs`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap.
+**Icon + two-line** (`common/icon_label.rs`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap. Implementation: a 3 px gap; the icon's place is kept when it cannot be drawn.
 
 **History** (`common/history.rs`): fixed-capacity ring buffer of `f32`; resizing keeps the newest samples.
 
@@ -997,6 +998,8 @@ Recycle Bin
 **Click**: open the Recycle Bin (`shell:RecycleBinFolder`).
 **Menu**: `Open Recycle Bin`; `Empty Recycle Bin` (`SHEmptyRecycleBinW` with the OS default confirmation and sound).
 **Drop**: files/folders → moved to the Recycle Bin (IFileOperation with `FOFX_RECYCLEONDELETE`; confirmation per OS settings). While dragging over it, show the floating drop hint "Delete {n} items" (§9.19).
+
+Implementation (`sensors/recycle_bin.rs`, `platform/windows/shell.rs`): the topic is read on a worker thread like volumes (§4.4), since counting a full Recycle Bin can take a while. The icon is bar height − 4, as the launchers', and the custom images are drawn at that height; *opacity* applies to the icon. Before the first reading the second line is empty and the hint is the title alone. *Empty Recycle Bin* is greyed out while the bin is known to be empty; `SHEmptyRecycleBinW` runs on a short-lived thread (the shell's confirmation may wait for the user), and when it returns, emptied or declined, the sensor reports `Change::RecycleBin`, so the topic is read at once. The built-in empty and full icons are placeholders (Appendix C).
 
 ### 9.17 `shortcut` — Shortcut  (Launchers; `DockShortcut`)
 

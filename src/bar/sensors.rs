@@ -9,7 +9,7 @@ use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::platform::{Canvas, Capabilities, Platform, RectF, TextEngine};
-use crate::sampler::{Delivery, Topic, TopicRequest};
+use crate::sampler::{ChangeSink, Delivery, Topic, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
 use crate::sensors::{
@@ -47,6 +47,8 @@ pub(super) struct Env<'a> {
     pub alt: bool,
     /// Transitions animate (SPEC §5.5).
     pub animate: bool,
+    /// Where sensors report what their actions changed (SPEC §4.4).
+    pub changes: &'a ChangeSink,
 }
 
 impl Env<'_> {
@@ -59,6 +61,7 @@ impl Env<'_> {
             alt: self.alt,
             animate: self.animate,
             platform: self.platform,
+            changes: self.changes,
         }
     }
 }
@@ -600,6 +603,7 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
         };
         let start = Instant::now();
         let mut sensors = BarSensors::default();
@@ -637,6 +641,7 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
         };
         let start = Instant::now();
         let wakes = Rc::new(Cell::new(0));
@@ -706,6 +711,7 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
         };
         let mut sensors = BarSensors::default();
         sensors.zones[0].push(Placed {
@@ -766,6 +772,7 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
         };
         let mut sensors = BarSensors::default();
         for id in ["u1", "u2"] {

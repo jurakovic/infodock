@@ -243,6 +243,14 @@ impl<'a> Launch<'a> {
     }
 }
 
+/// What the Recycle Bin holds on all drives (SPEC §9.16, Appendix A `recycle-bin`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RecycleBin {
+    pub items: u64,
+    /// The size of the items, bytes.
+    pub bytes: u64,
+}
+
 /// What the Power sensor does (SPEC §9.21).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerAction {
@@ -381,6 +389,18 @@ pub trait Platform: Send + Sync {
     fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
         let _ = (path, px);
         None
+    }
+    /// What the Recycle Bin holds on all drives, for the `recycle-bin` topic; `None` where it
+    /// cannot be read. It may take a while with many items, so it is read off the sampler
+    /// thread.
+    fn recycle_bin(&self) -> Option<RecycleBin> {
+        None
+    }
+    /// Empties the Recycle Bin in the background, with the OS confirmation, progress and
+    /// sound (SPEC §9.16), then calls `done`, whether it was emptied or not.
+    fn empty_recycle_bin(&self, done: Box<dyn FnOnce() + Send>) {
+        tracing::info!("emptying the Recycle Bin is not supported on this platform");
+        done();
     }
     /// Locks, signs out, switches user, sleeps, hibernates, shuts down or restarts (SPEC
     /// §9.21), in the background; `force` closes apps without asking (sign out, shut down,

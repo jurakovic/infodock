@@ -232,6 +232,7 @@ mod tests {
             locked: false,
             alt: false,
             animate: false,
+            changes: &crate::sampler::ChangeSink::NONE,
             platform,
         });
     }

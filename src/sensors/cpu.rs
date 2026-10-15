@@ -553,6 +553,7 @@ mod tests {
                 locked: self.settings.locked,
                 alt: false,
                 animate: true,
+                changes: &crate::sampler::ChangeSink::NONE,
                 platform: &self.clock,
             }
         }

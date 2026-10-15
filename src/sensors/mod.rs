@@ -21,6 +21,7 @@ pub mod network;
 pub mod ops;
 pub mod placeholder;
 pub mod power;
+pub mod recycle_bin;
 pub mod registry;
 pub mod schema;
 pub mod shortcut;
@@ -37,7 +38,7 @@ use serde_json::{Map, Value};
 use crate::bar::theme::Theme;
 use crate::config::model::Settings;
 use crate::platform::{Bitmap, Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
-use crate::sampler::{Sample, Topic, TopicRequest};
+use crate::sampler::{ChangeSink, Sample, Topic, TopicRequest};
 use schema::PropField;
 
 /// An `i18n` message key.
@@ -215,6 +216,10 @@ pub struct SensorCtx<'a> {
     /// Transitions animate (SPEC §5.5); otherwise they jump.
     pub animate: bool,
     pub platform: &'a dyn Platform,
+    /// Tells the sampler what a sensor's action changed, e.g. that the Recycle Bin was emptied,
+    /// so its topics are read again at once (SPEC §4.4); clone it for actions that finish on
+    /// another thread.
+    pub changes: &'a ChangeSink,
 }
 
 impl SensorCtx<'_> {

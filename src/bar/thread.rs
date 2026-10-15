@@ -30,7 +30,7 @@ use crate::platform::{
     BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
     PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
-use crate::sampler::{Delivery, TopicRequest};
+use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::ops::index_after_removal;
 use crate::sensors::registry::registry;
@@ -111,6 +111,8 @@ pub(super) struct BarLogic {
     /// the window in its place.
     slid: Option<i32>,
     platform: Arc<dyn Platform>,
+    /// Reports what sensors' actions changed to the sampler, through the host (SPEC §4.4).
+    changes: ChangeSink,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
 }
@@ -185,6 +187,10 @@ impl BarLogic {
             sliding_out: false,
             slid: None,
             platform,
+            changes: ChangeSink::new({
+                let host = Arc::clone(&host);
+                move |change| host.changed(change)
+            }),
             commands,
             host,
         }
@@ -364,6 +370,7 @@ impl BarLogic {
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
+            changes: &self.changes,
         };
         let now = Instant::now();
         let mut dirty = false;
@@ -520,6 +527,7 @@ impl BarLogic {
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
+            changes: &self.changes,
         };
         let (Some(content), Some((x, width))) =
             (self.sensors.hint(id, &env), self.sensors.place_of(id))
@@ -653,6 +661,7 @@ impl BarLogic {
             platform: self.platform.as_ref(),
             alt: modifiers.alt,
             animate: self.animate,
+            changes: &self.changes,
         };
         match self.sensors.click(&press.id, &env) {
             ClickResult::None => {}
@@ -681,6 +690,7 @@ impl BarLogic {
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
+            changes: &self.changes,
         };
         let entries = match &hit {
             Some(h) => {
@@ -755,6 +765,7 @@ impl BarLogic {
                         platform: self.platform.as_ref(),
                         alt: false,
                         animate: self.animate,
+                        changes: &self.changes,
                     };
                     if self.sensors.on_menu(&entry.id, item, &env) {
                         window.invalidate();
@@ -799,6 +810,7 @@ impl BarLogic {
                 platform: self.platform.as_ref(),
                 alt: false,
                 animate: self.animate,
+                changes: &self.changes,
             };
             self.sensors.wake(Instant::now(), &env);
             self.store_states();
@@ -822,6 +834,7 @@ impl BarLogic {
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
+            changes: &self.changes,
         };
         if self.sensors.deliver(delivery, &env, Instant::now()) {
             window.invalidate();
@@ -846,6 +859,7 @@ impl BarLogic {
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
+            changes: &self.changes,
         };
         if self.sensors.clock_changed(Instant::now(), &env) {
             window.invalidate();
@@ -881,6 +895,7 @@ impl BarLogic {
                     platform: self.platform.as_ref(),
                     alt: false,
                     animate: self.animate,
+                    changes: &self.changes,
                 };
                 if self.sensors.wake(Instant::now(), &env) {
                     window.invalidate();
@@ -1000,7 +1015,7 @@ impl BarHandler for BarLogic {
                 self.host.resumed();
                 self.clock_changed(window);
             }
-            UiEvent::DevicesChanged => self.host.devices_changed(),
+            UiEvent::DevicesChanged => self.host.changed(Change::Devices),
             UiEvent::Activate => self.host.activate(),
             UiEvent::TrayClick => self.host.toggle_bar(),
             UiEvent::TrayMenu => self.tray_menu(window),
@@ -1182,8 +1197,8 @@ mod tests {
         fn resumed(&self) {
             self.log("resumed".into());
         }
-        fn devices_changed(&self) {
-            self.log("devices changed".into());
+        fn changed(&self, change: Change) {
+            self.log(format!("changed {change:?}"));
         }
         fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
             self.log(format!("state {id} {}", serde_json::Value::Object(state)));

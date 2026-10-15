@@ -24,7 +24,7 @@ use crate::config::Config;
 use crate::config::ConfigStore;
 use crate::config::model::{BarMode, SensorInstance, Settings, Zone};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
-use crate::sampler::{Delivery, TopicRequest};
+use crate::sampler::{Change, Delivery, TopicRequest};
 use thread::BarLogic;
 
 /// What the bar asks of the rest of the app. Called on the bar thread.
@@ -52,8 +52,9 @@ pub trait BarHost: Send + Sync {
     fn redock(&self);
     /// The system resumed from sleep: the sampler reads every topic again (SPEC §4.4).
     fn resumed(&self);
-    /// A drive arrived or went: the sampler reads volumes, disks and paths again (SPEC §4.4).
-    fn devices_changed(&self);
+    /// Something changed, e.g. a drive arrived or went: the sampler reads the topics that
+    /// follow it again (SPEC §4.4). Called from any thread.
+    fn changed(&self, change: Change);
     /// Stores sensor `id`'s runtime state in the config (SPEC §11.2), e.g. the uptime record.
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State);
 }

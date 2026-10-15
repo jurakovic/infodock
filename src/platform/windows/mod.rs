@@ -133,6 +133,14 @@ impl Platform for WindowsPlatform {
         toast::notify(title, body);
     }
 
+    fn recycle_bin(&self) -> Option<super::RecycleBin> {
+        shell::recycle_bin()
+    }
+
+    fn empty_recycle_bin(&self, done: Box<dyn FnOnce() + Send>) {
+        shell::empty_recycle_bin(done);
+    }
+
     fn power(&self, action: super::PowerAction, force: bool) {
         power::power(action, force);
     }

@@ -2,8 +2,10 @@
 //! size, centred vertically, optionally tinted (Custom colour, §8.4), drawn at the sensor's
 //! opacity; an inactive sensor's icon fades or takes the inactive colour.
 
+use std::path::Path;
+
 use crate::bar::theme::{Inactive, Theme};
-use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
+use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image, load_image};
 use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx};
 
 /// The colour an icon is tinted with (SPEC §8.4): Custom tints any icon. Standard leaves shell
@@ -19,6 +21,31 @@ pub fn tint(choice: &ColorChoice, built_in: bool, theme: &Theme) -> Option<Color
 /// The icon size in physical px for `logical` px at `scale`.
 pub fn physical(logical: f32, scale: f32) -> u32 {
     (logical * scale).round().max(1.0) as u32
+}
+
+/// A user's image file (an `image` prop), decoded at the height it is drawn at and kept until
+/// that changes.
+#[derive(Default)]
+pub struct ImageFile {
+    /// The height in physical px and the image (`None` inside if it cannot be read).
+    cached: Option<(u32, Option<Bitmap>)>,
+}
+
+impl ImageFile {
+    /// The image at `path`, `px` physical px tall; `None` when `path` is empty or the file
+    /// cannot be read (logged once per height).
+    pub fn get(&mut self, path: &str, px: u32) -> Option<Bitmap> {
+        if path.is_empty() {
+            return None;
+        }
+        if self.cached.as_ref().is_none_or(|(h, _)| *h != px) {
+            let image = load_image(Path::new(path), Some(px))
+                .map_err(|e| tracing::warn!("image {path:?} cannot be shown: {e}"))
+                .ok();
+            self.cached = Some((px, image));
+        }
+        self.cached.as_ref().and_then(|(_, image)| image.clone())
+    }
 }
 
 /// An icon ready to draw.

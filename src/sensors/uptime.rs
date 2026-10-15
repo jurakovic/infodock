@@ -295,6 +295,7 @@ mod tests {
             locked: false,
             alt: false,
             animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
             platform: &NoPlatform,
         })
     }
