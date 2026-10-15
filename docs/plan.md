@@ -101,7 +101,10 @@ Order (D26): as in M2, each item brings the platform pieces its sensor needs; th
 - [x] **S12 Eject USB**: `sensors/eject_usb.rs` (§9.22) with the `eject-list` popup: ejectable volumes from `volumes`, *Eject* per row with toasts, *Safely Remove Hardware…*, *Nothing to eject*. D40
 - [x] **S13 Drop onto the bar**: `IDropTarget` on the bar window (§6.3): `CF_HDROP`, URL formats with their link text, `CFSTR_SHELLIDLIST`; classifying paths through the platform shell; new Disk, Folder Menu and Shortcut sensors at the drop position (§6.2 rules), without Properties; `IDropTargetHelper` for the drag image. D41
 - [x] **S14 Drop onto sensors**: Folder Menu file operations (`IFileOperation`; same volume moves, otherwise copies; Ctrl/Shift/Alt), `.url` files from URLs, Recycle Bin deletes, the drop effects, the highlighted target and the floating drop hint. D42
-- [ ] **S15 Close-out**: screenshots and budgets, clean-context review, fixes, `docs/manual-test.md` M3 final, CI green; split into S15a… when it starts, as in M2
+- [ ] **S15 Close-out**: screenshots and budgets, clean-context review, fixes, `docs/manual-test.md` M3 final, CI green. Split:
+- [ ] **S15a Screenshots and budgets**: CI's launcher and popup screenshots (`bar-launchers*`, `popup-*`) looked at and fixed where wrong; memory and idle CPU with the M3 code (§14.1), noted here
+- [ ] **S15b Review**: three clean-context reviewers on the M3 diff (`86f5994..0682389`: platform, providers and sampler; sensors; bar, drag & drop and Settings); findings in `docs/review-m3.md`, checked against the code and grouped into fix items (S15c…)
+- [ ] **S15z M3 done**: the review's fixes in, `docs/manual-test.md` M3 final with checks for the fixes, CI green
 
 ## M4 — Classic, import, packaging
 
