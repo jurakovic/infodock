@@ -9,6 +9,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use super::anim::{self, Easing, Fade};
+use super::drop::{self, Dropped};
 use super::hint::{self, HintBody, HintFrame, Hover, Step};
 use super::icons::IconLoader;
 use super::interact::{self, DropTarget, Press};
@@ -28,8 +29,9 @@ use crate::config::model::{
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::platform::{
-    BarGeometry, BarHandler, BarWindow, Canvas, Key, Modifiers, OsAppearance, Platform, PointF,
-    PointerButton, PopupInput, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
+    BarGeometry, BarHandler, BarWindow, Canvas, DragEvent, DropEffect, DropEffects, Key, Modifiers,
+    OsAppearance, Platform, PointF, PointerButton, PopupInput, Rect, RectF, SizeF, TextEngine,
+    TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::format::Numbers;
@@ -51,6 +53,14 @@ struct Drag {
     /// Where the sensor is.
     source: (Zone, usize),
     /// Where it would go; none until the pointer moved.
+    target: Option<DropTarget>,
+}
+
+/// A drag from another app over the bar (SPEC §6.3).
+struct ExternalDrag {
+    /// What the bar takes of the dragged items, in order.
+    items: Vec<Dropped>,
+    /// Where new sensors would go; none until the pointer is over the bar.
     target: Option<DropTarget>,
 }
 
@@ -84,6 +94,8 @@ pub(super) struct BarLogic {
     press: Option<Press>,
     /// A reorder drag runs (SPEC §6.2).
     drag: Option<Drag>,
+    /// Another app drags something over the bar (SPEC §6.3).
+    external: Option<ExternalDrag>,
     /// The left button is down on the background of a floating bar, which moves it (§5.1).
     moving: Option<Moving>,
     /// When the hover hint shows and hides.
@@ -183,6 +195,7 @@ impl BarLogic {
             previews: HashMap::new(),
             press: None,
             drag: None,
+            external: None,
             moving: None,
             hover: Hover::default(),
             popups: PopupHost::default(),
@@ -1140,7 +1153,100 @@ impl BarLogic {
     }
 }
 
+impl BarLogic {
+    /// Another app's drag enters the bar: the hint closes, and the items the bar can take are
+    /// kept for the drop (SPEC §6.3).
+    fn drag_enter(&mut self, window: &dyn BarWindow, items: &[crate::platform::DragItem]) {
+        self.cancel_drag(window);
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
+        let platform = Arc::clone(&self.platform);
+        let items = items
+            .iter()
+            .filter_map(|item| drop::classify(item, |path| platform.path_kind(path)))
+            .collect();
+        self.external = Some(ExternalDrag {
+            items,
+            target: None,
+        });
+    }
+
+    /// The pointer of another app's drag is at `at`: where new sensors would go, and the effect.
+    fn drag_over(
+        &mut self,
+        window: &dyn BarWindow,
+        at: PointF,
+        allowed: DropEffects,
+    ) -> DropEffect {
+        let target = interact::drop_target(
+            at.x,
+            &self.sensors.spans(),
+            self.sensors.bar_width(),
+            self.theme.pad,
+            self.theme.gap,
+        );
+        let Some(external) = self.external.as_mut() else {
+            return DropEffect::None;
+        };
+        if external.items.is_empty() {
+            return DropEffect::None;
+        }
+        if external.target != Some(target) {
+            external.target = Some(target);
+            window.invalidate();
+        }
+        drop::creation_effect(allowed)
+    }
+
+    /// Another app's drag left, or dropped: the placer goes.
+    fn drag_end(&mut self, window: &dyn BarWindow) -> Option<ExternalDrag> {
+        let external = self.external.take();
+        if external.as_ref().is_some_and(|e| e.target.is_some()) {
+            window.invalidate();
+        }
+        external
+    }
+
+    /// Drops the dragged items: one new sensor each, in order, where the placer was (SPEC
+    /// §6.3), without their Properties.
+    fn drag_drop(
+        &mut self,
+        window: &dyn BarWindow,
+        at: PointF,
+        allowed: DropEffects,
+    ) -> DropEffect {
+        let effect = self.drag_over(window, at, allowed);
+        let Some(external) = self.drag_end(window) else {
+            return DropEffect::None;
+        };
+        let Some(target) = external.target.filter(|_| effect != DropEffect::None) else {
+            return DropEffect::None;
+        };
+        let sensors = external.items.iter().map(drop::new_sensor).collect();
+        self.host
+            .add_sensors(target.zone, target.insertion, sensors);
+        effect
+    }
+}
+
 impl BarHandler for BarLogic {
+    fn on_drag(&mut self, window: &dyn BarWindow, event: DragEvent) -> DropEffect {
+        match event {
+            DragEvent::Enter {
+                items, at, allowed, ..
+            } => {
+                self.drag_enter(window, &items);
+                self.drag_over(window, at, allowed)
+            }
+            DragEvent::Over { at, allowed, .. } => self.drag_over(window, at, allowed),
+            DragEvent::Leave => {
+                self.drag_end(window);
+                DropEffect::None
+            }
+            DragEvent::Drop { at, allowed, .. } => self.drag_drop(window, at, allowed),
+        }
+    }
+
     fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent) {
         match event {
             UiEvent::Started => {
@@ -1274,9 +1380,15 @@ impl BarHandler for BarLogic {
             .map_or(self.settings.bar.edge, |g| g.edge);
         paint_bar(canvas, size, &self.theme, edge, highlight);
         self.sensors.draw(canvas, &self.theme, size.height);
-        // The placer: a 2 px line in the accent colour where the dragged sensor would go
-        // (SPEC §6.2, §12.2).
-        if let Some(target) = self.drag.as_ref().and_then(|d| d.target) {
+        // The placer: a 2 px line in the accent colour where the dragged sensor, or the
+        // sensors a drop creates, would go (SPEC §6.2, §6.3, §12.2).
+        let placer = self.drag.as_ref().and_then(|d| d.target).or_else(|| {
+            self.external
+                .as_ref()
+                .filter(|e| !e.items.is_empty())
+                .and_then(|e| e.target)
+        });
+        if let Some(target) = placer {
             let x = canvas.snap(target.placer_x - 1.0);
             canvas.fill_rect(
                 RectF::new(x, 2.0, x + 2.0, size.height - 2.0),
@@ -1431,6 +1543,21 @@ mod tests {
         fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String> {
             self.log(format!("add {kind} {} {index}", zone_id(zone)));
             Some("s_new".into())
+        }
+        fn add_sensors(
+            &self,
+            zone: Zone,
+            index: usize,
+            sensors: Vec<(&'static str, crate::sensors::Props)>,
+        ) {
+            for (i, (kind, props)) in sensors.into_iter().enumerate() {
+                self.log(format!(
+                    "add {kind} {} {} {}",
+                    zone_id(zone),
+                    index + i,
+                    serde_json::Value::Object(props)
+                ));
+            }
         }
         fn remove_sensor(&self, id: &str) {
             self.log(format!("remove {id}"));
@@ -2137,6 +2264,114 @@ mod tests {
             PointF::new(third_x, 14.0),
         );
         assert_eq!(host.calls()[1], format!("move {cpu} left 2"));
+    }
+
+    fn placer_drawn(logic: &mut BarLogic) -> bool {
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        canvas.dump().lines().any(|l| l.ends_with("#0078D4"))
+    }
+
+    #[test]
+    fn dropping_files_and_links_onto_the_bar_adds_sensors() {
+        use crate::platform::{DragItem, DropEffect, DropEffects};
+        let (mut logic, window, host, _) = bar(Settings::default());
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, b"x").expect("a file");
+        let path = |p: &std::path::Path| p.to_string_lossy().into_owned();
+        let items = vec![
+            DragItem::Path(path(&file)),
+            DragItem::Path(path(&dir.path().join("gone"))),
+            DragItem::Path(path(dir.path())),
+            DragItem::Url {
+                url: "https://example.com/".into(),
+                title: Some("Example".into()),
+            },
+            DragItem::Path("E:\\".into()),
+        ];
+        let at = PointF::new(1000.0, 14.0);
+        let enter = DragEvent::Enter {
+            items,
+            at,
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        assert_eq!(logic.on_drag(&window, enter), DropEffect::Link);
+        assert!(placer_drawn(&mut logic), "where the sensors would go");
+        let over = DragEvent::Over {
+            at: PointF::new(850.0, 14.0),
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        assert_eq!(logic.on_drag(&window, over), DropEffect::Link);
+        let drop = DragEvent::Drop {
+            at: PointF::new(850.0, 14.0),
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        assert_eq!(logic.on_drag(&window, drop), DropEffect::Link);
+        assert!(!placer_drawn(&mut logic));
+        // The right zone's first place: before its first sensor, one sensor per item that
+        // exists, in order.
+        assert_eq!(
+            host.calls(),
+            [
+                format!(
+                    "add shortcut right 0 {}",
+                    serde_json::json!({ "target": path(&file) })
+                ),
+                format!(
+                    "add folder-menu right 1 {}",
+                    serde_json::json!({ "folder": path(dir.path()) })
+                ),
+                format!(
+                    "add shortcut right 2 {}",
+                    serde_json::json!({ "url": "https://example.com/", "title": "Example" })
+                ),
+                format!(
+                    "add disk right 3 {}",
+                    serde_json::json!({ "drive": "E:\\" })
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn what_the_bar_cannot_take_is_refused() {
+        use crate::platform::{DragItem, DropEffect, DropEffects};
+        let (mut logic, window, host, _) = bar(Settings::default());
+        let mail = DragEvent::Enter {
+            items: vec![DragItem::Url {
+                url: "mailto:me@example.com".into(),
+                title: None,
+            }],
+            at: LOGO,
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        assert_eq!(logic.on_drag(&window, mail), DropEffect::None);
+        assert!(!placer_drawn(&mut logic));
+        let drop = DragEvent::Drop {
+            at: LOGO,
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        assert_eq!(logic.on_drag(&window, drop), DropEffect::None);
+        // A source that allows only moving: nothing to create links or copies with.
+        let move_only = DropEffects {
+            moves: true,
+            ..DropEffects::default()
+        };
+        let enter = DragEvent::Enter {
+            items: vec![DragItem::Path("E:\\".into())],
+            at: LOGO,
+            modifiers: Modifiers::default(),
+            allowed: move_only,
+        };
+        assert_eq!(logic.on_drag(&window, enter), DropEffect::None);
+        assert_eq!(logic.on_drag(&window, DragEvent::Leave), DropEffect::None);
+        assert!(host.calls().is_empty());
     }
 
     #[test]

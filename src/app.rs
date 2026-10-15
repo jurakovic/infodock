@@ -161,6 +161,34 @@ impl App {
         Ok(id)
     }
 
+    /// Adds `sensors` (types and props) in this order at `index` of `zone`, in one change;
+    /// returns their ids.
+    pub fn add_sensors(
+        &self,
+        zone: Zone,
+        index: usize,
+        sensors: &[(&str, Props)],
+    ) -> Result<Vec<String>, ConfigError> {
+        let (ids, _) = self.store.update(|c| {
+            sensors
+                .iter()
+                .enumerate()
+                .map(|(i, (kind, props))| {
+                    ops::add(
+                        c,
+                        registry(),
+                        &self.defaults(),
+                        kind,
+                        zone,
+                        index + i,
+                        props,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        Ok(ids)
+    }
+
     /// Where machine-derived props come from (SPEC §11.2).
     fn defaults(&self) -> DefaultsCtx<'_> {
         DefaultsCtx {
@@ -250,6 +278,12 @@ impl BarHost for AppHost {
             .add_sensor(kind, zone, index, &Props::new())
             .map_err(|e| tracing::warn!("could not add a {kind} sensor: {e}"))
             .ok()
+    }
+
+    fn add_sensors(&self, zone: Zone, index: usize, sensors: Vec<(&'static str, Props)>) {
+        if let Err(e) = self.0.add_sensors(zone, index, &sensors) {
+            tracing::warn!("could not add the dropped sensors: {e}");
+        }
     }
 
     fn remove_sensor(&self, id: &str) {

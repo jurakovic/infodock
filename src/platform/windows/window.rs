@@ -32,6 +32,7 @@ use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateRectRgn, DeleteObject, EndPaint, InvalidateRect, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Ole::OleInitialize;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -54,6 +55,7 @@ use windows::core::{HSTRING, PCWSTR, w};
 
 use super::appbar::{Shared as AppBarState, WinAppBar};
 use super::dialog;
+use super::droptarget;
 use super::hint::HintWindow;
 use super::instance::activate_message;
 use super::menu;
@@ -63,8 +65,9 @@ use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
-    AppBarEvent, BarHandler, BarThread, BarWindow, Canvas, HandlerFactory, MenuEntry, Modifiers,
-    PlatformError, PointF, PointerButton, Rect, SizeF, TimerId, TrayIcon, UiEvent, UiWaker,
+    AppBarEvent, BarHandler, BarThread, BarWindow, Canvas, DragEvent, DropEffect, HandlerFactory,
+    MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect, SizeF, TimerId, TrayIcon,
+    UiEvent, UiWaker,
 };
 
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
@@ -317,6 +320,15 @@ impl WindowState {
             return;
         };
         handler.on_event(self, event);
+        self.drain(handler.as_mut());
+        drop(slot);
+        if self.repaint.take() {
+            self.invalidate();
+        }
+    }
+
+    /// Delivers the events that arrived while the handler was busy.
+    fn drain(&self, handler: &mut dyn BarHandler) {
         loop {
             // Separate statement: the queue must not stay borrowed while the handler runs.
             let next = self.deferred.borrow_mut().pop_front();
@@ -325,10 +337,24 @@ impl WindowState {
             };
             handler.on_event(self, event);
         }
+    }
+
+    /// A drag from another app (SPEC §6.3): the handler answers with the effect at once; while
+    /// it is busy (a menu is open), nothing can be dropped.
+    fn drag(&self, event: DragEvent) -> DropEffect {
+        let Ok(mut slot) = self.handler.try_borrow_mut() else {
+            return DropEffect::None;
+        };
+        let Some(handler) = slot.as_mut() else {
+            return DropEffect::None;
+        };
+        let effect = handler.on_drag(self, event);
+        self.drain(handler.as_mut());
         drop(slot);
         if self.repaint.take() {
             self.invalidate();
         }
+        effect
     }
 
     fn paint(&self) {
@@ -764,6 +790,12 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
 }
 
 fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, PlatformError>>) {
+    // A single-threaded apartment with OLE, which drag & drop needs (SPEC §4.1). Never
+    // uninitialised: the thread runs until the process ends.
+    // SAFETY: first call on this thread.
+    if let Err(e) = unsafe { OleInitialize(None) } {
+        tracing::warn!("OLE is not available on the bar thread: {e}");
+    }
     let state = match create_window() {
         Ok(state) => state,
         Err(e) => {
@@ -796,6 +828,7 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
     });
     *state.handler.borrow_mut() = Some(make_handler(waker.clone()));
     state.dispatch(UiEvent::Started);
+    droptarget::register(state.hwnd(), Box::new(|event| state.drag(event)));
     let _ = ready.send(Ok(BarThread {
         appbar: Arc::new(WinAppBar { shared: appbar }),
         tray: tray as Arc<dyn TrayIcon>,

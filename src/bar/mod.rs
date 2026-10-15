@@ -2,6 +2,7 @@
 //! the rest of the app uses; the logic in `thread.rs` runs on the bar thread.
 
 pub mod anim;
+mod drop;
 mod hint;
 mod icons;
 mod interact;
@@ -43,6 +44,14 @@ pub trait BarHost: Send + Sync {
     fn change_settings(&self, change: Box<dyn FnOnce(&mut Settings) + Send>);
     /// Adds a sensor of type `kind` with its defaults; returns its id (SPEC §4.5).
     fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String>;
+    /// Adds sensors of the given types and props in this order at `index` of `zone`, without
+    /// opening their Properties (a drop, SPEC §6.3).
+    fn add_sensors(
+        &self,
+        zone: Zone,
+        index: usize,
+        sensors: Vec<(&'static str, crate::sensors::Props)>,
+    );
     fn remove_sensor(&self, id: &str);
     /// Moves a sensor; `index` counts with it already taken out (SPEC §6.2).
     fn move_sensor(&self, id: &str, zone: Zone, index: usize);

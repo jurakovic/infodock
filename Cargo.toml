@@ -61,6 +61,9 @@ raw-window-handle = "0.6"
 window-vibrancy = "0.8"
 # Points and matrices of the Direct2D API; the version the `windows` crate uses.
 windows-numerics = "0.3"
+# The `#[implement]` macro (the bar's `IDropTarget`) names this crate; the version the
+# `windows` crate uses.
+windows-core = "0.62"
 windows = { version = "0.62", features = [
     "Data_Xml_Dom",
     "Wdk_System_SystemInformation",
@@ -83,16 +86,21 @@ windows = { version = "0.62", features = [
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_IO",
     "Win32_System_Ioctl",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_Performance",
     "Win32_System_Power",
     "Win32_System_Shutdown",
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",

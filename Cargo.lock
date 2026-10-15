@@ -2209,6 +2209,7 @@ dependencies = [
  "tracing-subscriber",
  "window-vibrancy",
  "windows",
+ "windows-core",
  "windows-numerics",
 ]
 

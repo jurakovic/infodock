@@ -7,6 +7,7 @@ mod cpu;
 mod device;
 mod dialog;
 mod disk;
+mod droptarget;
 mod eject;
 mod hint;
 mod icons;

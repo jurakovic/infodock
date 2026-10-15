@@ -363,3 +363,12 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] Each row: the drive's icon as Explorer shows it, *STICK (E:)*, its size (*14.8 GB*), and *Eject*. A USB hard disk and a DVD with a disc are listed too; an empty DVD drive, an empty card reader and internal disks are not.
 - [ ] *Eject*: the button says *Ejecting…*, then a toast *STICK (E:) can be safely removed.* and the row goes; the list stays open. With a file open on the stick: the toast says it is in use and the button is back.
 - [ ] ↑/↓ mark the buttons and the footer, Enter acts; Esc closes. *Safely Remove Hardware…* opens Windows' dialog and closes the list.
+
+**Drop onto the bar** (since M3 S13)
+
+- [ ] Drag a file from Explorer over an empty part of the bar: the drag image stays, the pointer shows *Create link*, and the accent placer shows where it would go (left, centre or right zone by thirds, as when reordering). Drop: a Shortcut to the file appears there at once, without a Properties dialog; its icon is the file's.
+- [ ] A folder makes a Folder Menu; a drive from *This PC* (`E:`) makes a Disk; a selection of a file, a folder and a drive makes three sensors in that order.
+- [ ] Over a sensor: the placer is left of it on its left half and right of it on its right half; the drop goes there.
+- [ ] Drag a link from Edge or Chrome (and Firefox) onto the bar: a web Shortcut with the globe icon whose hint is the link's text (*Open 'Example Domain'*); the click opens the page. Drag the address bar's padlock: the page's title.
+- [ ] Text, a `mailto:` link or an image from a page: the no-drop pointer, nothing happens. Esc during the drag, or leaving the bar: the placer goes.
+- [ ] The bar locked: drops still add sensors. A context menu open on the bar: nothing can be dropped until it closes.

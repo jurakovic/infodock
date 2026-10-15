@@ -7,6 +7,7 @@
 
 pub mod bitmap;
 pub mod canvas;
+pub mod drag;
 pub mod geometry;
 pub mod locale;
 pub mod notify;
@@ -26,6 +27,7 @@ use serde::Serialize;
 use crate::config::model::{BarMode, DateLocale, Edge, FloatingRect, Material, Settings, ZOrder};
 pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
 pub use canvas::{Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF};
+pub use drag::{DragEvent, DragItem, DropEffect, DropEffects};
 pub use geometry::{MonitorInfo, Rect};
 pub use locale::Locale;
 pub use text::{Font, TextEngine, TextLayout, TextStyle};
@@ -1017,6 +1019,12 @@ impl MenuEntry {
 /// The bar logic. Called by the native bar window, always on the bar thread.
 pub trait BarHandler {
     fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent);
+    /// A drag from another app over the bar (SPEC §6.3); returns what dropping would do, or on
+    /// [`DragEvent::Drop`] what it did.
+    fn on_drag(&mut self, window: &dyn BarWindow, event: DragEvent) -> DropEffect {
+        let _ = (window, event);
+        DropEffect::None
+    }
     /// Draws the bar into a cleared canvas of `size` logical px.
     fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF);
 }
