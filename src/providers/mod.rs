@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use crate::platform::{Platform, PowerStatus, RecycleBin, Volume, WifiReader};
-use crate::sampler::{Change, ChangeSink, DiskSample, PathSample, Sample, Topic};
+use crate::sampler::{Change, ChangeSink, DiskSample, PathSample, Sample, Slow, Topic};
 use worker::SlowReader;
 
 /// The providers of all topics, with whatever state they keep between readings.
@@ -22,16 +22,16 @@ pub struct Providers {
     platform: Arc<dyn Platform>,
     /// Created on first use; `None` inside when the platform has no reader.
     cpu: Option<Option<cpu::Cpu>>,
-    /// The disk reader's thread, started on first use; `None` inside if it could not start.
-    disks: Option<Option<SlowReader<DiskSample>>>,
+    /// The disks, read on workers (one per drive), created on first use.
+    disks: Option<SlowReader<DiskSample>>,
     /// The same for paths (`path/<path>`).
-    paths: Option<Option<SlowReader<PathSample>>>,
+    paths: Option<SlowReader<PathSample>>,
     /// The same for the drive list (one key, `""`).
-    volumes: Option<Option<SlowReader<Vec<Volume>>>>,
+    volumes: Option<SlowReader<Vec<Volume>>>,
     /// The same for the Recycle Bin (one key, `""`), which can take a while to count.
-    recycle_bin: Option<Option<SlowReader<Option<RecycleBin>>>>,
+    recycle_bin: Option<SlowReader<Option<RecycleBin>>>,
     /// The same for the batteries (one key, `""`), whose firmware can be slow to answer.
-    power: Option<Option<SlowReader<Option<PowerStatus>>>>,
+    power: Option<SlowReader<Option<PowerStatus>>>,
     /// Created on first use and dropped when nobody reads Wi-Fi; `None` inside where there is
     /// no WLAN.
     wifi: Option<Option<Box<dyn WifiReader>>>,
@@ -82,27 +82,27 @@ impl Providers {
                 }
             }
             Topic::Disk(root) => {
-                if let Some(Some(disks)) = &mut self.disks {
+                if let Some(disks) = &mut self.disks {
                     disks.forget(root);
                 }
             }
             Topic::Path(path) => {
-                if let Some(Some(paths)) = &mut self.paths {
+                if let Some(paths) = &mut self.paths {
                     paths.forget(path);
                 }
             }
             Topic::Volumes => {
-                if let Some(Some(volumes)) = &mut self.volumes {
+                if let Some(volumes) = &mut self.volumes {
                     volumes.forget("");
                 }
             }
             Topic::RecycleBin => {
-                if let Some(Some(bin)) = &mut self.recycle_bin {
+                if let Some(bin) = &mut self.recycle_bin {
                     bin.forget("");
                 }
             }
             Topic::Battery(_) => {
-                if let Some(Some(power)) = &mut self.power {
+                if let Some(power) = &mut self.power {
                     power.forget("");
                 }
             }
@@ -137,47 +137,67 @@ impl Providers {
                 .page_files()
                 .map(|files| Sample::Swap(swap::sample(&files))),
             Topic::Disk(root) => {
-                let platform = &self.platform;
                 let disks = self.disks.get_or_insert_with(|| {
-                    let platform = Arc::clone(platform);
-                    SlowReader::new("disks", move |root| disk::sample(platform.disk_space(root)))
+                    let platform = Arc::clone(&self.platform);
+                    let changes = self.changes.clone();
+                    SlowReader::new(
+                        "disks",
+                        move |root| disk::sample(platform.disk_space(root)),
+                        move || changes.report(Change::Answered(Slow::Disks)),
+                    )
                 });
-                disks.as_mut()?.sample(root).map(Sample::Disk)
+                disks.sample(root).map(Sample::Disk)
             }
             Topic::Path(path) => {
-                let platform = &self.platform;
                 let paths = self.paths.get_or_insert_with(|| {
-                    let platform = Arc::clone(platform);
-                    SlowReader::new("paths", move |path| PathSample {
-                        kind: platform.path_kind(path),
-                    })
+                    let platform = Arc::clone(&self.platform);
+                    let changes = self.changes.clone();
+                    SlowReader::new(
+                        "paths",
+                        move |path| PathSample {
+                            kind: platform.path_kind(path),
+                        },
+                        move || changes.report(Change::Answered(Slow::Paths)),
+                    )
                 });
-                paths.as_mut()?.sample(path).map(Sample::Path)
+                paths.sample(path).map(Sample::Path)
             }
             // Listing may stall on a drive that does not answer.
             Topic::Volumes => {
-                let platform = &self.platform;
                 let volumes = self.volumes.get_or_insert_with(|| {
-                    let platform = Arc::clone(platform);
-                    SlowReader::new("volumes", move |_| platform.volumes())
+                    let platform = Arc::clone(&self.platform);
+                    let changes = self.changes.clone();
+                    SlowReader::new(
+                        "volumes",
+                        move |_| platform.volumes(),
+                        move || changes.report(Change::Answered(Slow::Volumes)),
+                    )
                 });
-                volumes.as_mut()?.sample("").map(Sample::Volumes)
+                volumes.sample("").map(Sample::Volumes)
             }
             Topic::RecycleBin => {
-                let platform = &self.platform;
                 let bin = self.recycle_bin.get_or_insert_with(|| {
-                    let platform = Arc::clone(platform);
-                    SlowReader::new("recycle-bin", move |_| platform.recycle_bin())
+                    let platform = Arc::clone(&self.platform);
+                    let changes = self.changes.clone();
+                    SlowReader::new(
+                        "recycle-bin",
+                        move |_| platform.recycle_bin(),
+                        move || changes.report(Change::Answered(Slow::RecycleBin)),
+                    )
                 });
-                bin.as_mut()?.sample("").flatten().map(Sample::RecycleBin)
+                bin.sample("").flatten().map(Sample::RecycleBin)
             }
             Topic::Battery(index) => {
-                let platform = &self.platform;
                 let power = self.power.get_or_insert_with(|| {
-                    let platform = Arc::clone(platform);
-                    SlowReader::new("batteries", move |_| platform.power_status())
+                    let platform = Arc::clone(&self.platform);
+                    let changes = self.changes.clone();
+                    SlowReader::new(
+                        "batteries",
+                        move |_| platform.power_status(),
+                        move || changes.report(Change::Answered(Slow::Batteries)),
+                    )
                 });
-                let status = power.as_mut()?.sample("").flatten()?;
+                let status = power.sample("").flatten()?;
                 Some(Sample::Battery(battery::sample(&status, *index)))
             }
             Topic::Wifi => {

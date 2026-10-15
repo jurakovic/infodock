@@ -85,9 +85,12 @@ pub fn volumes() -> Vec<Volume> {
             let label = if local { label(&path) } else { String::new() };
             let (ejectable, media) = match kind {
                 DriveKind::Removable | DriveKind::Optical => {
-                    (true, super::device::has_media(&root))
+                    (!is_system(&root), super::device::has_media(&root))
                 }
-                DriveKind::Fixed => (super::device::on_removable_bus(&root), true),
+                DriveKind::Fixed => (
+                    !is_system(&root) && super::device::on_removable_bus(&root),
+                    true,
+                ),
                 DriveKind::Network | DriveKind::Ram | DriveKind::Other => (false, true),
             };
             Volume {
@@ -174,6 +177,14 @@ pub fn space(root: &str) -> Option<DiskSpace> {
     }
     .ok()?;
     Some(DiskSpace { total, free })
+}
+
+/// Whether `root` is the drive Windows runs from (`SystemDrive`), which is never ejected.
+fn is_system(root: &str) -> bool {
+    std::env::var("SystemDrive").is_ok_and(|drive| {
+        let drive = drive.trim_end_matches('\\');
+        !drive.is_empty() && root.trim_end_matches('\\').eq_ignore_ascii_case(drive)
+    })
 }
 
 #[cfg(test)]

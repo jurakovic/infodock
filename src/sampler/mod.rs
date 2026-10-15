@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use scheduler::Scheduler;
 pub use topics::{
     BATTERY_EVERY, BatterySample, Change, CpuSample, Delivery, DiskSample, MemorySample, NetSample,
-    PathSample, Sample, SwapSample, Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
+    PathSample, Sample, Slow, SwapSample, Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
 };
 
 use crate::providers::Providers;

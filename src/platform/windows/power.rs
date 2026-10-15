@@ -129,8 +129,12 @@ fn act(action: PowerAction, force: bool) -> Result<()> {
     }
 }
 
-/// Sleeps or hibernates; returns once the computer has woken up.
+/// Sleeps or hibernates; returns once the computer has woken up. `SetSuspendState` needs
+/// `SeShutdownPrivilege` enabled too.
 fn suspend(hibernate: bool) -> Result<()> {
+    if let Err(e) = enable_shutdown_privilege() {
+        tracing::info!("the shutdown privilege could not be enabled: {e}");
+    }
     // SAFETY: plain call.
     if unsafe { SetSuspendState(hibernate, false, false) } {
         Ok(())
@@ -139,7 +143,8 @@ fn suspend(hibernate: bool) -> Result<()> {
     }
 }
 
-/// Shutting down or restarting needs `SeShutdownPrivilege` enabled in the process token.
+/// Shutting down, restarting, sleeping and hibernating need `SeShutdownPrivilege` enabled in
+/// the process token.
 fn enable_shutdown_privilege() -> Result<()> {
     let mut token = HANDLE::default();
     // SAFETY: the token handle is ours and closed below; the structures are initialised.

@@ -17,17 +17,20 @@ use std::mem::size_of;
 use std::time::Duration;
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_DEVCAP_REMOVABLE, CM_DRP_CAPABILITIES, CM_Get_DevNode_Registry_PropertyW, CM_Get_Parent,
-    CM_Request_Device_EjectW, CR_SUCCESS, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, PNP_VETO_TYPE,
-    PNP_VetoTypeUnknown, SP_DEVICE_INTERFACE_DATA, SP_DEVICE_INTERFACE_DETAIL_DATA_W,
-    SP_DEVINFO_DATA, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces,
-    SetupDiGetClassDevsW, SetupDiGetDeviceInterfaceDetailW,
+    CM_DEVCAP_REMOVABLE, CM_DRP_CAPABILITIES, CM_Get_DevNode_Registry_PropertyW, CM_Get_Device_IDW,
+    CM_Get_Parent, CM_Request_Device_EjectW, CR_SUCCESS, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT,
+    PNP_VETO_TYPE, PNP_VetoAlreadyRemoved, PNP_VetoDevice, PNP_VetoDriver, PNP_VetoLegacyDevice,
+    PNP_VetoLegacyDriver, PNP_VetoOutstandingOpen, PNP_VetoPendingClose, PNP_VetoTypeUnknown,
+    PNP_VetoWindowsApp, PNP_VetoWindowsService, SP_DEVICE_INTERFACE_DATA,
+    SP_DEVICE_INTERFACE_DETAIL_DATA_W, SP_DEVINFO_DATA, SetupDiDestroyDeviceInfoList,
+    SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW, SetupDiGetDeviceInterfaceDetailW,
 };
-use windows::Win32::Foundation::GENERIC_READ;
+use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
 use windows::Win32::Storage::FileSystem::{FILE_DEVICE_CD_ROM, FILE_DEVICE_DISK};
 use windows::Win32::System::Ioctl::{
     FSCTL_DISMOUNT_VOLUME, FSCTL_LOCK_VOLUME, GUID_DEVINTERFACE_CDROM, GUID_DEVINTERFACE_DISK,
-    IOCTL_STORAGE_EJECT_MEDIA, IOCTL_STORAGE_GET_DEVICE_NUMBER, STORAGE_DEVICE_NUMBER,
+    IOCTL_STORAGE_EJECT_MEDIA, IOCTL_STORAGE_GET_DEVICE_NUMBER, IOCTL_STORAGE_MEDIA_REMOVAL,
+    STORAGE_DEVICE_NUMBER,
 };
 use windows::Win32::UI::Shell::{
     BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO, IContextMenu, IShellItem,
@@ -197,6 +200,8 @@ fn is_removable(node: u32) -> bool {
 }
 
 /// The first removable device node above the disk `node` (e.g. the USB mass storage device).
+/// The search ends at the first USB device: above it are hubs, and a hub (a dock's, say)
+/// must not go with the card reader built into it.
 fn removable_above(node: u32) -> Option<u32> {
     let mut current = node;
     for _ in 0..MAX_DEPTH {
@@ -208,12 +213,24 @@ fn removable_above(node: u32) -> Option<u32> {
         if is_removable(parent) {
             return Some(parent);
         }
+        if is_usb_device(parent) {
+            return None;
+        }
         current = parent;
     }
     None
 }
 
-/// Asks Windows to eject device node `node`, as *Safely Remove Hardware* does.
+/// Whether device node `node` was found on USB (its instance id starts with `USB\`).
+fn is_usb_device(node: u32) -> bool {
+    let mut id = [0u16; 256];
+    // SAFETY: the buffer is writable for its length.
+    let status = unsafe { CM_Get_Device_IDW(node, &mut id, 0) };
+    status == CR_SUCCESS && from_wide(&id).to_ascii_uppercase().starts_with("USB\\")
+}
+
+/// Asks Windows to eject device node `node`, as *Safely Remove Hardware* does. A drive in use
+/// is asked again a few times (a file closed a moment ago may still be held).
 fn request_eject(node: u32) -> Result<(), EjectError> {
     let mut last = EjectError::Failed(String::new());
     for attempt in 0..ATTEMPTS {
@@ -228,34 +245,70 @@ fn request_eject(node: u32) -> Result<(), EjectError> {
         if status == CR_SUCCESS && veto == PNP_VetoTypeUnknown {
             return Ok(());
         }
-        last = if veto == PNP_VetoTypeUnknown {
-            EjectError::Failed(format!("configuration manager error {}", status.0))
+        let refused = if veto == PNP_VetoTypeUnknown {
+            Some(EjectError::Failed(format!(
+                "configuration manager error {}",
+                status.0
+            )))
         } else {
-            EjectError::InUse(holder(&from_wide(&name)))
+            veto_error(veto, &from_wide(&name))
         };
         tracing::info!(
-            "eject of device node {node} refused: {last:?} (veto {})",
+            "eject of device node {node} refused: {refused:?} (veto {})",
             veto.0
         );
+        match refused {
+            // Gone already.
+            None => return Ok(()),
+            Some(e @ EjectError::InUse(_)) => last = e,
+            Some(e) => return Err(e),
+        }
     }
     Err(last)
 }
 
-/// A veto name that names a program (not a device path such as `\Device\HarddiskVolume5`).
-fn holder(name: &str) -> Option<String> {
+/// What a veto means (SPEC §9.22), by its type: an app or a service names who holds the drive
+/// (an app's name is the path of its program), open files and other devices name nobody, and
+/// anything else is a failure, after which the shell's verb is tried. `None`: the device is
+/// gone already.
+fn veto_error(veto: PNP_VETO_TYPE, name: &str) -> Option<EjectError> {
+    const NOBODY: [PNP_VETO_TYPE; 6] = [
+        PNP_VetoOutstandingOpen,
+        PNP_VetoPendingClose,
+        PNP_VetoDevice,
+        PNP_VetoDriver,
+        PNP_VetoLegacyDevice,
+        PNP_VetoLegacyDriver,
+    ];
     let name = name.trim();
-    (!name.is_empty() && !name.starts_with('\\')).then(|| name.to_owned())
+    let named = |n: &str| (!n.is_empty()).then(|| n.to_owned());
+    if veto == PNP_VetoAlreadyRemoved {
+        return None;
+    }
+    Some(if veto == PNP_VetoWindowsApp {
+        EjectError::InUse(named(name.rsplit(['\\', '/']).next().unwrap_or_default()))
+    } else if veto == PNP_VetoWindowsService {
+        EjectError::InUse(named(name))
+    } else if NOBODY.contains(&veto) {
+        EjectError::InUse(None)
+    } else {
+        EjectError::Failed(format!("veto {}: {name}", veto.0))
+    })
 }
 
-/// Ejects the medium of drive `root`: lock, dismount, eject.
+/// Ejects the medium of drive `root`: lock, dismount, allow removal (another program may have
+/// locked the medium in), eject.
 fn eject_media(root: &str) -> Result<(), EjectError> {
-    let device = Device::open_volume(root, GENERIC_READ.0)
+    let device = Device::open_volume(root, GENERIC_READ.0 | GENERIC_WRITE.0)
+        .or_else(|| Device::open_volume(root, GENERIC_READ.0))
         .ok_or_else(|| EjectError::Failed("the drive cannot be opened".into()))?;
     // Fails while files on it are open.
     if !device.control(FSCTL_LOCK_VOLUME, None, None) {
         return Err(EjectError::InUse(None));
     }
     let _ = device.control(FSCTL_DISMOUNT_VOLUME, None, None);
+    // PREVENT_MEDIA_REMOVAL with removal allowed.
+    let _ = device.control(IOCTL_STORAGE_MEDIA_REMOVAL, Some(&[0u8]), None);
     if device.control(IOCTL_STORAGE_EJECT_MEDIA, None, None) {
         Ok(())
     } else {
@@ -295,10 +348,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_veto_names_a_program_not_a_device() {
-        assert_eq!(holder("Explorer.EXE"), Some("Explorer.EXE".into()));
-        assert_eq!(holder(r"\Device\HarddiskVolume5"), None);
-        assert_eq!(holder("  "), None);
+    fn a_veto_names_a_program_or_service_only() {
+        assert_eq!(
+            veto_error(
+                PNP_VetoWindowsApp,
+                r"\Device\HarddiskVolume3\Windows\notepad.exe"
+            ),
+            Some(EjectError::InUse(Some("notepad.exe".into())))
+        );
+        assert_eq!(
+            veto_error(PNP_VetoWindowsService, "WSearch"),
+            Some(EjectError::InUse(Some("WSearch".into())))
+        );
+        assert_eq!(
+            veto_error(PNP_VetoOutstandingOpen, r"STORAGE\Volume\{53f5…}"),
+            Some(EjectError::InUse(None))
+        );
+        assert!(matches!(
+            veto_error(PNP_VETO_TYPE(12), "x"),
+            Some(EjectError::Failed(_))
+        ));
+        assert_eq!(veto_error(PNP_VetoAlreadyRemoved, ""), None);
+        assert_eq!(
+            veto_error(PNP_VetoWindowsApp, " "),
+            Some(EjectError::InUse(None))
+        );
     }
 
     /// Runs on the Windows CI runner (`cargo test -- --ignored`): finds the system disk's

@@ -86,8 +86,9 @@ impl Drop for Device {
     }
 }
 
-/// The bus the disk of drive `root` hangs on; `None` if the device does not say.
-fn bus(root: &str) -> Option<STORAGE_BUS_TYPE> {
+/// The bus the disk of drive `root` hangs on, and whether its media are removable; `None` if
+/// the device does not say.
+fn bus(root: &str) -> Option<(STORAGE_BUS_TYPE, bool)> {
     let device = Device::open_volume(root, 0)?;
     let query = STORAGE_PROPERTY_QUERY {
         PropertyId: StorageDeviceProperty,
@@ -110,13 +111,17 @@ fn bus(root: &str) -> Option<STORAGE_BUS_TYPE> {
     // it unaligned.
     let descriptor =
         unsafe { std::ptr::read_unaligned(output.as_ptr().cast::<STORAGE_DEVICE_DESCRIPTOR>()) };
-    Some(descriptor.BusType)
+    Some((descriptor.BusType, descriptor.RemovableMedia))
 }
 
-/// Whether the disk of drive `root` is on a bus whose disks can be unplugged: USB, FireWire,
-/// SD or MMC (an external disk, which Windows reports as fixed).
+/// Whether the disk of drive `root` is on a bus whose disks can be unplugged: USB or FireWire
+/// (an external disk, which Windows reports as fixed), or an SD or MMC card that can be taken
+/// out (a laptop's eMMC system disk is on the same bus, with fixed media).
 pub fn on_removable_bus(root: &str) -> bool {
-    bus(root).is_some_and(|b| [BusTypeUsb, BusType1394, BusTypeSd, BusTypeMmc].contains(&b))
+    bus(root).is_some_and(|(bus, removable_media)| {
+        [BusTypeUsb, BusType1394].contains(&bus)
+            || ([BusTypeSd, BusTypeMmc].contains(&bus) && removable_media)
+    })
 }
 
 /// Whether removable or optical drive `root` holds a medium, without reading it.

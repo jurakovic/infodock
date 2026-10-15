@@ -41,6 +41,19 @@ pub enum Change {
     Power,
     /// Wi-Fi connected, disconnected, roamed, or its radio was switched.
     Wifi,
+    /// A slow reading came after the sampler stopped waiting for it (SPEC §4.4): the topics it
+    /// belongs to are read again at once and take it.
+    Answered(Slow),
+}
+
+/// The readings done on worker threads, because they can stall (SPEC §4.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Slow {
+    Disks,
+    Paths,
+    Volumes,
+    RecycleBin,
+    Batteries,
 }
 
 impl Topic {
@@ -52,6 +65,13 @@ impl Topic {
             Change::RecycleBin => *self == Self::RecycleBin,
             Change::Power => matches!(self, Self::Battery(_)),
             Change::Wifi => *self == Self::Wifi,
+            Change::Answered(slow) => match slow {
+                Slow::Disks => matches!(self, Self::Disk(_)),
+                Slow::Paths => matches!(self, Self::Path(_)),
+                Slow::Volumes => *self == Self::Volumes,
+                Slow::RecycleBin => *self == Self::RecycleBin,
+                Slow::Batteries => matches!(self, Self::Battery(_)),
+            },
         }
     }
 }
