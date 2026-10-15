@@ -363,6 +363,15 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
+/// A folder the shell knows by role (SPEC §9.20).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnownFolder {
+    /// The user's Start Menu programs (`FOLDERID_Programs`).
+    Programs,
+    /// The Start Menu programs of all users (`FOLDERID_CommonPrograms`).
+    CommonPrograms,
+}
+
 /// What the Power sensor does (SPEC §9.21).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerAction {
@@ -516,6 +525,11 @@ pub trait Platform: Send + Sync {
     /// Compares two names as the shell sorts them (SPEC §9.19).
     fn compare_names(&self, a: &str, b: &str) -> std::cmp::Ordering {
         natural_cmp(a, b)
+    }
+    /// Where the shell keeps `folder`; `None` where there is no such folder.
+    fn known_folder(&self, folder: KnownFolder) -> Option<String> {
+        let _ = folder;
+        None
     }
     /// Shows `path` selected in its folder in Explorer, in the background (SPEC §9.19).
     fn reveal(&self, path: &str) {

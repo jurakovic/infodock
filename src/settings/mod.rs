@@ -917,6 +917,18 @@ mod screenshots {
         super::properties::open_form(&app, &folder, true);
         render("settings-properties-folder-menu");
         state.invoke_props_cancel();
+        // Start Menu: title, image, colour and opacity; no folder.
+        let start_menu = app
+            .add_sensor(
+                "start-menu",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &start_menu, true);
+        render("settings-properties-start-menu");
+        state.invoke_props_cancel();
         // The first-run network graph: Automatic and this computer's connections.
         let network = app
             .store

@@ -1085,6 +1085,8 @@ Properties: title (default "Start Menu"), image (default: built-in Start Menu ic
 * Menu: `Open folder` (per-user Programs), `Open (all users) folder`.
 * No drop handling (the all-users Start Menu folder needs admin rights).
 
+Implementation (`sensors/start_menu.rs`): the folders come from `Platform::known_folder` (`FOLDERID_Programs`, `FOLDERID_CommonPrograms`). The `folder-browser` popup takes a list of folders to show as one: each is listed and prepared on the same worker, and the lists are merged by name ignoring case (folders hold every merged path, so going into one lists them all and merges again; of files with the same name the user's wins). A folder that cannot be read is left out unless none can. The header opens the user's folder of the level shown. An empty title shows "Start Menu"; the built-in icon is a placeholder (Appendix C).
+
 ### 9.21 `power` — Power  (Launchers; `DockPower`)
 
 | Key | XML key | Type | Default | Options (XML value) |

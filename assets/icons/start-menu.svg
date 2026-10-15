@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Placeholder (SPEC Appendix C): the Start Menu's icon, a list of programs; monochrome
+       white, tinted with the text colour. -->
+  <rect x="3" y="3.5" width="18" height="17" rx="2.2" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
+  <rect x="6" y="7.2" width="3" height="3" rx="0.6" fill="#FFFFFF"/>
+  <rect x="10.5" y="7.9" width="7.5" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.7"/>
+  <rect x="6" y="13.8" width="3" height="3" rx="0.6" fill="#FFFFFF"/>
+  <rect x="10.5" y="14.5" width="7.5" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.7"/>
+</svg>

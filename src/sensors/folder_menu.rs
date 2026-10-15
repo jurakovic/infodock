@@ -208,7 +208,7 @@ impl Sensor for FolderMenu {
             return ClickResult::None;
         }
         ClickResult::Popup(Box::new(FolderBrowser::new(Options {
-            folder: self.props.folder.clone(),
+            folders: vec![self.props.folder.clone()],
             title: self.title(),
             show_hidden: self.props.show_hidden,
             width: Self::size(&self.props.popup_width, 240.0),

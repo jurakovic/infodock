@@ -6,6 +6,8 @@
 //! jumps to a name, the wheel scrolls smoothly, and grips on the free edges resize the popup.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
@@ -70,6 +72,17 @@ pub struct Item {
     pub name: String,
     pub path: String,
     pub folder: bool,
+    /// More folders merged into this one (Start Menu, SPEC §9.20); listed together with it.
+    pub also: Vec<String>,
+}
+
+impl Item {
+    /// The folders this item lists: its path and those merged into it.
+    fn folders(&self) -> Vec<String> {
+        std::iter::once(self.path.clone())
+            .chain(self.also.iter().cloned())
+            .collect()
+    }
 }
 
 /// The name shown for an entry: links (`.lnk`, `.url`) without their extension.
@@ -101,15 +114,47 @@ pub fn prepare(
             name: display_name(&e.name, e.folder),
             path: e.path,
             folder: e.folder,
+            also: Vec::new(),
         })
         .collect();
-    items.sort_by(|a, b| b.folder.cmp(&a.folder).then_with(|| cmp(&a.name, &b.name)));
+    sort(&mut items, cmp);
     items
 }
 
-/// Lists `folder` on a worker thread, which wakes the bar thread when it is done.
+/// Folders first, then files, each in the order of `cmp`.
+fn sort(items: &mut [Item], cmp: impl Fn(&str, &str) -> Ordering) {
+    items.sort_by(|a, b| b.folder.cmp(&a.folder).then_with(|| cmp(&a.name, &b.name)));
+}
+
+/// Several folders' lists as one (SPEC §9.20): folders with the same name (ignoring case)
+/// become one folder holding the union of their children, and of files with the same name
+/// the earlier list's wins. Sorted as [`prepare`] sorts.
+pub fn merge(lists: Vec<Vec<Item>>, cmp: impl Fn(&str, &str) -> Ordering) -> Vec<Item> {
+    let mut items: Vec<Item> = Vec::new();
+    let mut seen: HashMap<(bool, String), usize> = HashMap::new();
+    for item in lists.into_iter().flatten() {
+        match seen.entry((item.folder, item.name.to_lowercase())) {
+            Entry::Occupied(same) => {
+                if item.folder {
+                    let same = &mut items[*same.get()];
+                    same.also.push(item.path);
+                    same.also.extend(item.also);
+                }
+            }
+            Entry::Vacant(slot) => {
+                slot.insert(items.len());
+                items.push(item);
+            }
+        }
+    }
+    sort(&mut items, cmp);
+    items
+}
+
+/// Lists `folders` on a worker thread as one list, which wakes the bar thread when it is done.
+/// Folders that cannot be read are left out, unless none can.
 fn list(
-    folder: String,
+    folders: Vec<String>,
     show_hidden: bool,
     platform: Arc<dyn Platform>,
     waker: UiWaker,
@@ -118,12 +163,23 @@ fn list(
     let spawned = std::thread::Builder::new()
         .name("folder".into())
         .spawn(move || {
-            let result = platform
-                .list_dir(&folder)
-                .map(|entries| prepare(entries, show_hidden, |a, b| platform.compare_names(a, b)));
-            if let Err(e) = &result {
-                tracing::info!("folder {folder:?} cannot be listed: {e}");
+            let cmp = |a: &str, b: &str| platform.compare_names(a, b);
+            let mut lists = Vec::new();
+            let mut error = None;
+            for folder in &folders {
+                match platform.list_dir(folder) {
+                    Ok(entries) => lists.push(prepare(entries, show_hidden, cmp)),
+                    Err(e) => {
+                        tracing::info!("folder {folder:?} cannot be listed: {e}");
+                        error.get_or_insert(e);
+                    }
+                }
             }
+            let result = match (lists.len(), error) {
+                (0, Some(e)) => Err(e),
+                (1, _) => Ok(lists.pop().unwrap_or_default()),
+                _ => Ok(merge(lists, cmp)),
+            };
             if tx.send(result).is_ok() {
                 waker.wake();
             }
@@ -157,7 +213,8 @@ enum Listing {
 /// What the browser shows first and how big it is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
-    pub folder: String,
+    /// The folder shown first; more folders merge into it (Start Menu, SPEC §9.20).
+    pub folders: Vec<String>,
     /// The header's text.
     pub title: String,
     pub show_hidden: bool,
@@ -191,7 +248,8 @@ struct Resize {
 
 /// A folder the browser shows, or showed before going into a subfolder.
 struct Level {
-    folder: String,
+    /// The folder, and any merged into it; the header opens the first.
+    folders: Vec<String>,
     title: String,
     /// `None` until the first layout starts it.
     listing: Option<Listing>,
@@ -204,9 +262,9 @@ struct Level {
 }
 
 impl Level {
-    fn new(folder: String, title: String) -> Self {
+    fn new(folders: Vec<String>, title: String) -> Self {
         Self {
-            folder,
+            folders,
             title,
             listing: None,
             scroll: 0.0,
@@ -325,7 +383,7 @@ impl FolderBrowser {
             show_hidden: options.show_hidden,
             width: options.width,
             height: options.height,
-            levels: vec![Level::new(options.folder, options.title)],
+            levels: vec![Level::new(options.folders, options.title)],
             pressed: None,
             hover_grip: None,
             resize: None,
@@ -541,7 +599,7 @@ impl FolderBrowser {
         // Coming back, the folder gone into is marked.
         self.level_mut().current = Some(Target::Row(index));
         self.start_slide(true, cx);
-        self.levels.push(Level::new(item.path, item.name));
+        self.levels.push(Level::new(item.folders(), item.name));
         PopupReply::Relayout
     }
 
@@ -579,7 +637,10 @@ impl FolderBrowser {
     fn activate(&mut self, target: Target, alt: bool, cx: &PopupCtx) -> PopupReply {
         let path = match target {
             Target::Back => return self.back(cx),
-            Target::Header => self.level().folder.clone(),
+            Target::Header => match self.level().folders.first() {
+                Some(folder) => folder.clone(),
+                None => return PopupReply::Nothing,
+            },
             Target::Row(i) => match self.items().get(i) {
                 Some(item) if item.folder && !alt => return self.enter(i, cx),
                 Some(item) => item.path.clone(),
@@ -675,7 +736,7 @@ impl Popup for FolderBrowser {
         if self.level().listing.is_none() {
             let level = self.level();
             let rx = list(
-                level.folder.clone(),
+                level.folders.clone(),
                 self.show_hidden,
                 Arc::clone(cx.platform),
                 cx.waker.clone(),
@@ -1077,7 +1138,7 @@ pub(crate) mod tests {
 
     fn browser(folder: &str) -> FolderBrowser {
         FolderBrowser::new(Options {
-            folder: folder.into(),
+            folders: vec![folder.into()],
             title: "Data".into(),
             show_hidden: false,
             width: 240.0,
@@ -1150,6 +1211,76 @@ pub(crate) mod tests {
         assert!(dump.contains("clip 0,28 240×292"), "{dump}");
         assert_eq!(b.kind(), "folder-browser");
         assert_eq!(b.align(), PopupAlign::LeftEdge);
+    }
+
+    #[test]
+    fn merges_same_named_folders_and_keeps_the_first_file() {
+        let item = |name: &str, root: &str, folder| Item {
+            name: name.into(),
+            path: format!("{root}\\{name}"),
+            folder,
+            also: Vec::new(),
+        };
+        let user = vec![item("Tools", "U", true), item("Notes", "U", false)];
+        let all = vec![
+            item("tools", "A", true),
+            item("notes", "A", false),
+            item("Accessories", "A", true),
+            item("Edge", "A", false),
+        ];
+        let merged = merge(vec![user, all], crate::platform::natural_cmp);
+        let view: Vec<_> = merged
+            .iter()
+            .map(|i| (i.path.as_str(), i.also.clone()))
+            .collect();
+        assert_eq!(
+            view,
+            [
+                ("A\\Accessories", vec![]),
+                ("U\\Tools", vec!["A\\tools".to_owned()]),
+                ("A\\Edge", vec![]),
+                ("U\\Notes", vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn merged_folders_list_their_union() {
+        let h = Harness::new();
+        let user = tempfile::tempdir().expect("a temporary folder");
+        let all = tempfile::tempdir().expect("a temporary folder");
+        for root in [&user, &all] {
+            fs::create_dir(root.path().join("Tools")).expect("a folder");
+        }
+        fs::write(user.path().join("Tools").join("Mine.lnk"), b"x").expect("a file");
+        fs::write(all.path().join("Tools").join("Shared.lnk"), b"x").expect("a file");
+        fs::write(all.path().join("Tools").join("mine.lnk"), b"x").expect("a file");
+        fs::write(all.path().join("Edge.lnk"), b"x").expect("a file");
+        let path = |dir: &tempfile::TempDir| dir.path().to_string_lossy().into_owned();
+        let mut b = FolderBrowser::new(Options {
+            folders: vec![path(&user), path(&all), path(&user).replace("tmp", "gone")],
+            title: "Start Menu".into(),
+            show_hidden: false,
+            width: 240.0,
+            height: 320.0,
+        });
+        b.layout(&h.ctx());
+        assert_eq!(texts(&drawn(&b)), ["Start Menu", "Tools", "Edge"]);
+        assert_eq!(click(&mut b, &h, row(0), false), PopupReply::Relayout);
+        b.layout(&h.ctx());
+        assert_eq!(texts(&drawn(&b)), ["Tools", "Mine", "Shared"]);
+        // The header opens the user's folder.
+        assert_eq!(
+            click(&mut b, &h, PointF::new(10.0, 10.0), false),
+            PopupReply::Close
+        );
+        assert_eq!(
+            h.platform.log(),
+            [format!(
+                "open {}",
+                user.path().join("Tools").to_string_lossy()
+            )]
+        );
     }
 
     #[test]
@@ -1459,6 +1590,7 @@ pub(crate) mod tests {
             name: "a".into(),
             path: "C:\\Slow\\a".into(),
             folder: false,
+            also: Vec::new(),
         };
         tx.send(Ok(vec![item])).expect("sent");
         assert_eq!(b.poll(&h.ctx()), PopupReply::Relayout);

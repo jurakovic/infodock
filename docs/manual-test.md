@@ -347,3 +347,11 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] Type the first letters of a name: the list jumps to it; a pause of a second starts a new name.
 - [ ] The wheel scrolls smoothly, by as many lines per notch as Settings ▸ Mouse says; a quick series of notches adds up.
 - [ ] Above a bottom bar: the pointer turns into resize arrows over the right edge and the top edge; dragging them resizes the list (not below 130 px, not wider than 600 px or taller than 70 % of the screen), also when the pointer leaves the list while dragging. Reopen it: the new size stays, and Settings shows nothing new (the size is internal). A sensor at the screen's right edge, whose list lines up on the right: the left edge is the grip. A top bar: the bottom edge is the grip.
+
+**Start Menu** (since M3 S11)
+
+- [ ] *New sensor… ▸ Launchers ▸ Start Menu*: the Start Menu icon (21 px); hover: *Start Menu*. Click: the list shows the programs of both Start Menu folders as one: e.g. *Accessories* (or *Windows Accessories*), *Startup*, *Windows Tools* and the shortcuts, sorted as Explorer sorts. A folder that exists in both (e.g. *Accessories*, or a program's folder installed for you and for everyone) appears once and lists the shortcuts of both. CI renders it (`popup-start-menu.png`).
+- [ ] A shortcut you copy into `%APPDATA%\Microsoft\Windows\Start Menu\Programs` under the name of an all-users one (e.g. a copy of *Edge*): it appears once, and opening it opens your copy.
+- [ ] Navigation, keys, wheel and resizing work as in the Folder Menu; the header opens your own Start Menu folder of the level shown.
+- [ ] Right-click: *Open folder* opens `%APPDATA%\Microsoft\Windows\Start Menu\Programs`; *Open (all users) folder* opens `C:\ProgramData\Microsoft\Windows\Start Menu\Programs`.
+- [ ] *Title* → `Apps` changes the hint and the header; *Image file* replaces the icon.

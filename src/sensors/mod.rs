@@ -29,6 +29,7 @@ pub mod registry;
 pub mod schema;
 pub mod shortcut;
 pub mod spacer;
+pub mod start_menu;
 pub mod text;
 pub mod time;
 pub mod uptime;
@@ -559,6 +560,12 @@ pub(crate) mod test_support {
                 .lock()
                 .expect("lock")
                 .push(format!("reveal {path}"));
+        }
+        fn known_folder(&self, folder: crate::platform::KnownFolder) -> Option<String> {
+            Some(match folder {
+                crate::platform::KnownFolder::Programs => "C:\\Users\\me\\Programs".into(),
+                crate::platform::KnownFolder::CommonPrograms => "C:\\ProgramData\\Programs".into(),
+            })
         }
         fn eject(&self, root: &str, report: crate::platform::EjectReport) {
             let (title, body) = report(&Ok(()));

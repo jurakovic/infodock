@@ -31,7 +31,7 @@ use std::mem::size_of;
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
-use windows::Win32::UI::Shell::FOLDERID_Programs;
+use windows::Win32::UI::Shell::{FOLDERID_CommonPrograms, FOLDERID_Programs};
 use windows::core::{PCWSTR, w};
 
 use super::{Capabilities, Color, Locale, MonitorInfo, OsAppearance, Platform};
@@ -111,6 +111,14 @@ impl Platform for WindowsPlatform {
 
     fn reveal(&self, path: &str) {
         shell::reveal(path);
+    }
+
+    fn known_folder(&self, folder: super::KnownFolder) -> Option<String> {
+        let id = match folder {
+            super::KnownFolder::Programs => &FOLDERID_Programs,
+            super::KnownFolder::CommonPrograms => &FOLDERID_CommonPrograms,
+        };
+        instance::known_folder(id).map(|p| p.to_string_lossy().into_owned())
     }
 
     fn net_interfaces(&self) -> Vec<super::NetInterface> {

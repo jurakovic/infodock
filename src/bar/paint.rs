@@ -665,7 +665,8 @@ mod tests {
         ];
         // Launchers (SPEC §9.17, §9.18, §9.21): Shortcuts to a program, a folder, a web
         // address, a tinted program, a bare program name and a missing target (inactive); the
-        // system drive and an absent one (inactive); every Power mode, the last at 50 %.
+        // system drive and an absent one (inactive); a Folder Menu and the Start Menu; every
+        // Power mode, the last at 50 %.
         let launchers = Layout {
             left: vec![
                 entry(
@@ -703,6 +704,12 @@ mod tests {
                 ),
                 entry("d1", "disk", serde_json::json!({ "drive": "C:\\" })),
                 entry("d2", "disk", serde_json::json!({ "drive": "Q:\\" })),
+                entry(
+                    "f1",
+                    "folder-menu",
+                    serde_json::json!({ "folder": "C:\\Windows" }),
+                ),
+                entry("m1", "start-menu", serde_json::json!({})),
                 entry("p1", "power", serde_json::json!({ "mode": "lock" })),
                 entry("p2", "power", serde_json::json!({ "mode": "signOut" })),
                 entry("p3", "power", serde_json::json!({ "mode": "switchUser" })),
@@ -755,14 +762,14 @@ mod tests {
                 &launchers,
                 Settings::default(),
                 dark,
-                560.0,
+                640.0,
             ),
             (
                 "bar-launchers-light",
                 &launchers,
                 Settings::default(),
                 light,
-                560.0,
+                640.0,
             ),
         ] {
             let theme = Theme::resolve(&settings, os);
@@ -877,13 +884,23 @@ mod tests {
         // The Folder Menu's list (SPEC §9.19): C:\Windows with this machine's shell icons,
         // its left edge at the sensor's, the third row hovered.
         use crate::bar::popup::{self, Open};
-        use crate::platform::{PopupInput, UiWaker};
+        use crate::platform::{KnownFolder, PopupInput, UiWaker};
         use crate::sensors::common::folder_browser::{FolderBrowser, Options};
         use crate::sensors::popup::PopupCtx;
         let platform = crate::platform::current();
         let icons = crate::sensors::DirectIcons(platform.as_ref());
         let waker = UiWaker::new(|| {});
-        for (name, os) in [("popup-folder", dark), ("popup-folder-light", light)] {
+        // The Start Menu's list merges the user's and all users' programs (SPEC §9.20).
+        let start_menu: Vec<String> = [KnownFolder::Programs, KnownFolder::CommonPrograms]
+            .into_iter()
+            .filter_map(|f| platform.known_folder(f))
+            .collect();
+        let windows = vec!["C:\\Windows".to_owned()];
+        for (name, os, folders, title) in [
+            ("popup-folder", dark, &windows, "Windows"),
+            ("popup-folder-light", light, &windows, "Windows"),
+            ("popup-start-menu", dark, &start_menu, "Start Menu"),
+        ] {
             let settings = Settings::default();
             let theme = Theme::resolve(&settings, os);
             let bar = RectF::new(0.0, 572.0, 800.0, 600.0);
@@ -895,8 +912,8 @@ mod tests {
             };
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
                 let browser = FolderBrowser::new(Options {
-                    folder: "C:\\Windows".into(),
-                    title: "Windows".into(),
+                    folders: folders.clone(),
+                    title: title.into(),
                     show_hidden: false,
                     width: 240.0,
                     height: 320.0,
