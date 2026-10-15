@@ -168,7 +168,11 @@ impl Shared {
             }
             // Alt+F4 hides it; the window stays for the next popup.
             WM_CLOSE => self.deactivated(hwnd),
-            WM_SETCURSOR if (lparam.0 & 0xFFFF) as u32 == HTCLIENT => set_cursor(self.cursor.get()),
+            // Handled: TRUE, so nothing sets the class cursor over it.
+            WM_SETCURSOR if (lparam.0 & 0xFFFF) as u32 == HTCLIENT => {
+                set_cursor(self.cursor.get());
+                return Some(LRESULT(1));
+            }
             WM_CAPTURECHANGED if lparam.0 != hwnd.0 as isize => {
                 self.send(PopupInput::CaptureLost);
                 return None;
