@@ -2212,10 +2212,16 @@ mod tests {
             "layout in 1178×1024",
             "the room above the bar"
         );
-        // The logo shows its active state.
-        let mut canvas = RecordingCanvas::new(1.0);
-        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
-        assert!(canvas.dump().contains("#FFFFFF/16%"), "{}", canvas.dump());
+        // The logo shows its active state, in the text colour of the OS theme.
+        let active = |logic: &mut BarLogic| {
+            let mut canvas = RecordingCanvas::new(1.0);
+            logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+            canvas
+                .dump()
+                .lines()
+                .any(|l| l.starts_with("fill rounded") && l.ends_with("/16%"))
+        };
+        assert!(active(&mut logic));
 
         // Input arrives from the content's corner; a redraw keeps the place.
         reply.set(PopupReply::Redraw);
@@ -2243,9 +2249,7 @@ mod tests {
         logic.on_event(&window, input(Key::Escape));
         assert!(window.popup.borrow().is_none());
         assert!(!log.borrow().iter().any(|l| l.contains("Escape")));
-        let mut canvas = RecordingCanvas::new(1.0);
-        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
-        assert!(!canvas.dump().contains("#FFFFFF/16%"), "no longer active");
+        assert!(!active(&mut logic), "no longer active");
     }
 
     #[test]
