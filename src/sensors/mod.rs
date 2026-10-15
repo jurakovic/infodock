@@ -4,8 +4,8 @@
 //! type means adding one module and listing it in `registry.rs`.
 //!
 //! The [`Sensor`] trait grows with the slices that need it: topics and samples arrive with the
-//! sampler (M1 S10), clicks, menus and drops with the interaction slices (S5–S8, M3), and
-//! `from_legacy` with the legacy import (M4).
+//! sampler (M1 S10), clicks and menus with the interaction slices (M1 S5–S8, M3 S2), drops with
+//! M3, and `from_legacy` with the legacy import (M4).
 
 pub mod color;
 pub mod common;
@@ -265,6 +265,34 @@ pub trait RichHint {
     fn draw(&self, canvas: &mut dyn Canvas, origin: PointF, theme: &Theme);
 }
 
+/// A sensor's own menu item id; unique within its type.
+pub type MenuId = u16;
+
+/// One of a sensor's own items in the sensor menu (SPEC §6.4), e.g. *Eject*.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuItem {
+    pub id: MenuId,
+    pub label: String,
+    /// Greyed out unless set.
+    pub enabled: bool,
+}
+
+impl MenuItem {
+    pub fn new(id: MenuId, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            label: label.into(),
+            enabled: true,
+        }
+    }
+
+    /// The same item, greyed out unless `enabled`.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+}
+
 /// What a click did (SPEC §8.1). Popups arrive with the sensors that open them (M3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickResult {
@@ -286,6 +314,15 @@ pub trait Sensor {
     /// The click action (SPEC §6.1); called only when the Lock rules allow clicks.
     fn click(&mut self, _cx: &SensorCtx) -> ClickResult {
         ClickResult::None
+    }
+    /// Its own items for the sensor menu (SPEC §6.4), shown between *Remove sensor* and
+    /// *Tools*; the menu is built each time it opens.
+    fn menu(&self, _cx: &SensorCtx) -> Vec<MenuItem> {
+        Vec::new()
+    }
+    /// One of its menu items was chosen; returns whether what it shows changed.
+    fn on_menu(&mut self, _item: MenuId, _cx: &SensorCtx) -> Dirty {
+        false
     }
     /// Drives inactive rendering (SPEC §8.5).
     fn inactive(&self) -> bool {

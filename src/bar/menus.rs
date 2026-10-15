@@ -1,11 +1,11 @@
-//! The bar's context menus (SPEC §6.4), built from the current state each time they open.
-//! Sensor-specific items arrive with the sensor types that have them (M3).
+//! The bar's context menus (SPEC §6.4), built from the current state each time they open, with
+//! a sensor's own items in its menu.
 
 use crate::config::model::{NewSensorMenu, Settings};
 use crate::i18n::t;
 use crate::platform::{Capabilities, MenuEntry};
 use crate::sensors::registry::Registry;
-use crate::sensors::{Category, SensorType};
+use crate::sensors::{Category, MenuId, MenuItem, SensorType};
 
 /// A chosen menu item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,8 +25,12 @@ pub enum MenuCommand {
     ToggleLock,
     TogglePopups,
     Quit,
+    /// One of the sensor's own items (SPEC §6.4).
+    Sensor(MenuId),
 }
 
+/// Ids of [`MenuCommand::Sensor`] start here.
+const SENSOR_BASE: u32 = 500;
 /// Ids of [`MenuCommand::Add`] start here.
 const ADD_BASE: u32 = 1000;
 
@@ -49,6 +53,8 @@ impl MenuCommand {
     pub fn id(self) -> u32 {
         match self {
             Self::Add(index) => ADD_BASE + index as u32,
+            // Sensor items beyond the range are not offered (see `sensor_menu`).
+            Self::Sensor(item) => SENSOR_BASE + u32::from(item),
             fixed => Self::FIXED.iter().position(|c| *c == fixed).unwrap_or(0) as u32 + 1,
         }
     }
@@ -56,6 +62,9 @@ impl MenuCommand {
     pub fn from_id(id: u32) -> Option<Self> {
         if id >= ADD_BASE {
             return Some(Self::Add((id - ADD_BASE) as usize));
+        }
+        if id >= SENSOR_BASE {
+            return MenuId::try_from(id - SENSOR_BASE).ok().map(Self::Sensor);
         }
         Self::FIXED.get((id as usize).checked_sub(1)?).copied()
     }
@@ -137,21 +146,31 @@ pub fn bar_menu(settings: &Settings, registry: &Registry, caps: &Capabilities) -
     entries
 }
 
-/// The menu of a sensor (SPEC §6.4). `editable`: its type has properties to show.
+/// The menu of a sensor (SPEC §6.4). `editable`: its type has properties to show; `own`: the
+/// sensor's own items, between *Remove sensor* and *Tools*.
 pub fn sensor_menu(
     settings: &Settings,
     registry: &Registry,
     caps: &Capabilities,
     editable: bool,
+    own: &[MenuItem],
 ) -> Vec<MenuEntry> {
     let mut entries = vec![
         new_sensor(settings, registry, caps),
         item(MenuCommand::Properties, "menu.properties").enabled(editable),
         item(MenuCommand::Remove, "menu.remove"),
         MenuEntry::Separator,
-        tools(),
-        item(MenuCommand::Settings, "tray.settings"),
     ];
+    let own: Vec<MenuEntry> = own
+        .iter()
+        .filter(|i| u32::from(i.id) < ADD_BASE - SENSOR_BASE)
+        .map(|i| MenuEntry::item(MenuCommand::Sensor(i.id).id(), &i.label).enabled(i.enabled))
+        .collect();
+    if !own.is_empty() {
+        entries.extend(own);
+        entries.push(MenuEntry::Separator);
+    }
+    entries.extend([tools(), item(MenuCommand::Settings, "tray.settings")]);
     entries.extend(toggles(settings));
     entries
 }
@@ -213,13 +232,45 @@ mod tests {
             popups_enabled: false,
             ..Settings::default()
         };
-        let entries = sensor_menu(&settings, registry(), &Capabilities::default(), false);
+        let entries = sensor_menu(&settings, registry(), &Capabilities::default(), false, &[]);
         let labels = labels(&entries);
         assert_eq!(
-            labels[..3],
-            ["New sensor…", "Properties… (off)", "Remove sensor"]
+            labels[..5],
+            [
+                "New sensor…",
+                "Properties… (off)",
+                "Remove sensor",
+                "—",
+                "Tools ▸ [Layout manager…, Import layout… (off), Export layout… (off), \
+                 Import legacy XML layout… (off), —, Help (off)]"
+            ]
         );
         assert_eq!(labels[labels.len() - 2..], ["✓ Lock", "Popups"]);
+    }
+
+    #[test]
+    fn a_sensors_own_items_sit_between_remove_and_tools() {
+        let own = [
+            MenuItem::new(0, "Eject"),
+            MenuItem::new(1, "Empty").enabled(false),
+            // Beyond the id range: not offered.
+            MenuItem::new(600, "Lost"),
+        ];
+        let entries = sensor_menu(
+            &Settings::default(),
+            registry(),
+            &Capabilities::default(),
+            true,
+            &own,
+        );
+        let labels = labels(&entries);
+        assert_eq!(labels[2..6], ["Remove sensor", "—", "Eject", "Empty (off)"]);
+        assert_eq!(labels[6], "—");
+        assert!(labels[7].starts_with("Tools"));
+        let MenuEntry::Item { id, .. } = &entries[5] else {
+            panic!("an item");
+        };
+        assert_eq!(MenuCommand::from_id(*id), Some(MenuCommand::Sensor(1)));
     }
 
     #[test]
@@ -258,7 +309,11 @@ mod tests {
             MenuCommand::from_id(MenuCommand::Add(4).id()),
             Some(MenuCommand::Add(4))
         );
+        assert_eq!(
+            MenuCommand::from_id(MenuCommand::Sensor(499).id()),
+            Some(MenuCommand::Sensor(499))
+        );
         assert_eq!(MenuCommand::from_id(0), None);
-        assert_eq!(MenuCommand::from_id(500), None);
+        assert_eq!(MenuCommand::from_id(13), None);
     }
 }

@@ -64,9 +64,15 @@ pub fn run() {
     }
     tracing::info!("Infodock {VERSION} starting");
 
+    // Before any window: the taskbar groups them, and toasts show, as the app (SPEC §7.4).
+    platform::register_app_id(IDENTIFIER, &i18n::t("app.name"));
+
     let (store, report) = ConfigStore::open(&dirs.config, VERSION);
     log_load_report(&report);
     let platform = platform::current();
+    if let Some(recovery) = &report.recovery {
+        notify_recovery(recovery, platform.as_ref());
+    }
     fill_machine_defaults(&store, platform.as_ref());
 
     // The Settings window uses Slint's winit backend on this thread; software rendering keeps
@@ -124,6 +130,21 @@ fn fill_machine_defaults(store: &ConfigStore, platform: &dyn platform::Platform)
     }
 }
 
+/// Tells the user their unreadable config was put aside (SPEC §11.2).
+fn notify_recovery(recovery: &config::store::Recovery, platform: &dyn platform::Platform) {
+    let file = recovery
+        .broken_file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let key = if recovery.from_backup {
+        "notify.configRestored.backup"
+    } else {
+        "notify.configRestored.defaults"
+    };
+    platform.notify(&i18n::t("app.name"), &i18n::t_args(key, &[("file", &file)]));
+}
+
 fn log_load_report(report: &config::store::LoadReport) {
     if report.first_run {
         tracing::info!("first run: created the default config");
@@ -135,7 +156,6 @@ fn log_load_report(report: &config::store::LoadReport) {
         tracing::warn!("config was written by a newer Infodock; loaded best-effort");
     }
     if let Some(r) = &report.recovery {
-        // A toast follows once notifications exist (M3, SPEC §11.2).
         tracing::warn!(
             "config was unreadable ({}); moved to {}; restored from {}",
             r.error,

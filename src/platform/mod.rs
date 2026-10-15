@@ -9,6 +9,7 @@ pub mod bitmap;
 pub mod canvas;
 pub mod geometry;
 pub mod locale;
+pub mod notify;
 pub mod recording;
 #[cfg(not(windows))]
 mod stub;
@@ -305,6 +306,11 @@ pub trait Platform: Send + Sync {
         let _ = (path, px);
         None
     }
+    /// Shows a notification from Infodock (SPEC §7.4): a toast with `title` (e.g. the
+    /// sensor's) and `body`, in the background; failures are logged.
+    fn notify(&self, title: &str, body: &str) {
+        tracing::info!("notification: {title}: {body}");
+    }
     /// Plays a WAV sound in the background, e.g. the Time sensor's chime (SPEC §9.5).
     fn play_sound(&self, wav: &'static [u8]) {
         let _ = wav;
@@ -519,6 +525,15 @@ pub fn single_instance(identifier: &str) -> Instance {
     return windows::instance::single_instance(identifier);
     #[cfg(not(windows))]
     return stub::single_instance(identifier);
+}
+
+/// Makes this process the app `identifier` for the OS (taskbar grouping, notifications;
+/// SPEC §7.4), named `display_name` in notifications.
+pub fn register_app_id(identifier: &str, display_name: &str) {
+    #[cfg(windows)]
+    windows::toast::register(identifier, display_name);
+    #[cfg(not(windows))]
+    let _ = (identifier, display_name);
 }
 
 /// Asks the running instance to show the bar and open Settings (SPEC §6.5). Waits up to a few

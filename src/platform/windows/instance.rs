@@ -33,7 +33,7 @@ pub(super) fn activate_message() -> u32 {
     *MESSAGE.get_or_init(|| unsafe { RegisterWindowMessageW(w!("Infodock.Activate")) })
 }
 
-fn known_folder(id: &GUID) -> Option<PathBuf> {
+pub(super) fn known_folder(id: &GUID) -> Option<PathBuf> {
     // SAFETY: the returned string is owned by us and freed with CoTaskMemFree.
     unsafe {
         let path = SHGetKnownFolderPath(id, KNOWN_FOLDER_FLAG(0), None).ok()?;

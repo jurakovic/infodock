@@ -270,3 +270,11 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] A target on a USB stick: remove the stick; within a minute the icon is the generic app icon, dimmed (inactive). Plug it back in: within a minute its own icon returns, not dimmed. No "insert a disk" dialog appears.
 - [ ] A target on a network share whose server is off: the bar keeps responding (the CPU graph keeps moving) while the icon and the check wait; the icon space stays free, then shows the generic icon dimmed.
 - [ ] Lock on with *Clicks when locked* → *Alt only*: the hint is only the title.
+
+**Sensor menus and notifications** (since M3 S2)
+
+- [ ] Right-click a sensor without its own items (e.g. the CPU graph): *New sensor…*, *Properties…*, *Remove sensor*, one separator, *Tools*, *Settings…*, *Lock*, *Popups*, as before.
+- [ ] Quit Infodock, put a few random characters at the start of `%APPDATA%\app.infodock.desktop\config.json`, start it: a toast from *Infodock* says the settings could not be read and the last good copy was restored, naming the `config.broken-….json` file. Delete `config.json.bak` too and repeat: the toast says the defaults are used.
+- [ ] The same with the portable `infodock.exe` on a machine where Infodock was never installed: the toast shows too (named *Infodock*).
+- [ ] The Settings window's taskbar button groups with a pinned Infodock shortcut (installed build).
+- [ ] `%LOCALAPPDATA%\app.infodock.desktop\logs`: the start-up log lists the capabilities. A laptop: `battery: true` and `wifi: true` (with Wi-Fi hardware); a desktop without Wi-Fi: `wifi: false`.

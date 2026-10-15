@@ -9,8 +9,9 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
-    FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, SEE_MASK_NOASYNC,
-    SHELLEXECUTEINFOW, SIGDN_FILESYSPATH, ShellExecuteExW,
+    FOLDERID_RecycleBinFolder, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog,
+    IFileOpenDialog, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, SHGetKnownFolderIDList,
+    SIGDN_FILESYSPATH, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result, w};
@@ -70,6 +71,21 @@ pub fn launch(launch: &Launch) {
         });
     if let Err(e) = spawned {
         tracing::warn!("could not start opening a target: {e}");
+    }
+}
+
+/// Whether the shell has a Recycle Bin (the `recycle_bin` capability, SPEC §4.6); asked of the
+/// shell's namespace, so no drive is touched.
+pub fn has_recycle_bin() -> bool {
+    // SAFETY: the returned ID list is ours and freed with CoTaskMemFree.
+    unsafe {
+        match SHGetKnownFolderIDList(&FOLDERID_RecycleBinFolder, 0, None) {
+            Ok(list) => {
+                CoTaskMemFree(Some(list.cast_const().cast()));
+                true
+            }
+            Err(_) => false,
+        }
     }
 }
 

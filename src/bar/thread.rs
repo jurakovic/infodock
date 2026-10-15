@@ -666,10 +666,18 @@ impl BarLogic {
         self.cancel_drag(window);
         let caps = self.platform.capabilities();
         let hit = self.sensors.hit(at.x);
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+            animate: self.animate,
+        };
         let entries = match &hit {
             Some(h) => {
                 let editable = registry().editable(&h.entry, &caps);
-                menus::sensor_menu(&self.settings, registry(), &caps, editable)
+                let own = self.sensors.menu(&h.entry.id, &env);
+                menus::sensor_menu(&self.settings, registry(), &caps, editable, &own)
             }
             None => menus::bar_menu(&self.settings, registry(), &caps),
         };
@@ -730,6 +738,21 @@ impl BarLogic {
                     .change_settings(Box::new(|s| s.popups_enabled = !s.popups_enabled));
             }
             MenuCommand::Quit => self.host.quit(),
+            MenuCommand::Sensor(item) => {
+                if let Some(entry) = target {
+                    let env = Env {
+                        settings: &self.settings,
+                        theme: &self.theme,
+                        platform: self.platform.as_ref(),
+                        alt: false,
+                        animate: self.animate,
+                    };
+                    if self.sensors.on_menu(&entry.id, item, &env) {
+                        window.invalidate();
+                        self.refresh_changed_hint(window);
+                    }
+                }
+            }
         }
     }
 

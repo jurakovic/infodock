@@ -13,7 +13,8 @@ use crate::sampler::{Delivery, Topic, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
 use crate::sensors::{
-    ClickResult, DrawCtx, HintContent, IconSource, LayoutCtx, Sensor, SensorCtx, State,
+    ClickResult, DrawCtx, HintContent, IconSource, LayoutCtx, MenuId, MenuItem, Sensor, SensorCtx,
+    State,
 };
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
@@ -307,6 +308,27 @@ impl BarSensors {
             return ClickResult::None;
         };
         p.sensor.click(&env.ctx(id))
+    }
+
+    /// Sensor `id`'s own menu items (SPEC §6.4).
+    pub fn menu(&self, id: &str, env: &Env) -> Vec<MenuItem> {
+        self.zones
+            .iter()
+            .flatten()
+            .find(|p| p.entry.id == id)
+            .map(|p| p.sensor.menu(&env.ctx(id)))
+            .unwrap_or_default()
+    }
+
+    /// Hands sensor `id` the menu item it offered and the user chose; returns whether what it
+    /// shows changed.
+    pub fn on_menu(&mut self, id: &str, item: MenuId, env: &Env) -> bool {
+        let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
+            return false;
+        };
+        let dirty = p.sensor.on_menu(item, &env.ctx(id));
+        p.dirty |= dirty;
+        dirty
     }
 
     /// The earliest wake-up any sensor asked for.
@@ -637,6 +659,59 @@ mod tests {
         );
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert_eq!(sensors.places()[0].2, 11.0, "re-measured after waking");
+    }
+
+    /// Offers *Count* (and a greyed-out *Never*); counts how often it was chosen.
+    struct Counter(u32);
+
+    impl Sensor for Counter {
+        fn measure(&mut self, _cx: &LayoutCtx) -> f32 {
+            10.0
+        }
+
+        fn draw(&self, _canvas: &mut dyn Canvas, _cx: &DrawCtx) {}
+
+        fn menu(&self, _cx: &SensorCtx) -> Vec<MenuItem> {
+            vec![
+                MenuItem::new(7, format!("Count ({})", self.0)),
+                MenuItem::new(8, "Never").enabled(false),
+            ]
+        }
+
+        fn on_menu(&mut self, item: MenuId, _cx: &SensorCtx) -> bool {
+            self.0 += u32::from(item == 7);
+            item == 7
+        }
+    }
+
+    #[test]
+    fn menu_items_come_from_the_sensor_and_go_back_to_it() {
+        let theme = theme();
+        let settings = Settings::default();
+        let platform = crate::platform::current();
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+            animate: true,
+        };
+        let mut sensors = BarSensors::default();
+        sensors.zones[0].push(Placed {
+            entry: entry("c", "counter", json!({})),
+            sensor: Box::new(Counter(0)),
+            topics: Vec::new(),
+            taken: Vec::new(),
+            width: 0.0,
+            x: 0.0,
+            dirty: false,
+        });
+        assert_eq!(sensors.menu("c", &env)[0].label, "Count (0)");
+        assert!(sensors.menu("nobody", &env).is_empty());
+        assert!(sensors.on_menu("c", 7, &env));
+        assert!(sensors.is_dirty("c"), "measured again");
+        assert!(!sensors.on_menu("nobody", 7, &env));
+        assert_eq!(sensors.menu("c", &env)[0].label, "Count (1)");
     }
 
     /// Shows the uptime in whole minutes, from samples.

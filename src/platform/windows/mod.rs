@@ -14,16 +14,20 @@ mod memory;
 mod menu;
 mod monitors;
 mod net;
+mod power;
 pub mod render;
 pub mod shell;
 pub mod text;
+pub mod toast;
 mod tray;
 pub mod window;
+mod wlan;
 
 use std::mem::size_of;
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::UI::Shell::FOLDERID_Programs;
 use windows::core::{PCWSTR, w};
 
 use super::{Capabilities, Color, Locale, MonitorInfo, OsAppearance, Platform};
@@ -33,12 +37,28 @@ use crate::sensors::dates::{Date, LocalTime};
 pub struct WindowsPlatform;
 
 impl Platform for WindowsPlatform {
+    /// Read once: what the system offers does not change while Infodock runs (a Wi-Fi adapter
+    /// plugged in later is found at the next start).
     fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            appbar: true,
-            per_core_cpu: cpu::per_processor_counters(),
-            ..Capabilities::default()
-        }
+        static CAPABILITIES: std::sync::OnceLock<Capabilities> = std::sync::OnceLock::new();
+        CAPABILITIES
+            .get_or_init(|| {
+                let capabilities = Capabilities {
+                    appbar: true,
+                    recycle_bin: shell::has_recycle_bin(),
+                    start_menu: instance::known_folder(&FOLDERID_Programs)
+                        .is_some_and(|p| p.is_dir()),
+                    wifi: wlan::has_interface(),
+                    battery: power::has_battery(),
+                    power_modes: Vec::new(),
+                    // Ejecting needs no hardware to exist; Eject USB lists what there is.
+                    eject: true,
+                    per_core_cpu: cpu::per_processor_counters(),
+                };
+                tracing::info!("capabilities: {capabilities:?}");
+                capabilities
+            })
+            .clone()
     }
 
     fn monitors(&self) -> Vec<MonitorInfo> {
@@ -105,6 +125,10 @@ impl Platform for WindowsPlatform {
 
     fn shell_icon(&self, path: &str, px: u32) -> Option<super::Bitmap> {
         icons::shell_icon(path, px)
+    }
+
+    fn notify(&self, title: &str, body: &str) {
+        toast::notify(title, body);
     }
 
     fn play_sound(&self, wav: &'static [u8]) {
@@ -197,4 +221,22 @@ fn read_dword(key: PCWSTR, value: PCWSTR) -> Option<u32> {
 fn from_wide(buf: &[u16]) -> String {
     let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
     String::from_utf16_lossy(&buf[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs on the Windows CI runner (`cargo test -- --ignored`): a server without Wi-Fi or a
+    /// battery, with a shell.
+    #[test]
+    #[ignore = "reads this machine's capabilities"]
+    fn capabilities_of_this_machine() {
+        let caps = WindowsPlatform.capabilities();
+        assert!(caps.appbar && caps.eject, "{caps:?}");
+        assert!(caps.recycle_bin, "{caps:?}");
+        assert!(caps.start_menu, "{caps:?}");
+        // Asked again: the same, without reading again.
+        assert_eq!(WindowsPlatform.capabilities(), caps);
+    }
 }
