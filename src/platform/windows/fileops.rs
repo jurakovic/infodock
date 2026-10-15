@@ -1,8 +1,7 @@
 //! File operations for drops (SPEC §9.16, §9.19): copying and moving into a folder and moving
 //! to the Recycle Bin with `IFileOperation` (the shell's progress, conflict and confirmation
-//! dialogs, undo), shortcuts (`.lnk`) with `IShellLinkW`, and the volume a path lies on.
+//! dialogs, undo) and shortcuts (`.lnk`) with `IShellLinkW`.
 
-use windows::Win32::Storage::FileSystem::GetVolumePathNameW;
 use windows::Win32::System::Com::{
     CLSCTX_ALL, CLSCTX_INPROC_SERVER, CoCreateInstance, IPersistFile,
 };
@@ -14,16 +13,6 @@ use windows::Win32::UI::Shell::{
 use windows::core::{HSTRING, Interface, PCWSTR, Result};
 
 use crate::platform::{FileOp, unique_path};
-
-/// The volume `path` lies on (`C:\`, `\\server\share\`, or a mounted folder's path), as the
-/// shell decides between moving and copying.
-pub fn volume_of(path: &str) -> Option<String> {
-    let mut buffer = [0u16; 261];
-    let wide = HSTRING::from(path);
-    // SAFETY: a NUL-terminated path and a buffer of MAX_PATH + 1 units.
-    unsafe { GetVolumePathNameW(&wide, &mut buffer) }.ok()?;
-    Some(super::from_wide(&buffer).to_lowercase())
-}
 
 /// Runs `op` for `paths` into `folder` on a short-lived thread (the shell's dialogs may wait
 /// for the user), then calls `done`. Failures and cancelled operations are logged.
@@ -174,8 +163,5 @@ mod tests {
         link(&[c.clone(), c], &folder).expect("linked");
         assert!(to.path().join("c.txt.lnk").exists());
         assert!(to.path().join("c.txt (2).lnk").exists());
-        let volume = volume_of(&a).expect("a volume");
-        assert!(volume.ends_with('\\'), "{volume}");
-        assert_eq!(volume_of(&folder), Some(volume));
     }
 }

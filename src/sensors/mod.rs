@@ -502,6 +502,7 @@ pub(crate) mod test_support {
             CLOCK_SCHEMA
         }
         fn machine_defaults(&self, _ctx: &DefaultsCtx) -> Props {
+            MACHINE_READS.with(|n| n.set(n.get() + 1));
             let mut p = Props::new();
             p.insert("use24h".into(), json!(false));
             p
@@ -624,6 +625,15 @@ pub(crate) mod test_support {
                 launch.admin
             ));
         }
+    }
+
+    thread_local! {
+        /// How often this thread asked [`Clock`] for its machine defaults.
+        static MACHINE_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+
+    pub fn machine_reads() -> u32 {
+        MACHINE_READS.with(std::cell::Cell::get)
     }
 
     /// A platform without capabilities or monitors.

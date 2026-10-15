@@ -124,6 +124,24 @@ pub fn dropfiles(bytes: &[u8]) -> Vec<String> {
     paths
 }
 
+/// Whether an item ID list starts at `offset` and ends inside `bytes`: each item begins with
+/// its size (a little-endian `u16` that counts itself), and a zero size ends the list. Shell
+/// functions walk the whole list, so a list that runs past the buffer must not reach them.
+pub fn id_list_fits(bytes: &[u8], offset: usize) -> bool {
+    let mut at = offset;
+    loop {
+        let Some(size) = bytes.get(at..at + 2) else {
+            return false;
+        };
+        match usize::from(u16::from_le_bytes([size[0], size[1]])) {
+            0 => return true,
+            // An item holds at least its size.
+            1 => return false,
+            size => at += size,
+        }
+    }
+}
+
 /// The name of the first file a `FileGroupDescriptorW` describes, without `.url`: a browser
 /// names the link file it offers after the page (SPEC §6.3).
 pub fn link_file_title(bytes: &[u8]) -> Option<String> {
@@ -227,6 +245,18 @@ mod tests {
         assert!(
             dropfiles(&[200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]).is_empty()
         );
+    }
+
+    #[test]
+    fn id_lists_must_end_inside_the_buffer() {
+        // Two items (4 and 3 bytes), then the terminator.
+        let list = [4, 0, 9, 9, 3, 0, 7, 0, 0];
+        assert!(id_list_fits(&list, 0));
+        assert!(id_list_fits(&[0, 0], 0), "the empty list (the desktop)");
+        assert!(!id_list_fits(&list[..8], 0), "no terminator");
+        assert!(!id_list_fits(&[200, 0, 0, 0], 0), "an item past the end");
+        assert!(!id_list_fits(&[1, 0, 0, 0], 0));
+        assert!(!id_list_fits(&list, 20));
     }
 
     #[test]

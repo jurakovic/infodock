@@ -9,20 +9,18 @@ use crate::platform::{DropEffect, DropEffects, FileOp, Modifiers};
 pub enum Dropped {
     /// A drive root, `E:\`.
     Drive(String),
-    Folder(String),
-    File(String),
+    /// A file or folder; which one is asked only when a drop makes a sensor for it, so a drag
+    /// touches no drive (SPEC §6.3).
+    Path(String),
     /// An `http`, `https` or `ftp` address, with the link's text.
-    Url {
-        url: String,
-        title: Option<String>,
-    },
+    Url { url: String, title: Option<String> },
 }
 
 impl Dropped {
     /// The path of a file or folder.
     pub fn path(&self) -> Option<&str> {
         match self {
-            Self::Folder(path) | Self::File(path) => Some(path),
+            Self::Path(path) => Some(path),
             Self::Drive(_) | Self::Url { .. } => None,
         }
     }
@@ -59,7 +57,7 @@ const LABEL_MAX: usize = 100;
 pub fn label(item: &Dropped) -> String {
     let text = match item {
         Dropped::Drive(root) => root.as_str(),
-        Dropped::Folder(path) | Dropped::File(path) => super::shortcut::file_name(path),
+        Dropped::Path(path) => super::shortcut::file_name(path),
         Dropped::Url { url, .. } => url.as_str(),
     };
     if text.chars().count() > LABEL_MAX {
@@ -172,15 +170,15 @@ mod tests {
 
     #[test]
     fn hints_name_one_item_or_count_them() {
-        let one = [Dropped::File("C:\\Data\\report.pdf".into())];
+        let one = [Dropped::Path("C:\\Data\\report.pdf".into())];
         assert_eq!(
             hint("drop.move", &one, "Downloads"),
             "Move 'report.pdf' to 'Downloads'"
         );
         let three = [
-            Dropped::File("C:\\a".into()),
-            Dropped::Folder("C:\\b".into()),
-            Dropped::File("C:\\c".into()),
+            Dropped::Path("C:\\a".into()),
+            Dropped::Path("C:\\b".into()),
+            Dropped::Path("C:\\c".into()),
         ];
         assert_eq!(
             hint("drop.copy", &three, "Downloads"),

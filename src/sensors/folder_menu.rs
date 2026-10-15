@@ -412,7 +412,7 @@ mod tests {
             modifiers: Modifiers::default(),
             allowed: DropEffects::ALL,
         };
-        let file = |p: &str| Dropped::File(p.into());
+        let file = |p: &str| Dropped::Path(p.into());
         with_ctx(|cx, platform| {
             // Same volume: moved.
             let local = [file("C:\\Data\\report.pdf")];
@@ -424,7 +424,7 @@ mod tests {
                 })
             );
             // Another volume: copied; with Alt: shortcuts.
-            let usb = [file("E:\\a.txt"), Dropped::Folder("E:\\Photos".into())];
+            let usb = [file("E:\\a.txt"), Dropped::Path("E:\\Photos".into())];
             assert_eq!(
                 menu.drop_action(&usb, all, cx).and_then(|a| a.hint),
                 Some("Copy 2 items to 'Downloads'".into())
@@ -443,7 +443,7 @@ mod tests {
             // Already there, or the folder itself: refused.
             let here = [file("C:\\Users\\me\\Downloads\\x.zip")];
             assert_eq!(menu.drop_action(&here, all, cx), Some(DropAction::REFUSED));
-            let parent = [Dropped::Folder("C:\\Users\\me".into())];
+            let parent = [Dropped::Path("C:\\Users\\me".into())];
             assert_eq!(
                 menu.drop_action(&parent, all, cx),
                 Some(DropAction::REFUSED)

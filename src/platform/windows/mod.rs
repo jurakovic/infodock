@@ -115,10 +115,6 @@ impl Platform for WindowsPlatform {
         shell::reveal(path);
     }
 
-    fn volume_of(&self, path: &str) -> Option<String> {
-        fileops::volume_of(path)
-    }
-
     fn file_operation(
         &self,
         op: super::FileOp,

@@ -7,13 +7,16 @@
 
 use std::cell::OnceCell;
 
-use windows::Win32::Foundation::{HWND, POINT, POINTL};
+use windows::Win32::Foundation::{GlobalFree, HWND, POINT, POINTL};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CoCreateInstance, DVASPECT_CONTENT, FORMATETC, IDataObject, TYMED_HGLOBAL,
+    CLSCTX_INPROC_SERVER, CoCreateInstance, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM,
+    TYMED_HGLOBAL,
 };
 use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
-use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+use windows::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows::Win32::System::Ole::{
     CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE,
     IDropTarget, IDropTarget_Impl, MK_ALT, RegisterDragDrop, ReleaseStgMedium,
@@ -178,7 +181,17 @@ impl IDropTarget_Impl for BarDropTarget_Impl {
             modifiers: modifiers(keys),
             allowed: from_dropeffect(allowed),
         };
-        self.answer(event, allowed, effect);
+        if self.answer(event, allowed, effect) == DROPEFFECT_MOVE {
+            // The bar moves the items itself (a Folder Menu, the Recycle Bin): an optimized
+            // move, so the source must not delete them as well.
+            if let Ok(data) = data.ok() {
+                report_optimized_move(data);
+            }
+            // SAFETY: as in DragEnter.
+            if let Some(effect) = unsafe { effect.as_mut() } {
+                *effect = DROPEFFECT_NONE;
+            }
+        }
         Ok(())
     }
 }
@@ -205,6 +218,55 @@ fn to_dropeffect(effect: DropEffect) -> DROPEFFECT {
         DropEffect::Copy => DROPEFFECT_COPY,
         DropEffect::Move => DROPEFFECT_MOVE,
         DropEffect::Link => DROPEFFECT_LINK,
+    }
+}
+
+/// Tells the source that the target moved the items itself (the shell's "optimized move"):
+/// `Performed DropEffect` none (the source deletes nothing), `Logical Performed DropEffect`
+/// move (what happened, for its display).
+fn report_optimized_move(data: &IDataObject) {
+    set_effect(data, format(w!("Performed DropEffect")), DROPEFFECT_NONE);
+    set_effect(
+        data,
+        format(w!("Logical Performed DropEffect")),
+        DROPEFFECT_MOVE,
+    );
+}
+
+/// Hands `data` a `DROPEFFECT` in clipboard format `format`.
+fn set_effect(data: &IDataObject, format: u16, effect: DROPEFFECT) {
+    if format == 0 {
+        return;
+    }
+    // SAFETY: the global holds one u32 written while locked; the data object owns it after a
+    // successful SetData, and it is freed here otherwise.
+    unsafe {
+        let Ok(global) = GlobalAlloc(GMEM_MOVEABLE, size_of::<u32>()) else {
+            return;
+        };
+        let pointer = GlobalLock(global);
+        if pointer.is_null() {
+            let _ = GlobalFree(Some(global));
+            return;
+        }
+        pointer.cast::<u32>().write_unaligned(effect.0);
+        let _ = GlobalUnlock(global);
+        let request = FORMATETC {
+            cfFormat: format,
+            ptd: std::ptr::null_mut(),
+            dwAspect: DVASPECT_CONTENT.0,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL.0 as u32,
+        };
+        let mut medium = STGMEDIUM {
+            tymed: TYMED_HGLOBAL.0 as u32,
+            ..Default::default()
+        };
+        medium.u.hGlobal = global;
+        if let Err(e) = data.SetData(&request, &medium, true) {
+            tracing::debug!("the drag source takes no drop result: {e}");
+            let _ = GlobalFree(Some(global));
+        }
     }
 }
 
@@ -284,8 +346,7 @@ fn shell_id_paths(data: &IDataObject) -> Option<Vec<String>> {
     let count = word(0)?;
     let parent = word(1)?;
     let pidl = |offset: usize| -> Option<*const ITEMIDLIST> {
-        // An ID list ends with a zero-length item, so at least two bytes are there.
-        (offset + 2 <= bytes.len()).then(|| bytes[offset..].as_ptr().cast::<ITEMIDLIST>())
+        drag::id_list_fits(&bytes, offset).then(|| bytes[offset..].as_ptr().cast::<ITEMIDLIST>())
     };
     let parent = pidl(parent)?;
     let mut paths = Vec::new();
@@ -293,8 +354,8 @@ fn shell_id_paths(data: &IDataObject) -> Option<Vec<String>> {
         let Some(child) = word(2 + i).and_then(pidl) else {
             break;
         };
-        // SAFETY: both ID lists lie within `bytes`, as the data object laid them out; the
-        // combined list is freed after use.
+        // SAFETY: both ID lists end within `bytes` (checked above); the combined list is
+        // freed after use.
         unsafe {
             let full = ILCombine(Some(parent), Some(child));
             if full.is_null() {
@@ -313,8 +374,7 @@ fn shell_id_paths(data: &IDataObject) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use windows::Win32::Foundation::HGLOBAL;
-    use windows::Win32::System::Com::STGMEDIUM;
-    use windows::Win32::System::Memory::{GHND, GlobalAlloc};
+    use windows::Win32::System::Memory::GHND;
     use windows::Win32::UI::Shell::SHCreateDataObject;
 
     use super::*;
@@ -404,5 +464,18 @@ mod tests {
             }]
         );
         assert!(read_items(&data_object(&[])).is_empty());
+        // After a move the bar did itself, the source reads that it deletes nothing.
+        let moved = data_object(&[]);
+        report_optimized_move(&moved);
+        let performed = global_bytes(&moved, format(w!("Performed DropEffect")));
+        assert_eq!(
+            performed.as_deref().map(|b| &b[..4]),
+            Some(&[0u8, 0, 0, 0][..])
+        );
+        let logical = global_bytes(&moved, format(w!("Logical Performed DropEffect")));
+        assert_eq!(
+            logical.as_deref().map(|b| &b[..4]),
+            Some(&[2u8, 0, 0, 0][..])
+        );
     }
 }

@@ -1165,11 +1165,7 @@ impl BarLogic {
         self.cancel_drag(window);
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
-        let platform = Arc::clone(&self.platform);
-        let items = items
-            .iter()
-            .filter_map(|item| drop::classify(item, |path| platform.path_kind(path)))
-            .collect();
+        let items = items.iter().filter_map(drop::classify).collect();
         self.external = Some(ExternalDrag {
             items,
             target: None,
@@ -1301,7 +1297,16 @@ impl BarLogic {
         let Some(target) = external.target else {
             return DropEffect::None;
         };
-        let sensors = external.items.iter().map(drop::new_sensor).collect();
+        // Which paths are files and which folders is asked now, once.
+        let platform = &self.platform;
+        let sensors: Vec<_> = external
+            .items
+            .iter()
+            .filter_map(|item| drop::new_sensor(item, |path| platform.path_kind(path)))
+            .collect();
+        if sensors.is_empty() {
+            return DropEffect::None;
+        }
         self.host
             .add_sensors(target.zone, target.insertion, sensors);
         effect

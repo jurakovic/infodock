@@ -519,8 +519,8 @@ mod tests {
             allowed: DropEffects::ALL,
         };
         let files = [
-            Dropped::File("C:\\a.txt".into()),
-            Dropped::Folder("C:\\Old".into()),
+            Dropped::Path("C:\\a.txt".into()),
+            Dropped::Path("C:\\Old".into()),
         ];
         assert_eq!(
             bin.drop_action(&files, all, &h.ctx()),

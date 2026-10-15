@@ -15,27 +15,26 @@ pub fn is_drive_root(path: &str) -> bool {
     }
 }
 
-/// Whether `url` is a web or FTP address (SPEC §6.3).
+/// Whether `url` is a web or FTP address (SPEC §6.3), without control characters, which
+/// could add lines to the `.url` file it may become.
 pub fn is_web(url: &str) -> bool {
-    let lower = url.trim().to_ascii_lowercase();
-    ["http://", "https://", "ftp://"]
-        .iter()
-        .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
+    let url = url.trim();
+    let lower = url.to_ascii_lowercase();
+    !url.chars().any(char::is_control)
+        && ["http://", "https://", "ftp://"]
+            .iter()
+            .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
 }
 
-/// What `item` is, asking `kind` what a path names; `None` for anything the bar does not take
-/// (a missing path, another kind of address).
-pub fn classify(item: &DragItem, kind: impl Fn(&str) -> PathKind) -> Option<Dropped> {
+/// What `item` is by its form (no drive is touched); `None` for anything the bar does not take
+/// (another kind of address).
+pub fn classify(item: &DragItem) -> Option<Dropped> {
     match item {
         DragItem::Path(path) if is_drive_root(path) => {
             let letter = path[..1].to_ascii_uppercase();
             Some(Dropped::Drive(format!("{letter}:\\")))
         }
-        DragItem::Path(path) => match kind(path) {
-            PathKind::Folder => Some(Dropped::Folder(path.clone())),
-            PathKind::File => Some(Dropped::File(path.clone())),
-            PathKind::Missing => None,
-        },
+        DragItem::Path(path) => Some(Dropped::Path(path.clone())),
         DragItem::Url { url, title } if is_web(url) => Some(Dropped::Url {
             url: url.trim().to_owned(),
             title: title
@@ -48,24 +47,31 @@ pub fn classify(item: &DragItem, kind: impl Fn(&str) -> PathKind) -> Option<Drop
     }
 }
 
-/// The sensor a drop on the bar creates for `dropped` (SPEC §6.3): its type and props.
-pub fn new_sensor(dropped: &Dropped) -> (&'static str, Props) {
+/// The sensor a drop on the bar creates for `dropped` (SPEC §6.3): its type and props;
+/// `kind` says what a path names, and a missing one makes nothing.
+pub fn new_sensor(
+    dropped: &Dropped,
+    kind: impl Fn(&str) -> PathKind,
+) -> Option<(&'static str, Props)> {
     let props = |pairs: &[(&str, &str)]| -> Props {
         pairs
             .iter()
             .map(|(k, v)| ((*k).to_owned(), Value::from(*v)))
             .collect()
     };
-    match dropped {
+    Some(match dropped {
         Dropped::Drive(root) => ("disk", props(&[("drive", root)])),
-        Dropped::Folder(path) => ("folder-menu", props(&[("folder", path)])),
-        Dropped::File(path) => ("shortcut", props(&[("target", path)])),
+        Dropped::Path(path) => match kind(path) {
+            PathKind::Folder => ("folder-menu", props(&[("folder", path)])),
+            PathKind::File => ("shortcut", props(&[("target", path)])),
+            PathKind::Missing => return None,
+        },
         Dropped::Url { url, title: None } => ("shortcut", props(&[("url", url)])),
         Dropped::Url {
             url,
             title: Some(title),
         } => ("shortcut", props(&[("url", url), ("title", title)])),
-    }
+    })
 }
 
 /// The effect of a drop that creates sensors: a link where the source allows it (the items
@@ -101,77 +107,70 @@ mod tests {
     }
 
     #[test]
-    fn drives_folders_files_and_web_addresses() {
+    fn drives_paths_and_web_addresses() {
+        assert_eq!(classify(&path("e:\\")), Some(Dropped::Drive("E:\\".into())));
+        assert_eq!(classify(&path("E:")), Some(Dropped::Drive("E:\\".into())));
         assert_eq!(
-            classify(&path("e:\\"), kind),
-            Some(Dropped::Drive("E:\\".into()))
+            classify(&path("C:\\Data")),
+            Some(Dropped::Path("C:\\Data".into()))
         );
-        assert_eq!(
-            classify(&path("E:"), kind),
-            Some(Dropped::Drive("E:\\".into()))
-        );
-        assert_eq!(
-            classify(&path("C:\\Data"), kind),
-            Some(Dropped::Folder("C:\\Data".into()))
-        );
-        assert_eq!(
-            classify(&path("C:\\a.txt"), kind),
-            Some(Dropped::File("C:\\a.txt".into()))
-        );
-        assert_eq!(classify(&path("C:\\Gone"), kind), None);
         let url = |url: &str, title: Option<&str>| DragItem::Url {
             url: url.into(),
             title: title.map(str::to_owned),
         };
         assert_eq!(
-            classify(&url("https://example.com/", Some(" Example ")), kind),
+            classify(&url("https://example.com/", Some(" Example "))),
             Some(Dropped::Url {
                 url: "https://example.com/".into(),
                 title: Some("Example".into())
             })
         );
         assert_eq!(
-            classify(&url("HTTP://a.b/", Some("HTTP://a.b/")), kind),
+            classify(&url("HTTP://a.b/", Some("HTTP://a.b/"))),
             Some(Dropped::Url {
                 url: "HTTP://a.b/".into(),
                 title: None
             }),
             "a title that is the address is none"
         );
-        assert!(classify(&url("ftp://files.example.com/", None), kind).is_some());
-        assert_eq!(classify(&url("mailto:me@example.com", None), kind), None);
-        assert_eq!(classify(&url("https://", None), kind), None);
+        assert!(classify(&url("ftp://files.example.com/", None)).is_some());
+        assert_eq!(classify(&url("mailto:me@example.com", None)), None);
+        assert_eq!(classify(&url("https://", None)), None);
+        assert_eq!(
+            classify(&url("https://a.b/\r\nIconFile=\\\\host\\x.ico", None)),
+            None,
+            "no extra lines in a .url file"
+        );
         assert!(!is_drive_root("C:\\Data"));
         assert!(!is_drive_root("1:\\"));
     }
 
     #[test]
     fn the_sensor_each_creates() {
-        let new = |d: Dropped| {
-            let (kind, props) = new_sensor(&d);
-            (kind, Value::Object(props))
-        };
+        let new =
+            |d: Dropped| new_sensor(&d, kind).map(|(kind, props)| (kind, Value::Object(props)));
         assert_eq!(
             new(Dropped::Drive("E:\\".into())),
-            ("disk", json!({ "drive": "E:\\" }))
+            Some(("disk", json!({ "drive": "E:\\" })))
         );
         assert_eq!(
-            new(Dropped::Folder("C:\\Data".into())),
-            ("folder-menu", json!({ "folder": "C:\\Data" }))
+            new(Dropped::Path("C:\\Data".into())),
+            Some(("folder-menu", json!({ "folder": "C:\\Data" })))
         );
         assert_eq!(
-            new(Dropped::File("C:\\a.txt".into())),
-            ("shortcut", json!({ "target": "C:\\a.txt" }))
+            new(Dropped::Path("C:\\a.txt".into())),
+            Some(("shortcut", json!({ "target": "C:\\a.txt" })))
         );
+        assert_eq!(new(Dropped::Path("C:\\Gone".into())), None);
         assert_eq!(
             new(Dropped::Url {
                 url: "https://example.com/".into(),
                 title: Some("Example".into())
             }),
-            (
+            Some((
                 "shortcut",
                 json!({ "url": "https://example.com/", "title": "Example" })
-            )
+            ))
         );
     }
 

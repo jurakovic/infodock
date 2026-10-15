@@ -78,7 +78,8 @@ pub fn updated_props(
 
 /// [`updated_props`] for `instance` with the machine-derived props it lacks filled in first:
 /// stored machine fields are kept as they are, so their static defaults must not stand in for
-/// the machine's values (SPEC §11.2).
+/// the machine's values (SPEC §11.2). Fields `changes` sets are not asked of the machine, so a
+/// dropped drive lists no drives.
 fn with_machine_props(
     registry: &Registry,
     ctx: &DefaultsCtx,
@@ -86,6 +87,13 @@ fn with_machine_props(
     changes: &Props,
 ) -> Result<Props, ConfigError> {
     let mut instance = instance.clone();
+    for (key, value) in changes {
+        // Validated with the other changes below.
+        instance
+            .props
+            .entry(key.clone())
+            .or_insert_with(|| value.clone());
+    }
     registry.fill_machine_props(&mut instance, ctx);
     updated_props(registry, &instance, changes)
 }
@@ -371,5 +379,24 @@ mod tests {
         update(&mut c, &registry, &CTX, &id, &shown).expect("updated");
         assert_eq!(c.layout.left[0].props["use24h"], false);
         assert_eq!(c.layout.left[0].props["showSeconds"], true);
+    }
+
+    #[test]
+    fn given_machine_props_are_not_asked_of_the_machine() {
+        let registry = Registry::new(vec![&Clock]);
+        let mut c = Config::default();
+        let before = crate::sensors::test_support::machine_reads();
+        add(
+            &mut c,
+            &registry,
+            &CTX,
+            "clock",
+            Zone::Left,
+            0,
+            &props(json!({ "use24h": true })),
+        )
+        .expect("added");
+        assert_eq!(crate::sensors::test_support::machine_reads(), before);
+        assert_eq!(c.layout.left[0].props["use24h"], true);
     }
 }

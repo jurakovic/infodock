@@ -582,7 +582,8 @@ pub trait Platform: Send + Sync {
         None
     }
     /// The volume `path` lies on (`C:\`, `\\server\share\`), to choose between moving and
-    /// copying a drop (SPEC §9.19); `None` where it cannot tell.
+    /// copying a drop (SPEC §9.19); `None` where it cannot tell. By the path's form, so a drag
+    /// touches no drive: a volume mounted in a folder counts as the one holding the folder.
     fn volume_of(&self, path: &str) -> Option<String> {
         path_root(path)
     }
