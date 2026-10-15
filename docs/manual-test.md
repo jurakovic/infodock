@@ -284,3 +284,13 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] *New sensor… ▸ Launchers ▸ Power*: the sleep icon (21 px); hover: *Sleep*. Properties: *Action* lists Lock, Sign out, Switch user, Sleep, Hibernate (only with hibernation turned on: `powercfg /hibernate on`), Shut down, Restart; each changes the icon. *Close apps without asking* shows only for Sign out, Shut down and Restart.
 - [ ] Click with *Ask first* on: a dialog asks "Do you really want to … this computer?" with the action on its button; Cancel and Esc do nothing. With *Ask first* off, the click acts at once.
 - [ ] Each mode does what it says: Lock shows the lock screen; Sign out signs out (open Notepad with unsaved text: Windows asks, unless *Close apps without asking*); Switch user shows the sign-in screen and the session is still there after signing in again; Sleep sleeps (on a Modern Standby laptop: the screen turns off and it goes to standby), and the bar is fine after waking; Hibernate hibernates; Shut down and Restart do so (Notepad with unsaved text: Windows waits for it, unless forced).
+
+**Volumes and Disk** (since M3 S4)
+
+- [ ] *New sensor… ▸ Launchers ▸ Disk*: the first drive's icon as Explorer shows it; hover: *Open 'Local Disk (C:)'* (or its label); click: the drive opens in Explorer. *Drive* lists every drive, optical ones too; a *Title* replaces the name in the hint.
+- [ ] A Disk on a USB stick: remove the stick, and within a second or two the icon is the generic drive icon, dimmed, the hint says *E:\ is not connected*, and a click does nothing. Plug it back in: its icon and name return within a second or two.
+- [ ] A Disk on an empty DVD drive: not dimmed, hint *CD Drive (D:) — no media*; insert a disc: the hint shows the disc's label and the icon may change.
+- [ ] A Disk Meter on the USB stick: removing and re-inserting the stick shows `n/a` and the values again within a second or two (not only at its interval).
+- [ ] A Shortcut whose target is on the USB stick: it dims and comes back with the stick within a second or two.
+- [ ] Open a Disk Meter's properties, then plug a USB stick in: the *Drive* list gains it without reopening the form, and the chosen drive stays chosen.
+- [ ] Map a network drive (`net use Z: \\server\share`) and disconnect it: a Disk on Z: follows.

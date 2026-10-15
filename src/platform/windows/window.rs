@@ -43,10 +43,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
     LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PBT_APMRESUMEAUTOMATIC, PostMessageW,
     PostQuitMessage, RegisterClassExW, SetTimer, SetWindowLongPtrW, TranslateMessage, WM_APP,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WNDCLASSEXW,
+    WM_CAPTURECHANGED, WM_CLOSE, WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED,
+    WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WNDCLASSEXW,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
@@ -234,6 +234,10 @@ impl WindowState {
                 self.dispatch(UiEvent::CaptureLost);
             }
             WM_TIMECHANGE => self.dispatch(UiEvent::TimeChanged),
+            // Volumes are broadcast to every top-level window.
+            WM_DEVICECHANGE if is_volume_change(wparam, lparam) => {
+                self.dispatch(UiEvent::DevicesChanged);
+            }
             // Sent on every resume, also when no user input follows (unlike the "suspend" one).
             WM_POWERBROADCAST if wparam.0 == PBT_APMRESUMEAUTOMATIC as usize => {
                 self.dispatch(UiEvent::Resumed);
@@ -526,6 +530,27 @@ fn modifiers() -> Modifiers {
         ctrl: down(VK_CONTROL),
         shift: down(VK_SHIFT),
     }
+}
+
+/// Whether a `WM_DEVICECHANGE` says a volume arrived or went (`DBT_DEVICEARRIVAL`,
+/// `DBT_DEVICEREMOVECOMPLETE` with a `DEV_BROADCAST_VOLUME`; a disc counts as arriving).
+fn is_volume_change(wparam: WPARAM, lparam: LPARAM) -> bool {
+    const DBT_DEVICEARRIVAL: usize = 0x8000;
+    const DBT_DEVICEREMOVECOMPLETE: usize = 0x8004;
+    const DBT_DEVTYP_VOLUME: u32 = 2;
+    /// `DEV_BROADCAST_HDR`.
+    #[repr(C)]
+    struct Header {
+        size: u32,
+        device_type: u32,
+        reserved: u32,
+    }
+    if !matches!(wparam.0, DBT_DEVICEARRIVAL | DBT_DEVICEREMOVECOMPLETE) || lparam.0 == 0 {
+        return false;
+    }
+    // SAFETY: with these events, lparam points to a DEV_BROADCAST_HDR.
+    let header = unsafe { &*(lparam.0 as *const Header) };
+    header.device_type == DBT_DEVTYP_VOLUME
 }
 
 /// `WM_SETTINGCHANGE` for light/dark mode, accent colour or transparency effects.

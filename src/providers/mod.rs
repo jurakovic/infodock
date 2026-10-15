@@ -12,7 +12,7 @@ mod worker;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use crate::platform::Platform;
+use crate::platform::{Platform, Volume};
 use crate::sampler::{DiskSample, PathSample, Sample, Topic};
 use worker::SlowReader;
 
@@ -25,6 +25,8 @@ pub struct Providers {
     disks: Option<Option<SlowReader<DiskSample>>>,
     /// The same for paths (`path/<path>`).
     paths: Option<Option<SlowReader<PathSample>>>,
+    /// The same for the drive list (one key, `""`).
+    volumes: Option<Option<SlowReader<Vec<Volume>>>>,
     net: net::Net,
 }
 
@@ -35,6 +37,7 @@ impl Providers {
             cpu: None,
             disks: None,
             paths: None,
+            volumes: None,
             net: net::Net::default(),
         }
     }
@@ -66,6 +69,11 @@ impl Providers {
             Topic::Path(path) => {
                 if let Some(Some(paths)) = &mut self.paths {
                     paths.forget(path);
+                }
+            }
+            Topic::Volumes => {
+                if let Some(Some(volumes)) = &mut self.volumes {
+                    volumes.forget("");
                 }
             }
             Topic::Net(id) => self.net.forget(id),
@@ -113,6 +121,15 @@ impl Providers {
                     })
                 });
                 paths.as_mut()?.sample(path).map(Sample::Path)
+            }
+            // Listing may stall on a drive that does not answer.
+            Topic::Volumes => {
+                let platform = &self.platform;
+                let volumes = self.volumes.get_or_insert_with(|| {
+                    let platform = Arc::clone(platform);
+                    SlowReader::new("volumes", move |_| platform.volumes())
+                });
+                volumes.as_mut()?.sample("").map(Sample::Volumes)
             }
             Topic::Net(id) => {
                 let interface = self.platform.net_interface(id.as_deref());

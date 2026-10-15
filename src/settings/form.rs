@@ -444,23 +444,7 @@ fn drives(volumes: &[Volume], hide_optical: bool, stored: &str) -> Vec<(String, 
     let mut drives: Vec<(String, String)> = volumes
         .iter()
         .filter(|v| !(hide_optical && v.kind == DriveKind::Optical) || v.root == stored)
-        .map(|v| {
-            let name = if v.label.is_empty() {
-                t(match v.kind {
-                    DriveKind::Fixed => "volume.fixed",
-                    DriveKind::Removable => "volume.removable",
-                    DriveKind::Optical => "volume.optical",
-                    DriveKind::Network => "volume.network",
-                    DriveKind::Ram => "volume.ram",
-                    DriveKind::Other => "volume.other",
-                })
-            } else {
-                v.label.clone()
-            };
-            let letter = v.root.trim_end_matches('\\');
-            let label = t_args("volume.entry", &[("name", &name), ("drive", letter)]);
-            (v.root.clone(), label)
-        })
+        .map(|v| (v.root.clone(), crate::sensors::disk::volume_name(v)))
         .collect();
     if !stored.is_empty() && !drives.iter().any(|(root, _)| root == stored) {
         let label = t_args("volume.missing", &[("drive", stored)]);
@@ -725,11 +709,7 @@ mod tests {
 
     #[test]
     fn drives_list_this_computers_volumes() {
-        let volume = |root: &str, kind, label: &str| Volume {
-            root: root.into(),
-            kind,
-            label: label.into(),
-        };
+        let volume = |root: &str, kind, label: &str| Volume::new(root, kind, label);
         let stored = json!({ "drive": "F:\\" });
         let mut form =
             Form::open(registry(), &instance("disk-meter", stored), false).expect("known");

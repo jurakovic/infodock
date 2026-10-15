@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::platform::PathKind;
+use crate::platform::{PathKind, Volume};
 
 /// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -19,7 +19,19 @@ pub enum Topic {
     Net(Option<String>),
     /// `path/<path>`: whether a file or folder exists, e.g. a Shortcut's target (SPEC §9.17).
     Path(String),
+    /// `volumes`: the drives; also pushed when one arrives or goes (SPEC §4.4, Appendix A).
+    Volumes,
 }
+
+impl Topic {
+    /// Whether a drive arriving or going may change this topic, so it is read again at once.
+    pub fn follows_devices(&self) -> bool {
+        matches!(self, Self::Volumes | Self::Disk(_) | Self::Path(_))
+    }
+}
+
+/// The drive list is read this often besides when drives arrive or go (SPEC §4.4).
+pub const VOLUMES_EVERY: Duration = Duration::from_secs(60);
 
 /// A sensor's wish to receive `topic` at least every `interval`.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +50,8 @@ pub enum Sample {
     Disk(DiskSample),
     Net(NetSample),
     Path(PathSample),
+    /// The drives with letters, in letter order.
+    Volumes(Vec<Volume>),
 }
 
 /// `path/<path>`: what the path names now.

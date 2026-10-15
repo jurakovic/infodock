@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use scheduler::Scheduler;
 pub use topics::{
     CpuSample, Delivery, DiskSample, MemorySample, NetSample, PathSample, Sample, SwapSample,
-    Topic, TopicRequest, UptimeSample,
+    Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
 };
 
 use crate::providers::Providers;
@@ -25,6 +25,8 @@ enum Message {
     },
     /// The system resumed from sleep.
     Resume,
+    /// A drive arrived or went.
+    Devices,
     Shutdown,
 }
 
@@ -57,6 +59,12 @@ impl Sampler {
     /// (SPEC §4.4).
     pub fn resume(&self) {
         let _ = self.messages.send(Message::Resume);
+    }
+
+    /// A drive arrived or went: the topics that follow devices (volumes, disks, paths) are
+    /// read again at once (SPEC §4.4).
+    pub fn devices_changed(&self) {
+        let _ = self.messages.send(Message::Devices);
     }
 
     /// Ends the thread.
@@ -109,6 +117,7 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                 providers.resume();
                 scheduler.resume(Instant::now());
             }
+            Ok(Message::Devices) => scheduler.refresh(Instant::now(), Topic::follows_devices),
             Ok(Message::Shutdown) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {}
         }
@@ -171,6 +180,35 @@ mod tests {
 
         sampler.subscribe("s_1", Vec::new());
         sampler.subscribe("s_2", Vec::new());
+        sampler.shutdown();
+        thread.join().expect("the thread ends");
+    }
+    #[test]
+    fn a_device_change_reads_the_drive_list_again_at_once() {
+        let (sampler, pending) = Sampler::new();
+        sampler.subscribe(
+            "d",
+            vec![TopicRequest {
+                topic: Topic::Volumes,
+                interval: VOLUMES_EVERY,
+            }],
+        );
+        let (tx, rx) = mpsc::channel();
+        let thread = pending
+            .start(
+                Providers::new(crate::platform::current()),
+                Box::new(move |d| {
+                    let _ = tx.send(d);
+                }),
+            )
+            .expect("the thread starts");
+        let wait = Duration::from_secs(5);
+        let first = rx.recv_timeout(wait).expect("the first list");
+        assert!(matches!(*first.sample, Sample::Volumes(_)));
+        // Not due for a minute, but a drive arrived.
+        sampler.devices_changed();
+        let again = rx.recv_timeout(wait).expect("read again");
+        assert_eq!((again.topic, again.to), (Topic::Volumes, None));
         sampler.shutdown();
         thread.join().expect("the thread ends");
     }

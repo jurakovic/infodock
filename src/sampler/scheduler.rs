@@ -118,6 +118,16 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
         }
     }
 
+    /// The topics `which` picks are due now, e.g. after a drive arrived (SPEC §4.4); the
+    /// cadence goes on from that reading.
+    pub fn refresh(&mut self, now: Instant, which: impl Fn(&K) -> bool) {
+        for (topic, entry) in &mut self.topics {
+            if which(topic) {
+                entry.next = now;
+            }
+        }
+    }
+
     /// The topics to sample now.
     pub fn due(&self, now: Instant) -> Vec<K> {
         self.topics
@@ -192,6 +202,25 @@ mod tests {
         assert_eq!(s.next_due(), None);
         assert_eq!(s.take_removed(), ["cpu"]);
         assert!(s.take_removed().is_empty());
+    }
+
+    #[test]
+    fn refreshed_topics_are_due_at_once() {
+        let t0 = Instant::now();
+        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        s.subscribe("a", &requests(&[("volumes", 60_000), ("cpu", 1000)]), t0);
+        for topic in s.due(t0) {
+            s.sampled(&topic, t0, Some(1));
+        }
+        let later = t0 + SEC / 2;
+        assert!(s.due(later).is_empty());
+        s.refresh(later, |t| *t == "volumes");
+        assert_eq!(s.due(later), ["volumes"]);
+        s.sampled(&"volumes", later, Some(2));
+        assert_eq!(s.due(later), Vec::<&str>::new());
+        // Nobody subscribes to a disk: nothing to refresh.
+        s.refresh(later, |t| *t == "disk");
+        assert!(s.due(later).is_empty());
     }
 
     #[test]

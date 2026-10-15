@@ -92,6 +92,14 @@ pub fn open(app: &Arc<App>, route: &str) {
     focus(&window);
 }
 
+/// The drive list changed (sampler thread): an open form's drive choices follow it.
+pub fn volumes_changed(volumes: Vec<crate::platform::Volume>) {
+    let queued = slint::invoke_from_event_loop(move || properties::volumes_changed(volumes));
+    if queued.is_err() {
+        tracing::debug!("the drive list arrived after the event loop ended");
+    }
+}
+
 /// Refreshes the open window whenever the config changes (from any thread).
 pub fn watch(app: &Arc<App>) {
     let a = Arc::clone(app);
@@ -871,6 +879,18 @@ mod screenshots {
             .expect("added");
         super::properties::open_form(&app, &power, true);
         render("settings-properties-power");
+        state.invoke_props_cancel();
+        // The Disk launcher: every drive, optical ones too (none on Linux: only the stored one).
+        let disk = app
+            .add_sensor(
+                "disk",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &disk, true);
+        render("settings-properties-disk-launcher");
         state.invoke_props_cancel();
         // The first-run network graph: Automatic and this computer's connections.
         let network = app

@@ -20,7 +20,7 @@ pub struct SlowReader<V> {
     pending: HashSet<String>,
 }
 
-impl<V: Copy + Send + 'static> SlowReader<V> {
+impl<V: Clone + Send + 'static> SlowReader<V> {
     /// Starts the worker `name`, which reads with `read`; `None` if the thread cannot start.
     pub fn new(name: &str, read: impl Fn(&str) -> V + Send + 'static) -> Option<Self> {
         let (requests, queue) = mpsc::channel::<String>();
@@ -65,7 +65,7 @@ impl<V: Copy + Send + 'static> SlowReader<V> {
                 Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
             }
         }
-        self.latest.get(key).copied()
+        self.latest.get(key).cloned()
     }
 
     /// Drops what is known about `key` once no sensor shows it.

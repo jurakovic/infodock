@@ -1000,6 +1000,7 @@ impl BarHandler for BarLogic {
                 self.host.resumed();
                 self.clock_changed(window);
             }
+            UiEvent::DevicesChanged => self.host.devices_changed(),
             UiEvent::Activate => self.host.activate(),
             UiEvent::TrayClick => self.host.toggle_bar(),
             UiEvent::TrayMenu => self.tray_menu(window),
@@ -1178,6 +1179,9 @@ mod tests {
         }
         fn resumed(&self) {
             self.log("resumed".into());
+        }
+        fn devices_changed(&self) {
+            self.log("devices changed".into());
         }
         fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
             self.log(format!("state {id} {}", serde_json::Value::Object(state)));

@@ -52,6 +52,8 @@ pub trait BarHost: Send + Sync {
     fn redock(&self);
     /// The system resumed from sleep: the sampler reads every topic again (SPEC §4.4).
     fn resumed(&self);
+    /// A drive arrived or went: the sampler reads volumes, disks and paths again (SPEC §4.4).
+    fn devices_changed(&self);
     /// Stores sensor `id`'s runtime state in the config (SPEC §11.2), e.g. the uptime record.
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State);
 }

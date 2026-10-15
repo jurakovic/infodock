@@ -79,6 +79,7 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
                 if form.has_drive_field() {
                     form.set_volumes(app.platform.volumes());
                 }
+                app.watch_volumes(form.has_drive_field());
                 if form.has_adapter_field() {
                     form.set_adapters(app.platform.net_interfaces());
                 }
@@ -110,6 +111,7 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
 pub(super) fn cancel(open: &mut Open, app: &App) {
     if let Some(state) = open.form.take() {
         state.preview.stop();
+        app.watch_volumes(false);
         app.end_preview(&state.form.id);
         if state.form.new
             && let Err(e) = app.remove_sensor(&state.form.id)
@@ -138,24 +140,49 @@ fn edit(app: &Arc<App>, change: impl FnOnce(&mut Form, &[String]) -> bool) {
         // An error of an earlier Save no longer applies.
         window.set_props_error(SharedString::new());
         window.set_props_valid(state.form.valid());
-        let rows = state.form.rows(&families);
-        let model = window.get_props();
-        for (i, (new, old)) in rows.iter().zip(&state.rows).enumerate() {
-            // A text field shows what is typed; refreshing it would move the cursor.
-            let mut compare = new.clone();
-            if matches!(new.kind, RowKind::Text | RowKind::File | RowKind::Folder) {
-                compare.text.clone_from(&old.text);
-            }
-            if compare != *old {
-                model.set_row_data(i, prop_row(new));
-            }
-        }
-        state.rows = rows;
+        show_rows(state, &window, &families);
         if valid {
             let a = Arc::clone(app);
             state
                 .preview
                 .start(TimerMode::SingleShot, PREVIEW_DELAY, move || preview(&a));
+        }
+    });
+}
+
+/// Shows the rows that changed since they were last shown.
+fn show_rows(state: &mut FormState, window: &ui::SettingsState, families: &[String]) {
+    let rows = state.form.rows(families);
+    let model = window.get_props();
+    for (i, (new, old)) in rows.iter().zip(&state.rows).enumerate() {
+        // A text field shows what is typed; refreshing it would move the cursor.
+        let mut compare = new.clone();
+        if matches!(new.kind, RowKind::Text | RowKind::File | RowKind::Folder) {
+            compare.text.clone_from(&old.text);
+        }
+        if compare != *old {
+            model.set_row_data(i, prop_row(new));
+        }
+    }
+    state.rows = rows;
+}
+
+/// The drive list changed: an open form's drive choices follow it, keeping the choice.
+pub(super) fn volumes_changed(volumes: Vec<crate::platform::Volume>) {
+    WINDOW.with(|w| {
+        let Ok(mut w) = w.try_borrow_mut() else {
+            return;
+        };
+        let Some(open) = w.as_mut() else {
+            return;
+        };
+        let families = open.families.clone();
+        let window = open.window.global::<ui::SettingsState>();
+        if let Some(state) = open.form.as_mut()
+            && state.form.has_drive_field()
+        {
+            state.form.set_volumes(volumes);
+            show_rows(state, &window, &families);
         }
     });
 }
@@ -199,6 +226,7 @@ fn save(app: &App) {
             Ok(()) => {
                 if let Some(state) = open.form.take() {
                     state.preview.stop();
+                    app.watch_volumes(false);
                 }
                 window.set_page(2);
             }

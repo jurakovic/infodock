@@ -81,7 +81,20 @@ pub fn volumes() -> Vec<Volume> {
                 DriveKind::Fixed | DriveKind::Removable | DriveKind::Ram
             );
             let label = if local { label(&path) } else { String::new() };
-            Volume { root, kind, label }
+            let (ejectable, media) = match kind {
+                DriveKind::Removable | DriveKind::Optical => {
+                    (true, super::device::has_media(&root))
+                }
+                DriveKind::Fixed => (super::device::on_removable_bus(&root), true),
+                DriveKind::Network | DriveKind::Ram | DriveKind::Other => (false, true),
+            };
+            Volume {
+                root,
+                kind,
+                label,
+                ejectable,
+                media,
+            }
         })
         .collect()
 }
@@ -158,6 +171,7 @@ mod tests {
         assert!(free.total > 0 && free.free <= free.total, "{free:?}");
         assert!(space("Q:\\").is_none() || volumes.iter().any(|v| v.root == "Q:\\"));
         assert_eq!(path_kind(&system.root), PathKind::Folder);
+        assert!(system.media && !system.ejectable, "{system:?}");
     }
 
     #[test]

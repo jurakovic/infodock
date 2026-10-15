@@ -143,7 +143,7 @@ pub enum DriveKind {
     Other,
 }
 
-/// A volume with a drive letter (SPEC §4.5: lists of volumes).
+/// A volume with a drive letter (SPEC §4.5: lists of volumes; Appendix A `volumes`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Volume {
     /// `C:\`.
@@ -151,6 +151,24 @@ pub struct Volume {
     pub kind: DriveKind,
     /// The volume label; empty if it has none or no medium is inserted.
     pub label: String,
+    /// It can be ejected: removable and optical drives, and disks on USB, FireWire or SD
+    /// buses (SPEC §9.22).
+    pub ejectable: bool,
+    /// A medium is inserted; always for fixed, network and RAM drives.
+    pub media: bool,
+}
+
+impl Volume {
+    /// A volume of `kind` with a medium, not ejectable unless removable or optical.
+    pub fn new(root: impl Into<String>, kind: DriveKind, label: impl Into<String>) -> Self {
+        Self {
+            root: root.into(),
+            kind,
+            label: label.into(),
+            ejectable: matches!(kind, DriveKind::Removable | DriveKind::Optical),
+            media: true,
+        }
+    }
 }
 
 /// A volume's size and free space, bytes (SPEC Appendix A, `disk/<X:\>`).
@@ -614,6 +632,9 @@ pub enum UiEvent {
     LocaleChanged,
     /// The system resumed from sleep or hibernation.
     Resumed,
+    /// A drive arrived or went: a disk plugged in or removed, a disc inserted or ejected, a
+    /// network drive mapped or disconnected.
+    DevicesChanged,
     /// A second launch asked this instance to show itself (SPEC §6.5).
     Activate,
     /// The tray icon was clicked or selected with the keyboard (SPEC §6.5).

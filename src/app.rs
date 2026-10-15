@@ -9,13 +9,15 @@ use crate::config::model::{Settings, Zone};
 use crate::config::{ConfigError, ConfigStore};
 use crate::platform::Platform;
 use crate::providers::Providers;
-use crate::sampler::{Pending, Sampler, TopicRequest};
+use crate::sampler::{Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY};
 use crate::sensors::registry::registry;
 use crate::sensors::{DefaultsCtx, Props, ops};
 use crate::settings;
 
 /// How long a requested quit may take before the process ends anyway.
 const QUIT_TIMEOUT: Duration = Duration::from_secs(5);
+/// The sampler subscriber id of the Settings window.
+const SETTINGS: &str = "settings";
 
 pub struct App {
     pub store: ConfigStore,
@@ -44,8 +46,8 @@ impl App {
         let _ = self.bar.set(bar);
     }
 
-    /// Starts the sampler thread, which delivers to the bar (SPEC §4.4). Subscriptions made
-    /// before it starts are kept.
+    /// Starts the sampler thread, which delivers to the bar (SPEC §4.4), and the drive list to
+    /// Settings while it watches it. Subscriptions made before it starts are kept.
     pub fn start_sampler(&self) {
         let pending = self
             .pending
@@ -56,7 +58,11 @@ impl App {
             return;
         };
         let bar = Arc::downgrade(bar);
-        let deliver = Box::new(move |delivery| {
+        let deliver = Box::new(move |delivery: Delivery| {
+            let for_settings = delivery.to.as_deref().is_none_or(|to| to == SETTINGS);
+            if for_settings && let Sample::Volumes(volumes) = delivery.sample.as_ref() {
+                settings::volumes_changed(volumes.clone());
+            }
             if let Some(bar) = bar.upgrade() {
                 bar.deliver(delivery);
             }
@@ -64,6 +70,20 @@ impl App {
         if let Err(e) = pending.start(Providers::new(Arc::clone(&self.platform)), deliver) {
             tracing::error!("the sampler could not start: {e}");
         }
+    }
+
+    /// Settings receives the drive list while `watch` (a form with a drive field is open), so
+    /// it follows drives that arrive or go (SPEC §9.12).
+    pub fn watch_volumes(&self, watch: bool) {
+        let topics = if watch {
+            vec![TopicRequest {
+                topic: Topic::Volumes,
+                interval: VOLUMES_EVERY,
+            }]
+        } else {
+            Vec::new()
+        };
+        self.sampler.subscribe(SETTINGS, topics);
     }
 
     pub fn bar_visible(&self) -> bool {
@@ -251,6 +271,10 @@ impl BarHost for AppHost {
 
     fn resumed(&self) {
         self.0.sampler.resume();
+    }
+
+    fn devices_changed(&self) {
+        self.0.sampler.devices_changed();
     }
 
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {

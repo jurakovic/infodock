@@ -436,6 +436,7 @@ mod tests {
                         free: 241 * GB,
                     }
                 }),
+                Topic::Volumes => Sample::Volumes(crate::platform::current().volumes()),
                 // What the path is on this machine (the launchers' targets).
                 Topic::Path(path) => Sample::Path(crate::sampler::PathSample {
                     kind: crate::platform::current().path_kind(path),
@@ -623,9 +624,9 @@ mod tests {
                 serde_json::json!({ "drive": "Q:\\", "mode": "freeBytes" }),
             ),
         ];
-        // Launchers (SPEC §9.17, §9.21): Shortcuts to a program, a folder, a web address, a
-        // tinted program, a bare program name and a missing target (inactive); every Power
-        // mode, the last at 50 %.
+        // Launchers (SPEC §9.17, §9.18, §9.21): Shortcuts to a program, a folder, a web
+        // address, a tinted program, a bare program name and a missing target (inactive); the
+        // system drive and an absent one (inactive); every Power mode, the last at 50 %.
         let launchers = Layout {
             left: vec![
                 entry(
@@ -661,6 +662,8 @@ mod tests {
                     "shortcut",
                     serde_json::json!({ "target": "Q:\\Gone\\tool.exe" }),
                 ),
+                entry("d1", "disk", serde_json::json!({ "drive": "C:\\" })),
+                entry("d2", "disk", serde_json::json!({ "drive": "Q:\\" })),
                 entry("p1", "power", serde_json::json!({ "mode": "lock" })),
                 entry("p2", "power", serde_json::json!({ "mode": "signOut" })),
                 entry("p3", "power", serde_json::json!({ "mode": "switchUser" })),
@@ -713,14 +716,14 @@ mod tests {
                 &launchers,
                 Settings::default(),
                 dark,
-                500.0,
+                560.0,
             ),
             (
                 "bar-launchers-light",
                 &launchers,
                 Settings::default(),
                 light,
-                500.0,
+                560.0,
             ),
         ] {
             let theme = Theme::resolve(&settings, os);

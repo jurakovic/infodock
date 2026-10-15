@@ -3,6 +3,7 @@
 pub mod appbar;
 mod com;
 mod cpu;
+mod device;
 mod dialog;
 mod disk;
 mod hint;

@@ -74,6 +74,26 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// How a volume is named in lists and on the Disk launcher (SPEC §9.12, §9.18): its label, or
+/// else its kind, with the letter: `Local Disk (C:)`, `Data (D:)`. Labels are read only from
+/// local drives, so naming never waits for a server or a disc.
+pub fn volume_name(volume: &Volume) -> String {
+    let name = if volume.label.is_empty() {
+        t(match volume.kind {
+            DriveKind::Fixed => "volume.fixed",
+            DriveKind::Removable => "volume.removable",
+            DriveKind::Optical => "volume.optical",
+            DriveKind::Network => "volume.network",
+            DriveKind::Ram => "volume.ram",
+            DriveKind::Other => "volume.other",
+        })
+    } else {
+        volume.label.clone()
+    };
+    let letter = volume.root.trim_end_matches('\\');
+    t_args("volume.entry", &[("name", &name), ("drive", letter)])
+}
+
 /// The first fixed drive (SPEC §9.12), the machine-derived default.
 pub fn first_fixed(volumes: &[Volume]) -> Option<&str> {
     volumes
@@ -465,11 +485,7 @@ mod tests {
 
     #[test]
     fn the_first_fixed_drive_is_the_default() {
-        let volume = |root: &str, kind| Volume {
-            root: root.into(),
-            kind,
-            label: String::new(),
-        };
+        let volume = |root: &str, kind| Volume::new(root, kind, "");
         let volumes = [
             volume("A:\\", DriveKind::Removable),
             volume("D:\\", DriveKind::Fixed),
