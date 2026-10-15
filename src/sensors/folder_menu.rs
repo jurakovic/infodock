@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::common::folder_browser::{FolderBrowser, Options};
 use super::common::icon::{self, Icon, ImageFile};
+use super::drop::{self, DragInfo, DropAction, Dropped};
 use super::schema::{FieldKind, Lit, PropField};
 use super::shortcut::file_name;
 use super::{
@@ -13,7 +14,7 @@ use super::{
     Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::t;
-use crate::platform::Canvas;
+use crate::platform::{Canvas, DropEffect, FileOp};
 
 /// The built-in folder icon (Appendix C).
 const FOLDER: &[u8] = include_bytes!("../../assets/icons/folder.svg");
@@ -152,7 +153,56 @@ struct FolderMenu {
     icon: Option<Icon>,
 }
 
+/// What a drop into the folder does (SPEC §9.19).
+#[derive(Debug, Clone, PartialEq)]
+enum DropPlan {
+    /// Internet shortcuts (`.url`) to the links.
+    Links,
+    /// Copy, move or make shortcuts to the files and folders.
+    Files(FileOp, Vec<String>),
+    /// Nothing can be done: an effect the source does not allow, or a folder into itself.
+    Refused,
+}
+
 impl FolderMenu {
+    /// What dropping `items` would do; `None` when they are not all files and folders or all
+    /// links, so the bar inserts new sensors instead.
+    fn drop_plan(&self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) -> Option<DropPlan> {
+        if self.unset() || items.is_empty() {
+            return None;
+        }
+        let folder = &self.props.folder;
+        if items.iter().all(|i| matches!(i, Dropped::Url { .. })) {
+            let allowed = drag.allowed.link || drag.allowed.copy;
+            return Some(if allowed {
+                DropPlan::Links
+            } else {
+                DropPlan::Refused
+            });
+        }
+        let paths: Vec<String> = items
+            .iter()
+            .map(|i| i.path().map(str::to_owned))
+            .collect::<Option<_>>()?;
+        let volume = cx.platform.volume_of(folder);
+        let same_volume =
+            volume.is_some() && paths.iter().all(|p| cx.platform.volume_of(p) == volume);
+        let Some(op) = drop::file_op(drag.modifiers, same_volume, drag.allowed) else {
+            return Some(DropPlan::Refused);
+        };
+        // A folder into itself, or items moved to where they are: nothing to do.
+        let pointless = op != FileOp::Link
+            && paths.iter().any(|p| {
+                drop::is_within(folder, p)
+                    || (op == FileOp::Move && drop::same_folder(drop::parent(p), folder))
+            });
+        Some(if pointless {
+            DropPlan::Refused
+        } else {
+            DropPlan::Files(op, paths)
+        })
+    }
+
     /// The title, or the folder's name (`Downloads`, `C:\`).
     fn title(&self) -> String {
         if self.props.title.is_empty() {
@@ -230,6 +280,53 @@ impl Sensor for FolderMenu {
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         self.title()
     }
+
+    /// Files and folders are copied, moved or linked into the folder, links become Internet
+    /// shortcuts (SPEC §9.19).
+    fn drop_action(&self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) -> Option<DropAction> {
+        let title = self.title();
+        Some(match self.drop_plan(items, drag, cx)? {
+            DropPlan::Links => DropAction {
+                effect: if drag.allowed.link {
+                    DropEffect::Link
+                } else {
+                    DropEffect::Copy
+                },
+                hint: Some(drop::hint("drop.urlShortcut", items, &title)),
+            },
+            DropPlan::Files(op, _) => {
+                let key = match op {
+                    FileOp::Copy => "drop.copy",
+                    FileOp::Move => "drop.move",
+                    FileOp::Link => "drop.link",
+                };
+                DropAction {
+                    effect: op.effect(),
+                    hint: Some(drop::hint(key, items, &title)),
+                }
+            }
+            DropPlan::Refused => DropAction::REFUSED,
+        })
+    }
+
+    fn drop_items(&mut self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) {
+        let folder = &self.props.folder;
+        match self.drop_plan(items, drag, cx) {
+            Some(DropPlan::Links) => {
+                for item in items {
+                    if let Dropped::Url { url, title } = item {
+                        let stem = drop::url_file_stem(url, title.as_deref());
+                        cx.platform.create_url_file(folder, &stem, url);
+                    }
+                }
+            }
+            Some(DropPlan::Files(op, paths)) => {
+                cx.platform
+                    .file_operation(op, paths, folder.clone(), Box::new(|| {}));
+            }
+            Some(DropPlan::Refused) | None => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -305,6 +402,76 @@ mod tests {
             assert!(!menu.menu(cx)[0].enabled);
         });
         assert_eq!(FolderMenuType.summary(&Props::new()), None);
+    }
+
+    #[test]
+    fn drops_copy_move_link_or_make_url_files() {
+        use crate::platform::{DropEffects, Modifiers};
+        let mut menu = create(json!({ "folder": "C:\\Users\\me\\Downloads" }));
+        let all = DragInfo {
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        let file = |p: &str| Dropped::File(p.into());
+        with_ctx(|cx, platform| {
+            // Same volume: moved.
+            let local = [file("C:\\Data\\report.pdf")];
+            assert_eq!(
+                menu.drop_action(&local, all, cx),
+                Some(DropAction {
+                    effect: DropEffect::Move,
+                    hint: Some("Move 'report.pdf' to 'Downloads'".into())
+                })
+            );
+            // Another volume: copied; with Alt: shortcuts.
+            let usb = [file("E:\\a.txt"), Dropped::Folder("E:\\Photos".into())];
+            assert_eq!(
+                menu.drop_action(&usb, all, cx).and_then(|a| a.hint),
+                Some("Copy 2 items to 'Downloads'".into())
+            );
+            let alt = DragInfo {
+                modifiers: Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                },
+                ..all
+            };
+            assert_eq!(
+                menu.drop_action(&usb, alt, cx).map(|a| a.effect),
+                Some(DropEffect::Link)
+            );
+            // Already there, or the folder itself: refused.
+            let here = [file("C:\\Users\\me\\Downloads\\x.zip")];
+            assert_eq!(menu.drop_action(&here, all, cx), Some(DropAction::REFUSED));
+            let parent = [Dropped::Folder("C:\\Users\\me".into())];
+            assert_eq!(
+                menu.drop_action(&parent, all, cx),
+                Some(DropAction::REFUSED)
+            );
+            // A drive among them: the bar inserts sensors instead.
+            let drive = [file("C:\\a"), Dropped::Drive("E:\\".into())];
+            assert_eq!(menu.drop_action(&drive, all, cx), None);
+            let link = [Dropped::Url {
+                url: "https://example.com/".into(),
+                title: Some("Example Domain".into()),
+            }];
+            assert_eq!(
+                menu.drop_action(&link, all, cx).and_then(|a| a.hint),
+                Some("Create shortcut to 'https://example.com/' in 'Downloads'".into())
+            );
+            menu.drop_items(&local, all, cx);
+            menu.drop_items(&usb, alt, cx);
+            menu.drop_items(&link, all, cx);
+            menu.drop_items(&here, all, cx);
+            assert_eq!(
+                platform.log(),
+                [
+                    "Move C:\\Data\\report.pdf into C:\\Users\\me\\Downloads",
+                    "Link E:\\a.txt, E:\\Photos into C:\\Users\\me\\Downloads",
+                    "url file C:\\Users\\me\\Downloads\\Example Domain.url https://example.com/",
+                ]
+            );
+        });
     }
 
     #[test]

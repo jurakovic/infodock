@@ -384,6 +384,26 @@
   "sensor.startMenu.field.title.help": "Shown on hover and above the list. Leave empty for \"Start Menu\".",
   "sensor.startMenu.field.image.help": "ICO, PNG, GIF, JPEG or SVG. Leave empty for the Start Menu icon.",
   "sensor.startMenu.menu.openAll": "Open (all users) folder",
+  "drop.move": {
+    "one": "Move '{item}' to '{folder}'",
+    "other": "Move {count} items to '{folder}'"
+  },
+  "drop.copy": {
+    "one": "Copy '{item}' to '{folder}'",
+    "other": "Copy {count} items to '{folder}'"
+  },
+  "drop.link": {
+    "one": "Create shortcut to '{item}' in '{folder}'",
+    "other": "Create {count} shortcuts in '{folder}'"
+  },
+  "drop.urlShortcut": {
+    "one": "Create shortcut to '{item}' in '{folder}'",
+    "other": "Create {count} shortcuts in '{folder}'"
+  },
+  "drop.delete": {
+    "one": "Delete '{item}'",
+    "other": "Delete {count} items"
+  },
   "sensor.ejectUsb.name": "Eject USB",
   "sensor.ejectUsb.description": "Lists the USB drives and discs that can be ejected, and ejects them.",
   "sensor.ejectUsb.hint.drives": {

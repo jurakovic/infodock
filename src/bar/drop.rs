@@ -5,20 +5,7 @@ use serde_json::Value;
 
 use crate::platform::{DragItem, DropEffect, DropEffects, PathKind};
 use crate::sensors::Props;
-
-/// A dragged item the bar can take.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Dropped {
-    /// A drive root, `E:\`.
-    Drive(String),
-    Folder(String),
-    File(String),
-    /// An `http`, `https` or `ftp` address, with the link's text.
-    Url {
-        url: String,
-        title: Option<String>,
-    },
-}
+pub use crate::sensors::drop::Dropped;
 
 /// Whether `path` is a drive's root: `E:\` or `E:`.
 pub fn is_drive_root(path: &str) -> bool {

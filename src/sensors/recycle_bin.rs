@@ -9,6 +9,7 @@ use serde::Deserialize;
 use super::common::icon::{self, Icon, ImageFile};
 use super::common::icon_label::IconLabel;
 use super::common::two_line::TwoLine;
+use super::drop::{self, DragInfo, DropAction, Dropped};
 use super::format;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
@@ -16,7 +17,7 @@ use super::{
     MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_count};
-use crate::platform::{Canvas, RecycleBin};
+use crate::platform::{Canvas, DropEffect, RecycleBin};
 use crate::sampler::{Change, Sample, Topic, TopicRequest};
 
 /// The built-in icons (Appendix C).
@@ -262,6 +263,38 @@ impl Sensor for Bin {
         self.value()
     }
 
+    /// Files and folders go to the Recycle Bin (SPEC §9.16); anything else is left to the bar.
+    fn drop_action(
+        &self,
+        items: &[Dropped],
+        drag: DragInfo,
+        _cx: &SensorCtx,
+    ) -> Option<DropAction> {
+        if items.is_empty() || items.iter().any(|i| i.path().is_none()) {
+            return None;
+        }
+        Some(if drag.allowed.moves {
+            DropAction {
+                effect: DropEffect::Move,
+                hint: Some(drop::hint("drop.delete", items, "")),
+            }
+        } else {
+            DropAction::REFUSED
+        })
+    }
+
+    fn drop_items(&mut self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) {
+        let paths: Option<Vec<String>> =
+            items.iter().map(|i| i.path().map(str::to_owned)).collect();
+        let Some(paths) = paths.filter(|p| !p.is_empty() && drag.allowed.moves) else {
+            return;
+        };
+        // Read again once the shell is done, rather than at the next interval.
+        let changes = cx.changes.clone();
+        cx.platform
+            .recycle(paths, Box::new(move || changes.report(Change::RecycleBin)));
+    }
+
     fn topics(&self) -> Vec<TopicRequest> {
         vec![TopicRequest {
             topic: Topic::RecycleBin,
@@ -333,6 +366,9 @@ mod tests {
         fn empty_recycle_bin(&self, done: Box<dyn FnOnce() + Send>) {
             *self.emptied.lock().expect("lock") += 1;
             done();
+        }
+        fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
+            self.clock.recycle(paths, done);
         }
     }
 
@@ -471,6 +507,47 @@ mod tests {
         // Known to be empty: nothing to empty.
         bin.on_sample(&Topic::RecycleBin, &sample(0, 0), &h.ctx());
         assert!(!bin.menu(&h.ctx())[1].enabled);
+    }
+
+    #[test]
+    fn dropped_files_go_to_the_bin() {
+        use crate::platform::{DropEffects, Modifiers};
+        let h = Harness::new();
+        let mut bin = create(json!({}));
+        let all = DragInfo {
+            modifiers: Modifiers::default(),
+            allowed: DropEffects::ALL,
+        };
+        let files = [
+            Dropped::File("C:\\a.txt".into()),
+            Dropped::Folder("C:\\Old".into()),
+        ];
+        assert_eq!(
+            bin.drop_action(&files, all, &h.ctx()),
+            Some(DropAction {
+                effect: DropEffect::Move,
+                hint: Some("Delete 2 items".into())
+            })
+        );
+        let copy_only = DragInfo {
+            allowed: DropEffects {
+                copy: true,
+                ..DropEffects::default()
+            },
+            ..all
+        };
+        assert_eq!(
+            bin.drop_action(&files, copy_only, &h.ctx()),
+            Some(DropAction::REFUSED)
+        );
+        let link = [Dropped::Url {
+            url: "https://example.com/".into(),
+            title: None,
+        }];
+        assert_eq!(bin.drop_action(&link, all, &h.ctx()), None, "a new sensor");
+        bin.drop_items(&files, all, &h.ctx());
+        assert_eq!(h.platform.clock.log(), ["recycle C:\\a.txt, C:\\Old"]);
+        assert_eq!(*h.reported.lock().expect("lock"), [Change::RecycleBin]);
     }
 
     #[test]

@@ -8,8 +8,9 @@ use std::time::{Duration, Instant};
 use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
-use crate::platform::{Brush, Canvas, Capabilities, Platform, RectF, Shape, TextEngine};
+use crate::platform::{Brush, Canvas, Capabilities, Color, Platform, RectF, Shape, TextEngine};
 use crate::sampler::{ChangeSink, Delivery, Topic, TopicRequest};
+use crate::sensors::drop::{DragInfo, DropAction, Dropped};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
 use crate::sensors::{
@@ -24,6 +25,8 @@ const PRESSED_OPACITY: f32 = 0.6;
 const ACTIVE_ALPHA: f32 = 0.16;
 const ACTIVE_REACH: f32 = 3.0;
 const ACTIVE_RADIUS: f32 = 4.0;
+/// The target of a drop has its background darkened (SPEC §9.19).
+const DROP_TARGET: Color = Color::rgba(0, 0, 0, 0.78);
 /// A broadcast sample this much before a sensor's interval is over still counts as on time,
 /// at most (samples come on a grid, give or take a few ms).
 const EARLY: Duration = Duration::from_millis(500);
@@ -89,6 +92,8 @@ pub(super) struct BarSensors {
     pressed: Option<String>,
     /// Drawn with a highlight behind it while its popup is open (SPEC §7.2).
     active: Option<String>,
+    /// Drawn on a dark background while a drag from another app would drop onto it (§6.3).
+    drop_target: Option<String>,
     /// The zones must be placed again.
     relayout: bool,
     /// Ids of the sensors created since [`Self::take_created`] was last called.
@@ -242,6 +247,19 @@ impl BarSensors {
         for zone in [0, 2, 1] {
             for p in &self.zones[zone] {
                 let rect = RectF::new(p.x, 0.0, p.x + p.width, bar_height);
+                if self.drop_target.as_deref() == Some(p.entry.id.as_str()) {
+                    let x = (
+                        canvas.snap(rect.left - ACTIVE_REACH),
+                        canvas.snap(rect.right + ACTIVE_REACH),
+                    );
+                    canvas.fill(
+                        &Shape::RoundedRect {
+                            rect: RectF::new(x.0, 2.0, x.1, bar_height - 2.0),
+                            radius: ACTIVE_RADIUS,
+                        },
+                        &Brush::Solid(DROP_TARGET),
+                    );
+                }
                 if self.active.as_deref() == Some(p.entry.id.as_str()) {
                     let x = (
                         canvas.snap(rect.left - ACTIVE_REACH),
@@ -299,6 +317,34 @@ impl BarSensors {
         }
         self.active = id.map(str::to_owned);
         true
+    }
+
+    /// Darkens sensor `id` (or none) as the target of a drop; returns whether that changed.
+    pub fn set_drop_target(&mut self, id: Option<&str>) -> bool {
+        if self.drop_target.as_deref() == id {
+            return false;
+        }
+        self.drop_target = id.map(str::to_owned);
+        true
+    }
+
+    /// What dropping `items` onto sensor `id` would do; `None` when it does not take them.
+    pub fn drop_action(
+        &self,
+        id: &str,
+        items: &[Dropped],
+        drag: DragInfo,
+        env: &Env,
+    ) -> Option<DropAction> {
+        let p = self.zones.iter().flatten().find(|p| p.entry.id == id)?;
+        p.sensor.drop_action(items, drag, &env.ctx(id))
+    }
+
+    /// Drops `items` onto sensor `id`.
+    pub fn drop_items(&mut self, id: &str, items: &[Dropped], drag: DragInfo, env: &Env) {
+        if let Some(p) = self.all_mut().find(|p| p.entry.id == id) {
+            p.sensor.drop_items(items, drag, &env.ctx(id));
+        }
     }
 
     /// Dims sensor `id` (or none); returns whether that changed.

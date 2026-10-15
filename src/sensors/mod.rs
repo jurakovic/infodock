@@ -15,6 +15,7 @@ pub mod date;
 pub mod dates;
 pub mod disk;
 pub mod disk_launcher;
+pub mod drop;
 pub mod eject_usb;
 pub mod folder_menu;
 pub mod format;
@@ -376,6 +377,19 @@ pub trait Sensor {
     fn on_menu(&mut self, _item: MenuId, _cx: &SensorCtx) -> Dirty {
         false
     }
+    /// What dropping `items` here would do (SPEC §6.3): the effect and the floating hint;
+    /// `None` (the default) has the bar insert new sensors next to this one instead. Asked
+    /// when the drag reaches the sensor and when its keys change.
+    fn drop_action(
+        &self,
+        _items: &[drop::Dropped],
+        _drag: drop::DragInfo,
+        _cx: &SensorCtx,
+    ) -> Option<drop::DropAction> {
+        None
+    }
+    /// `items` were dropped here, as [`Sensor::drop_action`] said.
+    fn drop_items(&mut self, _items: &[drop::Dropped], _drag: drop::DragInfo, _cx: &SensorCtx) {}
     /// Drives inactive rendering (SPEC §8.5).
     fn inactive(&self) -> bool {
         false
@@ -574,6 +588,32 @@ pub(crate) mod test_support {
                 .lock()
                 .expect("lock")
                 .push(format!("eject {root}: {title}: {body}"));
+        }
+        fn file_operation(
+            &self,
+            op: crate::platform::FileOp,
+            paths: Vec<String>,
+            folder: String,
+            done: Box<dyn FnOnce() + Send>,
+        ) {
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("{op:?} {} into {folder}", paths.join(", ")));
+            done();
+        }
+        fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("recycle {}", paths.join(", ")));
+            done();
+        }
+        fn create_url_file(&self, folder: &str, stem: &str, url: &str) {
+            self.log
+                .lock()
+                .expect("lock")
+                .push(format!("url file {folder}\\{stem}.url {url}"));
         }
         fn launch(&self, launch: &crate::platform::Launch) {
             self.log.lock().expect("lock").push(format!(

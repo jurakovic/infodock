@@ -372,3 +372,12 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] Drag a link from Edge or Chrome (and Firefox) onto the bar: a web Shortcut with the globe icon whose hint is the link's text (*Open 'Example Domain'*); the click opens the page. Drag the address bar's padlock: the page's title.
 - [ ] Text, a `mailto:` link or an image from a page: the no-drop pointer, nothing happens. Esc during the drag, or leaving the bar: the placer goes.
 - [ ] The bar locked: drops still add sensors. A context menu open on the bar: nothing can be dropped until it closes.
+
+**Drop onto sensors** (since M3 S14)
+
+- [ ] Drag a file from the same drive over a Folder Menu: the sensor darkens, a hint above it says *Move 'report.pdf' to 'Downloads'*, the pointer shows *Move*. Drop: the file moves (the shell's progress shows for big files; Ctrl+Z in Explorer undoes it). From a USB stick: *Copy …*; three items: *Copy 3 items to 'Downloads'*.
+- [ ] Hold Ctrl (copy), Shift (move) or Alt (shortcut) while dragging: the hint and pointer change at once. Alt: *Create shortcut to 'report.pdf' in 'Downloads'*, and the drop makes `report.pdf.lnk` there (a second one `report.pdf (2).lnk`).
+- [ ] A file with the name of one already in the folder: Windows' conflict dialog (replace, skip, compare). Dragging the Folder Menu's own folder, or a file already in it, onto it: no-drop pointer, no hint.
+- [ ] A link from Edge or Chrome onto a Folder Menu: *Create shortcut to 'https://…' in 'Downloads'*; the drop makes `Example Domain.url` (a page without a title: its address with `:/.?=&` as `-`), which opens the page.
+- [ ] Files onto the Recycle Bin sensor: it darkens, *Delete 'report.pdf'* or *Delete 3 items*; the drop moves them to the Recycle Bin (asking first if the Recycle Bin's properties say so), and the count goes up at once.
+- [ ] A link onto the Recycle Bin, or a drive onto a Folder Menu: the placer shows instead, and the drop makes a new sensor next to it. Onto any other sensor (a clock, the Start Menu): the placer, new sensors.

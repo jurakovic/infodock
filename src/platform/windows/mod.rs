@@ -9,6 +9,7 @@ mod dialog;
 mod disk;
 mod droptarget;
 mod eject;
+mod fileops;
 mod hint;
 mod icons;
 pub mod image;
@@ -112,6 +113,24 @@ impl Platform for WindowsPlatform {
 
     fn reveal(&self, path: &str) {
         shell::reveal(path);
+    }
+
+    fn volume_of(&self, path: &str) -> Option<String> {
+        fileops::volume_of(path)
+    }
+
+    fn file_operation(
+        &self,
+        op: super::FileOp,
+        paths: Vec<String>,
+        folder: String,
+        done: Box<dyn FnOnce() + Send>,
+    ) {
+        fileops::file_operation(op, paths, folder, done);
+    }
+
+    fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
+        fileops::recycle(paths, done);
     }
 
     fn known_folder(&self, folder: super::KnownFolder) -> Option<String> {

@@ -365,6 +365,54 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
+/// A file operation into a folder (SPEC §9.19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileOp {
+    Copy,
+    Move,
+    /// Shortcuts (`.lnk`) to the items.
+    Link,
+}
+
+impl FileOp {
+    /// The pointer's effect for this operation.
+    pub fn effect(self) -> DropEffect {
+        match self {
+            Self::Copy => DropEffect::Copy,
+            Self::Move => DropEffect::Move,
+            Self::Link => DropEffect::Link,
+        }
+    }
+}
+
+/// The root of `path` by its form: `C:\` for `C:\Data`, `\\server\share\` for a UNC path.
+pub fn path_root(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        return Some(format!("{}:\\", path[..1].to_ascii_uppercase()));
+    }
+    let unc = path.strip_prefix("\\\\")?;
+    let mut parts = unc.split('\\').filter(|p| !p.is_empty());
+    let (server, share) = (parts.next()?, parts.next()?);
+    Some(format!("\\\\{server}\\{share}\\").to_lowercase())
+}
+
+/// `stem` + `ext` in `folder`, numbered (`stem (2).ext`) while that name is taken.
+pub fn unique_path(folder: &std::path::Path, stem: &str, ext: &str) -> PathBuf {
+    let mut path = folder.join(format!("{stem}{ext}"));
+    let mut n = 2;
+    while path.exists() && n < 1000 {
+        path = folder.join(format!("{stem} ({n}){ext}"));
+        n += 1;
+    }
+    path
+}
+
+/// The text of an Internet shortcut (`.url`) to `url`.
+pub fn url_file_text(url: &str) -> String {
+    format!("[InternetShortcut]\r\nURL={url}\r\n")
+}
+
 /// A folder the shell knows by role (SPEC §9.20).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnownFolder {
@@ -532,6 +580,46 @@ pub trait Platform: Send + Sync {
     fn known_folder(&self, folder: KnownFolder) -> Option<String> {
         let _ = folder;
         None
+    }
+    /// The volume `path` lies on (`C:\`, `\\server\share\`), to choose between moving and
+    /// copying a drop (SPEC §9.19); `None` where it cannot tell.
+    fn volume_of(&self, path: &str) -> Option<String> {
+        path_root(path)
+    }
+    /// Copies or moves `paths` into `folder`, or makes shortcuts (`.lnk`) to them there, in the
+    /// background with the shell's progress and conflict dialogs (SPEC §9.19); then calls
+    /// `done`, whatever happened.
+    fn file_operation(
+        &self,
+        op: FileOp,
+        paths: Vec<String>,
+        folder: String,
+        done: Box<dyn FnOnce() + Send>,
+    ) {
+        tracing::info!("{op:?} {paths:?} into {folder} is not supported on this platform");
+        done();
+    }
+    /// Moves `paths` to the Recycle Bin in the background, asking as the OS settings say (SPEC
+    /// §9.16); then calls `done`, whatever happened.
+    fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
+        tracing::info!("recycling {paths:?} is not supported on this platform");
+        done();
+    }
+    /// Writes an Internet shortcut to `url` into `folder` as `stem.url` (numbered if that name
+    /// is taken), in the background (SPEC §9.19); failures are logged.
+    fn create_url_file(&self, folder: &str, stem: &str, url: &str) {
+        let (folder, stem, url) = (PathBuf::from(folder), stem.to_owned(), url.to_owned());
+        let spawned = std::thread::Builder::new()
+            .name("url-file".into())
+            .spawn(move || {
+                let path = unique_path(&folder, &stem, ".url");
+                if let Err(e) = std::fs::write(&path, url_file_text(&url)) {
+                    tracing::warn!("could not write {}: {e}", path.display());
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::warn!("could not start writing a link file: {e}");
+        }
     }
     /// Shows `path` selected in its folder in Explorer, in the background (SPEC §9.19).
     fn reveal(&self, path: &str) {
@@ -1118,7 +1206,33 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
 mod tests {
     use std::cmp::Ordering;
 
-    use super::natural_cmp;
+    use super::{natural_cmp, path_root, unique_path, url_file_text};
+
+    #[test]
+    fn roots_of_paths() {
+        assert_eq!(path_root("c:\\Data\\a.txt").as_deref(), Some("C:\\"));
+        assert_eq!(path_root("E:").as_deref(), Some("E:\\"));
+        assert_eq!(
+            path_root("\\\\Server\\Share\\Docs\\a").as_deref(),
+            Some("\\\\server\\share\\")
+        );
+        assert_eq!(path_root("\\\\server"), None);
+        assert_eq!(path_root("relative\\a"), None);
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        assert_eq!(
+            unique_path(dir.path(), "a", ".url"),
+            dir.path().join("a.url")
+        );
+        std::fs::write(dir.path().join("a.url"), b"x").expect("a file");
+        assert_eq!(
+            unique_path(dir.path(), "a", ".url"),
+            dir.path().join("a (2).url")
+        );
+        assert_eq!(
+            url_file_text("https://example.com/"),
+            "[InternetShortcut]\r\nURL=https://example.com/\r\n"
+        );
+    }
 
     #[test]
     fn names_sort_as_explorer_sorts_them() {
