@@ -74,8 +74,10 @@ pub enum DragEvent {
 /// UTF-16 little-endian code units of `bytes`.
 fn utf16(bytes: &[u8]) -> Vec<u16> {
     bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&pair| u16::from_le_bytes(pair))
         .collect()
 }
 
