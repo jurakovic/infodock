@@ -43,6 +43,12 @@ pub struct Open {
     pub frame: Option<HintFrame>,
     /// The room it was laid out in.
     pub room: SizeF,
+    /// The monitor's height, logical px.
+    pub monitor_height: f32,
+    /// Its left edge is the free one (its right edge is lined up with the sensor).
+    pub free_left: bool,
+    /// Whether the window captures the pointer for it.
+    pub captured: bool,
 }
 
 impl Open {
@@ -89,7 +95,13 @@ impl Open {
     /// Frames content of `size` at `anchor`.
     pub fn place(&mut self, size: SizeF, anchor: &Anchor, theme: &Theme) {
         let align = self.popup.align();
-        self.frame = Some(HintFrame::framed(size, anchor, theme, PADDING, align));
+        let frame = HintFrame::framed(size, anchor, theme, PADDING, align);
+        let left = frame.window.left + frame.bubble.left;
+        // Lined up on the left unless its right edge had to be.
+        self.free_left = align == crate::sensors::popup::PopupAlign::LeftEdge
+            && (left - anchor.rect.left).abs() > 0.5;
+        self.monitor_height = anchor.monitor.height();
+        self.frame = Some(frame);
     }
 }
 
@@ -165,6 +177,9 @@ mod tests {
                 popup: Box::new(Square),
                 frame: None,
                 room: SizeF::new(0.0, 0.0),
+                monitor_height: 0.0,
+                free_left: false,
+                captured: false,
             }),
             ..PopupHost::default()
         };
@@ -186,6 +201,9 @@ mod tests {
             popup: Box::new(Square),
             frame: None,
             room: SizeF::new(0.0, 0.0),
+            monitor_height: 0.0,
+            free_left: false,
+            captured: false,
         };
         let bar = RectF::new(0.0, 1052.0, 1920.0, 1080.0);
         let anchor = Anchor {
@@ -200,6 +218,8 @@ mod tests {
         let frame = open.frame.expect("placed");
         // Left edges lined up: the window starts a shadow's width further left.
         assert_eq!(frame.window.left + 6.0, 900.0);
+        assert!(!open.free_left);
+        assert_eq!(open.monitor_height, 1080.0);
         // The bubble is above the pointer, with the shadow around it.
         let origin = open.origin().expect("placed");
         assert_eq!(origin, PointF::new(10.0, 10.0));

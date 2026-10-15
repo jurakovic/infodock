@@ -815,6 +815,9 @@ impl BarLogic {
             popup,
             frame: None,
             room: SizeF::new(0.0, 0.0),
+            monitor_height: 0.0,
+            free_left: false,
+            captured: false,
         });
         if self.sensors.set_active(Some(id)) {
             window.invalidate();
@@ -837,6 +840,7 @@ impl BarLogic {
             return;
         };
         let room = popup::room(&anchor);
+        let edge = anchor.edge;
         let Some(open) = self.popups.open.as_mut() else {
             return;
         };
@@ -849,6 +853,10 @@ impl BarLogic {
             icons: &self.icons,
             waker: &self.waker,
             room,
+            monitor_height: anchor.monitor.height(),
+            edge,
+            free_left: open.free_left,
+            animate: self.animate,
             now: Instant::now(),
         };
         let size = open.popup.layout(&cx);
@@ -878,6 +886,9 @@ impl BarLogic {
         let Some(mut open) = self.popups.close(Instant::now()) else {
             return;
         };
+        if open.captured {
+            window.capture_popup_pointer(false);
+        }
         window.hide_popup();
         window.set_timer(TimerId::Popup, None);
         if let Some(changes) = open.popup.take_props() {
@@ -890,11 +901,18 @@ impl BarLogic {
 
     /// Carries out what the popup asked for after an input, a wake-up or a poll.
     fn popup_reply(&mut self, window: &dyn BarWindow, reply: PopupReply) {
-        if let Some(open) = self.popups.open.as_mut()
-            && let Some(changes) = open.popup.take_props()
-        {
-            let owner = open.owner.clone();
-            self.host.update_sensor(&owner, changes);
+        if let Some(open) = self.popups.open.as_mut() {
+            // The pointer's shape and capture follow the popup (a grip being dragged).
+            window.set_popup_cursor(open.popup.cursor());
+            let captures = open.popup.captures();
+            if open.captured != captures {
+                open.captured = captures;
+                window.capture_popup_pointer(captures);
+            }
+            if let Some(changes) = open.popup.take_props() {
+                let owner = open.owner.clone();
+                self.host.update_sensor(&owner, changes);
+            }
         }
         match reply {
             PopupReply::Nothing => {}
@@ -911,6 +929,10 @@ impl BarLogic {
         f: impl FnOnce(&mut Open, &PopupCtx) -> PopupReply,
     ) -> Option<PopupReply> {
         let scale = self.geometry.as_ref().map_or(1.0, |g| g.scale as f32);
+        let edge = self
+            .geometry
+            .as_ref()
+            .map_or(self.settings.bar.edge, |g| g.edge);
         let open = self.popups.open.as_mut()?;
         let cx = PopupCtx {
             theme: &self.theme,
@@ -921,6 +943,10 @@ impl BarLogic {
             icons: &self.icons,
             waker: &self.waker,
             room: open.room,
+            monitor_height: open.monitor_height,
+            edge,
+            free_left: open.free_left,
+            animate: self.animate,
             now: Instant::now(),
         };
         Some(f(open, &cx))
@@ -1297,6 +1323,8 @@ mod tests {
         popup: RefCell<Option<(Rect, String)>>,
         popup_draws: Cell<u32>,
         popup_timer: Cell<Option<std::time::Duration>>,
+        popup_cursor: Cell<crate::platform::PopupCursor>,
+        popup_captured: Cell<bool>,
     }
 
     impl BarWindow for FakeWindow {
@@ -1328,6 +1356,12 @@ mod tests {
         }
         fn hide_popup(&self) {
             *self.popup.borrow_mut() = None;
+        }
+        fn set_popup_cursor(&self, cursor: crate::platform::PopupCursor) {
+            self.popup_cursor.set(cursor);
+        }
+        fn capture_popup_pointer(&self, capture: bool) {
+            self.popup_captured.set(capture);
         }
         fn hide_hint(&self) {
             *self.hint.borrow_mut() = None;
@@ -2317,9 +2351,9 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_menu_opens_its_list_and_closes_on_esc() {
+    fn a_folder_menu_opens_its_list_closes_on_esc_and_resizes() {
         let dir = crate::sensors::common::folder_browser::tests::sample_folder();
-        let (mut logic, window, _host, mut config) = bar(Settings::default());
+        let (mut logic, window, host, mut config) = bar(Settings::default());
         // A Folder Menu in the logo's place.
         let logo = &mut config.layout.center[0];
         logo.kind = "folder-menu".into();
@@ -2344,5 +2378,48 @@ mod tests {
         };
         logic.on_event(&window, key(Key::Escape));
         assert!(window.popup.borrow().is_none());
+
+        // Dragging its free right edge: the pointer is captured and the size saved. (Clicks
+        // on the sensor wait out the guard after Esc closed it.)
+        std::thread::sleep(super::popup::GUARD);
+        press(&mut logic, &window, LOGO, false);
+        release(&mut logic, &window, LOGO);
+        assert!(window.popup.borrow().is_some());
+        // The content starts 10 px into the window (shadow and padding).
+        let at = |x: f32| PointF::new(10.0 + x, 110.0);
+        let input = |logic: &mut BarLogic, input| logic.on_event(&window, UiEvent::Popup(input));
+        input(&mut logic, PopupInput::PointerMove(at(239.0)));
+        assert_eq!(
+            window.popup_cursor.get(),
+            crate::platform::PopupCursor::ResizeWidth
+        );
+        input(
+            &mut logic,
+            PopupInput::PointerDown {
+                button: PointerButton::Left,
+                at: at(239.0),
+                modifiers: Modifiers::default(),
+            },
+        );
+        assert!(window.popup_captured.get());
+        input(&mut logic, PopupInput::PointerMove(at(299.0)));
+        input(
+            &mut logic,
+            PopupInput::PointerUp {
+                button: PointerButton::Left,
+                at: at(299.0),
+                modifiers: Modifiers::default(),
+            },
+        );
+        assert!(!window.popup_captured.get());
+        let (rect, _) = window.popup.borrow().clone().expect("still open");
+        assert_eq!(rect.width(), 300 + 2 * 4 + 2 * 6, "60 px wider");
+        assert!(
+            host.calls()
+                .iter()
+                .any(|c| c.ends_with(r#"{"popupHeight":320,"popupWidth":300}"#)),
+            "{:?}",
+            host.calls()
+        );
     }
 }

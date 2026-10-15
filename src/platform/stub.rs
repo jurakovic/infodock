@@ -71,6 +71,10 @@ impl BarWindow for NoWindow {
 
     fn hide_popup(&self) {}
 
+    fn set_popup_cursor(&self, _cursor: super::PopupCursor) {}
+
+    fn capture_popup_pointer(&self, _capture: bool) {}
+
     fn capture_pointer(&self, _capture: bool) {}
 
     fn escape_down(&self) -> bool {

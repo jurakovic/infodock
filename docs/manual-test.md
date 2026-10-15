@@ -336,7 +336,14 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 
 - [ ] *New sensor… ▸ Launchers ▸ Folder Menu*, *Folder* → your Downloads folder: the folder icon (21 px); hover: *Downloads*. Click: a list opens above the bar (below a top bar), its left edge at the sensor's (its right edge when there is no room), fading in; the sensor shows a faint highlight behind it while the list is open. CI renders it (`popup-folder*.png`, `C:\Windows`).
 - [ ] The list: the header *Downloads* with a 2 px light-blue line under it, folders first, then files, sorted as Explorer sorts them (`File 2` before `File 10`), each with its shell icon; shortcuts without `.lnk`/`.url`; no `desktop.ini`, no hidden files (with *Show hidden files* on, they show). An empty folder says *no items*; a folder on a server that is away says *Loading…*, then that it cannot be opened, and the bar keeps responding.
-- [ ] Hover highlights rows (light blue on the dark popup, dark blue on a light one); a click opens the file and closes the list; Alt+click shows it selected in Explorer; a click on the header opens the folder (Alt: reveals it). A folder row opens in Explorer (navigation comes with S10b).
+- [ ] Hover highlights rows (light blue on the dark popup, dark blue on a light one); a click opens the file and closes the list; Alt+click shows it selected in Explorer; a click on the header opens the folder shown (Alt: reveals it).
 - [ ] Keys while the list is open (no click needed first): ↓ and ↑ move the highlight, Home/End/Page Up/Page Down jump, Enter opens, Esc closes. The wheel scrolls a long folder.
 - [ ] Closing: a click elsewhere (desktop, another window) closes it; a second click on the sensor closes it without reopening it; Alt+F4 closes it; a right-click on the bar closes it before the menu opens. No hints show while it is open.
 - [ ] Right-click the sensor: *Open folder* opens it in Explorer. 125 % and 150 % display scale: the list is sharp, icons included.
+
+**Folder Menu navigation** (since M3 S10b)
+
+- [ ] A click on a folder row goes into it: the lists slide left over a quarter second, the header shows the subfolder's name and a Back arrow on its right. Back (or ←, or Backspace) slides back right to the folder as it was left, scrolled as before and with the subfolder marked. → on a marked folder goes in; Enter too. With *Animations* off (Settings ▸ Bar) the lists change at once.
+- [ ] Type the first letters of a name: the list jumps to it; a pause of a second starts a new name.
+- [ ] The wheel scrolls smoothly, by as many lines per notch as Settings ▸ Mouse says; a quick series of notches adds up.
+- [ ] Above a bottom bar: the pointer turns into resize arrows over the right edge and the top edge; dragging them resizes the list (not below 130 px, not wider than 600 px or taller than 70 % of the screen), also when the pointer leaves the list while dragging. Reopen it: the new size stays, and Settings shows nothing new (the size is internal). A sensor at the screen's right edge, whose list lines up on the right: the left edge is the grip. A top bar: the bottom edge is the grip.

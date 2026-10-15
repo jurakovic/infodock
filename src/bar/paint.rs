@@ -906,6 +906,9 @@ mod tests {
                     popup: Box::new(browser),
                     frame: None,
                     room: popup::room(&anchor),
+                    monitor_height: anchor.monitor.height(),
+                    free_left: false,
+                    captured: false,
                 };
                 let cx = PopupCtx {
                     theme: &theme,
@@ -916,6 +919,10 @@ mod tests {
                     icons: &icons,
                     waker: &waker,
                     room: open.room,
+                    monitor_height: open.monitor_height,
+                    edge: Edge::Bottom,
+                    free_left: false,
+                    animate: false,
                     now: std::time::Instant::now(),
                 };
                 open.popup.layout(&cx);

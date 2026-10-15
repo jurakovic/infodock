@@ -904,6 +904,19 @@ pub enum PopupInput {
     },
     /// A character typed, e.g. for jumping to a name (never a control character).
     Char(char),
+    /// Another window took the pointer capture the popup asked for.
+    CaptureLost,
+}
+
+/// The pointer's shape over the popup window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PopupCursor {
+    #[default]
+    Arrow,
+    /// Over a grip that changes the width.
+    ResizeWidth,
+    /// Over a grip that changes the height.
+    ResizeHeight,
 }
 
 /// The bar logic's timers; each runs independently.
@@ -1018,6 +1031,11 @@ pub trait BarWindow {
     fn show_popup(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas));
     /// Hides the popup window; no [`UiEvent::PopupDeactivated`] follows.
     fn hide_popup(&self);
+    /// The pointer's shape over the popup window, e.g. over a resize grip.
+    fn set_popup_cursor(&self, cursor: PopupCursor);
+    /// While captured, the popup's pointer events keep coming when the pointer leaves it
+    /// (dragging a grip); [`PopupInput::CaptureLost`] says when another window takes it.
+    fn capture_popup_pointer(&self, capture: bool);
     /// While captured, pointer events keep coming when the pointer leaves the window.
     fn capture_pointer(&self, capture: bool);
     /// Whether Esc is held now, read without focus (the bar never takes it; SPEC §6.2).

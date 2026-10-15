@@ -15,25 +15,28 @@ use windows::Win32::Graphics::Gdi::{AC_SRC_ALPHA, AC_SRC_OVER, BLENDFUNCTION, Sc
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, SetFocus, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent, VIRTUAL_KEY, VK_BACK,
-    VK_CONTROL, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_MENU, VK_NEXT, VK_PRIOR,
-    VK_RETURN, VK_RIGHT, VK_SHIFT, VK_UP,
+    GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE, TRACKMOUSEEVENT,
+    TrackMouseEvent, VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME,
+    VK_LEFT, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetWindowLongPtrW, HWND_TOPMOST,
-    IDC_ARROW, LoadCursorW, RegisterClassExW, SC_KEYMENU, SPI_GETWHEELSCROLLLINES, SW_HIDE,
-    SW_SHOW, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, ULW_ALPHA,
-    UpdateLayeredWindow, WA_INACTIVE, WM_ACTIVATE, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSCOMMAND, WM_SYSKEYDOWN, WNDCLASSEXW, WS_EX_LAYERED,
+    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetWindowLongPtrW, HTCLIENT,
+    HWND_TOPMOST, IDC_ARROW, IDC_SIZENS, IDC_SIZEWE, LoadCursorW, RegisterClassExW, SC_KEYMENU,
+    SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_NOMOVE, SWP_NOSIZE,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursor, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, SystemParametersInfoW, ULW_ALPHA, UpdateLayeredWindow, WA_INACTIVE,
+    WM_ACTIVATE, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SETCURSOR, WM_SYSCOMMAND, WM_SYSKEYDOWN, WNDCLASSEXW, WS_EX_LAYERED,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::{PCWSTR, Result, w};
 
 use super::hint::FADE;
 use super::render::Renderer;
-use crate::platform::{Canvas, Key, Modifiers, PointF, PointerButton, PopupInput, Rect, UiEvent};
+use crate::platform::{
+    Canvas, Key, Modifiers, PointF, PointerButton, PopupCursor, PopupInput, Rect, UiEvent,
+};
 
 const CLASS_NAME: PCWSTR = w!("Infodock.Popup");
 /// One wheel notch (`WHEEL_DELTA`).
@@ -60,6 +63,8 @@ struct Shared {
     scale: Cell<f32>,
     /// `TrackMouseEvent` asked for `WM_MOUSELEAVE`.
     tracking_leave: Cell<bool>,
+    /// The pointer's shape over the window.
+    cursor: Cell<PopupCursor>,
 }
 
 impl Shared {
@@ -163,11 +168,31 @@ impl Shared {
             }
             // Alt+F4 hides it; the window stays for the next popup.
             WM_CLOSE => self.deactivated(hwnd),
+            WM_SETCURSOR if (lparam.0 & 0xFFFF) as u32 == HTCLIENT => set_cursor(self.cursor.get()),
+            WM_CAPTURECHANGED if lparam.0 != hwnd.0 as isize => {
+                self.send(PopupInput::CaptureLost);
+                return None;
+            }
             // Alt alone does not start menu mode in a window without a menu.
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => {}
             _ => return None,
         }
         Some(LRESULT(0))
+    }
+}
+
+/// Shows `cursor` now.
+fn set_cursor(cursor: PopupCursor) {
+    let id = match cursor {
+        PopupCursor::Arrow => IDC_ARROW,
+        PopupCursor::ResizeWidth => IDC_SIZEWE,
+        PopupCursor::ResizeHeight => IDC_SIZENS,
+    };
+    // SAFETY: loads and sets a system cursor.
+    unsafe {
+        if let Ok(cursor) = LoadCursorW(None, id) {
+            SetCursor(Some(cursor));
+        }
     }
 }
 
@@ -262,6 +287,7 @@ impl PopupWindow {
             visible: Cell::new(false),
             scale: Cell::new(1.0),
             tracking_leave: Cell::new(false),
+            cursor: Cell::new(PopupCursor::Arrow),
         }));
         // SAFETY: plain class registration and window creation; the window and `shared` live
         // until the process ends.
@@ -392,6 +418,25 @@ impl PopupWindow {
             self.fading_since.set(None);
         }
         alpha < 255
+    }
+
+    /// Sets the pointer's shape over the window, at once if the pointer is there.
+    pub(super) fn set_cursor(&self, cursor: PopupCursor) {
+        if self.shared.cursor.replace(cursor) != cursor && self.shared.tracking_leave.get() {
+            set_cursor(cursor);
+        }
+    }
+
+    /// Captures the pointer for the window, or releases it.
+    pub(super) fn capture(&self, capture: bool) {
+        // SAFETY: plain calls on our own window.
+        unsafe {
+            if capture {
+                SetCapture(self.hwnd);
+            } else if GetCapture() == self.hwnd {
+                let _ = ReleaseCapture();
+            }
+        }
     }
 
     /// Hides the popup; no deactivation is reported.

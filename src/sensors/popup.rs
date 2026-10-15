@@ -8,8 +8,10 @@ use std::time::Instant;
 
 use super::{IconSource, Props};
 use crate::bar::theme::Theme;
-use crate::config::model::Settings;
-use crate::platform::{Canvas, Platform, PointF, PopupInput, SizeF, TextEngine, UiWaker};
+use crate::config::model::{Edge, Settings};
+use crate::platform::{
+    Canvas, Platform, PointF, PopupCursor, PopupInput, SizeF, TextEngine, UiWaker,
+};
 
 /// How a popup lines up with its sensor (SPEC §7.3, §9.19).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +51,15 @@ pub struct PopupCtx<'a> {
     pub waker: &'a UiWaker,
     /// The most room the content may take, logical px (the monitor beside the bar).
     pub room: SizeF,
+    /// The monitor's height, logical px.
+    pub monitor_height: f32,
+    /// The bar's edge: the popup is above a bottom bar and below a top one.
+    pub edge: Edge,
+    /// The popup's left edge is the free one, not lined up with the sensor (its right edge is,
+    /// SPEC §9.19); otherwise its right edge is.
+    pub free_left: bool,
+    /// Transitions animate (SPEC §5.5); otherwise they jump.
+    pub animate: bool,
     pub now: Instant,
 }
 
@@ -76,6 +87,15 @@ pub trait Popup {
     /// The bar thread was woken: work from the popup's own threads may have arrived.
     fn poll(&mut self, _cx: &PopupCtx) -> PopupReply {
         PopupReply::Nothing
+    }
+    /// The pointer's shape, e.g. over a resize grip; asked after each input.
+    fn cursor(&self) -> PopupCursor {
+        PopupCursor::Arrow
+    }
+    /// Whether its pointer events should keep coming while the pointer is outside it (a grip
+    /// being dragged); asked after each input.
+    fn captures(&self) -> bool {
+        false
     }
     /// Props of its sensor to save, e.g. a size the user dragged (SPEC §9.19); each change is
     /// taken once.

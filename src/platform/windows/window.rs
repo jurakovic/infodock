@@ -562,6 +562,18 @@ impl BarWindow for WindowState {
             popup.hide();
         }
     }
+
+    fn set_popup_cursor(&self, cursor: crate::platform::PopupCursor) {
+        if let Some(Ok(popup)) = self.popup.get() {
+            popup.set_cursor(cursor);
+        }
+    }
+
+    fn capture_popup_pointer(&self, capture: bool) {
+        if let Some(Ok(popup)) = self.popup.get() {
+            popup.capture(capture);
+        }
+    }
 }
 
 /// The bar window as a raw window handle, for `window-vibrancy`.
