@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::platform::PathKind;
+
 /// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Topic {
@@ -15,6 +17,8 @@ pub enum Topic {
     /// `net/<id|auto>`: one network interface by id, or `None` for the one carrying the
     /// default route.
     Net(Option<String>),
+    /// `path/<path>`: whether a file or folder exists, e.g. a Shortcut's target (SPEC §9.17).
+    Path(String),
 }
 
 /// A sensor's wish to receive `topic` at least every `interval`.
@@ -33,6 +37,13 @@ pub enum Sample {
     Swap(SwapSample),
     Disk(DiskSample),
     Net(NetSample),
+    Path(PathSample),
+}
+
+/// `path/<path>`: what the path names now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PathSample {
+    pub kind: PathKind,
 }
 
 /// `cpu`: the processors' load, each 0–100 (SPEC Appendix A).

@@ -6,7 +6,8 @@
 //! would block for the SMB timeout, and an optical drive may spin up.
 
 use windows::Win32::Storage::FileSystem::{
-    GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW,
+    FILE_ATTRIBUTE_DIRECTORY, GetDiskFreeSpaceExW, GetDriveTypeW, GetFileAttributesW,
+    GetLogicalDriveStringsW, GetVolumeInformationW, INVALID_FILE_ATTRIBUTES,
 };
 use windows::Win32::System::Diagnostics::Debug::{
     SEM_FAILCRITICALERRORS, SEM_NOOPENFILEERRORBOX, SetThreadErrorMode, THREAD_ERROR_MODE,
@@ -14,7 +15,7 @@ use windows::Win32::System::Diagnostics::Debug::{
 use windows::core::PCWSTR;
 
 use super::from_wide;
-use crate::platform::{DiskSpace, DriveKind, Volume};
+use crate::platform::{DiskSpace, DriveKind, PathKind, Volume};
 
 /// `GetDriveTypeW` results.
 const DRIVE_NO_ROOT_DIR: u32 = 1;
@@ -25,10 +26,10 @@ const DRIVE_CDROM: u32 = 5;
 const DRIVE_RAMDISK: u32 = 6;
 
 /// Turns off the "insert a disk" dialogs for this thread while it lives.
-struct QuietErrors(THREAD_ERROR_MODE);
+pub(super) struct QuietErrors(THREAD_ERROR_MODE);
 
 impl QuietErrors {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let mut old = THREAD_ERROR_MODE::default();
         // SAFETY: `old` receives the previous mode, restored on drop.
         let _ = unsafe {
@@ -103,6 +104,21 @@ fn label(path: &[u16]) -> String {
     .map_or_else(|_| String::new(), |()| from_wide(&name))
 }
 
+/// What `path` names, without a dialog for a drive that has no medium.
+pub fn path_kind(path: &str) -> PathKind {
+    let _quiet = QuietErrors::new();
+    let wide = wide(path);
+    // SAFETY: a NUL-terminated path.
+    let attributes = unsafe { GetFileAttributesW(PCWSTR(wide.as_ptr())) };
+    if attributes == INVALID_FILE_ATTRIBUTES {
+        PathKind::Missing
+    } else if attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0 {
+        PathKind::Folder
+    } else {
+        PathKind::File
+    }
+}
+
 pub fn space(root: &str) -> Option<DiskSpace> {
     let _quiet = QuietErrors::new();
     let path = wide(root);
@@ -141,5 +157,17 @@ mod tests {
         let free = space(&system.root).expect("readable");
         assert!(free.total > 0 && free.free <= free.total, "{free:?}");
         assert!(space("Q:\\").is_none() || volumes.iter().any(|v| v.root == "Q:\\"));
+        assert_eq!(path_kind(&system.root), PathKind::Folder);
+    }
+
+    #[test]
+    fn path_kinds() {
+        let dir = std::env::temp_dir();
+        let file = dir.join("infodock-path-kind.txt");
+        std::fs::write(&file, b"x").expect("written");
+        assert_eq!(path_kind(&file.to_string_lossy()), PathKind::File);
+        assert_eq!(path_kind(&dir.to_string_lossy()), PathKind::Folder);
+        let _ = std::fs::remove_file(&file);
+        assert_eq!(path_kind(&file.to_string_lossy()), PathKind::Missing);
     }
 }

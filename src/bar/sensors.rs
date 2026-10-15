@@ -12,7 +12,9 @@ use crate::platform::{Canvas, Capabilities, Platform, RectF, TextEngine};
 use crate::sampler::{Delivery, Topic, TopicRequest};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
-use crate::sensors::{ClickResult, DrawCtx, HintContent, LayoutCtx, Sensor, SensorCtx, State};
+use crate::sensors::{
+    ClickResult, DrawCtx, HintContent, IconSource, LayoutCtx, Sensor, SensorCtx, State,
+};
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
 const PRESSED_OPACITY: f32 = 0.6;
@@ -195,13 +197,14 @@ impl BarSensors {
 
     /// Measures and places what changed now, with the scale and bar width of the last layout,
     /// rather than at the next paint; e.g. before a hint is placed next to its sensor.
-    pub fn refresh_layout(&mut self, theme: &Theme, text: &dyn TextEngine) {
+    pub fn refresh_layout(&mut self, theme: &Theme, text: &dyn TextEngine, icons: &dyn IconSource) {
         if self.scale > 0.0 {
             let cx = LayoutCtx {
                 theme,
                 text,
                 scale: self.scale,
                 numbers: self.numbers,
+                icons,
             };
             self.update_layout(&cx, self.bar_width);
         }
@@ -439,6 +442,7 @@ mod tests {
             text: &FixedMetrics,
             scale,
             numbers: Default::default(),
+            icons: &crate::sensors::NoIcons,
         }
     }
 

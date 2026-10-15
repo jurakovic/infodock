@@ -2,8 +2,8 @@
 //! can be added without touching sensors. Windows lives in `windows/`; every other OS gets the
 //! portable stub in `stub.rs` (enough to develop and test on Linux).
 //!
-//! The spec's `Shell`, `Icons`, `Power` and `Devices` traits are added with the milestones that
-//! need them (M2–M3); the locale is plain data (`locale.rs`).
+//! The spec's `Shell`, `Icons`, `Power` and `Devices` services are methods of [`Platform`],
+//! added with the milestones that need them (M2–M3); the locale is plain data (`locale.rs`).
 
 pub mod bitmap;
 pub mod canvas;
@@ -177,6 +177,38 @@ pub struct NetInterface {
     pub link_tx: u64,
 }
 
+/// What a path names (SPEC §9.17: a Shortcut is inactive while its target is missing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathKind {
+    Missing,
+    File,
+    Folder,
+}
+
+/// A program, document, folder or URI to start, as a sensor click starts it (SPEC §9.17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Launch<'a> {
+    pub target: &'a str,
+    /// Parameters for a program, passed as they are (never interpreted by a shell).
+    pub args: &'a str,
+    /// The working folder; `None` leaves it to the shell.
+    pub dir: Option<&'a str>,
+    /// Run as administrator (the `runas` verb), which asks for elevation.
+    pub admin: bool,
+}
+
+impl<'a> Launch<'a> {
+    /// `target` opened as Explorer would, without parameters.
+    pub fn open(target: &'a str) -> Self {
+        Self {
+            target,
+            args: "",
+            dir: None,
+            admin: false,
+        }
+    }
+}
+
 /// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryStatus {
@@ -250,7 +282,28 @@ pub trait Platform: Send + Sync {
     /// `taskmgr.exe`, a file or folder, or a URI such as `ms-settings:dateandtime`. It runs in
     /// the background; failures are logged (and the shell may explain them).
     fn open(&self, target: &str) {
-        tracing::info!("opening {target:?} is not supported on this platform");
+        self.launch(&Launch::open(target));
+    }
+    /// Starts a program, document, folder or URI with parameters, a working folder and
+    /// optionally elevated (SPEC §9.17), in the background like [`Platform::open`].
+    fn launch(&self, launch: &Launch) {
+        tracing::info!("starting {launch:?} is not supported on this platform");
+    }
+    /// What `path` names now. It may wait for a network server, so it runs off the bar
+    /// thread (the `path/<path>` topic).
+    fn path_kind(&self, path: &str) -> PathKind {
+        match std::fs::metadata(path) {
+            Ok(m) if m.is_dir() => PathKind::Folder,
+            Ok(_) => PathKind::File,
+            Err(_) => PathKind::Missing,
+        }
+    }
+    /// The shell's icon for a file, folder or drive, `px` physical px square (a `.lnk` shows
+    /// its target's icon); `None` where it has none or the platform has no shell. It may be
+    /// slow, so the bar asks for it on a worker thread.
+    fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
+        let _ = (path, px);
+        None
     }
     /// Plays a WAV sound in the background, e.g. the Time sensor's chime (SPEC §9.5).
     fn play_sound(&self, wav: &'static [u8]) {
@@ -662,8 +715,9 @@ impl UiWaker {
     }
 }
 
-/// Builds the bar logic on the bar thread.
-pub type HandlerFactory = Box<dyn FnOnce() -> Box<dyn BarHandler> + Send>;
+/// Builds the bar logic on the bar thread, with a waker its own workers can use (e.g. the icon
+/// loader).
+pub type HandlerFactory = Box<dyn FnOnce(UiWaker) -> Box<dyn BarHandler> + Send>;
 
 /// Handles to a running bar thread, usable from any thread.
 pub struct BarThread {

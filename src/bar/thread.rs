@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use super::anim::{self, Easing, Fade};
 use super::hint::{self, HintBody, HintFrame, Hover, Step};
+use super::icons::IconLoader;
 use super::interact::{self, DropTarget, Press};
 use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
@@ -27,7 +28,7 @@ use crate::i18n::{t, t_args};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::platform::{
     BarGeometry, BarHandler, BarWindow, Canvas, Modifiers, OsAppearance, Platform, PointF,
-    PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent,
+    PointerButton, Rect, RectF, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Delivery, TopicRequest};
 use crate::sensors::format::Numbers;
@@ -78,6 +79,8 @@ pub(super) struct BarLogic {
     geometry: Option<BarGeometry>,
     sensors: BarSensors,
     text: Rc<dyn TextEngine>,
+    /// Shell icons for the sensors, read on a worker thread.
+    icons: IconLoader,
     appearance: OsAppearance,
     theme: Theme,
     /// The material last applied to the window; `None` until the first application.
@@ -148,6 +151,7 @@ impl BarLogic {
         platform: Arc<dyn Platform>,
         commands: Receiver<Command>,
         host: Arc<dyn BarHost>,
+        waker: UiWaker,
     ) -> Self {
         let appearance = platform.appearance();
         let animate = anim::enabled(config.settings.bar.animations, appearance.animations);
@@ -165,6 +169,7 @@ impl BarLogic {
             geometry: None,
             sensors: BarSensors::default(),
             text: crate::platform::text_engine(),
+            icons: IconLoader::new(Arc::clone(&platform), waker),
             appearance,
             material: None,
             tray_shown: None,
@@ -565,7 +570,8 @@ impl BarLogic {
         if let Some(id) = self.hover.shown().map(str::to_owned) {
             // The hint is placed by its sensor, which may have moved: place the sensors now
             // rather than at the next paint.
-            self.sensors.refresh_layout(&self.theme, self.text.as_ref());
+            self.sensors
+                .refresh_layout(&self.theme, self.text.as_ref(), &self.icons);
             if !self.show_hint(window, &id) {
                 self.hover.nothing_shown();
                 window.hide_hint();
@@ -582,7 +588,8 @@ impl BarLogic {
         };
         let changed = self.sensors.is_dirty(&id);
         let before = self.sensors.place_of(&id);
-        self.sensors.refresh_layout(&self.theme, self.text.as_ref());
+        self.sensors
+            .refresh_layout(&self.theme, self.text.as_ref(), &self.icons);
         if changed || self.sensors.place_of(&id) != before {
             self.refresh_hint(window);
         }
@@ -895,6 +902,11 @@ impl BarHandler for BarLogic {
                         Command::Sample(delivery) => self.deliver(window, &delivery),
                     }
                 }
+                // Icons that arrived: the sensors that asked for them measure again.
+                if self.icons.receive() {
+                    self.sensors.invalidate_all();
+                    window.invalidate();
+                }
                 // Samples alone change neither the theme nor the tray.
                 if configured {
                     self.refresh_theme(window);
@@ -968,6 +980,7 @@ impl BarHandler for BarLogic {
             text: self.text.as_ref(),
             scale: canvas.scale(),
             numbers: self.numbers,
+            icons: &self.icons,
         };
         self.sensors.update_layout(&cx, size.width);
         let now = Instant::now();
@@ -1164,6 +1177,7 @@ mod tests {
             crate::platform::current(),
             rx,
             Arc::clone(&host) as Arc<dyn BarHost>,
+            UiWaker::new(|| {}),
         );
         // The same text metrics on every OS, readable by the recording canvas.
         logic.text = Rc::new(crate::platform::recording::FixedMetrics);

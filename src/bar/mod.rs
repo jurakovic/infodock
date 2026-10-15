@@ -3,6 +3,7 @@
 
 pub mod anim;
 mod hint;
+mod icons;
 mod interact;
 mod layout;
 mod menus;
@@ -87,8 +88,8 @@ impl BarController {
         let config = store.get();
         let settings = config.settings.clone();
         let (commands, queue) = mpsc::channel();
-        let thread = platform::start_bar_thread(Box::new(move || {
-            Box::new(BarLogic::new(config, platform, queue, host))
+        let thread = platform::start_bar_thread(Box::new(move |waker| {
+            Box::new(BarLogic::new(config, platform, queue, host, waker))
         }))?;
 
         let controller = Arc::new(Self {

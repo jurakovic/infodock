@@ -63,6 +63,28 @@ impl Bitmap {
         Self::from_premultiplied(width, height, rgba)
     }
 
+    /// Wraps the BGRA pixels of a shell icon (SPEC §4.6 `Icons`). The shell hands out
+    /// premultiplied alpha, but some icons come straight (a colour above its alpha gives them
+    /// away) and old ones without alpha (all 0), which are opaque.
+    pub fn from_shell_bgra(width: u32, height: u32, mut bgra: Vec<u8>) -> Option<Self> {
+        let pixels = bgra.as_chunks_mut::<4>().0;
+        for px in pixels.iter_mut() {
+            px.swap(0, 2);
+        }
+        if pixels.iter().all(|px| px[3] == 0) {
+            for px in pixels.iter_mut() {
+                px[3] = 255;
+            }
+            return Self::from_premultiplied(width, height, bgra);
+        }
+        let straight = pixels.iter().any(|px| px[..3].iter().any(|&c| c > px[3]));
+        if straight {
+            Self::from_rgba(width, height, bgra)
+        } else {
+            Self::from_premultiplied(width, height, bgra)
+        }
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -301,6 +323,20 @@ mod tests {
         assert_eq!(&b.to_rgba()[..4], &[255, 128, 0, 128]);
         assert!(Bitmap::from_rgba(2, 2, vec![0; 8]).is_none());
         assert!(Bitmap::from_rgba(0, 0, Vec::new()).is_none());
+    }
+
+    #[test]
+    fn shell_icons_premultiplied_straight_or_without_alpha() {
+        // BGRA, premultiplied: kept as it is (in RGBA order).
+        let pre = Bitmap::from_shell_bgra(2, 1, vec![0, 64, 128, 128, 0, 0, 0, 0]).expect("ok");
+        assert_eq!(pixel(&pre, 0, 0), [128, 64, 0, 128]);
+        // A colour above its alpha: straight, so it is premultiplied here.
+        let straight = Bitmap::from_shell_bgra(1, 1, vec![0, 0, 255, 128]).expect("ok");
+        assert_eq!(pixel(&straight, 0, 0), [128, 0, 0, 128]);
+        // No alpha at all: an old opaque icon.
+        let old = Bitmap::from_shell_bgra(1, 1, vec![30, 20, 10, 0]).expect("ok");
+        assert_eq!(pixel(&old, 0, 0), [10, 20, 30, 255]);
+        assert!(Bitmap::from_shell_bgra(2, 2, vec![0; 4]).is_none());
     }
 
     #[test]

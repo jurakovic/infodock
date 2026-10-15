@@ -684,9 +684,6 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
         let _ = ready.send(Err(PlatformError::Os("AppBar or tray missing".into())));
         return;
     };
-    *state.handler.borrow_mut() = Some(make_handler());
-    state.dispatch(UiEvent::Started);
-
     let hwnd = state.hwnd.get();
     let queued = Arc::clone(&state.wake_queued);
     let waker = UiWaker::new(move || {
@@ -705,6 +702,8 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
             }
         }
     });
+    *state.handler.borrow_mut() = Some(make_handler(waker.clone()));
+    state.dispatch(UiEvent::Started);
     let _ = ready.send(Ok(BarThread {
         appbar: Arc::new(WinAppBar { shared: appbar }),
         tray: tray as Arc<dyn TrayIcon>,

@@ -109,6 +109,7 @@ mod tests {
             text: &FixedMetrics,
             scale: 1.0,
             numbers: Default::default(),
+            icons: &crate::sensors::NoIcons,
         });
         // 9 characters × 5 px + 2 × 4 px.
         assert_eq!(width, 53.0);

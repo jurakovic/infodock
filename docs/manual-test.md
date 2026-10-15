@@ -253,3 +253,20 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 - [ ] *New sensor…* (picker): with every type listed, the search box and the Add and Cancel buttons stay in view; Up and Down move the selection and the list scrolls with it.
 - [ ] Edit a Time sensor's properties: the clock does not blink empty while previewing.
 - [ ] A Network Graph set to a connection that is then renamed (Network Connections ▸ Rename): its properties still show it (by the new name), not *Automatic*.
+
+## M3 — Launchers & hardware
+
+The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.png` in `infodock-screenshots`) with this machine's shell icons; the checks here cover clicking, the shell and real devices.
+
+**Shortcut** (since M3 S1)
+
+- [ ] *New sensor… ▸ Launchers ▸ Shortcut*, *Target* → *Browse…* → `C:\Windows\System32\notepad.exe`, Save: Notepad's icon, 24 px on the 28 px bar, sharp at 100 % and 150 %. Hover: *Open 'notepad'*; click: Notepad opens.
+- [ ] A `.lnk` from the Start Menu folder as the target shows its program's icon (no shortcut arrow); a folder shows the folder icon and opens in Explorer; a document opens in its app.
+- [ ] *Parameters* `/A C:\Windows\win.ini` on Notepad opens that file; parameters with spaces in quotes arrive as one. *Start in* empty: a `.cmd` target that runs `cd` shows its own folder; set to another folder, that one.
+- [ ] *Run as* → *Administrator*: the elevation prompt appears; *No* leaves nothing behind (no error dialog).
+- [ ] *Web address* `https://example.com/` (with a target set too): the globe icon, hint *Open 'https://example.com/'*, the default browser opens the page. `ms-settings:display` opens the display settings.
+- [ ] *Title* → `Editor`: the hint is just *Editor*. *Colour* → *Custom* tints the icon; *Opacity* 40 % fades it.
+- [ ] *Image file*: an `.ico`, `.png` or `.svg` replaces the icon, keeping its aspect ratio.
+- [ ] A target on a USB stick: remove the stick; within a minute the icon is the generic app icon, dimmed (inactive). Plug it back in: within a minute its own icon returns, not dimmed. No "insert a disk" dialog appears.
+- [ ] A target on a network share whose server is off: the bar keeps responding (the CPU graph keeps moving) while the icon and the check wait; the icon space stays free, then shows the generic icon dimmed.
+- [ ] Lock on with *Clicks when locked* → *Alt only*: the hint is only the title.

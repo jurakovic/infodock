@@ -1,7 +1,8 @@
-//! Shell services (SPEC §4.6): opening programs, files and URIs for sensor clicks
-//! (`ShellExecuteExW`), and the file and folder pickers Settings uses (`IFileOpenDialog`).
+//! Shell services (SPEC §4.6): starting programs, files and URIs for sensor clicks
+//! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), and the file
+//! and folder pickers Settings uses (`IFileOpenDialog`).
 
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{ERROR_CANCELLED, HWND};
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoCreateInstance,
     CoInitializeEx, CoTaskMemFree, CoUninitialize,
@@ -12,14 +13,18 @@ use windows::Win32::UI::Shell::{
     SHELLEXECUTEINFOW, SIGDN_FILESYSPATH, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-use windows::core::{HSTRING, PCWSTR, Result};
+use windows::core::{HSTRING, PCWSTR, Result, w};
 
-use crate::platform::PathRequest;
+use crate::platform::{Launch, PathRequest};
 
-/// Opens `target` as Explorer would, on a short-lived thread: the shell can take a moment (and
-/// show its own message when the target is missing), and the bar thread must not wait.
-pub fn open(target: &str) {
-    let target = target.to_owned();
+/// Starts `launch` as Explorer would, on a short-lived thread: the shell can take a moment (and
+/// show its own message when the target is missing, or ask for elevation), and the bar thread
+/// must not wait.
+pub fn launch(launch: &Launch) {
+    let target = launch.target.to_owned();
+    let args = launch.args.to_owned();
+    let dir = launch.dir.map(str::to_owned);
+    let admin = launch.admin;
     let spawned = std::thread::Builder::new()
         .name("open".into())
         .spawn(move || {
@@ -29,17 +34,34 @@ pub fn open(target: &str) {
                 unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) }
                     .is_ok();
             let file = HSTRING::from(target.as_str());
+            let params = HSTRING::from(args.as_str());
+            let directory = dir.as_deref().map(HSTRING::from);
+            let optional = |s: &HSTRING| {
+                if s.is_empty() {
+                    PCWSTR::null()
+                } else {
+                    PCWSTR(s.as_ptr())
+                }
+            };
             let mut info = SHELLEXECUTEINFOW {
                 cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
                 // The thread ends after the call, so the shell must finish before it returns.
                 fMask: SEE_MASK_NOASYNC,
+                lpVerb: if admin { w!("runas") } else { PCWSTR::null() },
                 lpFile: PCWSTR(file.as_ptr()),
+                lpParameters: optional(&params),
+                lpDirectory: directory.as_ref().map_or(PCWSTR::null(), optional),
                 nShow: SW_SHOWNORMAL.0,
                 ..Default::default()
             };
-            // SAFETY: `info` is initialised and `file` outlives the call.
-            if let Err(e) = unsafe { ShellExecuteExW(&mut info) } {
-                tracing::warn!("could not open {target:?}: {e}");
+            // SAFETY: `info` is initialised and the strings outlive the call.
+            match unsafe { ShellExecuteExW(&mut info) } {
+                Ok(()) => {}
+                // The user declined the elevation prompt.
+                Err(e) if e.code() == ERROR_CANCELLED.to_hresult() => {
+                    tracing::info!("starting {target:?} was cancelled");
+                }
+                Err(e) => tracing::warn!("could not open {target:?}: {e}"),
             }
             if initialised {
                 // SAFETY: balances the successful CoInitializeEx above.

@@ -3,5 +3,6 @@
 pub mod dual_graph;
 pub mod graph;
 pub mod history;
+pub mod icon;
 pub mod meter;
 pub mod two_line;

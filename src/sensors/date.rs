@@ -587,6 +587,7 @@ mod tests {
                 text: &FixedMetrics,
                 scale: 1.0,
                 numbers: Default::default(),
+                icons: &crate::sensors::NoIcons,
             });
             let mut canvas = RecordingCanvas::new(1.0);
             let rect = RectF::new(0.0, 0.0, width, 28.0);

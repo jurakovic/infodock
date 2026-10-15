@@ -847,6 +847,19 @@ mod screenshots {
         render("settings-properties-disk");
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&disk).is_none());
+        // The Shortcut's form: paths, parameters, a web address and how it runs (SPEC §9.17).
+        let shortcut = app
+            .add_sensor(
+                "shortcut",
+                crate::config::model::Zone::Left,
+                0,
+                &crate::sensors::Props::new(),
+            )
+            .expect("added");
+        super::properties::open_form(&app, &shortcut, true);
+        render_sized("settings-properties-shortcut", 900);
+        state.invoke_props_cancel();
+        assert!(app.store.get().layout.find(&shortcut).is_none());
         // The first-run network graph: Automatic and this computer's connections.
         let network = app
             .store

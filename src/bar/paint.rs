@@ -436,6 +436,10 @@ mod tests {
                         free: 241 * GB,
                     }
                 }),
+                // What the path is on this machine (the launchers' targets).
+                Topic::Path(path) => Sample::Path(crate::sampler::PathSample {
+                    kind: crate::platform::current().path_kind(path),
+                }),
                 Topic::Net(_) => Sample::Net(NetSample {
                     present: true,
                     id: "WIFI".into(),
@@ -478,7 +482,8 @@ mod tests {
 
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
     /// them): plain bars per theme, the canvas specimen, the first-run layout, the General
-    /// sensors and every system sensor with made-up samples, at 100 % and 150 %.
+    /// sensors, every system sensor with made-up samples and the launchers, at 100 % and
+    /// 150 %.
     #[cfg(windows)]
     #[test]
     #[ignore = "writes PNGs to target/screenshots; run with --ignored"]
@@ -618,6 +623,46 @@ mod tests {
                 serde_json::json!({ "drive": "Q:\\", "mode": "freeBytes" }),
             ),
         ];
+        // Launchers (SPEC §9.17): a program, a folder, a web address, a tinted program, a
+        // bare program name and a missing target (inactive).
+        let launchers = Layout {
+            left: vec![
+                entry(
+                    "l1",
+                    "shortcut",
+                    serde_json::json!({ "target": "C:\\Windows\\System32\\notepad.exe" }),
+                ),
+                entry(
+                    "l2",
+                    "shortcut",
+                    serde_json::json!({ "target": "C:\\Windows" }),
+                ),
+                entry(
+                    "l3",
+                    "shortcut",
+                    serde_json::json!({ "url": "https://example.com/" }),
+                ),
+                entry(
+                    "l4",
+                    "shortcut",
+                    serde_json::json!({
+                        "target": "C:\\Windows\\explorer.exe",
+                        "color": { "mode": "custom", "color": "#20B7FF" }
+                    }),
+                ),
+                entry(
+                    "l5",
+                    "shortcut",
+                    serde_json::json!({ "target": "notepad.exe" }),
+                ),
+                entry(
+                    "l6",
+                    "shortcut",
+                    serde_json::json!({ "target": "Q:\\Gone\\tool.exe" }),
+                ),
+            ],
+            ..Layout::default()
+        };
         let platform = crate::platform::current();
         let first_run = crate::config::Config::first_run("1.0.0").layout;
         for (name, layout, settings, os, bar_width) in [
@@ -651,6 +696,20 @@ mod tests {
                 light,
                 1100.0,
             ),
+            (
+                "bar-launchers",
+                &launchers,
+                Settings::default(),
+                dark,
+                300.0,
+            ),
+            (
+                "bar-launchers-light",
+                &launchers,
+                Settings::default(),
+                light,
+                300.0,
+            ),
         ] {
             let theme = Theme::resolve(&settings, os);
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
@@ -677,6 +736,7 @@ mod tests {
                     text: text.as_ref(),
                     scale,
                     numbers: platform.locale(settings.date_locale).numbers(),
+                    icons: &crate::sensors::DirectIcons(platform.as_ref()),
                 };
                 sensors.update_layout(&cx, size.width);
                 let width = (size.width * scale).round() as u32;

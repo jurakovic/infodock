@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Placeholder (SPEC Appendix C): the Shortcut's icon when the shell has none (a missing
+       target); monochrome white, so a Custom colour tints it. -->
+  <rect x="2.8" y="3.8" width="18.4" height="16.4" rx="2.2" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
+  <rect x="2.8" y="3.8" width="18.4" height="4.2" rx="2.2" fill="#FFFFFF"/>
+  <rect x="6" y="11" width="12" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.6"/>
+  <rect x="6" y="14.6" width="8" height="1.6" rx="0.8" fill="#FFFFFF" opacity="0.6"/>
+</svg>

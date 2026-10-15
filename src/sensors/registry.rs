@@ -11,7 +11,7 @@ use crate::config::model::{Layout, SensorInstance};
 use crate::i18n::t;
 use crate::platform::{Capabilities, Capability};
 
-/// The sensor types of this version. Launchers and hardware arrive in M3.
+/// The sensor types of this version. More launchers and hardware arrive with M3.
 static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
     Registry::new(vec![
         &super::text::TextType,
@@ -29,6 +29,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::date::DateType,
         &super::time::TimeType,
         &super::uptime::UptimeType,
+        &super::shortcut::ShortcutType,
     ])
 });
 
@@ -227,6 +228,7 @@ mod tests {
             text: &FixedMetrics,
             scale: 1.0,
             numbers: Default::default(),
+            icons: &crate::sensors::NoIcons,
         });
         let mut canvas = RecordingCanvas::new(1.0);
         sensor.draw(

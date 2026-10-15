@@ -21,6 +21,7 @@ pub mod ops;
 pub mod placeholder;
 pub mod registry;
 pub mod schema;
+pub mod shortcut;
 pub mod spacer;
 pub mod text;
 pub mod time;
@@ -33,7 +34,7 @@ use serde_json::{Map, Value};
 
 use crate::bar::theme::Theme;
 use crate::config::model::Settings;
-use crate::platform::{Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
+use crate::platform::{Bitmap, Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
 use crate::sampler::{Sample, Topic, TopicRequest};
 use schema::PropField;
 
@@ -146,6 +147,51 @@ pub struct LayoutCtx<'a> {
     pub scale: f32,
     /// How the locale writes numbers (SPEC §8.6), kept by the bar.
     pub numbers: format::Numbers,
+    /// Shell icons of files, folders and drives (SPEC §9.17–9.18).
+    pub icons: &'a dyn IconSource,
+}
+
+/// A shell icon as an [`IconSource`] has it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShellIcon {
+    /// Being read; the sensors measure again once it is there.
+    Loading,
+    /// The shell has none, e.g. for a path that does not exist.
+    None,
+    Ready(Bitmap),
+}
+
+/// Shell icons for measuring sensors (bar thread). The bar reads them on a worker thread,
+/// since the shell may wait for a network server (SPEC §4.1).
+pub trait IconSource {
+    /// The icon of `path`, `px` physical px square.
+    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon;
+    /// Forgets the icons of `path`, so they are read again, e.g. once a missing target is back.
+    fn forget(&self, path: &str);
+}
+
+/// No shell icons: tests, and platforms without a shell.
+pub struct NoIcons;
+
+impl IconSource for NoIcons {
+    fn shell_icon(&self, _path: &str, _px: u32) -> ShellIcon {
+        ShellIcon::None
+    }
+
+    fn forget(&self, _path: &str) {}
+}
+
+/// Shell icons read from the platform at once, on the calling thread: for screenshots.
+pub struct DirectIcons<'a>(pub &'a dyn Platform);
+
+impl IconSource for DirectIcons<'_> {
+    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
+        self.0
+            .shell_icon(path, px)
+            .map_or(ShellIcon::None, ShellIcon::Ready)
+    }
+
+    fn forget(&self, _path: &str) {}
 }
 
 /// What drawing may use (bar thread).
@@ -410,6 +456,15 @@ pub(crate) mod test_support {
                 .expect("lock")
                 .push(format!("open {target}"));
         }
+        fn launch(&self, launch: &crate::platform::Launch) {
+            self.log.lock().expect("lock").push(format!(
+                "launch {} args={} dir={} admin={}",
+                launch.target,
+                launch.args,
+                launch.dir.unwrap_or_default(),
+                launch.admin
+            ));
+        }
     }
 
     /// A platform without capabilities or monitors.
@@ -440,6 +495,7 @@ pub(crate) mod test_support {
             text: &FixedMetrics,
             scale: 1.0,
             numbers: Default::default(),
+            icons: &crate::sensors::NoIcons,
         })
     }
 

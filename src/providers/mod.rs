@@ -7,12 +7,14 @@ mod memory;
 mod net;
 mod swap;
 mod uptime;
+mod worker;
 
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use crate::platform::Platform;
-use crate::sampler::{Sample, Topic};
+use crate::sampler::{DiskSample, PathSample, Sample, Topic};
+use worker::SlowReader;
 
 /// The providers of all topics, with whatever state they keep between readings.
 pub struct Providers {
@@ -20,7 +22,9 @@ pub struct Providers {
     /// Created on first use; `None` inside when the platform has no reader.
     cpu: Option<Option<cpu::Cpu>>,
     /// The disk reader's thread, started on first use; `None` inside if it could not start.
-    disks: Option<Option<disk::Disks>>,
+    disks: Option<Option<SlowReader<DiskSample>>>,
+    /// The same for paths (`path/<path>`).
+    paths: Option<Option<SlowReader<PathSample>>>,
     net: net::Net,
 }
 
@@ -30,6 +34,7 @@ impl Providers {
             platform,
             cpu: None,
             disks: None,
+            paths: None,
             net: net::Net::default(),
         }
     }
@@ -56,6 +61,11 @@ impl Providers {
             Topic::Disk(root) => {
                 if let Some(Some(disks)) = &mut self.disks {
                     disks.forget(root);
+                }
+            }
+            Topic::Path(path) => {
+                if let Some(Some(paths)) = &mut self.paths {
+                    paths.forget(path);
                 }
             }
             Topic::Net(id) => self.net.forget(id),
@@ -88,10 +98,21 @@ impl Providers {
                 .map(|files| Sample::Swap(swap::sample(&files))),
             Topic::Disk(root) => {
                 let platform = &self.platform;
-                let disks = self
-                    .disks
-                    .get_or_insert_with(|| disk::Disks::new(Arc::clone(platform)));
+                let disks = self.disks.get_or_insert_with(|| {
+                    let platform = Arc::clone(platform);
+                    SlowReader::new("disks", move |root| disk::sample(platform.disk_space(root)))
+                });
                 disks.as_mut()?.sample(root).map(Sample::Disk)
+            }
+            Topic::Path(path) => {
+                let platform = &self.platform;
+                let paths = self.paths.get_or_insert_with(|| {
+                    let platform = Arc::clone(platform);
+                    SlowReader::new("paths", move |path| PathSample {
+                        kind: platform.path_kind(path),
+                    })
+                });
+                paths.as_mut()?.sample(path).map(Sample::Path)
             }
             Topic::Net(id) => {
                 let interface = self.platform.net_interface(id.as_deref());

@@ -371,7 +371,8 @@ mod tests {
                 "Memory Meter",
                 "Swap Graph",
                 "Swap Meter",
-                "Network Graph"
+                "Network Graph",
+                "Shortcut"
             ]
         );
         assert_eq!(
@@ -394,7 +395,9 @@ mod tests {
                 Line::Entry(11),
                 Line::Entry(12),
                 Line::Heading("Network".into()),
-                Line::Entry(13)
+                Line::Entry(13),
+                Line::Heading("Launchers".into()),
+                Line::Entry(14)
             ]
         );
     }

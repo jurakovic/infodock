@@ -92,10 +92,14 @@ impl TrayIcon for NoTray {
 
 pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, PlatformError> {
     let (wake_tx, wake_rx) = mpsc::channel::<()>();
+    let waker = UiWaker::new(move || {
+        let _ = wake_tx.send(());
+    });
+    let handler_waker = waker.clone();
     std::thread::Builder::new()
         .name("bar".into())
         .spawn(move || {
-            let mut handler: Box<dyn BarHandler> = make_handler();
+            let mut handler: Box<dyn BarHandler> = make_handler(handler_waker);
             handler.on_event(&NoWindow, UiEvent::Started);
             while wake_rx.recv().is_ok() {
                 handler.on_event(&NoWindow, UiEvent::Wake);
@@ -106,9 +110,7 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
     Ok(BarThread {
         appbar: Arc::new(StubAppBar),
         tray: Arc::new(NoTray),
-        waker: UiWaker::new(move || {
-            let _ = wake_tx.send(());
-        }),
+        waker,
     })
 }
 

@@ -220,6 +220,7 @@ mod tests {
             text: &FixedMetrics,
             scale: 1.5,
             numbers: Default::default(),
+            icons: &crate::sensors::NoIcons,
         });
         assert_eq!(width, 28.0);
         assert_eq!(sensor.bitmap.as_ref().map(Bitmap::height), Some(41));

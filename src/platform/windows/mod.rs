@@ -1,10 +1,12 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+mod com;
 mod cpu;
 mod dialog;
 mod disk;
 mod hint;
+mod icons;
 pub mod image;
 pub mod instance;
 mod locale;
@@ -71,6 +73,10 @@ impl Platform for WindowsPlatform {
         disk::space(root)
     }
 
+    fn path_kind(&self, path: &str) -> super::PathKind {
+        disk::path_kind(path)
+    }
+
     fn net_interfaces(&self) -> Vec<super::NetInterface> {
         net::interfaces()
     }
@@ -93,8 +99,12 @@ impl Platform for WindowsPlatform {
         }
     }
 
-    fn open(&self, target: &str) {
-        shell::open(target);
+    fn launch(&self, launch: &super::Launch) {
+        shell::launch(launch);
+    }
+
+    fn shell_icon(&self, path: &str, px: u32) -> Option<super::Bitmap> {
+        icons::shell_icon(path, px)
     }
 
     fn play_sound(&self, wav: &'static [u8]) {
