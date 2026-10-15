@@ -37,6 +37,7 @@ static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
         &super::wifi::WifiType,
         &super::folder_menu::FolderMenuType,
         &super::start_menu::StartMenuType,
+        &super::eject_usb::EjectUsbType,
     ])
 });
 

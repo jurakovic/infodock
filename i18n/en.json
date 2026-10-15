@@ -384,6 +384,16 @@
   "sensor.startMenu.field.title.help": "Shown on hover and above the list. Leave empty for \"Start Menu\".",
   "sensor.startMenu.field.image.help": "ICO, PNG, GIF, JPEG or SVG. Leave empty for the Start Menu icon.",
   "sensor.startMenu.menu.openAll": "Open (all users) folder",
+  "sensor.ejectUsb.name": "Eject USB",
+  "sensor.ejectUsb.description": "Lists the USB drives and discs that can be ejected, and ejects them.",
+  "sensor.ejectUsb.hint.drives": {
+    "one": "{count} removable drive",
+    "other": "{count} removable drives"
+  },
+  "sensor.ejectUsb.eject": "Eject",
+  "sensor.ejectUsb.ejecting": "Ejecting…",
+  "sensor.ejectUsb.nothing": "Nothing to eject",
+  "sensor.ejectUsb.safelyRemove": "Safely Remove Hardware…",
   "folderBrowser.empty": "no items",
   "folderBrowser.loading": "Loading…",
   "folderBrowser.failed": "This folder cannot be opened",

@@ -665,8 +665,8 @@ mod tests {
         ];
         // Launchers (SPEC §9.17, §9.18, §9.21): Shortcuts to a program, a folder, a web
         // address, a tinted program, a bare program name and a missing target (inactive); the
-        // system drive and an absent one (inactive); a Folder Menu and the Start Menu; every
-        // Power mode, the last at 50 %.
+        // system drive and an absent one (inactive); a Folder Menu, the Start Menu and Eject
+        // USB; every Power mode, the last at 50 %.
         let launchers = Layout {
             left: vec![
                 entry(
@@ -710,6 +710,7 @@ mod tests {
                     serde_json::json!({ "folder": "C:\\Windows" }),
                 ),
                 entry("m1", "start-menu", serde_json::json!({})),
+                entry("u1", "eject-usb", serde_json::json!({})),
                 entry("p1", "power", serde_json::json!({ "mode": "lock" })),
                 entry("p2", "power", serde_json::json!({ "mode": "signOut" })),
                 entry("p3", "power", serde_json::json!({ "mode": "switchUser" })),
@@ -762,14 +763,14 @@ mod tests {
                 &launchers,
                 Settings::default(),
                 dark,
-                640.0,
+                680.0,
             ),
             (
                 "bar-launchers-light",
                 &launchers,
                 Settings::default(),
                 light,
-                640.0,
+                680.0,
             ),
         ] {
             let theme = Theme::resolve(&settings, os);
@@ -895,12 +896,64 @@ mod tests {
             .into_iter()
             .filter_map(|f| platform.known_folder(f))
             .collect();
-        let windows = vec!["C:\\Windows".to_owned()];
-        for (name, os, folders, title) in [
-            ("popup-folder", dark, &windows, "Windows"),
-            ("popup-folder-light", light, &windows, "Windows"),
-            ("popup-start-menu", dark, &start_menu, "Start Menu"),
-        ] {
+        let browser = |folders: &[String], title: &str| -> Box<dyn crate::sensors::popup::Popup> {
+            Box::new(FolderBrowser::new(Options {
+                folders: folders.to_vec(),
+                title: title.into(),
+                show_hidden: false,
+                width: 240.0,
+                height: 320.0,
+            }))
+        };
+        let windows = ["C:\\Windows".to_owned()];
+        // Eject USB's list (SPEC §9.22): a stick, a USB disk and a disc, the first button
+        // hovered.
+        let eject = || -> Box<dyn crate::sensors::popup::Popup> {
+            use crate::platform::{DriveKind, Volume};
+            use crate::sensors::common::eject_list::{Drives, EjectList};
+            let mut disk = Volume::new("F:\\", DriveKind::Fixed, "Backup");
+            disk.ejectable = true;
+            let volumes = vec![
+                Volume::new("E:\\", DriveKind::Removable, "STICK"),
+                disk,
+                Volume::new("D:\\", DriveKind::Optical, "HOLIDAY_2026"),
+            ];
+            let drives = std::sync::Arc::new(std::sync::Mutex::new(Drives {
+                volumes,
+                generation: 1,
+            }));
+            let mut list =
+                EjectList::new(drives, Default::default(), crate::sampler::ChangeSink::NONE);
+            list.preset_sizes(&[
+                ("E:\\", 15_931_539_456),
+                ("F:\\", 2_000_381_014_016),
+                ("D:\\", 4_700_372_992),
+            ]);
+            Box::new(list)
+        };
+        type MakePopup<'a> = Box<dyn Fn() -> Box<dyn crate::sensors::popup::Popup> + 'a>;
+        let popups: [(&str, _, MakePopup, _); 4] = [
+            (
+                "popup-folder",
+                dark,
+                Box::new(|| browser(&windows, "Windows")),
+                (60.0, 75.0),
+            ),
+            (
+                "popup-folder-light",
+                light,
+                Box::new(|| browser(&windows, "Windows")),
+                (60.0, 75.0),
+            ),
+            (
+                "popup-start-menu",
+                dark,
+                Box::new(|| browser(&start_menu, "Start Menu")),
+                (60.0, 75.0),
+            ),
+            ("popup-eject", dark, Box::new(eject), (270.0, 14.0)),
+        ];
+        for (name, os, make, (hover_x, hover_y)) in popups {
             let settings = Settings::default();
             let theme = Theme::resolve(&settings, os);
             let bar = RectF::new(0.0, 572.0, 800.0, 600.0);
@@ -911,16 +964,9 @@ mod tests {
                 edge: Edge::Bottom,
             };
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
-                let browser = FolderBrowser::new(Options {
-                    folders: folders.clone(),
-                    title: title.into(),
-                    show_hidden: false,
-                    width: 240.0,
-                    height: 320.0,
-                });
                 let mut open = Open {
                     owner: "f".into(),
-                    popup: Box::new(browser),
+                    popup: make(),
                     frame: None,
                     room: popup::room(&anchor),
                     monitor_height: anchor.monitor.height(),
@@ -947,7 +993,7 @@ mod tests {
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 open.popup.poll(&cx);
                 open.popup.layout(&cx);
-                let hover = PopupInput::PointerMove(crate::platform::PointF::new(60.0, 75.0));
+                let hover = PopupInput::PointerMove(crate::platform::PointF::new(hover_x, hover_y));
                 open.popup.input(&hover, &cx);
                 let size = open.popup.layout(&cx);
                 open.place(size, &anchor, &theme);

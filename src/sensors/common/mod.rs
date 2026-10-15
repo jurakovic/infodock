@@ -2,6 +2,7 @@
 
 pub mod dual_graph;
 pub mod eject;
+pub mod eject_list;
 pub mod folder_browser;
 pub mod graph;
 pub mod history;

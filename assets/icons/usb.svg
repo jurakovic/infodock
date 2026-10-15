@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 21">
+  <!-- Placeholder (SPEC Appendix C): the Eject USB icon, a USB stick on its side, 30×21;
+       monochrome white, tinted with the text colour. -->
+  <rect x="2" y="5.5" width="17" height="10" rx="2" fill="#FFFFFF"/>
+  <rect x="19" y="7" width="8" height="7" rx="0.8" fill="none" stroke="#FFFFFF" stroke-width="1.4"/>
+  <rect x="21.3" y="8.8" width="1.6" height="1.4" fill="#FFFFFF"/>
+  <rect x="21.3" y="10.8" width="1.6" height="1.4" fill="#FFFFFF"/>
+  <path d="M8 13 L10.5 9 L13 13 Z" fill="#000000" opacity="0.45"/>
+</svg>

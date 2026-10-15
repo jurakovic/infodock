@@ -355,3 +355,11 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] Navigation, keys, wheel and resizing work as in the Folder Menu; the header opens your own Start Menu folder of the level shown.
 - [ ] Right-click: *Open folder* opens `%APPDATA%\Microsoft\Windows\Start Menu\Programs`; *Open (all users) folder* opens `C:\ProgramData\Microsoft\Windows\Start Menu\Programs`.
 - [ ] *Title* → `Apps` changes the hint and the header; *Image file* replaces the icon.
+
+**Eject USB** (since M3 S12)
+
+- [ ] *New sensor… ▸ Launchers ▸ Eject USB*: the USB icon (30×21); hover: *Eject USB*, and with a stick plugged in *1 removable drive*. CI renders it in `bar-launchers*.png` and its list (`popup-eject.png`, made-up drives).
+- [ ] Click without anything to eject: *Nothing to eject* above *Safely Remove Hardware…*. Plug a stick in while the list is open: its row appears within a second or two.
+- [ ] Each row: the drive's icon as Explorer shows it, *STICK (E:)*, its size (*14.8 GB*), and *Eject*. A USB hard disk and a DVD with a disc are listed too; an empty DVD drive, an empty card reader and internal disks are not.
+- [ ] *Eject*: the button says *Ejecting…*, then a toast *STICK (E:) can be safely removed.* and the row goes; the list stays open. With a file open on the stick: the toast says it is in use and the button is back.
+- [ ] ↑/↓ mark the buttons and the footer, Enter acts; Esc closes. *Safely Remove Hardware…* opens Windows' dialog and closes the list.

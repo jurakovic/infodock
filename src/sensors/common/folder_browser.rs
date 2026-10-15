@@ -678,7 +678,7 @@ impl FolderBrowser {
 
 /// The row highlight on a popup background (SPEC §9.19): light blue on dark backgrounds, dark
 /// blue on light ones.
-fn highlight(background: Color) -> Color {
+pub fn highlight(background: Color) -> Color {
     let luminance = 0.299 * background.r + 0.587 * background.g + 0.114 * background.b;
     if luminance < 0.5 {
         Color::rgba(0xA9, 0xDF, 0xFF, 0.40)
@@ -688,7 +688,7 @@ fn highlight(background: Color) -> Color {
 }
 
 /// Text `text` centred vertically in a band `height` tall from `top`, on whole px.
-fn centred(canvas: &dyn Canvas, top: f32, height: f32, text: &TextLayout) -> f32 {
+pub fn centred(canvas: &dyn Canvas, top: f32, height: f32, text: &TextLayout) -> f32 {
     canvas.snap(top + (height - text.height()) / 2.0)
 }
 

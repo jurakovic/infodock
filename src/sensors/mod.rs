@@ -15,6 +15,7 @@ pub mod date;
 pub mod dates;
 pub mod disk;
 pub mod disk_launcher;
+pub mod eject_usb;
 pub mod folder_menu;
 pub mod format;
 pub mod image;
