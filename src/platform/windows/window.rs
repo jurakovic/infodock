@@ -43,17 +43,18 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
     GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
     LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PBT_APMPOWERSTATUSCHANGE,
-    PBT_APMRESUMEAUTOMATIC, PostMessageW, PostQuitMessage, RegisterClassExW, SetTimer,
-    SetWindowLongPtrW, TranslateMessage, WM_APP, WM_CAPTURECHANGED, WM_CLOSE, WM_DEVICECHANGE,
-    WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_SIZE,
-    WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_POPUP,
+    PBT_APMRESUMEAUTOMATIC, PostMessageW, PostQuitMessage, RegisterClassExW, SWP_HIDEWINDOW,
+    SetTimer, SetWindowLongPtrW, TranslateMessage, WINDOWPOS, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE,
+    WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED, WNDCLASSEXW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
 use super::appbar::{Shared as AppBarState, WinAppBar};
+use super::band::BandWindow;
 use super::dialog;
 use super::droptarget;
 use super::hint::HintWindow;
@@ -65,9 +66,9 @@ use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
-    AppBarEvent, BarHandler, BarThread, BarWindow, Canvas, DragEvent, DropEffect, HandlerFactory,
-    MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect, SizeF, TimerId, TrayIcon,
-    UiEvent, UiWaker,
+    AppBarEvent, Band, BarHandler, BarThread, BarWindow, Canvas, DragEvent, DropEffect,
+    HandlerFactory, MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect, SizeF,
+    TimerId, TrayIcon, UiEvent, UiWaker,
 };
 
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
@@ -121,6 +122,8 @@ struct WindowState {
     hint: OnceCell<std::result::Result<HintWindow, ()>>,
     /// The same for the popup window.
     popup: OnceCell<std::result::Result<PopupWindow, ()>>,
+    /// The skin's shadow band; created when a skin first has one.
+    band: OnceCell<std::result::Result<BandWindow, ()>>,
 }
 
 impl WindowState {
@@ -285,6 +288,15 @@ impl WindowState {
                 return LRESULT(0);
             }
             WM_SIZE | WM_DPICHANGED => self.invalidate(),
+            // Moved, sized, shown or hidden, or restacked: the shadow band follows.
+            WM_WINDOWPOSCHANGED => {
+                // SAFETY: for this message lParam points to the change's WINDOWPOS.
+                let hiding = lparam.0 != 0
+                    && unsafe { &*(lparam.0 as *const WINDOWPOS) }
+                        .flags
+                        .contains(SWP_HIDEWINDOW);
+                self.follow_band(hiding);
+            }
             WM_SETTINGCHANGE if is_appearance_change(wparam, lparam) => {
                 self.dispatch(UiEvent::AppearanceChanged);
             }
@@ -407,19 +419,49 @@ impl WindowState {
             height: height as f32 / scale,
         };
         match renderer.draw(width, height, scale, |canvas| handler.paint(canvas, size)) {
-            // SAFETY: copies the finished frame, alpha included, into the window's surface.
-            Ok(frame) => unsafe {
-                if let Err(e) = BitBlt(hdc, 0, 0, width, height, Some(frame), 0, 0, SRCCOPY) {
+            Ok(frame) => {
+                // SAFETY: copies the finished frame, alpha included, into the window's surface.
+                let copied =
+                    unsafe { BitBlt(hdc, 0, 0, width, height, Some(frame), 0, 0, SRCCOPY) };
+                if let Err(e) = copied {
                     self.report_render_error(&e);
                     self.retry_render();
                 }
-            },
+                self.show_band(handler.band());
+            }
             Err(e) => {
                 self.report_render_error(&e);
                 // A lost render target is re-created on the next frame.
                 self.retry_render();
             }
         }
+    }
+
+    /// Shows the skin's shadow band beside the bar, or none (SPEC §5.1).
+    fn show_band(&self, band: Option<Band>) {
+        if band.is_none() && self.band.get().is_none() {
+            return;
+        }
+        let window = self.band.get_or_init(|| {
+            BandWindow::new(self.hwnd()).map_err(|e| {
+                tracing::warn!("the shadow band window could not be created: {e}");
+            })
+        });
+        if let Ok(window) = window {
+            window.set(band, self.away());
+        }
+    }
+
+    /// Puts the shadow band beside the bar where it is now; `hiding`: the bar is being hidden.
+    fn follow_band(&self, hiding: bool) {
+        if let Some(Ok(band)) = self.band.get() {
+            band.follow(hiding || self.away());
+        }
+    }
+
+    /// The bar is shown off its place, rising or sliding out (SPEC §5.5); its band waits.
+    fn away(&self) -> bool {
+        self.appbar.get().is_some_and(|appbar| appbar.offset() != 0)
     }
 
     /// Draws the bar again shortly after a failed frame; nothing else may ask for one.
@@ -733,6 +775,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         tracking_leave: Cell::new(false),
         hint: OnceCell::new(),
         popup: OnceCell::new(),
+        band: OnceCell::new(),
     }));
     let title = HSTRING::from(t("app.name"));
     // SAFETY: creates our own window; `state` outlives it.

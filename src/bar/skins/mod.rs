@@ -71,9 +71,12 @@ pub struct Rendered {
 /// The skin `spec` chooses, drawn for `target` with packs from `dir`; `None` for an empty bar.
 /// A pack that is not there or cannot be used gives Gloss, a custom image Flat (SPEC §12.4).
 pub fn render(dir: &Path, spec: &SkinSpec, target: Target) -> Option<Rendered> {
-    render_with(dir, spec, target, &|bytes| {
-        crate::platform::decode_image(bytes, None).ok()
-    })
+    render_with(dir, spec, target, &platform_decode)
+}
+
+/// Decodes a pack's tile or the custom image with the platform (WIC on Windows).
+fn platform_decode(bytes: &[u8]) -> Option<Bitmap> {
+    crate::platform::decode_image(bytes, None).ok()
 }
 
 /// [`render`] with this image decoder.
@@ -207,19 +210,33 @@ fn draw_tile(
 pub struct SkinCache {
     /// The skins folder (SPEC §11.1).
     dir: PathBuf,
+    decode: fn(&[u8]) -> Option<Bitmap>,
     drawn: Option<(SkinSpec, Target, Option<Rendered>)>,
 }
 
 impl SkinCache {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, drawn: None }
+        Self {
+            dir,
+            decode: platform_decode,
+            drawn: None,
+        }
+    }
+
+    /// With another image decoder, for tests on every OS.
+    #[cfg(test)]
+    pub fn with_decoder(dir: PathBuf, decode: fn(&[u8]) -> Option<Bitmap>) -> Self {
+        Self {
+            decode,
+            ..Self::new(dir)
+        }
     }
 
     /// The skin for `spec` and `target`, drawn again only when either changed.
     pub fn get(&mut self, spec: &SkinSpec, target: Target) -> Option<&Rendered> {
         let fresh = matches!(&self.drawn, Some((s, t, _)) if s == spec && *t == target);
         if !fresh {
-            let rendered = render(&self.dir, spec, target);
+            let rendered = render_with(&self.dir, spec, target, &self.decode);
             self.drawn = Some((spec.clone(), target, rendered));
         }
         self.drawn.as_ref().and_then(|(_, _, r)| r.as_ref())
@@ -227,11 +244,12 @@ impl SkinCache {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
 
     use super::*;
-    use pack::tests::{pack, png};
+    pub(crate) use pack::tests::pack;
+    use pack::tests::png;
 
     const BASE: Color = Color::rgba(0x2A, 0x2A, 0x2E, 1.0);
 
@@ -258,7 +276,7 @@ mod tests {
     }
 
     /// Decodes the PNGs the tests write, as the platform would.
-    fn decode_png(bytes: &[u8]) -> Option<Bitmap> {
+    pub(crate) fn decode_png(bytes: &[u8]) -> Option<Bitmap> {
         let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
             .read_info()
             .ok()?;
@@ -269,7 +287,7 @@ mod tests {
     }
 
     /// Writes rows of opaque grey, `values[y]` for row `y`, `width` px wide.
-    fn rows_png(path: &Path, width: u32, values: &[u8]) {
+    pub(crate) fn rows_png(path: &Path, width: u32, values: &[u8]) {
         let rgba: Vec<u8> = values
             .iter()
             .flat_map(|&v| [v, v, v, 255].repeat(width as usize))

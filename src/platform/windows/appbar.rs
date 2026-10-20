@@ -274,6 +274,11 @@ impl Shared {
         }
     }
 
+    /// How far the bar is shown off its place (rising or sliding out, SPEC §5.5); 0 in place.
+    pub(super) fn offset(&self) -> i32 {
+        self.ui(|u| u.offset)
+    }
+
     /// Shows the bar `dy` px off its place (the rise animation, SPEC §5.5). The placement stays
     /// as it is: one that changes nothing keeps the offset, a new one puts the bar in place.
     pub(super) fn slide(&self, dy: i32) {

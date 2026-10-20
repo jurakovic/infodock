@@ -147,13 +147,14 @@ One process (single instance enforced). No browser engine runs at any time.
 | `bar` | native, bar thread | `WS_POPUP`; `WS_EX_TOOLWINDOW` (no taskbar button, no Alt+Tab); `WS_EX_NOACTIVATE` (clicks do not take focus, §5.3); per-pixel alpha composited by DWM, with an optional material (§5.5); z-order per settings | The bar |
 | `hint` | native, bar thread | layered (`UpdateLayeredWindow`, per-pixel alpha), topmost, non-activating, click-through (`WS_EX_TRANSPARENT`), tool window; created on first use and reused | Hover popups (text hints, calendar) |
 | `popup` | native, bar thread | layered, topmost, tool window, focusable; hides when it loses activation; created on first use and reused | Interactive popups (Folder Menu, Start Menu, Eject list) |
+| `band` | native, bar thread | layered, click-through (`WS_EX_TRANSPARENT`), non-activating, tool window, owned by the bar window and kept right above it in the z-order; created when a skin first has a shadow band | A skin pack's shadow band beside the bar (§5.1) |
 | `settings` | Slint window, main thread | normal decorated window, opened on a route (a page such as `general`, `bar`, `sensors` or `popups`; `layout` for the Layout manager on the Sensors page; `sensor/<id>`; `new?zone=…&index=…` or `new?target=<id>`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
 
 Plus a **tray icon** (native, registered for the bar window, bar thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit. The menu is built from the current state each time it opens.
 
 Threads:
 * **main**: Slint's event loop — the Settings window and the global hotkey. Other threads reach it with `slint::invoke_from_event_loop`.
-* **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint and popup windows, the tray icon, the sensor instances, layout, rendering, menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
+* **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint, popup and band windows, the tray icon, the sensor instances, layout, rendering, menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
 * **sampler thread**: polls the providers and delivers samples to the bar thread's queue (§4.4).
 * **worker threads**: slow work (directory listings, file operations, icon extraction); results go back to the bar thread's queue.
 
@@ -312,7 +313,7 @@ Sensor types declare `requires: &[Capability]`. The picker hides types whose cap
 * **Monitor**: `primary` (default) or a specific monitor, identified by device name (e.g. `\\.\DISPLAY2`) with fallback to friendly name + resolution. If the chosen monitor is absent, use primary and keep the setting for when it returns.
 * **Width**: the full width of the monitor's work area as negotiated by the AppBar protocol (other appbars are respected). Configurable in floating mode.
 * **Height**: theme default (modern **28** logical px, classic **25**), user-adjustable 22–40. All coordinates are logical (DIP); Rust converts to physical px using the monitor scale.
-* **Shadow band**: a skin MAY define a shadow band (§12.4). It makes the **window** taller by the band height. The band sits on the side facing the screen center, is transparent and MUST be click-through (window region excludes it, or the shadow is painted inside the bar height — implementer's choice).
+* **Shadow band**: a skin MAY define a shadow band (§12.4). It sits beside the bar on the side facing the screen center (above a bar at the bottom, below one at the top; for a floating bar, away from the nearer edge), outside the reserved work area, is transparent and MUST be click-through. Implementation: the bar logic hands the band, drawn with the skin, to the platform after each frame (`BarHandler::band`); the `band` window (§4.1) shows it, moves with the bar window (`WM_WINDOWPOSCHANGED`), and hides while the bar is hidden or off its place during the rise and slide (§5.5). The bar window itself stays as tall as the bar, so the AppBar, hints, popups, floating and the animations work from the bar alone.
 * **Modes**
   * **Docked** (default): attached to the chosen edge; optionally **reserves space** (§5.2).
   * **Floating**: free position, draggable by the bar background while unlocked (drag threshold 4 px). Position and width are persisted. No space reservation.

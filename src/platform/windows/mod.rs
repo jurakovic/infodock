@@ -1,6 +1,7 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+mod band;
 mod battery;
 mod com;
 mod cpu;

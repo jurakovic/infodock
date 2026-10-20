@@ -31,7 +31,7 @@ use crate::config::model::{
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
 use crate::platform::{
-    BarGeometry, BarHandler, BarWindow, Canvas, DragEvent, DropEffect, Key, Modifiers,
+    Band, BarGeometry, BarHandler, BarWindow, Canvas, DragEvent, DropEffect, Key, Modifiers,
     OsAppearance, Platform, PointF, PointerButton, PopupInput, Rect, RectF, SizeF, TextEngine,
     TimerId, UiEvent, UiWaker,
 };
@@ -121,6 +121,8 @@ pub(super) struct BarLogic {
     theme: Theme,
     /// The classic bar's skin as last drawn (SPEC §12.4).
     skin: SkinCache,
+    /// Its shadow band as last drawn, for the platform to show beside the bar (SPEC §5.1).
+    band: Option<Band>,
     /// The material last applied to the window; `None` until the first application.
     material: Option<Material>,
     /// Whether the tray icon is shown; `None` until first applied.
@@ -216,6 +218,7 @@ impl BarLogic {
             icons: IconLoader::new(Arc::clone(&platform), waker),
             appearance,
             skin: SkinCache::new(skins),
+            band: None,
             material: None,
             tray_shown: None,
             subscribed: HashMap::new(),
@@ -1506,6 +1509,11 @@ impl BarHandler for BarLogic {
             self.skin
                 .get(spec, skins::Target::of(size, canvas.scale(), edge))
         });
+        // A band goes on the side facing the screen centre: above a bar at the bottom.
+        self.band = skin.and_then(|s| s.band.clone()).map(|bitmap| Band {
+            bitmap,
+            above: edge == Edge::Bottom,
+        });
         paint_bar(
             canvas,
             size,
@@ -1533,6 +1541,10 @@ impl BarHandler for BarLogic {
         if opacity < 1.0 {
             canvas.pop();
         }
+    }
+
+    fn band(&self) -> Option<Band> {
+        self.band.clone()
     }
 }
 
@@ -1779,6 +1791,48 @@ mod tests {
 
     /// The middle of the logo, the only sensor in the centre.
     const LOGO: PointF = PointF::new(WIDTH / 2.0, 14.0);
+
+    #[test]
+    fn a_skin_packs_band_goes_on_the_side_facing_the_screen_centre() {
+        use crate::bar::skins::tests::{decode_png, pack, rows_png};
+        let skins = tempfile::tempdir().expect("temp dir");
+        let folder = pack(
+            skins.path(),
+            "stripes",
+            r#"{ "image": "t.png", "shadowBand": 2 }"#,
+        );
+        rows_png(
+            &folder.join("t.png"),
+            3,
+            &[[10, 20].as_slice(), &[100; 25]].concat(),
+        );
+        let mut settings = Settings {
+            theme: crate::config::model::Theme::Classic,
+            ..Settings::default()
+        };
+        settings.classic.skin = "stripes".into();
+        let (mut logic, _window, _host, _config) = bar(settings);
+        logic.skin = SkinCache::with_decoder(skins.path().into(), decode_png);
+        let size = SizeF::new(WIDTH, 25.0);
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        // At the bottom of the screen the band goes above the bar, as wide as the bar.
+        let band = logic.band().expect("a band");
+        assert!(band.above);
+        assert_eq!((band.bitmap.width(), band.bitmap.height()), (1200, 2));
+        // The next frame hands over the same band, which the window need not draw again.
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(logic.band().expect("a band").same(&band));
+        // Placed at the top: below it.
+        if let Some(g) = logic.geometry.as_mut() {
+            g.edge = Edge::Top;
+        }
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(!logic.band().expect("a band").above);
+        // Built-in skins and the modern bar have none.
+        logic.theme.skin = None;
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert_eq!(logic.band(), None);
+    }
 
     fn press(logic: &mut BarLogic, window: &FakeWindow, at: PointF, alt: bool) {
         let modifiers = Modifiers {

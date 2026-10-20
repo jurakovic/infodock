@@ -112,6 +112,26 @@ impl Drop for Surface {
     }
 }
 
+/// A memory DC holding a copy of a bitmap, e.g. for `UpdateLayeredWindow`.
+pub(super) struct BitmapDc(Surface);
+
+impl BitmapDc {
+    pub(super) fn new(bitmap: &Bitmap) -> Result<Self> {
+        let surface = Surface::new(bitmap.width() as i32, bitmap.height() as i32)?;
+        let bgra = swap_red_blue(bitmap.pixels());
+        // SAFETY: the DIB holds width × height × 4 bytes, as many as the bitmap; nothing else
+        // writes to it.
+        unsafe {
+            std::ptr::copy_nonoverlapping(bgra.as_ptr(), surface.bits.cast_mut(), bgra.len());
+        }
+        Ok(Self(surface))
+    }
+
+    pub(super) fn dc(&self) -> HDC {
+        self.0.dc
+    }
+}
+
 /// RGBA ↔ BGRA.
 fn swap_red_blue(pixels: &[u8]) -> Vec<u8> {
     let mut out = pixels.to_vec();

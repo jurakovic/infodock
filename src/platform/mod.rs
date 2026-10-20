@@ -1123,6 +1123,29 @@ pub trait BarHandler {
     }
     /// Draws the bar into a cleared canvas of `size` logical px.
     fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF);
+    /// The skin's shadow band to show beside the bar (SPEC §5.1), asked after each frame.
+    fn band(&self) -> Option<Band> {
+        None
+    }
+}
+
+/// A skin's shadow band (SPEC §5.1, §12.4): a transparent shadow as wide as the bar, beside it on
+/// the side facing the screen centre. The platform shows it in a click-through window of its
+/// own that follows the bar's window, outside the reserved work area.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Band {
+    /// Physical px; its rows nearest the bar are the darkest.
+    pub bitmap: Bitmap,
+    /// Above the bar (one at the bottom of the screen), or below it.
+    pub above: bool,
+}
+
+impl Band {
+    /// The same band: the same pixels on the same side. Cheap, for checking every frame.
+    pub fn same(&self, other: &Self) -> bool {
+        self.above == other.above
+            && Arc::ptr_eq(self.bitmap.shared_pixels(), other.bitmap.shared_pixels())
+    }
 }
 
 /// The native bar window as the bar logic sees it (bar thread only).

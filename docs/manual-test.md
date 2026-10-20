@@ -425,3 +425,12 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] `"background": { "color": "#A5703A" }`: the pack is tinted (its greys become shades of that colour); without a colour it keeps its own colours.
 - [ ] Break the pack and start again, one at a time: delete `tile.png`; replace it with a 600 px wide image, a GIF renamed to `.png`, or a 2 MB file; make the tile 30 px tall; name `../x.png` in `skin.json`. Each time the bar shows Gloss and the log says why.
 - [ ] `"skin": "custom"` and `"customSkin": "C:\\Users\\…\\wood.jpg"` (a JPEG within 512 px and 1 MB): the photo tiled across the bar at its height, tinted when a colour is set; a missing or larger file: Flat.
+
+**Shadow band** (since M4 S3)
+
+- [ ] The test pack above with `"shadowBand": 9` and a 34 px tile on a bottom bar: a soft shadow lies above the bar, over the desktop and windows. Maximise a window: it stops at the bar (the band reserves nothing) and the shadow lies over its bottom edge.
+- [ ] Click, scroll and drag in the shadow: everything reaches the window below it (a scroll bar, Explorer's status bar); the pointer never shows the bar's.
+- [ ] On a top bar the shadow is below the bar. A floating bar: the shadow is away from the nearer screen edge and moves with the bar while it is dragged.
+- [ ] Start Infodock and change the edge: the shadow appears once the bar is in place, not while it slides. Hide the bar (hotkey or tray): the shadow goes too, and comes back with it.
+- [ ] A full-screen video on the bar's monitor (*Hide on full screen* on): no shadow over the video. *Z-order* → *Bottom*: the shadow stays behind windows as the bar does; *Topmost*: above them.
+- [ ] Switch to a built-in skin or the modern theme: the shadow goes. Two monitors at 100 % and 150 %: on the second the shadow is 1.5 times as tall.
