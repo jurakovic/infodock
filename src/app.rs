@@ -1,5 +1,6 @@
 //! The running app: state shared by all threads, bar visibility, and quitting.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
@@ -24,6 +25,8 @@ const SETTINGS: &str = "settings";
 pub struct App {
     pub store: ConfigStore,
     pub platform: Arc<dyn Platform>,
+    /// The skins folder (SPEC §11.1, §12.4).
+    pub skins: PathBuf,
     bar: OnceLock<Arc<BarController>>,
     sampler: Sampler,
     /// The sampler thread until [`App::start_sampler`] starts it.
@@ -32,11 +35,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(store: ConfigStore, platform: Arc<dyn Platform>) -> Self {
+    pub fn new(store: ConfigStore, platform: Arc<dyn Platform>, skins: PathBuf) -> Self {
         let (sampler, pending) = Sampler::new();
         Self {
             store,
             platform,
+            skins,
             bar: OnceLock::new(),
             sampler,
             pending: Mutex::new(Some(pending)),
@@ -351,7 +355,7 @@ mod tests {
     fn sensor_operations_save_through_the_store() {
         let dir = tempfile::tempdir().expect("temp dir");
         let (store, _) = ConfigStore::open(dir.path(), "test");
-        let app = App::new(store, crate::platform::current());
+        let app = App::new(store, crate::platform::current(), dir.path().join("skins"));
         let props = json!({ "text": "Hi" })
             .as_object()
             .cloned()

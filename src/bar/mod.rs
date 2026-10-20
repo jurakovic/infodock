@@ -18,6 +18,7 @@ mod thread;
 mod tray;
 
 pub(crate) use interact::clicks_allowed;
+pub use paint::skin_preview;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};

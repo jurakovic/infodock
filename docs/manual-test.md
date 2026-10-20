@@ -434,3 +434,13 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Start Infodock and change the edge: the shadow appears once the bar is in place, not while it slides. Hide the bar (hotkey or tray): the shadow goes too, and comes back with it.
 - [ ] A full-screen video on the bar's monitor (*Hide on full screen* on): no shadow over the video. *Z-order* → *Bottom*: the shadow stays behind windows as the bar does; *Topmost*: above them.
 - [ ] Switch to a built-in skin or the modern theme: the shadow goes. Two monitors at 100 % and 150 %: on the second the shadow is 1.5 times as tall.
+
+**Appearance page** (since M4 S4)
+
+- [ ] Settings ▸ Appearance lies between Bar and Sensors. *Theme* → *Classic*: the bar switches at once to the classic look (25 px, Arial, Gloss); the page shows the skin gallery. Back to *Modern*: the gallery goes.
+- [ ] Each tile previews its skin as the bar draws it, sharp at 100 % and 150 % (open Settings on a 150 % monitor), as tall as the bar: *Height* 32 makes the previews taller. A click on a tile, or the arrow keys once the gallery has the focus, changes the bar's skin; the chosen tile is outlined. The test pack from S2 shows as a tile with its name.
+- [ ] *Background colour* → *A colour of your choice*, `#3A6EA5`: the bar and every built-in preview take it; the pack's preview is tinted. *Use theme default* goes back to the theme's colour; *The theme's colour* hides the colour box and ignores the colour.
+- [ ] *Background opacity* 50 %: the classic skin fades, its previews too, the sensors do not. *Use theme default* returns to 90 % (classic) or 80 % (modern).
+- [ ] *Material* lists *Theme default (Acrylic)* (modern) or *(None)* (classic), then None, Acrylic and Mica, and each changes the bar. Turn off *Transparency effects* in Windows, close and reopen Settings: the list is disabled and says why.
+- [ ] *Custom image*: its row shows the path box and *Browse…*; pick a JPEG within 512 px and 1 MB: the bar and the tile show it. A missing, larger or GIF file: the row says why and the bar is Flat.
+- [ ] Set `"skin": "gone"` in the config (or delete the chosen pack's folder and reopen the page): a red line under *Skin* says Gloss is used, and no tile is outlined. A broken pack chosen: the line gives the reason.

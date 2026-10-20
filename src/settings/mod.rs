@@ -5,6 +5,7 @@
 //! through the config store; the store's change listener then refreshes the window, so changes
 //! made elsewhere (tray, hotkey) show up too.
 
+mod appearance;
 mod form;
 mod layout;
 mod model;
@@ -44,6 +45,8 @@ struct Open {
     form: Option<properties::FormState>,
     /// The sensor picker, while it is shown.
     picker: Option<picker::PickerState>,
+    /// The skin gallery on the Appearance page.
+    gallery: appearance::Gallery,
 }
 
 /// Why a change was not saved.
@@ -147,6 +150,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         fonts: Vec::new(),
         form: None,
         picker: None,
+        gallery: appearance::Gallery::default(),
     };
     let config = app.store.get();
     fill(&mut open, app, &config.settings);
@@ -160,6 +164,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     properties::connect(window, app);
     picker::connect(window, app);
     layout::connect(window, app);
+    appearance::connect(window, app);
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_page_changed(move |page| {
@@ -173,6 +178,10 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
                 }
                 if page != picker::PAGE {
                     open.picker = None;
+                }
+                // Packs installed or removed meanwhile show in the gallery.
+                if page == appearance::PAGE {
+                    open.gallery.refresh(&a);
                 }
                 // Keys typed on another page are not a hotkey: recording ends with the page.
                 let state = open.window.global::<ui::SettingsState>();
@@ -189,6 +198,10 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     state.on_set_number(move |path, value| save_change(&a, &path, Value::from(value)));
     let a = Arc::clone(app);
     state.on_reset(move |path| save(&a, model::patch(&path, Value::Null)));
+    let a = Arc::clone(app);
+    state.on_set_text(move |path, text| {
+        save_change(&a, &path, Value::String(text.as_str().to_owned()));
+    });
     let a = Arc::clone(app);
     state.on_set_floating_width(move |width| {
         let width = u32::try_from(width).unwrap_or(DEFAULT_FLOATING_WIDTH);
@@ -370,6 +383,8 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_popup_shadow(popups.shadow);
     state.set_show_delay(popups.show_delay_ms as f32);
     state.set_hide_delay(popups.hide_delay_ms as f32);
+
+    appearance::fill(open, app, settings);
 }
 
 /// Saves a settings patch and shows the outcome. A changed hotkey is registered first; if that
@@ -569,7 +584,11 @@ mod screenshots {
             .expect("the first Slint use in this process");
         let dir = tempfile::tempdir().expect("temp dir");
         let (store, _) = ConfigStore::open(dir.path(), "test");
-        let app = Arc::new(App::new(store, crate::platform::current()));
+        let app = Arc::new(App::new(
+            store,
+            crate::platform::current(),
+            dir.path().join("skins"),
+        ));
 
         let ui = ui::SettingsWindow::new().expect("the window builds");
         crate::install_i18n!(ui);
@@ -581,6 +600,7 @@ mod screenshots {
             fonts: Vec::new(),
             form: None,
             picker: None,
+            gallery: super::appearance::Gallery::default(),
         };
         fill(&mut open, &app, &app.store.get().settings);
         super::layout::fill(&open, &app, &app.store.get().layout);
@@ -615,8 +635,45 @@ mod screenshots {
         state.set_mode(1);
         render("settings-bar-floating");
         state.set_mode(0);
+        // Appearance with the classic theme: the skin gallery with a pack made here (a blue
+        // gradient; a swatch where there is no renderer), the custom image and a missing skin.
+        let pack = app.skins.join("blue-steel");
+        std::fs::create_dir_all(&pack).expect("pack folder");
+        std::fs::write(
+            pack.join("skin.json"),
+            r#"{ "name": "Blue steel", "image": "tile.png" }"#,
+        )
+        .expect("skin.json");
+        let tile: Vec<u8> = (0..25u8)
+            .flat_map(|y| [40 + y * 4, 80 + y * 3, 160 + y * 3, 255].repeat(8))
+            .collect();
+        write_png(&pack.join("tile.png"), 8, 25, &tile);
+        let set = |open: &mut Open, change: &dyn Fn(&mut crate::config::model::Settings)| {
+            app.store
+                .update(|c| {
+                    change(&mut c.settings);
+                    Ok(())
+                })
+                .expect("saved");
+            fill(open, &app, &app.store.get().settings);
+        };
+        state.set_page(super::appearance::PAGE);
+        set(&mut open, &|s| {
+            s.theme = crate::config::model::Theme::Classic
+        });
+        render_sized("settings-appearance-classic", 1000);
+        set(&mut open, &|s| {
+            s.classic.skin = "custom".into();
+            s.classic.custom_skin = "wood.png".into();
+        });
+        render_sized("settings-appearance-custom", 1000);
+        set(&mut open, &|s| s.classic.skin = "gone".into());
+        render("settings-appearance-missing");
+        set(&mut open, &|s| {
+            *s = crate::config::model::Settings::default();
+        });
         // The whole Sensors page, with the Layout manager; then a Remove waiting to be confirmed.
-        state.set_page(2);
+        state.set_page(super::model::SENSORS_PAGE as i32);
         render_sized("settings-sensors-layout", 1000);
         let logo = app.store.get().layout.center[0].id.clone();
         state.set_layout_confirm(logo.as_str().into());
@@ -700,7 +757,7 @@ mod screenshots {
             text.chars().for_each(|c| key(c.into()));
             settle();
         };
-        let (general, bar, sensors, popups) = (27.0, 67.0, 107.0, 147.0);
+        let (general, bar, appearance, sensors, popups) = (27.0, 67.0, 107.0, 147.0, 187.0);
         let nav = |y: f32| click(49.0, y);
 
         // Ctrl+Space in the navigation unselects its item; the page stays.
@@ -735,6 +792,31 @@ mod screenshots {
         };
         assert_eq!(left(), ["network-graph", "memory-meter", "cpu-graph"]);
         nav(general);
+
+        // Appearance: a click on a gallery tile chooses its skin, and once the gallery has the
+        // focus, the arrow keys move on.
+        let refill = || {
+            super::WINDOW.with(|w| {
+                if let Some(open) = w.borrow_mut().as_mut() {
+                    fill(open, &app, &app.store.get().settings);
+                }
+            });
+            settle();
+        };
+        let skin = || app.store.get().settings.classic.skin;
+        nav(appearance);
+        state.invoke_set_choice("theme".into(), 1);
+        window.set_size(PhysicalSize::new(width, 1000));
+        refill();
+        // Carbon, the first tile of the second row.
+        click(301.0, 634.0);
+        assert_eq!(skin(), "carbon");
+        refill();
+        key(Key::RightArrow.into());
+        assert_eq!(skin(), "glass");
+        state.invoke_set_choice("theme".into(), 0);
+        window.set_size(PhysicalSize::new(width, height));
+        refill();
 
         // Leaving General ends recording the hotkey.
         state.set_recording_hotkey(true);
@@ -817,7 +899,7 @@ mod screenshots {
         (0..3).for_each(|_| key(Key::Backspace.into()));
         "svg".chars().for_each(|c| key(c.into()));
         click(723.0, 380.0);
-        assert_eq!(state.get_page(), 2);
+        assert_eq!(state.get_page(), super::model::SENSORS_PAGE as i32);
         let config = app.store.get();
         let props = &config
             .layout
@@ -841,7 +923,7 @@ mod screenshots {
         // Cancel removes the new sensor again.
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&text).is_none());
-        assert_eq!(state.get_page(), 2);
+        assert_eq!(state.get_page(), super::model::SENSORS_PAGE as i32);
         // A drive field lists this computer's volumes (none on Linux: only the stored drive).
         let disk = app
             .add_sensor(

@@ -150,14 +150,21 @@ fn draw_custom(
     decode: &dyn Fn(&[u8]) -> Option<Bitmap>,
 ) -> Result<Option<Rendered>, PackError> {
     let name = &spec.custom_image;
-    let bytes = pack::read_image(Path::new(name), name)?;
-    pack::check_image(name, &bytes, None)?;
+    let bytes = read_custom(name)?;
     let tile = decode(&bytes).ok_or_else(|| PackError::Format(name.clone()))?;
     let layout = TileLayout {
         band_first: true,
         mirror_band: false,
     };
     Ok(draw_tile(&tile, 0, layout, spec.tint, target))
+}
+
+/// Reads the custom image at `path` after the checks a pack's tiles get (SPEC §12.4); Settings
+/// shows why it cannot be used.
+pub fn read_custom(path: &str) -> Result<Vec<u8>, PackError> {
+    let bytes = pack::read_image(Path::new(path), path)?;
+    pack::check_image(path, &bytes, None)?;
+    Ok(bytes)
 }
 
 /// Cuts `tile` into its bar part and its `band` rows, tints both, scales them (the bar part to

@@ -17,7 +17,7 @@ use crate::sensors::{Category, DefaultsCtx, Props};
 use crate::ui;
 
 /// The page index of the picker in the window.
-pub(super) const PAGE: i32 = 5;
+pub(super) const PAGE: i32 = 6;
 
 /// A type the picker offers.
 #[derive(Debug, Clone, PartialEq)]
@@ -298,7 +298,9 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
                 && let Some(open) = w.as_mut()
             {
                 open.picker = None;
-                open.window.global::<ui::SettingsState>().set_page(2);
+                open.window
+                    .global::<ui::SettingsState>()
+                    .set_page(super::model::SENSORS_PAGE as i32);
             }
         });
     });

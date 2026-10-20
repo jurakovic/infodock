@@ -89,12 +89,12 @@ pub fn run() {
         return;
     }
 
-    let app = Arc::new(App::new(store, platform));
+    let app = Arc::new(App::new(store, platform, dirs.skins()));
     let bar = match BarController::create(
         &app.store,
         Arc::clone(&app.platform),
         Arc::new(AppHost(Arc::clone(&app))),
-        dirs.skins(),
+        app.skins.clone(),
     ) {
         Ok(bar) => bar,
         Err(e) => {

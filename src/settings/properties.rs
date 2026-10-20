@@ -18,7 +18,7 @@ use crate::sensors::registry::registry;
 use crate::ui;
 
 /// The page index of the form in the window.
-pub(super) const PAGE: i32 = 4;
+pub(super) const PAGE: i32 = 5;
 /// Edits are previewed this long after the last one (SPEC §6.7).
 const PREVIEW_DELAY: Duration = Duration::from_millis(150);
 
@@ -91,7 +91,7 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
             })
         else {
             state.set_save_error(t("settings.props.missing").into());
-            state.set_page(2);
+            state.set_page(super::model::SENSORS_PAGE as i32);
             return;
         };
         let rows = form.rows(&open.families);
@@ -232,7 +232,7 @@ fn save(app: &App) {
                     state.preview.stop();
                     app.watch_volumes(false);
                 }
-                window.set_page(2);
+                window.set_page(super::model::SENSORS_PAGE as i32);
             }
             Err(e) => window.set_props_error(e.to_string().into()),
         }
@@ -301,7 +301,7 @@ pub(super) fn set_path(app: &Arc<App>, key: &str, path: String) {
 
 /// The window's native handle, to make the picker modal to it.
 #[cfg(windows)]
-fn owner(window: &ui::SettingsWindow) -> Option<isize> {
+pub(super) fn owner(window: &ui::SettingsWindow) -> Option<isize> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use slint::winit_030::WinitWindowAccessor;
     window
@@ -314,7 +314,7 @@ fn owner(window: &ui::SettingsWindow) -> Option<isize> {
 }
 
 #[cfg(not(windows))]
-fn owner(_window: &ui::SettingsWindow) -> Option<isize> {
+pub(super) fn owner(_window: &ui::SettingsWindow) -> Option<isize> {
     None
 }
 
@@ -356,7 +356,9 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
                 && let Some(open) = w.as_mut()
             {
                 cancel(open, &a);
-                open.window.global::<ui::SettingsState>().set_page(2);
+                open.window
+                    .global::<ui::SettingsState>()
+                    .set_page(super::model::SENSORS_PAGE as i32);
             }
         });
     });

@@ -1,9 +1,12 @@
 //! Drawing the bar's background (SPEC §5.5, §12): the modern bar's fill and hairline, or the
 //! classic bar's skin. The sensors draw themselves on top (`bar/sensors.rs`).
 
+use std::path::Path;
+
+use super::skins;
 use super::theme::Theme;
-use crate::config::model::Edge;
-use crate::platform::{Bitmap, Canvas, RectF, SizeF};
+use crate::config::model::{Edge, Settings};
+use crate::platform::{Bitmap, Canvas, OsAppearance, PlatformError, RectF, SizeF};
 
 /// The hover highlight multiplies the background opacity by up to this (SPEC §5.5).
 const HIGHLIGHT_GAIN: f32 = 1.7;
@@ -38,10 +41,40 @@ pub(super) fn paint_bar(
     }
 }
 
+/// A preview of the bar's background as `settings` choose it, e.g. a skin in Settings' gallery
+/// (SPEC §12.4): `width` logical px wide and as tall as the bar, on its edge, drawn by the bar's
+/// renderer at `scale` with packs from `skins_dir`. Fails where there is no renderer.
+pub fn skin_preview(
+    settings: &Settings,
+    os: OsAppearance,
+    skins_dir: &Path,
+    width: f32,
+    scale: f32,
+) -> Result<Bitmap, PlatformError> {
+    let theme = Theme::resolve(settings, os);
+    let edge = settings.bar.edge;
+    let target = skins::Target::of(SizeF::new(width, theme.bar_height as f32), scale, edge);
+    // The whole physical px, as the bar window has them.
+    let size = SizeF::new(target.width as f32 / scale, target.height as f32 / scale);
+    crate::platform::render_offscreen(target.width, target.height, scale, &mut |canvas| {
+        let skin = theme
+            .skin
+            .as_ref()
+            .and_then(|spec| skins::render(skins_dir, spec, target));
+        paint_bar(
+            canvas,
+            size,
+            &theme,
+            edge,
+            0.0,
+            skin.as_ref().map(|s| &s.bar),
+        );
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bar::skins;
     use crate::config::model::{Settings, Theme as ThemeId};
     use crate::platform::recording::RecordingCanvas;
     use crate::platform::{Color, OsAppearance};

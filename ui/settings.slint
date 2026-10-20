@@ -1,5 +1,5 @@
-// The Settings window (SPEC §10.7): General, Bar, Sensors and Popups pages, a sensor's
-// properties and the sensor picker. Rust fills `SettingsState` from the config and handles its
+// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors and Popups pages, a
+// sensor's properties and the sensor picker. Rust fills `SettingsState` from the config and handles its
 // callbacks; controls bind to it two-way, and every change is saved through a settings patch.
 import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
@@ -51,8 +51,19 @@ export struct LayoutRow {
     down: bool,
 }
 
+// A skin in the Appearance page's gallery (SPEC §12.4).
+export struct SkinTile {
+    name: string,
+    // Rendered by the bar's renderer; where there is none, a swatch of `swatch` instead.
+    preview: image,
+    has-preview: bool,
+    swatch: color,
+    selected: bool,
+}
+
 export global SettingsState {
-    // 0 = General, 1 = Bar, 2 = Sensors, 3 = Popups; 4 = a sensor's properties, 5 = the picker.
+    // 0 = General, 1 = Bar, 2 = Appearance, 3 = Sensors, 4 = Popups; 5 = a sensor's properties,
+    // 6 = the picker.
     in-out property <int> page;
 
     // General (SPEC §10.1)
@@ -89,6 +100,34 @@ export global SettingsState {
     in property <int> theme-height;
     // The height differs from the theme default.
     in property <bool> height-customised;
+
+    // Appearance (SPEC §10.3)
+    // 0 = modern, 1 = classic.
+    in-out property <int> theme;
+    // 0 = the theme's colour, 1 = a custom one.
+    in-out property <int> background-mode;
+    in-out property <string> background-color;
+    in property <bool> background-color-customised;
+    in property <string> background-color-default;
+    in-out property <float> background-opacity;
+    in property <bool> background-opacity-customised;
+    in property <int> background-opacity-default;
+    // "Theme default (…)", then the materials.
+    in property <[string]> materials;
+    in-out property <int> material;
+    // Transparency effects are on in Windows, so a material can be shown.
+    in property <bool> material-available: true;
+    in property <[SkinTile]> skins;
+    // The tile of the configured skin; -1 if it is not in the gallery.
+    in property <int> skin-selected: -1;
+    // The bar's height, which the previews have, logical px.
+    in property <float> skin-preview-height: 25;
+    // Why the configured skin is not drawn; empty when it is.
+    in property <string> skin-notice;
+    in-out property <string> custom-skin;
+    in property <bool> custom-skin-shown;
+    // Why the custom image cannot be used; empty when it can.
+    in property <string> custom-skin-error;
 
     // Sensors (SPEC §10.4)
     in-out property <string> sensor-text-color;
@@ -163,6 +202,13 @@ export global SettingsState {
     // Index 0 is the theme default; then `fonts` or the font styles.
     callback set-font(path: string, index: int);
     callback set-font-style(path: string, index: int);
+    // A text setting, saved as it is typed.
+    callback set-text(path: string, text: string);
+    // Index 0 is the theme default; then the materials.
+    callback set-material(index: int);
+    // The gallery's tile `index`.
+    callback set-skin(index: int);
+    callback browse-custom-skin();
     // The colour of a #RRGGBB text, for swatches; transparent if it is not one.
     pure callback to-color(text: string) -> color;
     // The text is a colour as #RRGGBB.
@@ -847,6 +893,220 @@ component LayoutList inherits Rectangle {
     }
 }
 
+// The classic skins as tiles with their previews (SPEC §12.4), in as many columns as fit. A
+// click chooses one; with the focus, the arrow keys move to the previous or next.
+component SkinGallery inherits FocusScope {
+    property <length> tile-width: 172px;
+    property <length> tile-height: SettingsState.skin-preview-height * 1px + 44px;
+    property <length> gap: 8px;
+    property <int> columns: max(1, floor((self.width + self.gap) / (self.tile-width + self.gap)));
+
+    height: ceil(SettingsState.skins.length / self.columns) * (self.tile-height + self.gap);
+    accessible-role: list;
+    accessible-label: I18n.tr("settings.appearance.skin");
+    key-pressed(event) => {
+        if event.text == Key.LeftArrow || event.text == Key.UpArrow {
+            if SettingsState.skin-selected > 0 {
+                SettingsState.set-skin(SettingsState.skin-selected - 1);
+            }
+            return accept;
+        }
+        if event.text == Key.RightArrow || event.text == Key.DownArrow {
+            if SettingsState.skin-selected < SettingsState.skins.length - 1 {
+                SettingsState.set-skin(SettingsState.skin-selected + 1);
+            }
+            return accept;
+        }
+        reject
+    }
+
+    for tile[i] in SettingsState.skins: Rectangle {
+        x: mod(i, root.columns) * (root.tile-width + root.gap);
+        y: floor(i / root.columns) * (root.tile-height + root.gap);
+        width: root.tile-width;
+        height: root.tile-height;
+        border-radius: 6px;
+        border-width: tile.selected ? 2px : 1px;
+        border-color: tile.selected ? (root.has-focus ? Palette.foreground : Palette.accent-background)
+            : Palette.border;
+        background: touch.has-hover ? Palette.alternate-background : transparent;
+        accessible-role: list-item;
+        accessible-label: tile.name;
+        accessible-item-selectable: true;
+        accessible-item-selected: tile.selected;
+        accessible-action-default => {
+            SettingsState.set-skin(i);
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.focus();
+                SettingsState.set-skin(i);
+            }
+        }
+
+        VerticalLayout {
+            padding: 6px;
+            spacing: 6px;
+            alignment: start;
+            if tile.has-preview: Image {
+                width: 160px;
+                height: SettingsState.skin-preview-height * 1px;
+                source: tile.preview;
+                image-fit: fill;
+            }
+            if !tile.has-preview: Rectangle {
+                width: 160px;
+                height: SettingsState.skin-preview-height * 1px;
+                background: tile.swatch;
+            }
+            Text {
+                text: tile.name;
+                overflow: elide;
+                horizontal-alignment: center;
+                color: Palette.foreground;
+            }
+        }
+    }
+}
+
+component AppearancePage inherits VerticalLayout {
+    alignment: start;
+
+    Row {
+        label: I18n.tr("settings.appearance.theme");
+        help: I18n.tr("settings.appearance.theme.help");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.appearance.theme.modern"),
+                I18n.tr("settings.appearance.theme.classic"),
+            ];
+            current-index <=> SettingsState.theme;
+            accessible-label: I18n.tr("settings.appearance.theme");
+            selected => {
+                SettingsState.set-choice("theme", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.appearance.colorMode");
+        help: SettingsState.theme == 1 ? I18n.tr("settings.appearance.colorMode.classicHelp") : "";
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.appearance.colorMode.standard"),
+                I18n.tr("settings.appearance.colorMode.custom"),
+            ];
+            current-index <=> SettingsState.background-mode;
+            accessible-label: I18n.tr("settings.appearance.colorMode");
+            selected => {
+                SettingsState.set-choice("background.colorMode", self.current-index);
+            }
+        }
+    }
+
+    if SettingsState.background-mode == 1: Row {
+        label: I18n.tr("settings.appearance.color");
+        help: I18n.tr-with("settings.popups.default", "value", SettingsState.background-color-default);
+        WithReset {
+            customised: SettingsState.background-color-customised;
+            reset => {
+                SettingsState.reset("background.color");
+            }
+            ColorField {
+                label: I18n.tr("settings.appearance.color");
+                value <=> SettingsState.background-color;
+                accepted(text) => {
+                    SettingsState.set-color("background.color", text);
+                }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.appearance.opacity");
+        help: SettingsState.theme == 1
+            ? I18n.tr-with("settings.appearance.opacity.classicHelp", "value", SettingsState.background-opacity-default)
+            : I18n.tr-with("settings.popups.opacity.default", "value", SettingsState.background-opacity-default);
+        WithReset {
+            customised: SettingsState.background-opacity-customised;
+            reset => {
+                SettingsState.reset("background.opacity");
+            }
+            ValueSlider {
+                label: I18n.tr("settings.appearance.opacity");
+                minimum: 0;
+                maximum: 100;
+                unit: "common.percent";
+                value <=> SettingsState.background-opacity;
+                released(v) => {
+                    SettingsState.set-number("background.opacity", v);
+                }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.appearance.material");
+        help: SettingsState.material-available ? I18n.tr("settings.appearance.material.help")
+            : I18n.tr("settings.appearance.material.off");
+        ComboBox {
+            width: 240px;
+            model: SettingsState.materials;
+            current-index <=> SettingsState.material;
+            enabled: SettingsState.material-available;
+            accessible-label: I18n.tr("settings.appearance.material");
+            selected => {
+                SettingsState.set-material(self.current-index);
+            }
+        }
+    }
+
+    if SettingsState.theme == 1: SectionHeading {
+        padding-top: 24px;
+        padding-bottom: 12px;
+        title: I18n.tr("settings.appearance.skin");
+        help: I18n.tr("settings.appearance.skin.help");
+    }
+
+    if SettingsState.theme == 1 && SettingsState.skin-notice != "": Text {
+        text: SettingsState.skin-notice;
+        wrap: word-wrap;
+        color: #d13438;
+    }
+
+    if SettingsState.theme == 1: VerticalLayout {
+        padding-top: 4px;
+        SkinGallery { }
+    }
+
+    if SettingsState.theme == 1 && SettingsState.custom-skin-shown: Row {
+        label: I18n.tr("settings.appearance.customSkin");
+        help: I18n.tr("settings.appearance.customSkin.help");
+        error: SettingsState.custom-skin-error;
+        HorizontalLayout {
+            spacing: 8px;
+            // Saved as it is typed: the navigation does not take the focus.
+            LineEdit {
+                width: 220px;
+                text <=> SettingsState.custom-skin;
+                accessible-label: I18n.tr("settings.appearance.customSkin");
+                edited(text) => {
+                    SettingsState.set-text("classic.customSkin", text);
+                }
+            }
+            Button {
+                text: I18n.tr("settings.props.browse");
+                clicked => {
+                    SettingsState.browse-custom-skin();
+                }
+            }
+        }
+    }
+}
+
 component SensorsPage inherits VerticalLayout {
     alignment: start;
 
@@ -1404,6 +1664,7 @@ export component SettingsWindow inherits Window {
                 model: [
                     { text: I18n.tr("settings.nav.general") },
                     { text: I18n.tr("settings.nav.bar") },
+                    { text: I18n.tr("settings.nav.appearance") },
                     { text: I18n.tr("settings.nav.sensors") },
                     { text: I18n.tr("settings.nav.popups") },
                 ];
@@ -1432,10 +1693,11 @@ export component SettingsWindow inherits Window {
             spacing: 8px;
 
             Text {
-                text: SettingsState.page == 4 ? SettingsState.props-title
-                    : SettingsState.page == 5 ? I18n.tr("settings.picker.title") : [
+                text: SettingsState.page == 5 ? SettingsState.props-title
+                    : SettingsState.page == 6 ? I18n.tr("settings.picker.title") : [
                     I18n.tr("settings.nav.general"),
                     I18n.tr("settings.nav.bar"),
+                    I18n.tr("settings.nav.appearance"),
                     I18n.tr("settings.nav.sensors"),
                     I18n.tr("settings.nav.popups"),
                 ][SettingsState.page];
@@ -1450,7 +1712,7 @@ export component SettingsWindow inherits Window {
                 color: #d13438;
             }
 
-            if SettingsState.page != 5: scroll := ScrollView {
+            if SettingsState.page != 6: scroll := ScrollView {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
@@ -1459,13 +1721,14 @@ export component SettingsWindow inherits Window {
                     padding-bottom: 24px;
                     if SettingsState.page == 0: GeneralPage { }
                     if SettingsState.page == 1: BarPage { }
-                    if SettingsState.page == 2: SensorsPage { }
-                    if SettingsState.page == 3: PopupsPage { }
-                    if SettingsState.page == 4: PropertiesPage { }
+                    if SettingsState.page == 2: AppearancePage { }
+                    if SettingsState.page == 3: SensorsPage { }
+                    if SettingsState.page == 4: PopupsPage { }
+                    if SettingsState.page == 5: PropertiesPage { }
                 }
             }
             // The picker scrolls only its list (SPEC §6.6).
-            if SettingsState.page == 5: PickerPage {
+            if SettingsState.page == 6: PickerPage {
                 vertical-stretch: 1;
             }
         }

@@ -10,7 +10,9 @@ use crate::platform::MonitorInfo;
 use crate::platform::geometry::{floating_rect, to_physical};
 
 /// Settings pages in navigation order (SPEC §10.7).
-pub const PAGES: [&str; 4] = ["general", "bar", "sensors", "popups"];
+pub const PAGES: [&str; 5] = ["general", "bar", "appearance", "sensors", "popups"];
+/// The page with the Layout manager.
+pub const SENSORS_PAGE: usize = 3;
 
 /// Where Settings opens (SPEC §4.1, §6.6, §6.7).
 #[derive(Debug, Clone, PartialEq)]
@@ -42,10 +44,10 @@ pub fn route(route: &str) -> Route {
     };
     match first {
         // The layout manager is on the Sensors page.
-        "layout" => Route::Page(2),
+        "layout" => Route::Page(SENSORS_PAGE),
         "sensor" => match parts.next() {
             Some(id) if !id.is_empty() => Route::Sensor(id.to_owned()),
-            _ => Route::Page(2),
+            _ => Route::Page(SENSORS_PAGE),
         },
         "new" => Route::New {
             zone: param("zone").and_then(|z| serde_json::from_value(Value::String(z)).ok()),
@@ -94,6 +96,14 @@ pub const CHOICES: &[Choice] = &[
         values: &["auto", "on", "off"],
     },
     Choice {
+        path: "theme",
+        values: &["modern", "classic"],
+    },
+    Choice {
+        path: "background.colorMode",
+        values: &["standard", "custom"],
+    },
+    Choice {
         path: "sensors.inactiveMode",
         values: &["opacity", "colorize"],
     },
@@ -109,22 +119,46 @@ pub const FONT_STYLES: [&str; 6] = [
     "boldItalic",
 ];
 
-/// The font style list: "Theme default (…)" naming the theme's style, then every style.
-pub fn font_style_labels(theme_default: &str) -> Vec<String> {
-    let name = |id: &str| crate::i18n::t(&format!("fontStyle.{id}"));
+/// The materials in the order Settings lists them, after "Theme default" (SPEC §10.3).
+pub const MATERIALS: [&str; 3] = ["none", "acrylic", "mica"];
+
+/// "Theme default (…)" naming the theme's choice, then every choice in `ids`, each named by the
+/// message `<prefix>.<id>`.
+fn after_theme_default(prefix: &str, ids: &[&str], theme_default: &str) -> Vec<String> {
+    let name = |id: &str| crate::i18n::t(&format!("{prefix}.{id}"));
     std::iter::once(t_args(
         "common.themeDefault",
         &[("value", &name(theme_default))],
     ))
-    .chain(FONT_STYLES.iter().map(|id| name(id)))
+    .chain(ids.iter().map(|id| name(id)))
     .collect()
+}
+
+/// The index of `value` (one of `ids`, or `None` for the theme default) in such a list.
+fn index_after_theme_default(ids: &[&str], value: Option<&str>) -> i32 {
+    value
+        .and_then(|v| ids.iter().position(|id| *id == v))
+        .map_or(0, |i| i as i32 + 1)
+}
+
+/// The font style list: "Theme default (…)" naming the theme's style, then every style.
+pub fn font_style_labels(theme_default: &str) -> Vec<String> {
+    after_theme_default("fontStyle", &FONT_STYLES, theme_default)
 }
 
 /// The index of `style` (a font style id, or `None` for the theme default) in that list.
 pub fn font_style_index(style: Option<&str>) -> i32 {
-    style
-        .and_then(|s| FONT_STYLES.iter().position(|id| *id == s))
-        .map_or(0, |i| i as i32 + 1)
+    index_after_theme_default(&FONT_STYLES, style)
+}
+
+/// The material list: "Theme default (…)" naming the theme's material, then every material.
+pub fn material_labels(theme_default: &str) -> Vec<String> {
+    after_theme_default("settings.appearance.material", &MATERIALS, theme_default)
+}
+
+/// The index of `material` (a material id, or `None` for the theme default) in that list.
+pub fn material_index(material: Option<&str>) -> i32 {
+    index_after_theme_default(&MATERIALS, material)
 }
 
 /// The font list: "Theme default (…)" naming the theme's family, then the installed families
@@ -326,12 +360,13 @@ mod tests {
         assert_eq!(route("general"), Route::Page(0));
         assert_eq!(route("bar"), Route::Page(1));
         assert_eq!(route("bar/height"), Route::Page(1));
-        assert_eq!(route("popups"), Route::Page(3));
-        assert_eq!(route("layout"), Route::Page(2));
+        assert_eq!(route("appearance"), Route::Page(2));
+        assert_eq!(route("popups"), Route::Page(4));
+        assert_eq!(route("layout"), Route::Page(SENSORS_PAGE));
         assert_eq!(route("nope"), Route::Page(0));
         assert_eq!(route(""), Route::Page(0));
         assert_eq!(route("sensor/s_1a2b3"), Route::Sensor("s_1a2b3".into()));
-        assert_eq!(route("sensor/"), Route::Page(2));
+        assert_eq!(route("sensor/"), Route::Page(SENSORS_PAGE));
         assert_eq!(
             route("new?zone=right&index=0"),
             Route::New {
@@ -480,6 +515,14 @@ mod tests {
         assert_eq!(styles[6], "Bold italic");
         assert_eq!(font_style_index(None), 0);
         assert_eq!(font_style_index(Some("bold")), 3);
+
+        let materials = material_labels("acrylic");
+        assert_eq!(
+            materials,
+            ["Theme default (Acrylic)", "None", "Acrylic", "Mica"]
+        );
+        assert_eq!(material_index(None), 0);
+        assert_eq!(material_index(Some("mica")), 3);
     }
 
     #[test]
