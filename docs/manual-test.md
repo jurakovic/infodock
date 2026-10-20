@@ -402,3 +402,18 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 - [ ] A Wi-Fi 6E network on channel 2 (6 GHz): the hint says *6 GHz, channel 2*.
 - [ ] Open a Folder Menu, then hide the bar with the hotkey: the list goes too. Press the sensor of an open list and hold for a second before releasing: the list closes and stays closed. Close a list with Esc while the pointer is on its sensor: no hint until the pointer leaves and comes back.
 - [ ] Eject USB with two sticks: mark the first with ↓, eject it with Enter; when it leaves, nothing is marked and Enter does nothing. Swap a stick for a bigger one in the same letter: the size updates.
+
+## M4 — Classic, import, packaging
+
+Exit criteria (SPEC §17): Appendix B imports exactly as specified; the installer works per user without admin rights.
+
+The M0–M3 checks above still apply. CI renders the classic bar with every built-in skin (`bar-classic-*.png` in `infodock-screenshots`); the checks here cover real monitors and the live bar.
+
+**Built-in skins** (since M4 S1)
+
+- [ ] Until the Appearance page (M4 S4): quit Infodock, set `"theme": "classic"` and `"classic": { "skin": "gloss" }` under `settings` in `%APPDATA%\app.infodock.desktop\config.json`, start it again. For each of `flat`, `gloss`, `brushed`, `carbon` and `glass`: the bar shows the skin at 25 px, sharp at 100 % and 150 % (Gloss's dark bottom line one physical px at 100 %, two at 200 %; Carbon's diamonds larger at 150 %).
+- [ ] `"background": { "color": "#3A6EA5" }`: the skin takes that colour. `"opacity": 50` as well: the skin fades, the sensors' text and icons do not.
+- [ ] Glass on a top bar: its light line is at the bottom of the bar, towards the screen centre; on a bottom bar at the top. Gloss's dark line is at the bottom on either edge.
+- [ ] *Highlight on hover* on: the skin brightens under the pointer, as the modern background does.
+- [ ] An unknown skin (`"skin": "nope"`): Gloss. `"custom"` without an image: Flat.
+- [ ] The classic bar on a 4K monitor at 150 %: memory within 30 MB at idle, idle CPU as with the modern bar (the skin is drawn once per size, not per frame).

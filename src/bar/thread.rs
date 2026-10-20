@@ -18,6 +18,7 @@ use super::paint::paint_bar;
 use super::placement::Anchor;
 use super::popup::{self, Open, PopupHost};
 use super::sensors::{BarSensors, Env};
+use super::skins::{self, SkinCache};
 use super::theme::Theme;
 use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
@@ -117,6 +118,8 @@ pub(super) struct BarLogic {
     icons: IconLoader,
     appearance: OsAppearance,
     theme: Theme,
+    /// The classic bar's skin as last drawn (SPEC §12.4).
+    skin: SkinCache,
     /// The material last applied to the window; `None` until the first application.
     material: Option<Material>,
     /// Whether the tray icon is shown; `None` until first applied.
@@ -210,6 +213,7 @@ impl BarLogic {
             text: crate::platform::text_engine(),
             icons: IconLoader::new(Arc::clone(&platform), waker),
             appearance,
+            skin: SkinCache::default(),
             material: None,
             tray_shown: None,
             subscribed: HashMap::new(),
@@ -1496,7 +1500,11 @@ impl BarHandler for BarLogic {
             .geometry
             .as_ref()
             .map_or(self.settings.bar.edge, |g| g.edge);
-        paint_bar(canvas, size, &self.theme, edge, highlight);
+        let skin = self.theme.skin.as_ref().and_then(|spec| {
+            self.skin
+                .get(spec, skins::Target::of(size, canvas.scale(), edge))
+        });
+        paint_bar(canvas, size, &self.theme, edge, highlight, skin);
         self.sensors.draw(canvas, &self.theme, size.height);
         // The placer: a 2 px line in the accent colour where the dragged sensor, or the
         // sensors a drop creates, would go (SPEC §6.2, §6.3, §12.2).

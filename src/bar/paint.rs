@@ -1,28 +1,32 @@
-//! Drawing the bar (SPEC §5.5, §12). Sensors arrive in M1 S4; until then the bar is its
-//! background and hairline.
+//! Drawing the bar's background (SPEC §5.5, §12): the modern bar's fill and hairline, or the
+//! classic bar's skin. The sensors draw themselves on top (`bar/sensors.rs`).
 
 use super::theme::Theme;
 use crate::config::model::Edge;
-use crate::platform::{Canvas, RectF, SizeF};
+use crate::platform::{Bitmap, Canvas, RectF, SizeF};
 
 /// The hover highlight multiplies the background opacity by up to this (SPEC §5.5).
 const HIGHLIGHT_GAIN: f32 = 1.7;
 
-/// Draws the bar's background into a cleared canvas of `size` logical px; `highlight` (0–1) is
-/// how far the hover highlight has faded in.
+/// Draws the bar's background into a cleared canvas of `size` logical px: `skin`, the classic
+/// theme's rendered skin (`bar/skins`), or else the background colour. `highlight` (0–1) is how
+/// far the hover highlight has faded in.
 pub(super) fn paint_bar(
     canvas: &mut dyn Canvas,
     size: SizeF,
     theme: &Theme,
     edge: Edge,
     highlight: f32,
+    skin: Option<&Bitmap>,
 ) {
     let background = theme.bar_background;
     let gain = 1.0 + (HIGHLIGHT_GAIN - 1.0) * highlight;
-    canvas.fill_rect(
-        RectF::from_size(size),
-        background.with_alpha(background.a * gain),
-    );
+    let opacity = (background.a * gain).min(1.0);
+    match skin {
+        // The opacity applies to the skin only, not to the sensors (SPEC §12.3).
+        Some(skin) => canvas.draw_bitmap(skin, RectF::from_size(size), opacity),
+        None => canvas.fill_rect(RectF::from_size(size), background.with_alpha(opacity)),
+    }
     if let Some(hairline) = theme.hairline {
         // One px on the edge facing the screen centre (SPEC §12.2), whole physical px thick.
         let thickness = canvas.snap(1.0).max(1.0 / canvas.scale());
@@ -37,6 +41,7 @@ pub(super) fn paint_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bar::skins;
     use crate::config::model::{Settings, Theme as ThemeId};
     use crate::platform::recording::RecordingCanvas;
     use crate::platform::{Color, OsAppearance};
@@ -47,7 +52,7 @@ mod tests {
         let size = SizeF::new(800.0, 28.0);
 
         let mut bottom = RecordingCanvas::new(1.0);
-        paint_bar(&mut bottom, size, &theme, Edge::Bottom, 0.0);
+        paint_bar(&mut bottom, size, &theme, Edge::Bottom, 0.0, None);
         assert_eq!(
             bottom.dump(),
             "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,0 800×1 #FFFFFF/8%\n"
@@ -55,7 +60,7 @@ mod tests {
 
         // At 150 % the line is two physical px, so it stays crisp.
         let mut top = RecordingCanvas::new(1.5);
-        paint_bar(&mut top, size, &theme, Edge::Top, 0.0);
+        paint_bar(&mut top, size, &theme, Edge::Top, 0.0, None);
         assert_eq!(
             top.dump(),
             "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,26.67 800×1.33 #FFFFFF/8%\n"
@@ -73,6 +78,7 @@ mod tests {
             &theme,
             Edge::Bottom,
             1.0,
+            None,
         );
         assert!(canvas.dump().starts_with("fill rect 0,0 100×28 #1C1C1F\n"));
         let s = Settings {
@@ -90,6 +96,7 @@ mod tests {
             &theme,
             Edge::Bottom,
             0.5,
+            None,
         );
         assert!(
             canvas
@@ -99,22 +106,24 @@ mod tests {
     }
 
     #[test]
-    fn classic_bar_has_no_hairline() {
+    fn classic_bar_draws_its_skin_with_the_background_opacity() {
         let s = Settings {
             theme: ThemeId::Classic,
             ..Settings::default()
         };
         let theme = Theme::resolve(&s, OsAppearance::default());
-        let mut canvas = RecordingCanvas::new(1.0);
-        paint_bar(
-            &mut canvas,
-            SizeF::new(100.0, 25.0),
-            &theme,
-            Edge::Bottom,
-            0.0,
-        );
-        assert_eq!(canvas.ops.len(), 1);
         assert_eq!(theme.bar_background, Color::rgba(0x2A, 0x2A, 0x2E, 0.9));
+        let size = SizeF::new(100.0, 25.0);
+        let spec = theme.skin.as_ref().expect("classic has a skin");
+        let skin = skins::render(spec, skins::Target::of(size, 1.5, Edge::Bottom));
+        let mut canvas = RecordingCanvas::new(1.5);
+        paint_bar(&mut canvas, size, &theme, Edge::Bottom, 0.0, skin.as_ref());
+        // The skin, and no hairline.
+        assert_eq!(canvas.dump(), "bitmap 150×38 into 0,0 100×25 opacity 0.9\n");
+        // The hover highlight strengthens the skin as it does the modern background.
+        let mut canvas = RecordingCanvas::new(1.5);
+        paint_bar(&mut canvas, size, &theme, Edge::Bottom, 1.0, skin.as_ref());
+        assert_eq!(canvas.dump(), "bitmap 150×38 into 0,0 100×25 opacity 1\n");
     }
 
     #[test]
@@ -185,13 +194,15 @@ mod tests {
                     ],
                 },
             );
-            super::super::paint_bar(
-                canvas,
-                SizeF::new(WIDTH, h),
-                theme,
-                crate::config::model::Edge::Bottom,
-                0.0,
-            );
+            let size = SizeF::new(WIDTH, h);
+            let edge = crate::config::model::Edge::Bottom;
+            let skin = theme.skin.as_ref().and_then(|spec| {
+                crate::bar::skins::render(
+                    spec,
+                    crate::bar::skins::Target::of(size, canvas.scale(), edge),
+                )
+            });
+            super::super::paint_bar(canvas, size, theme, edge, 0.0, skin.as_ref());
             let fg = theme.sensor_text;
             let small = TextStyle::new(&theme.sensor_font, theme.small_size).tabular();
             let mut x = theme.pad;
@@ -509,9 +520,9 @@ mod tests {
     }
 
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
-    /// them): plain bars per theme, the canvas specimen, the first-run layout, the General
-    /// sensors, every system sensor with made-up samples and the launchers, at 100 % and
-    /// 150 %.
+    /// them): plain bars per theme and every built-in skin, the canvas specimen, the first-run
+    /// layout, the General sensors, every system sensor with made-up samples and the launchers,
+    /// at 100 % and 150 %.
     #[cfg(windows)]
     #[test]
     #[ignore = "writes PNGs to target/screenshots; run with --ignored"]
@@ -539,24 +550,74 @@ mod tests {
             theme: ThemeId::Classic,
             ..Settings::default()
         };
-        let bars = [
-            ("bar-modern-dark", Settings::default(), dark, Edge::Bottom),
+        let skin_of = |theme: &Theme, size: SizeF, scale: f32, edge: Edge| {
+            theme
+                .skin
+                .as_ref()
+                .and_then(|spec| skins::render(spec, skins::Target::of(size, scale, edge)))
+        };
+        let mut bars = vec![
             (
-                "bar-modern-light-top",
+                "bar-modern-dark".to_owned(),
+                Settings::default(),
+                dark,
+                Edge::Bottom,
+                1.0,
+            ),
+            (
+                "bar-modern-light-top".to_owned(),
                 Settings::default(),
                 light,
                 Edge::Top,
+                1.0,
             ),
-            ("bar-classic", classic.clone(), dark, Edge::Bottom),
+            (
+                "bar-classic".to_owned(),
+                classic.clone(),
+                dark,
+                Edge::Bottom,
+                1.0,
+            ),
         ];
-        for (name, settings, os, edge) in bars {
+        // Every built-in skin (SPEC §12.4), also at 150 %, where its lines and textures follow
+        // the scale; Glass on a top bar, where its highlight is at the bottom; Gloss tinted.
+        let skinned = |id: &str, color: Option<&str>| {
+            let mut s = classic.clone();
+            s.classic.skin = id.into();
+            s.background.color = color.map(Into::into);
+            s
+        };
+        for skin in skins::BuiltIn::ALL {
+            let settings = skinned(skin.id(), None);
+            let name = format!("bar-classic-{}", skin.id());
+            bars.push((name.clone(), settings.clone(), dark, Edge::Bottom, 1.0));
+            bars.push((format!("{name}@1.5x"), settings, dark, Edge::Bottom, 1.5));
+        }
+        bars.push((
+            "bar-classic-glass-top".to_owned(),
+            skinned("glass", None),
+            dark,
+            Edge::Top,
+            1.0,
+        ));
+        bars.push((
+            "bar-classic-gloss-blue".to_owned(),
+            skinned("gloss", Some("#3A6EA5")),
+            dark,
+            Edge::Bottom,
+            1.0,
+        ));
+        for (name, settings, os, edge, scale) in bars {
             let theme = Theme::resolve(&settings, os);
             let size = SizeF::new(400.0, theme.bar_height as f32);
-            let bitmap = render_offscreen(400, theme.bar_height, 1.0, &mut |canvas| {
-                paint_bar(canvas, size, &theme, edge, 0.0)
+            let skin = skin_of(&theme, size, scale, edge);
+            let width = (size.width * scale).round() as u32;
+            let height = (size.height * scale).round() as u32;
+            let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
+                paint_bar(canvas, size, &theme, edge, 0.0, skin.as_ref())
             })
             .expect("rendered");
-            save(name, &bitmap);
+            save(&name, &bitmap);
         }
 
         let text = text_engine();
@@ -809,8 +870,9 @@ mod tests {
                 sensors.update_layout(&cx, size.width);
                 let width = (size.width * scale).round() as u32;
                 let height = (size.height * scale).round() as u32;
+                let skin = skin_of(&theme, size, scale, Edge::Bottom);
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
-                    paint_bar(canvas, size, &theme, Edge::Bottom, 0.0);
+                    paint_bar(canvas, size, &theme, Edge::Bottom, 0.0, skin.as_ref());
                     sensors.draw(canvas, &theme, size.height);
                 })
                 .expect("rendered");

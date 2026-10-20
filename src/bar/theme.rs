@@ -1,6 +1,7 @@
 //! The resolved bar theme (SPEC §12.1): theme defaults, user settings and the OS appearance
 //! combined into the values all bar drawing reads.
 
+use super::skins::SkinSpec;
 use crate::config::model::{
     BackgroundColorMode, InactiveMode, Material, Settings, Theme as ThemeId, ThemeDefaults,
 };
@@ -27,6 +28,9 @@ pub struct Theme {
     pub bar_height: u32,
     /// Tint with the configured opacity as alpha.
     pub bar_background: Color,
+    /// The classic bar's skin, drawn with `bar_background`'s alpha (SPEC §12.3); `None` on the
+    /// modern bar, which fills its background.
+    pub skin: Option<SkinSpec>,
     /// 1 px line on the edge facing the screen centre (modern only, SPEC §12.2).
     pub hairline: Option<Color>,
     pub material: Material,
@@ -102,12 +106,19 @@ impl Theme {
             .as_deref()
             .unwrap_or(&d.popup_background);
 
+        let skin = (!modern).then(|| SkinSpec {
+            id: s.classic.skin.clone(),
+            custom_image: s.classic.custom_skin.clone(),
+            base: background,
+        });
+
         Self {
             id: s.theme,
             bar_height: s.bar_height(),
             bar_background: background.with_alpha(percent(
                 s.background.opacity.unwrap_or(d.background_opacity),
             )),
+            skin,
             hairline,
             material,
             pad: 7.0,
@@ -203,6 +214,35 @@ mod tests {
         assert_eq!(t.popup_radius, 6.0);
         assert_eq!(t.hairline, None);
         assert_eq!(t.material, Material::None);
+        assert_eq!(
+            t.skin,
+            Some(SkinSpec {
+                id: "gloss".into(),
+                custom_image: String::new(),
+                base: hex("#2A2A2E"),
+            })
+        );
+        assert_eq!(Theme::resolve(&Settings::default(), DARK).skin, None);
+    }
+
+    #[test]
+    fn classic_skin_takes_the_background_colour_as_its_base() {
+        let mut s = Settings {
+            theme: ThemeId::Classic,
+            ..Settings::default()
+        };
+        s.classic.skin = "carbon".into();
+        s.background.color = Some("#3A6EA5".into());
+        s.background.opacity = Some(70);
+        let t = Theme::resolve(&s, LIGHT);
+        let skin = t.skin.expect("classic has a skin");
+        assert_eq!((skin.id.as_str(), skin.base), ("carbon", hex("#3A6EA5")));
+        // The opacity stays with the background, which the bar draws the skin with.
+        assert_eq!(t.bar_background, hex("#3A6EA5").with_alpha(0.7));
+        // Standard colour mode: the theme's colour.
+        s.background.color_mode = BackgroundColorMode::Standard;
+        let skin = Theme::resolve(&s, DARK).skin.expect("classic has a skin");
+        assert_eq!(skin.base, hex("#2A2A2E"));
     }
 
     #[test]

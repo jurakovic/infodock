@@ -181,7 +181,7 @@ src/
     hint.rs, popup.rs       hover hint (§7.1) and interactive popup host (§7.2)
     placement.rs            hint/popup placement (§7.3), pure
     menus.rs, tray.rs       context menus (§6.4) and the tray menu (§6.5)
-    theme.rs, skins.rs      resolved theme (§12.1), built-in skins, skin packs and tint (§12.3–12.4)
+    theme.rs, skins/        resolved theme (§12.1), built-in skins, skin packs and tint (§12.3–12.4)
     anim.rs                 rise animation, hover highlight, fades (§5.5)
   sensors/
     mod.rs                  SensorType and Sensor traits, SensorCtx (§8.1)
@@ -1376,7 +1376,7 @@ A compact, denser look:
 
 ### 12.4 Skins
 
-**Built-in skins** (procedural, drawn by `bar/skins.rs`; base colour = `background.color`):
+**Built-in skins** (procedural, drawn by `bar/skins/`; base colour = `background.color`):
 
 | Id | Name | Look |
 |---|---|---|
@@ -1386,6 +1386,8 @@ A compact, denser look:
 | `carbon` | Carbon | Base colour + a 4 px diagonal checker pattern at 6 % |
 | `glass` | Glass | Base colour at reduced alpha; 1 px white highlight at 25 % on the inner edge; soft inner glow |
 | `custom` | Custom image | `classic.customSkin`, tiled horizontally; missing file → Flat |
+
+Implementation (`bar/skins/`): a skin is drawn pixel by pixel into a bitmap of the bar's physical size (lines are one logical px in whole physical px; textures are sized in logical px), kept until the skin, its colour, the bar's size or its edge changes, and drawn with the background opacity (and the hover highlight, §5.5). Gloss's line is black at 30 %. Brushed metal runs from 16 % white at the top to 20 % black at the bottom; its texture is a lighter or darker line per physical row with streaks along it, at most 4 %. Carbon's checker is turned by 45°: diamonds 4 px across, the light ones 6 % white. Glass is the base colour at 55 % alpha, with a glow (10 % white) fading over a third of the height from both long edges and its highlight on the edge facing the screen centre (the top of a bottom bar).
 
 **Skin packs** (user-installable raster skins), in `%APPDATA%\app.infodock.desktop\skins\<pack-id>\`:
 
