@@ -218,6 +218,13 @@ impl App {
         Ok(())
     }
 
+    /// A skin pack was installed or removed: the bar draws its skin again (SPEC §12.4).
+    pub fn skins_changed(&self) {
+        if let Some(bar) = self.bar.get() {
+            bar.skins_changed();
+        }
+    }
+
     /// Shows sensor `id` with its saved props again.
     pub fn end_preview(&self, id: &str) {
         if let Some(bar) = self.bar.get() {

@@ -61,6 +61,13 @@ export struct SkinTile {
     selected: bool,
 }
 
+// A folder in the skins folder (SPEC §12.4): a pack, or why it cannot be used.
+export struct SkinPackRow {
+    id: string,
+    name: string,
+    problem: string,
+}
+
 export global SettingsState {
     // 0 = General, 1 = Bar, 2 = Appearance, 3 = Sensors, 4 = Popups; 5 = a sensor's properties,
     // 6 = the picker.
@@ -128,6 +135,10 @@ export global SettingsState {
     in property <bool> custom-skin-shown;
     // Why the custom image cannot be used; empty when it can.
     in property <string> custom-skin-error;
+    in property <[SkinPackRow]> skin-packs;
+    // What the last install did, and whether it failed.
+    in-out property <string> skin-install-message;
+    in property <bool> skin-install-failed;
 
     // Sensors (SPEC §10.4)
     in-out property <string> sensor-text-color;
@@ -209,6 +220,11 @@ export global SettingsState {
     // The gallery's tile `index`.
     callback set-skin(index: int);
     callback browse-custom-skin();
+    // Installs a skin pack from a folder, or else from a .zip file.
+    callback install-skin(folder: bool);
+    // Moves the pack `id` to the Recycle Bin.
+    callback remove-skin(id: string);
+    callback open-skins-folder();
     // The colour of a #RRGGBB text, for swatches; transparent if it is not one.
     pure callback to-color(text: string) -> color;
     // The text is a colour as #RRGGBB.
@@ -1101,6 +1117,65 @@ component AppearancePage inherits VerticalLayout {
                 text: I18n.tr("settings.props.browse");
                 clicked => {
                     SettingsState.browse-custom-skin();
+                }
+            }
+        }
+    }
+
+    if SettingsState.theme == 1: SectionHeading {
+        padding-top: 24px;
+        padding-bottom: 8px;
+        title: I18n.tr("settings.appearance.packs");
+        help: I18n.tr("settings.appearance.packs.help");
+    }
+
+    if SettingsState.theme == 1: HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        Button {
+            text: I18n.tr("settings.appearance.packs.installFolder");
+            clicked => {
+                SettingsState.install-skin(true);
+            }
+        }
+
+        Button {
+            text: I18n.tr("settings.appearance.packs.installZip");
+            clicked => {
+                SettingsState.install-skin(false);
+            }
+        }
+
+        Button {
+            text: I18n.tr("settings.appearance.packs.openFolder");
+            clicked => {
+                SettingsState.open-skins-folder();
+            }
+        }
+    }
+
+    if SettingsState.theme == 1 && SettingsState.skin-install-message != "": Text {
+        text: SettingsState.skin-install-message;
+        wrap: word-wrap;
+        color: SettingsState.skin-install-failed ? #d13438 : Palette.foreground;
+    }
+
+    if SettingsState.theme == 1 && SettingsState.skin-packs.length == 0: Text {
+        text: I18n.tr("settings.appearance.packs.none");
+        wrap: word-wrap;
+        color: Palette.foreground;
+        opacity: 0.7;
+    }
+
+    if SettingsState.theme == 1: VerticalLayout {
+        for pack in SettingsState.skin-packs: Row {
+            label: pack.name;
+            error: pack.problem;
+            Button {
+                text: I18n.tr("settings.appearance.packs.remove");
+                accessible-label: I18n.tr-with("settings.appearance.packs.removeNamed", "name", pack.name);
+                clicked => {
+                    SettingsState.remove-skin(pack.id);
                 }
             }
         }

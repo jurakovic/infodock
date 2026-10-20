@@ -86,6 +86,8 @@ enum Command {
     Sample(Delivery),
     /// The bar was hidden (tray, hotkey): its hint and popup close.
     Hidden,
+    /// A skin pack was installed or removed (SPEC §12.4): the skin is drawn again.
+    SkinsChanged,
 }
 
 /// Cross-thread handle to the bar.
@@ -197,6 +199,11 @@ impl BarController {
 
     pub fn end_preview(&self, id: &str) {
         self.send(Command::EndPreview(id.to_owned()));
+    }
+
+    /// A skin pack was installed or removed: the bar reads its skin again.
+    pub fn skins_changed(&self) {
+        self.send(Command::SkinsChanged);
     }
 
     /// Passes a sample to the sensors on the bar (sampler thread).

@@ -1398,6 +1398,10 @@ impl BarHandler for BarLogic {
                         }
                         Command::Sample(delivery) => self.deliver(window, &delivery),
                         Command::Hidden => self.hidden(window),
+                        Command::SkinsChanged => {
+                            self.skin.forget();
+                            window.invalidate();
+                        }
                     }
                 }
                 // Icons that arrived: the sensors (and a popup) that asked for them measure again.
@@ -1832,6 +1836,43 @@ mod tests {
         logic.theme.skin = None;
         logic.paint(&mut RecordingCanvas::new(1.0), size);
         assert_eq!(logic.band(), None);
+    }
+
+    #[test]
+    fn a_pack_installed_later_is_drawn_once_the_bar_hears_of_it() {
+        use crate::bar::skins::tests::{decode_png, pack, rows_png};
+        let skins = tempfile::tempdir().expect("temp dir");
+        let mut settings = Settings {
+            theme: crate::config::model::Theme::Classic,
+            ..Settings::default()
+        };
+        settings.classic.skin = "stripes".into();
+        let (mut logic, window, _host, _config) = bar(settings);
+        logic.skin = SkinCache::with_decoder(skins.path().into(), decode_png);
+        let size = SizeF::new(WIDTH, 25.0);
+        // Not installed: Gloss, without a band.
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert_eq!(logic.band(), None);
+        let folder = pack(
+            skins.path(),
+            "stripes",
+            r#"{ "image": "t.png", "shadowBand": 2 }"#,
+        );
+        rows_png(
+            &folder.join("t.png"),
+            3,
+            &[[10, 20].as_slice(), &[100; 25]].concat(),
+        );
+        // The skin drawn is kept until the bar hears of it.
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert_eq!(logic.band(), None);
+        // Settings installed it and tells the bar (SPEC §12.4).
+        let (commands, queue) = mpsc::channel();
+        logic.commands = queue;
+        commands.send(Command::SkinsChanged).expect("queued");
+        logic.on_event(&window, UiEvent::Wake);
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(logic.band().is_some());
     }
 
     fn press(logic: &mut BarLogic, window: &FakeWindow, at: PointF, alt: bool) {

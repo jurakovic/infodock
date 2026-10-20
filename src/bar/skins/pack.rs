@@ -16,7 +16,7 @@ use crate::platform::bitmap::ImageFormat;
 /// The file every pack has.
 pub const MANIFEST: &str = "skin.json";
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
-const MAX_IMAGE_BYTES: u64 = 1024 * 1024;
+pub(super) const MAX_IMAGE_BYTES: u64 = 1024 * 1024;
 const MAX_SIDE: u32 = 512;
 /// The bar height tiles are drawn for unless `skin.json` says otherwise.
 const DEFAULT_HEIGHT: u32 = 25;
@@ -100,6 +100,15 @@ impl Pack {
     pub fn tile_height(&self) -> u32 {
         self.height + self.shadow_band
     }
+
+    /// The files `skin.json` names.
+    pub fn files(&self) -> Vec<&str> {
+        [&self.image, &self.image_top, &self.image_bottom]
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect()
+    }
 }
 
 /// Why a pack, or the custom image, cannot be used. Settings shows [`PackError::message`].
@@ -165,7 +174,8 @@ pub struct PackEntry {
     pub pack: Result<Pack, PackError>,
 }
 
-/// Every folder in `dir` as a pack, sorted by name; none when `dir` does not exist.
+/// Every folder in `dir` as a pack, sorted by name; none when `dir` does not exist. Folders
+/// being installed or removed are left out.
 pub fn list(dir: &Path) -> Vec<PackEntry> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
@@ -174,6 +184,7 @@ pub fn list(dir: &Path) -> Vec<PackEntry> {
         .flatten()
         .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|id| !id.starts_with(super::install::STAGING_PREFIX))
         .map(|id| PackEntry {
             pack: read(&id, &dir.join(&id)),
             id,
@@ -189,7 +200,7 @@ pub fn load(dir: &Path, id: &str) -> Option<Result<Pack, PackError>> {
     (is_file_name(id) && folder.is_dir()).then(|| read(id, &folder))
 }
 
-fn read(id: &str, folder: &Path) -> Result<Pack, PackError> {
+pub(super) fn read(id: &str, folder: &Path) -> Result<Pack, PackError> {
     if BuiltIn::from_id(id).is_some() || id == CUSTOM {
         return Err(PackError::Reserved);
     }
@@ -235,7 +246,7 @@ fn read(id: &str, folder: &Path) -> Result<Pack, PackError> {
 }
 
 /// A plain name of something in a folder: no path, no drive, not `.` or `..`.
-fn is_file_name(name: &str) -> bool {
+pub(super) fn is_file_name(name: &str) -> bool {
     !name.is_empty()
         && name != "."
         && name != ".."

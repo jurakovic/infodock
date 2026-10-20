@@ -23,7 +23,7 @@ assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check)
 docs/                plan.md, manual-test.md, review findings (`review-m1.md`)
-tests/fixtures/      shared test fixtures (legacy XML)
+tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 ```
 
 ## Commands

@@ -186,6 +186,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
                 // Keys typed on another page are not a hotkey: recording ends with the page.
                 let state = open.window.global::<ui::SettingsState>();
                 state.set_recording_hotkey(false);
+                state.set_skin_install_message(SharedString::new());
                 // Text that was typed but not saved (an incomplete colour) is not shown again.
                 let settings = a.store.get().settings;
                 fill(open, &a, &settings);
@@ -648,6 +649,9 @@ mod screenshots {
             .flat_map(|y| [40 + y * 4, 80 + y * 3, 160 + y * 3, 255].repeat(8))
             .collect();
         write_png(&pack.join("tile.png"), 8, 25, &tile);
+        let broken = app.skins.join("broken");
+        std::fs::create_dir_all(&broken).expect("pack folder");
+        std::fs::write(broken.join("skin.json"), r#"{ "image": "tile.png" }"#).expect("skin.json");
         let set = |open: &mut Open, change: &dyn Fn(&mut crate::config::model::Settings)| {
             app.store
                 .update(|c| {
@@ -661,7 +665,13 @@ mod screenshots {
         set(&mut open, &|s| {
             s.theme = crate::config::model::Theme::Classic
         });
-        render_sized("settings-appearance-classic", 1000);
+        let installed = crate::i18n::t_args(
+            "settings.appearance.packs.installed",
+            &[("name", "Blue steel")],
+        );
+        state.set_skin_install_message(installed.into());
+        render_sized("settings-appearance-classic", 1200);
+        state.set_skin_install_message(SharedString::new());
         set(&mut open, &|s| {
             s.classic.skin = "custom".into();
             s.classic.custom_skin = "wood.png".into();
@@ -814,6 +824,14 @@ mod screenshots {
         refill();
         key(Key::RightArrow.into());
         assert_eq!(skin(), "glass");
+        // A pack installed shows in the gallery and the list at once.
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/skins/sunset.zip");
+        crate::bar::skins::install::install(&app.skins, &fixture).expect("installed");
+        super::appearance::packs_changed(&app);
+        use slint::Model;
+        assert!(state.get_skins().iter().any(|t| t.name == "Sunset"));
+        assert!(state.get_skin_packs().iter().any(|p| p.id == "Sunset"));
         state.invoke_set_choice("theme".into(), 0);
         window.set_size(PhysicalSize::new(width, height));
         refill();

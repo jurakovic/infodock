@@ -1,7 +1,10 @@
 //! Settings ▸ Appearance (SPEC §10.3, §10.7): the theme, the bar's background and, for the
 //! classic theme, the skin gallery with previews rendered by the bar's renderer
-//! (`skin_preview`), the custom image and a notice when the configured skin is missing.
+//! (`skin_preview`), the custom image, a notice when the configured skin is missing, and the
+//! skin packs: installed from a folder or a `.zip`, listed with their problems, removed to the
+//! Recycle Bin (SPEC §12.4).
 
+use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -51,6 +54,18 @@ pub fn entries(packs: &[PackEntry]) -> Vec<SkinEntry> {
         })
     });
     built_in.chain(installed).collect()
+}
+
+/// Every folder in the skins folder for the list of packs: its id, its name (the id when it
+/// cannot be used) and why it cannot be used.
+pub fn pack_rows(packs: &[PackEntry]) -> Vec<(String, String, String)> {
+    packs
+        .iter()
+        .map(|entry| match &entry.pack {
+            Ok(pack) => (entry.id.clone(), pack.name.clone(), String::new()),
+            Err(e) => (entry.id.clone(), entry.id.clone(), e.message()),
+        })
+        .collect()
 }
 
 /// Why the bar does not draw the configured skin `id`: it is not installed, or its pack cannot
@@ -207,6 +222,15 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     if !gallery.listed {
         gallery.refresh(app);
     }
+    let rows: Vec<ui::SkinPackRow> = pack_rows(&gallery.packs)
+        .into_iter()
+        .map(|(id, name, problem)| ui::SkinPackRow {
+            id: id.into(),
+            name: name.into(),
+            problem: problem.into(),
+        })
+        .collect();
+    state.set_skin_packs(ModelRc::new(VecModel::from(rows)));
     state.set_skin_notice(
         notice(&classic.skin, &gallery.packs)
             .unwrap_or_default()
@@ -247,31 +271,131 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_skins(ModelRc::new(VecModel::from(tiles)));
 }
 
-/// Lets the user pick the custom image.
-fn browse(app: &Arc<App>) {
+/// Shows the OS picker for a folder, or for a file of `extensions` called `types_name`, modal
+/// to the window.
+fn pick(title: &str, folder: bool, extensions: &[&str], types_name: &str) -> Option<String> {
     let owner = WINDOW.with(|w| {
         let w = w.try_borrow().ok()?;
         super::properties::owner(&w.as_ref()?.window)
     });
-    let (title, types_name, all_files) = (
-        t("settings.props.pickFile"),
-        t("settings.props.supportedFiles"),
-        t("settings.props.allFiles"),
-    );
+    let all_files = t("settings.props.allFiles");
     // The picker runs its own modal loop; no window state is borrowed meanwhile.
-    let picked = crate::platform::pick_path(
+    crate::platform::pick_path(
         owner,
         &PathRequest {
-            title: &title,
-            folder: false,
-            extensions: IMAGE_TYPES,
-            types_name: &types_name,
+            title,
+            folder,
+            extensions,
+            types_name,
             all_files: &all_files,
         },
+    )
+}
+
+/// Lets the user pick the custom image.
+fn browse(app: &Arc<App>) {
+    let picked = pick(
+        &t("settings.props.pickFile"),
+        false,
+        IMAGE_TYPES,
+        &t("settings.props.supportedFiles"),
     );
     if let Some(path) = picked {
         save(app, model::patch("classic.customSkin", Value::String(path)));
     }
+}
+
+/// The skins folder changed: the bar draws its skin again, the page lists the folder again.
+pub(super) fn packs_changed(app: &App) {
+    app.skins_changed();
+    WINDOW.with(|w| {
+        if let Some(open) = w.borrow_mut().as_mut() {
+            open.gallery.refresh(app);
+            let settings = app.store.get().settings;
+            super::fill(open, app, &settings);
+        }
+    });
+}
+
+/// Lets the user pick a pack's folder, or a `.zip` holding one, and installs it (SPEC §12.4).
+fn install(app: &Arc<App>, folder: bool) {
+    let picked = if folder {
+        pick(&t("settings.appearance.packs.pickFolder"), true, &[], "")
+    } else {
+        pick(
+            &t("settings.appearance.packs.pickZip"),
+            false,
+            &["zip"],
+            &t("settings.appearance.packs.zipFiles"),
+        )
+    };
+    let Some(path) = picked else {
+        return;
+    };
+    let (message, failed) = match skins::install::install(&app.skins, Path::new(&path)) {
+        Ok(pack) => {
+            tracing::info!("installed the skin pack {:?} from {path:?}", pack.id);
+            let message = t_args(
+                "settings.appearance.packs.installed",
+                &[("name", &pack.name)],
+            );
+            (message, false)
+        }
+        Err(e) => {
+            let reason = e.message();
+            tracing::warn!("could not install the skin pack {path:?}: {reason}");
+            let message = t_args(
+                "settings.appearance.packs.installFailed",
+                &[("reason", &reason)],
+            );
+            (message, true)
+        }
+    };
+    WINDOW.with(|w| {
+        if let Some(open) = w.borrow().as_ref() {
+            let state = open.window.global::<ui::SettingsState>();
+            state.set_skin_install_message(message.into());
+            state.set_skin_install_failed(failed);
+        }
+    });
+    packs_changed(app);
+}
+
+/// Moves the pack `id`, one the page lists, to the Recycle Bin (SPEC §12.4).
+fn remove(app: &Arc<App>, id: &str) {
+    let listed = WINDOW.with(|w| {
+        w.borrow()
+            .as_ref()
+            .is_some_and(|open| open.gallery.packs.iter().any(|p| p.id == id))
+    });
+    if !listed {
+        return;
+    }
+    let path = app.skins.join(id).display().to_string();
+    let (a, id) = (Arc::clone(app), id.to_owned());
+    app.platform.recycle(
+        vec![path],
+        Box::new(move || {
+            let queued = slint::invoke_from_event_loop(move || removed(&a, &id));
+            if queued.is_err() {
+                tracing::debug!("a skin pack was removed after the event loop ended");
+            }
+        }),
+    );
+}
+
+/// After removing the pack `id` (or not: the user may have said no): the bar no longer shows it.
+fn removed(app: &Arc<App>, id: &str) {
+    if !app.skins.join(id).exists() {
+        tracing::info!("removed the skin pack {id:?}");
+        if app.store.get().settings.classic.skin == id {
+            save(
+                app,
+                model::patch("classic.skin", Value::from(skins::FALLBACK.id())),
+            );
+        }
+    }
+    packs_changed(app);
 }
 
 /// Handles the page's callbacks.
@@ -305,6 +429,17 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     });
     let a = Arc::clone(app);
     state.on_browse_custom_skin(move || browse(&a));
+    let a = Arc::clone(app);
+    state.on_install_skin(move |folder| install(&a, folder));
+    let a = Arc::clone(app);
+    state.on_remove_skin(move |id| remove(&a, &id));
+    let a = Arc::clone(app);
+    state.on_open_skins_folder(move || {
+        if let Err(e) = std::fs::create_dir_all(&a.skins) {
+            tracing::warn!("could not create the skins folder: {e}");
+        }
+        a.platform.open(&a.skins.display().to_string());
+    });
 }
 
 #[cfg(test)]
@@ -345,6 +480,21 @@ mod tests {
         assert_eq!(
             notice("gone", &packs).as_deref(),
             Some("The skin “gone” is not installed on this computer, so Gloss is used.")
+        );
+        let rows = pack_rows(&packs);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            (rows[0].0.as_str(), rows[0].1.as_str()),
+            ("broken", "broken")
+        );
+        assert!(
+            rows[0].2.starts_with("skin.json is not valid"),
+            "{}",
+            rows[0].2
+        );
+        assert_eq!(
+            rows[1],
+            ("ocean".into(), "Ocean blue".into(), String::new())
         );
         let broken = notice("broken", &packs).expect("a notice");
         assert!(

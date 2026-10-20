@@ -444,3 +444,13 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] *Material* lists *Theme default (Acrylic)* (modern) or *(None)* (classic), then None, Acrylic and Mica, and each changes the bar. Turn off *Transparency effects* in Windows, close and reopen Settings: the list is disabled and says why.
 - [ ] *Custom image*: its row shows the path box and *Browse…*; pick a JPEG within 512 px and 1 MB: the bar and the tile show it. A missing, larger or GIF file: the row says why and the bar is Flat.
 - [ ] Set `"skin": "gone"` in the config (or delete the chosen pack's folder and reopen the page): a red line under *Skin* says Gloss is used, and no tile is outlined. A broken pack chosen: the line gives the reason.
+
+**Skin pack management** (since M4 S5)
+
+- [ ] With the classic theme, *Skin packs* lists the folders in the skins folder; *Open skins folder* opens `%APPDATA%\app.infodock.desktop\skins` in Explorer (created if missing).
+- [ ] *Install from folder…* with the test pack's folder from S2 (rename the installed one first): it is listed, its tile appears in the gallery, and the folder in `skins` holds only `skin.json` and the tiles it names (no `readme.txt` copied along).
+- [ ] Zip that folder in Explorer (*Send to ▸ Compressed folder*), and zip its contents without the folder: *Install from .zip…* installs both, named after the folder and after the `.zip` respectively. Choose the pack as the skin, edit a tile, zip and install it again: the bar shows the new tile at once.
+- [ ] A `.zip` without `skin.json`, a renamed text file, a pack with a tile 30 px tall: the line under the buttons says why, in red, and nothing appears in `skins` (no folder starting with `.` is left either).
+- [ ] Set `"skin": "nope"` (Gloss with the notice), then install a pack named `nope`: the bar and the gallery show it at once, without restarting.
+- [ ] A broken folder in `skins` (e.g. `skin.json` naming a missing file) is listed with its reason in red; *Remove* moves it to the Recycle Bin (it can be restored from there).
+- [ ] *Remove* the pack the bar shows: it goes to the Recycle Bin and the bar shows Gloss, which the gallery outlines.

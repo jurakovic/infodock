@@ -6,8 +6,10 @@
 //! skin, its colours, the bar's size or its edge change.
 
 mod builtin;
+pub mod install;
 pub mod pack;
 mod raster;
+mod zip;
 
 pub use builtin::BuiltIn;
 
@@ -237,6 +239,11 @@ impl SkinCache {
             decode,
             ..Self::new(dir)
         }
+    }
+
+    /// Draws the skin again the next time, e.g. after a pack was installed or removed.
+    pub fn forget(&mut self) {
+        self.drawn = None;
     }
 
     /// The skin for `spec` and `target`, drawn again only when either changed.
