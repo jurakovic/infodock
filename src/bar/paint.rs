@@ -536,6 +536,15 @@ mod tests {
         use crate::sensors::LayoutCtx;
         use crate::test_util::{screenshot_path, write_png};
 
+        // A bar window `width` × `height` logical px at `scale`: its logical size from the whole
+        // physical px it has (25 px at 150 % is 38), and those.
+        let window = |width: f32, height: u32, scale: f32| {
+            let (w, h) = (
+                (width * scale).round() as u32,
+                (height as f32 * scale).round() as u32,
+            );
+            (SizeF::new(w as f32 / scale, h as f32 / scale), w, h)
+        };
         let save = |name: &str, bitmap: &crate::platform::Bitmap| {
             write_png(
                 &screenshot_path(name),
@@ -661,10 +670,8 @@ mod tests {
         }
         for (name, settings, os, edge, scale) in bars {
             let theme = Theme::resolve(&settings, os);
-            let size = SizeF::new(400.0, theme.bar_height as f32);
+            let (size, width, height) = window(400.0, theme.bar_height, scale);
             let skin = skin_of(&theme, size, scale, edge);
-            let width = (size.width * scale).round() as u32;
-            let height = (size.height * scale).round() as u32;
             let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
                 paint_bar(
                     canvas,
@@ -920,7 +927,7 @@ mod tests {
         ] {
             let theme = Theme::resolve(&settings, os);
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
-                let size = SizeF::new(bar_width, theme.bar_height as f32);
+                let (size, width, height) = window(bar_width, theme.bar_height, scale);
                 let mut sensors = BarSensors::default();
                 let caps = crate::platform::Capabilities {
                     battery: true,
@@ -952,8 +959,6 @@ mod tests {
                     icons: &crate::sensors::DirectIcons(platform.as_ref()),
                 };
                 sensors.update_layout(&cx, size.width);
-                let width = (size.width * scale).round() as u32;
-                let height = (size.height * scale).round() as u32;
                 let skin = skin_of(&theme, size, scale, Edge::Bottom);
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
                     let skin = skin.as_ref().map(|s| &s.bar);
