@@ -3,6 +3,7 @@
 //! clicks, context menus and the hover hint (§6, §7.1).
 
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
@@ -191,6 +192,7 @@ impl BarLogic {
         commands: Receiver<Command>,
         host: Arc<dyn BarHost>,
         waker: UiWaker,
+        skins: PathBuf,
     ) -> Self {
         let appearance = platform.appearance();
         let animate = anim::enabled(config.settings.bar.animations, appearance.animations);
@@ -213,7 +215,7 @@ impl BarLogic {
             text: crate::platform::text_engine(),
             icons: IconLoader::new(Arc::clone(&platform), waker),
             appearance,
-            skin: SkinCache::default(),
+            skin: SkinCache::new(skins),
             material: None,
             tray_shown: None,
             subscribed: HashMap::new(),
@@ -1504,7 +1506,14 @@ impl BarHandler for BarLogic {
             self.skin
                 .get(spec, skins::Target::of(size, canvas.scale(), edge))
         });
-        paint_bar(canvas, size, &self.theme, edge, highlight, skin);
+        paint_bar(
+            canvas,
+            size,
+            &self.theme,
+            edge,
+            highlight,
+            skin.map(|s| &s.bar),
+        );
         self.sensors.draw(canvas, &self.theme, size.height);
         // The placer: a 2 px line in the accent colour where the dragged sensor, or the
         // sensors a drop creates, would go (SPEC §6.2, §6.3, §12.2).
@@ -1740,6 +1749,7 @@ mod tests {
             rx,
             Arc::clone(&host) as Arc<dyn BarHost>,
             UiWaker::new(|| {}),
+            PathBuf::from("no-skins"),
         );
         // The same text metrics on every OS, readable by the recording canvas.
         logic.text = Rc::new(crate::platform::recording::FixedMetrics);

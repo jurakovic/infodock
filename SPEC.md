@@ -1370,7 +1370,7 @@ A compact, denser look:
 * Height 25; Arial; label/value 9 px bold; day/hour 15 px bold; month/minutes 11 px.
 * Popups: radius 6 px, 13×7 pointer triangle.
 * No material (opaque or plain-alpha background), so skins render predictably.
-* The background is a **skin** (§12.4), tinted with `background.color` when `background.colorMode = custom`.
+* The background is a **skin** (§12.4), tinted with `background.color` when `background.colorMode = custom` and the user has set a colour; with the theme's colour (`null`), skin packs and the custom image keep their own colours.
 * **Tint algorithm** (skins, and icons with a custom colour): per pixel `L = (0.299R + 0.587G + 0.114B) / 255`; output RGB = `L × tintRGB`; alpha preserved. Applied on the CPU to the decoded RGBA and cached keyed by `(source, tint, size)`. Built-in skins apply the tint by using `background.color` as their base colour.
 * Background opacity applies to the skin layer only, not to sensors.
 
@@ -1385,7 +1385,7 @@ A compact, denser look:
 | `brushed` | Brushed metal | Vertical gradient (lighter top, darker bottom) + a fine repeating horizontal line texture at 4 % |
 | `carbon` | Carbon | Base colour + a 4 px diagonal checker pattern at 6 % |
 | `glass` | Glass | Base colour at reduced alpha; 1 px white highlight at 25 % on the inner edge; soft inner glow |
-| `custom` | Custom image | `classic.customSkin`, tiled horizontally; missing file → Flat |
+| `custom` | Custom image | `classic.customSkin`, tiled horizontally like a pack's tile without a band (its own height is the height it was drawn for; the same checks as a pack's files); missing or unusable file → Flat |
 
 Implementation (`bar/skins/`): a skin is drawn pixel by pixel into a bitmap of the bar's physical size (lines are one logical px in whole physical px; textures are sized in logical px), kept until the skin, its colour, the bar's size or its edge changes, and drawn with the background opacity (and the hover highlight, §5.5). Gloss's line is black at 30 %. Brushed metal runs from 16 % white at the top to 20 % black at the bottom; its texture is a lighter or darker line per physical row with streaks along it, at most 4 %. Carbon's checker is turned by 45°: diamonds 4 px across, the light ones 6 % white. Glass is the base colour at 55 % alpha, with a glow (10 % white) fading over a third of the height from both long edges and its highlight on the edge facing the screen centre (the top of a bottom bar).
 
@@ -1403,9 +1403,11 @@ Implementation (`bar/skins/`): a skin is drawn pixel by pixel into a bitmap of t
 }
 ```
 
-* Tiles are never stretched horizontally. A tile is `height + shadowBand` px tall (± 1 px tolerance).
-* When the configured bar height (§5.1) differs from `height`, the bar part of the tile is scaled vertically to the bar height; the shadow band keeps its size. This is pre-rendered together with the tint (§12.3) and cached. Sensors always use the full configured bar height.
-* Validation on load: PNG/JPEG magic bytes, ≤ 1 MB per file, ≤ 512 px per side, only files named in `skin.json`. Invalid packs are listed in Settings with the reason.
+* `name` defaults to the folder's name. Every edge needs a tile: `image`, or both `imageTop` and `imageBottom`. A folder named like a built-in skin (or `custom`) is not a pack.
+* Tiles are never stretched horizontally. A tile is `height + shadowBand` px tall (± 1 px tolerance). The band is on the side facing the screen center for the edge the tile is drawn for: at the top of `imageBottom` and `image`, at the bottom of `imageTop`. When `image` serves a top bar, its bar part is used as it is and its band is mirrored below the bar, so the band's darkest rows still touch the bar.
+* When the configured bar height (§5.1) differs from `height`, the bar part of the tile is scaled vertically to the bar height; the shadow band keeps its size. This is pre-rendered together with the tint (§12.3) and cached. Sensors always use the full configured bar height. Tiles are drawn for 100 %: at other scales their width, the bar part's height and the band follow the monitor's scale.
+* Validation on load: PNG/JPEG magic bytes, ≤ 1 MB per file, ≤ 512 px per side, only files named in `skin.json` (plain file names in the pack's folder), `height` + `shadowBand` 1–512 px, each tile taller than the band. Invalid packs are listed in Settings with the reason. A pack is checked when listed and again when drawn; one that cannot be drawn gives Gloss, and the reason is logged.
+* Implementation (`bar/skins/pack.rs`, `raster.rs`): the tile is decoded by the platform (WIC), cut into its bar part and band, tinted, scaled with a linear filter on premultiplied pixels (widened when shrinking), and tiled from the bar's left end; the band is drawn the same way for the side facing the screen center.
 * Settings ▸ Appearance: a gallery of the built-in skins and installed packs with previews (`skin_preview`), "Install skin pack…" (pick a folder or `.zip`; `install_skin`), "Open skins folder" (`shell_open` on `skinsDir`), "Remove" (`remove_skin`).
 * A configured skin that is missing on this machine falls back to Gloss, with a one-line notice in Settings ▸ Appearance.
 

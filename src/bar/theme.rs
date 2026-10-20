@@ -110,6 +110,7 @@ impl Theme {
             id: s.classic.skin.clone(),
             custom_image: s.classic.custom_skin.clone(),
             base: background,
+            tint: custom_background.then_some(background),
         });
 
         Self {
@@ -220,6 +221,7 @@ mod tests {
                 id: "gloss".into(),
                 custom_image: String::new(),
                 base: hex("#2A2A2E"),
+                tint: None,
             })
         );
         assert_eq!(Theme::resolve(&Settings::default(), DARK).skin, None);
@@ -237,12 +239,14 @@ mod tests {
         let t = Theme::resolve(&s, LIGHT);
         let skin = t.skin.expect("classic has a skin");
         assert_eq!((skin.id.as_str(), skin.base), ("carbon", hex("#3A6EA5")));
+        // Packs and the custom image are tinted with a colour the user set.
+        assert_eq!(skin.tint, Some(hex("#3A6EA5")));
         // The opacity stays with the background, which the bar draws the skin with.
         assert_eq!(t.bar_background, hex("#3A6EA5").with_alpha(0.7));
         // Standard colour mode: the theme's colour.
         s.background.color_mode = BackgroundColorMode::Standard;
         let skin = Theme::resolve(&s, DARK).skin.expect("classic has a skin");
-        assert_eq!(skin.base, hex("#2A2A2E"));
+        assert_eq!((skin.base, skin.tint), (hex("#2A2A2E"), None));
     }
 
     #[test]

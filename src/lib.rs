@@ -94,6 +94,7 @@ pub fn run() {
         &app.store,
         Arc::clone(&app.platform),
         Arc::new(AppHost(Arc::clone(&app))),
+        dirs.skins(),
     ) {
         Ok(bar) => bar,
         Err(e) => {

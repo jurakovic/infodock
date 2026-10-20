@@ -858,6 +858,13 @@ pub struct AppDirs {
     pub logs: PathBuf,
 }
 
+impl AppDirs {
+    /// Skin packs, one folder each (SPEC §12.4).
+    pub fn skins(&self) -> PathBuf {
+        self.config.join("skins")
+    }
+}
+
 /// The per-user folders for the app with this identifier.
 pub fn app_dirs(identifier: &str) -> AppDirs {
     #[cfg(windows)]

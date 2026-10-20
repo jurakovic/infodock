@@ -417,3 +417,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] *Highlight on hover* on: the skin brightens under the pointer, as the modern background does.
 - [ ] An unknown skin (`"skin": "nope"`): Gloss. `"custom"` without an image: Flat.
 - [ ] The classic bar on a 4K monitor at 150 %: memory within 30 MB at idle, idle CPU as with the modern bar (the skin is drawn once per size, not per frame).
+
+**Skin packs** (since M4 S2)
+
+- [ ] Make a pack: `%APPDATA%\app.infodock.desktop\skins\test\skin.json` with `{ "name": "Test", "image": "tile.png", "shadowBand": 9 }` and a PNG tile 34 px tall (or a legacy 25 + 9 px skin), then set `"skin": "test"` as above: the tile repeats across the bar from its left end, never stretched; at 150 %, and with *Height* 32, the bar part fills the bar's height. CI shows the same with a made-up pack (`bar-classic-pack*`).
+- [ ] Add `imageTop` and `imageBottom` with different tiles: each edge uses its own. With `image` only, a top bar shows the same bar part as a bottom bar.
+- [ ] `"background": { "color": "#A5703A" }`: the pack is tinted (its greys become shades of that colour); without a colour it keeps its own colours.
+- [ ] Break the pack and start again, one at a time: delete `tile.png`; replace it with a 600 px wide image, a GIF renamed to `.png`, or a 2 MB file; make the tile 30 px tall; name `../x.png` in `skin.json`. Each time the bar shows Gloss and the log says why.
+- [ ] `"skin": "custom"` and `"customSkin": "C:\\Users\\…\\wood.jpg"` (a JPEG within 512 px and 1 MB): the photo tiled across the bar at its height, tinted when a colour is set; a missing or larger file: Flat.

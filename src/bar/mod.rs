@@ -19,6 +19,7 @@ mod tray;
 
 pub(crate) use interact::clicks_allowed;
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -98,17 +99,19 @@ pub struct BarController {
 }
 
 impl BarController {
-    /// Starts the bar thread and docks the bar; follows `store` from then on.
+    /// Starts the bar thread and docks the bar; follows `store` from then on. Skin packs come
+    /// from `skins` (SPEC §11.1).
     pub fn create(
         store: &ConfigStore,
         platform: Arc<dyn Platform>,
         host: Arc<dyn BarHost>,
+        skins: PathBuf,
     ) -> Result<Arc<Self>, PlatformError> {
         let config = store.get();
         let settings = config.settings.clone();
         let (commands, queue) = mpsc::channel();
         let thread = platform::start_bar_thread(Box::new(move |waker| {
-            Box::new(BarLogic::new(config, platform, queue, host, waker))
+            Box::new(BarLogic::new(config, platform, queue, host, waker, skins))
         }))?;
 
         let controller = Arc::new(Self {

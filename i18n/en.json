@@ -560,5 +560,15 @@
   "settings.picker.after": "After",
   "settings.picker.target": "the “{name}” sensor",
   "settings.picker.add": "Add",
-  "settings.picker.cancel": "Cancel"
+  "settings.picker.cancel": "Cancel",
+  "skins.error.manifest": "skin.json is not valid: {error}",
+  "skins.error.reserved": "The folder has the name of a built-in skin. Rename the folder.",
+  "skins.error.noImage": "skin.json names no image for one of the screen edges.",
+  "skins.error.height": "The height and shadow band together must be 1–512 px.",
+  "skins.error.fileName": "“{file}” is not the name of a file in the skin's folder.",
+  "skins.error.missing": "“{file}” is missing.",
+  "skins.error.tooLarge": "“{file}” is larger than 1 MB.",
+  "skins.error.format": "“{file}” is not a PNG or JPEG image.",
+  "skins.error.dimensions": "“{file}” is larger than 512 × 512 px.",
+  "skins.error.tileHeight": "“{file}” is {actual} px tall; the skin's height and shadow band need {expected} px."
 }

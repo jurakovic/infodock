@@ -115,7 +115,8 @@ mod tests {
         assert_eq!(theme.bar_background, Color::rgba(0x2A, 0x2A, 0x2E, 0.9));
         let size = SizeF::new(100.0, 25.0);
         let spec = theme.skin.as_ref().expect("classic has a skin");
-        let skin = skins::render(spec, skins::Target::of(size, 1.5, Edge::Bottom));
+        let target = skins::Target::of(size, 1.5, Edge::Bottom);
+        let skin = skins::render(std::path::Path::new("no-skins"), spec, target).map(|s| s.bar);
         let mut canvas = RecordingCanvas::new(1.5);
         paint_bar(&mut canvas, size, &theme, Edge::Bottom, 0.0, skin.as_ref());
         // The skin, and no hairline.
@@ -198,9 +199,11 @@ mod tests {
             let edge = crate::config::model::Edge::Bottom;
             let skin = theme.skin.as_ref().and_then(|spec| {
                 crate::bar::skins::render(
+                    std::path::Path::new("no-skins"),
                     spec,
                     crate::bar::skins::Target::of(size, canvas.scale(), edge),
                 )
+                .map(|s| s.bar)
             });
             super::super::paint_bar(canvas, size, theme, edge, 0.0, skin.as_ref());
             let fg = theme.sensor_text;
@@ -550,11 +553,35 @@ mod tests {
             theme: ThemeId::Classic,
             ..Settings::default()
         };
+        // A skin pack, made here (SPEC §12.4): a blue tile with a 9 px shadow band, drawn for a
+        // 25 px bar, with a groove at its right edge so the tiling shows.
+        let skins_dir = tempfile::tempdir().expect("temp dir");
+        let pack_dir = skins_dir.path().join("blue-steel");
+        std::fs::create_dir_all(&pack_dir).expect("pack folder");
+        std::fs::write(
+            pack_dir.join("skin.json"),
+            r#"{ "name": "Blue Steel", "image": "tile.png", "shadowBand": 9 }"#,
+        )
+        .expect("skin.json");
+        let tile: Vec<u8> = (0..34u32)
+            .flat_map(|y| (0..24u32).map(move |x| (x, y)))
+            .flat_map(|(x, y)| match y {
+                // The band: black, darkest next to the bar.
+                0..9 => [0, 0, 0, (y * y * 2) as u8],
+                9 => [0xA8, 0xC8, 0xF0, 255],
+                _ if x == 23 => [0x10, 0x20, 0x38, 255],
+                _ => {
+                    let t = (y - 10) as f32 / 23.0;
+                    let mix = |a: f32, b: f32| (a + (b - a) * t) as u8;
+                    [mix(90.0, 31.0), mix(143.0, 63.0), mix(208.0, 111.0), 255]
+                }
+            })
+            .collect();
+        write_png(&pack_dir.join("tile.png"), 24, 34, &tile);
         let skin_of = |theme: &Theme, size: SizeF, scale: f32, edge: Edge| {
-            theme
-                .skin
-                .as_ref()
-                .and_then(|spec| skins::render(spec, skins::Target::of(size, scale, edge)))
+            theme.skin.as_ref().and_then(|spec| {
+                skins::render(skins_dir.path(), spec, skins::Target::of(size, scale, edge))
+            })
         };
         let mut bars = vec![
             (
@@ -607,6 +634,31 @@ mod tests {
             Edge::Bottom,
             1.0,
         ));
+        // The pack on both edges, at 150 %, on a 32 px bar (its bar part scaled to fit), and
+        // tinted; a missing pack (Gloss).
+        let pack = skinned("blue-steel", None);
+        let mut tall = pack.clone();
+        tall.bar.height = Some(32);
+        for (name, settings, edge, scale) in [
+            ("bar-classic-pack", pack.clone(), Edge::Bottom, 1.0),
+            ("bar-classic-pack-top", pack.clone(), Edge::Top, 1.0),
+            ("bar-classic-pack@1.5x", pack.clone(), Edge::Bottom, 1.5),
+            ("bar-classic-pack-32", tall, Edge::Bottom, 1.0),
+            (
+                "bar-classic-pack-tinted",
+                skinned("blue-steel", Some("#A5703A")),
+                Edge::Bottom,
+                1.0,
+            ),
+            (
+                "bar-classic-missing",
+                skinned("gone", None),
+                Edge::Bottom,
+                1.0,
+            ),
+        ] {
+            bars.push((name.to_owned(), settings, dark, edge, scale));
+        }
         for (name, settings, os, edge, scale) in bars {
             let theme = Theme::resolve(&settings, os);
             let size = SizeF::new(400.0, theme.bar_height as f32);
@@ -614,10 +666,42 @@ mod tests {
             let width = (size.width * scale).round() as u32;
             let height = (size.height * scale).round() as u32;
             let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
-                paint_bar(canvas, size, &theme, edge, 0.0, skin.as_ref())
+                paint_bar(
+                    canvas,
+                    size,
+                    &theme,
+                    edge,
+                    0.0,
+                    skin.as_ref().map(|s| &s.bar),
+                )
             })
             .expect("rendered");
             save(&name, &bitmap);
+        }
+        // The pack's shadow band beside the bar, on the side facing the screen centre.
+        for (name, edge, scale) in [
+            ("bar-classic-pack-band", Edge::Bottom, 1.0),
+            ("bar-classic-pack-band-top", Edge::Top, 1.0),
+            ("bar-classic-pack-band@1.5x", Edge::Bottom, 1.5),
+        ] {
+            let theme = Theme::resolve(&pack, dark);
+            let size = SizeF::new(400.0, theme.bar_height as f32);
+            let skin = skin_of(&theme, size, scale, edge).expect("drawn");
+            let band = skin.band.clone().expect("a band");
+            let (width, bar, shadow) = (skin.bar.width(), skin.bar.height(), band.height());
+            let (band_top, bar_top) = match edge {
+                Edge::Bottom => (0, shadow),
+                Edge::Top => (bar, 0),
+            };
+            let rect = |top: u32, height: u32| {
+                crate::platform::RectF::new(0.0, top as f32, width as f32, (top + height) as f32)
+            };
+            let bitmap = render_offscreen(width, bar + shadow, 1.0, &mut |canvas| {
+                canvas.draw_bitmap(&band, rect(band_top, shadow), 1.0);
+                canvas.draw_bitmap(&skin.bar, rect(bar_top, bar), theme.bar_background.a);
+            })
+            .expect("rendered");
+            save(name, &bitmap);
         }
 
         let text = text_engine();
@@ -872,7 +956,8 @@ mod tests {
                 let height = (size.height * scale).round() as u32;
                 let skin = skin_of(&theme, size, scale, Edge::Bottom);
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
-                    paint_bar(canvas, size, &theme, Edge::Bottom, 0.0, skin.as_ref());
+                    let skin = skin.as_ref().map(|s| &s.bar);
+                    paint_bar(canvas, size, &theme, Edge::Bottom, 0.0, skin);
                     sensors.draw(canvas, &theme, size.height);
                 })
                 .expect("rendered");
