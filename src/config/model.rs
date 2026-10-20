@@ -106,6 +106,7 @@ pub struct Settings {
     pub bar: BarSettings,
     // §10.3
     pub theme: Theme,
+    pub color_scheme: ColorScheme,
     pub background: BackgroundSettings,
     pub classic: ClassicSettings,
     // §10.4
@@ -132,6 +133,7 @@ impl Default for Settings {
             new_sensor_menu: NewSensorMenu::Dialog,
             bar: BarSettings::default(),
             theme: Theme::Modern,
+            color_scheme: ColorScheme::System,
             background: BackgroundSettings::default(),
             classic: ClassicSettings::default(),
             sensors: SensorDefaults::default(),
@@ -325,6 +327,11 @@ string_enum!(ZOrder {
 });
 string_enum!(Animations { Auto, On, Off });
 string_enum!(Theme { Modern, Classic });
+string_enum!(ColorScheme {
+    System,
+    Light,
+    Dark
+});
 string_enum!(BackgroundColorMode { Standard, Custom });
 string_enum!(Material {
     None,
@@ -397,7 +404,32 @@ impl ThemeDefaults {
     }
 }
 
+/// The modern bar's background and sensor text in its light look (SPEC §12.2).
+pub const LIGHT_BAR_BACKGROUND: &str = "#F3F3F3";
+pub const LIGHT_SENSOR_TEXT: &str = "#1A1A1A";
+
 impl Settings {
+    /// Whether Settings and the modern bar are dark (SPEC §10.3): as `colorScheme` says, or with
+    /// `system` as the OS apps are (`os_dark`).
+    pub fn dark_scheme(&self, os_dark: bool) -> bool {
+        match self.color_scheme {
+            ColorScheme::System => os_dark,
+            ColorScheme::Light => false,
+            ColorScheme::Dark => true,
+        }
+    }
+
+    /// Whether the modern bar has its light look (SPEC §12.2): the light scheme, while the
+    /// background and sensor text colours are not customised.
+    pub fn light_bar(&self, os_dark: bool) -> bool {
+        let custom_background = self.background.color_mode == BackgroundColorMode::Custom
+            && self.background.color.is_some();
+        self.theme == Theme::Modern
+            && !self.dark_scheme(os_dark)
+            && !custom_background
+            && self.sensors.text_color == SensorDefaults::default().text_color
+    }
+
     /// Bar height in logical px with the theme default applied.
     pub fn bar_height(&self) -> u32 {
         self.bar

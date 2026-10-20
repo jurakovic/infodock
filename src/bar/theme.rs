@@ -3,14 +3,10 @@
 
 use super::skins::SkinSpec;
 use crate::config::model::{
-    BackgroundColorMode, InactiveMode, Material, Settings, Theme as ThemeId, ThemeDefaults,
+    BackgroundColorMode, InactiveMode, LIGHT_BAR_BACKGROUND, LIGHT_SENSOR_TEXT, Material, Settings,
+    Theme as ThemeId, ThemeDefaults,
 };
 use crate::platform::{Color, Font, OsAppearance};
-
-/// Modern theme in OS light mode, when the user has not customised colours (SPEC §12.2).
-const LIGHT_BAR_BACKGROUND: Color = Color::rgba(0xF3, 0xF3, 0xF3, 1.0);
-const LIGHT_SENSOR_TEXT: Color = Color::rgba(0x1A, 0x1A, 0x1A, 1.0);
-const DEFAULT_TEXT_COLOR: &str = "#FFFFFF";
 
 /// How inactive sensors draw their icon or graphic (SPEC §8.5).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,11 +66,11 @@ impl Theme {
         let modern = s.theme == ThemeId::Modern;
         let custom_background =
             s.background.color_mode == BackgroundColorMode::Custom && s.background.color.is_some();
-        let light =
-            modern && !os.dark && !custom_background && s.sensors.text_color == DEFAULT_TEXT_COLOR;
+        // The light look follows `colorScheme` (SPEC §10.3, §12.2).
+        let light = s.light_bar(os.dark);
 
         let theme_background = if light {
-            LIGHT_BAR_BACKGROUND
+            color(LIGHT_BAR_BACKGROUND, Color::WHITE)
         } else {
             color(&d.background_color, Color::BLACK)
         };
@@ -84,7 +80,7 @@ impl Theme {
         };
         let white = Color::WHITE;
         let sensor_text = if light {
-            LIGHT_SENSOR_TEXT
+            color(LIGHT_SENSOR_TEXT, Color::BLACK)
         } else {
             color(&s.sensors.text_color, white)
         };
@@ -308,6 +304,38 @@ mod tests {
         };
         assert_eq!(
             Theme::resolve(&classic, LIGHT).bar_background,
+            hex("#2A2A2E").with_alpha(0.9)
+        );
+    }
+
+    #[test]
+    fn colour_scheme_overrides_the_os() {
+        use crate::config::model::ColorScheme;
+        let light = Settings {
+            color_scheme: ColorScheme::Light,
+            ..Settings::default()
+        };
+        let t = Theme::resolve(&light, DARK);
+        assert_eq!(t.bar_background, hex("#F3F3F3").with_alpha(0.8));
+        assert_eq!(t.sensor_text, hex("#1A1A1A"));
+        let dark = Settings {
+            color_scheme: ColorScheme::Dark,
+            ..Settings::default()
+        };
+        let t = Theme::resolve(&dark, LIGHT);
+        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.8));
+        assert_eq!(t.sensor_text, hex("#FFFFFF"));
+        assert_eq!(t.hairline, Some(Color::rgba(255, 255, 255, 0.08)));
+        // `system` follows the OS.
+        assert!(Settings::default().dark_scheme(true));
+        assert!(!Settings::default().dark_scheme(false));
+        // The classic bar has no light look.
+        let classic = Settings {
+            theme: ThemeId::Classic,
+            ..light
+        };
+        assert_eq!(
+            Theme::resolve(&classic, DARK).bar_background,
             hex("#2A2A2E").with_alpha(0.9)
         );
     }

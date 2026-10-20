@@ -15,7 +15,9 @@ use crate::app::App;
 use crate::bar::skins::pack::{self, PackEntry};
 use crate::bar::skins::{self, BuiltIn, CUSTOM};
 use crate::bar::theme::Theme;
-use crate::config::model::{ClassicSettings, Settings, Theme as ThemeId, ThemeDefaults};
+use crate::config::model::{
+    BackgroundSettings, ClassicSettings, ColorScheme, Settings, Theme as ThemeId, ThemeDefaults,
+};
 use crate::i18n::{t, t_args};
 use crate::platform::{Bitmap, PathRequest};
 use crate::ui;
@@ -164,6 +166,7 @@ fn preview(app: &App, key: &PreviewKey) -> Preview {
 /// Copies the Appearance settings into the window; the gallery's previews are drawn again only
 /// where what they show changed.
 pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
+    apply_scheme(open, settings.color_scheme);
     let state = open.window.global::<ui::SettingsState>();
     let json = serde_json::to_value(settings).unwrap_or_default();
     let choice = |path: &str| model::choice(path).map_or(0, |c| model::choice_index(&json, c));
@@ -171,16 +174,23 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     let background = &settings.background;
 
     state.set_theme(choice("theme"));
+    state.set_color_scheme(choice("colorScheme"));
     state.set_background_mode(choice("background.colorMode"));
-    state.set_background_color(
-        background
-            .color
-            .as_deref()
-            .unwrap_or(&defaults.background_color)
-            .into(),
-    );
+    // What the theme gives, which in the modern bar's light look is its light colour.
+    let uncustomised = Settings {
+        background: BackgroundSettings {
+            color: None,
+            ..background.clone()
+        },
+        ..settings.clone()
+    };
+    let os_dark = app.platform.appearance().dark;
+    let theme_color = model::in_effect(&uncustomised, os_dark, "background.color")
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| defaults.background_color.clone());
+    state.set_background_color(background.color.as_deref().unwrap_or(&theme_color).into());
     state.set_background_color_customised(background.color.is_some());
-    state.set_background_color_default(defaults.background_color.as_str().into());
+    state.set_background_color_default(theme_color.as_str().into());
     state.set_background_opacity(background.opacity.unwrap_or(defaults.background_opacity) as f32);
     state.set_background_opacity_customised(background.opacity.is_some());
     state.set_background_opacity_default(defaults.background_opacity as i32);
@@ -290,6 +300,29 @@ fn pick(title: &str, folder: bool, extensions: &[&str], types_name: &str) -> Opt
             all_files: &all_files,
         },
     )
+}
+
+/// Gives the window's title bar the colour scheme (SPEC §10.3); the Fluent palette follows
+/// `color-scheme` in the UI. Done again until the native window exists.
+pub(super) fn apply_scheme(open: &mut Open, scheme: ColorScheme) {
+    use slint::winit_030::WinitWindowAccessor;
+    use slint::winit_030::winit::window::Theme as WindowTheme;
+    if open.scheme == Some(scheme) {
+        return;
+    }
+    let theme = match scheme {
+        ColorScheme::System => None,
+        ColorScheme::Light => Some(WindowTheme::Light),
+        ColorScheme::Dark => Some(WindowTheme::Dark),
+    };
+    let applied = open
+        .window
+        .window()
+        .with_winit_window(|w| w.set_theme(theme))
+        .is_some();
+    if applied {
+        open.scheme = Some(scheme);
+    }
 }
 
 /// Lets the user pick the custom image.

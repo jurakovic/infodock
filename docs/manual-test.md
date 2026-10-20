@@ -454,3 +454,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Set `"skin": "nope"` (Gloss with the notice), then install a pack named `nope`: the bar and the gallery show it at once, without restarting.
 - [ ] A broken folder in `skins` (e.g. `skin.json` naming a missing file) is listed with its reason in red; *Remove* moves it to the Recycle Bin (it can be restored from there).
 - [ ] *Remove* the pack the bar shows: it goes to the Recycle Bin and the bar shows Gloss, which the gallery outlines.
+
+**Colour scheme** (since M4 S6)
+
+- [ ] Settings ▸ Appearance ▸ *Colour scheme* *Dark* with Windows in light mode: Settings turns dark at once, title bar included, and the modern bar is dark (`#1C1C1F`, white text). *Light* with Windows in dark mode: Settings and the bar turn light (`#F3F3F3`, dark text); the colour box shows `#F3F3F3` as the theme default.
+- [ ] *Like Windows*: switch Windows between light and dark (Settings ▸ Personalisation ▸ Colours ▸ *Choose your mode*) with Infodock's Settings open: Settings and the bar follow within a second, without reopening.
+- [ ] In light mode, click into the colour box and out again: the colour stays the theme's (the bar keeps its light look, *Use theme default* stays disabled). Set a sensor text colour or a background colour: the bar leaves the light look, as before.
+- [ ] The classic theme with any colour scheme: the bar keeps its skin; only Settings changes.
+- [ ] Close and reopen Settings with *Dark* chosen: it opens dark, title bar included.

@@ -3,7 +3,9 @@
 
 use serde_json::{Map, Value};
 
-use crate::config::model::{FloatingRect, PRIMARY_MONITOR, Settings, ThemeDefaults, Zone};
+use crate::config::model::{
+    FloatingRect, LIGHT_BAR_BACKGROUND, PRIMARY_MONITOR, Settings, ThemeDefaults, Zone,
+};
 use crate::config::patch::apply_settings_patch;
 use crate::i18n::t_args;
 use crate::platform::MonitorInfo;
@@ -98,6 +100,10 @@ pub const CHOICES: &[Choice] = &[
     Choice {
         path: "theme",
         values: &["modern", "classic"],
+    },
+    Choice {
+        path: "colorScheme",
+        values: &["system", "light", "dark"],
     },
     Choice {
         path: "background.colorMode",
@@ -200,8 +206,9 @@ pub fn choice_index(settings: &Value, choice: &Choice) -> i32 {
 }
 
 /// The value in effect at a dotted path: the stored one, or the theme's default for a
-/// theme-dependent setting stored as `null`; `None` for an unknown path.
-pub fn in_effect(settings: &Settings, path: &str) -> Option<Value> {
+/// theme-dependent setting stored as `null`; `None` for an unknown path. `os_dark`: the OS apps
+/// are dark, for the modern bar's light look with `colorScheme: system` (SPEC §12.2).
+pub fn in_effect(settings: &Settings, os_dark: bool, path: &str) -> Option<Value> {
     let json = serde_json::to_value(settings).ok()?;
     let stored = value_at(&json, path)?;
     if !stored.is_null() {
@@ -210,6 +217,7 @@ pub fn in_effect(settings: &Settings, path: &str) -> Option<Value> {
     let d = ThemeDefaults::of(settings.theme);
     let default = match path {
         "bar.height" => Value::from(d.bar_height),
+        "background.color" if settings.light_bar(os_dark) => Value::from(LIGHT_BAR_BACKGROUND),
         "background.color" => Value::from(d.background_color),
         "background.opacity" => Value::from(d.background_opacity),
         "background.material" => serde_json::to_value(d.background_material).ok()?,
@@ -228,9 +236,9 @@ pub fn in_effect(settings: &Settings, path: &str) -> Option<Value> {
 /// at the theme's value (a colour box losing the focus, a slider clicked without moving) stays
 /// `null` and keeps following the theme (SPEC §11.2). An invalid value counts as a change, so
 /// saving it reports why.
-pub fn changes(settings: &Settings, path: &str, value: &Value) -> bool {
+pub fn changes(settings: &Settings, os_dark: bool, path: &str, value: &Value) -> bool {
     apply_settings_patch(settings, &patch(path, value.clone())).map_or(true, |next| {
-        in_effect(&next, path) != in_effect(settings, path)
+        in_effect(&next, os_dark, path) != in_effect(settings, os_dark, path)
     })
 }
 
@@ -398,20 +406,20 @@ mod tests {
     fn theme_defaults_are_in_effect_until_set() {
         let modern = Settings::default();
         assert_eq!(
-            in_effect(&modern, "popups.background"),
+            in_effect(&modern, true, "popups.background"),
             Some(json!("#202024"))
         );
-        assert_eq!(in_effect(&modern, "bar.height"), Some(json!(28)));
+        assert_eq!(in_effect(&modern, true, "bar.height"), Some(json!(28)));
         assert_eq!(
-            in_effect(&modern, "sensors.fontStyle"),
+            in_effect(&modern, true, "sensors.fontStyle"),
             Some(json!("semibold"))
         );
         assert_eq!(
-            in_effect(&modern, "sensors.textColor"),
+            in_effect(&modern, true, "sensors.textColor"),
             Some(json!("#FFFFFF"))
         );
-        assert_eq!(in_effect(&modern, "bar.floating"), Some(Value::Null));
-        assert_eq!(in_effect(&modern, "bar.nope"), None);
+        assert_eq!(in_effect(&modern, true, "bar.floating"), Some(Value::Null));
+        assert_eq!(in_effect(&modern, true, "bar.nope"), None);
         let defaults = serde_json::to_value(&modern).expect("serializable");
         for path in [
             "bar.height",
@@ -426,9 +434,9 @@ mod tests {
             "popups.fontStyle",
         ] {
             assert_eq!(value_at(&defaults, path), Some(&Value::Null), "{path}");
-            let value = in_effect(&modern, path).unwrap_or_default();
+            let value = in_effect(&modern, true, path).unwrap_or_default();
             assert!(!value.is_null(), "{path} has no theme default");
-            assert!(!changes(&modern, path, &value), "{path}");
+            assert!(!changes(&modern, true, path, &value), "{path}");
         }
 
         let mut classic = Settings {
@@ -436,13 +444,51 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(
-            in_effect(&classic, "popups.background"),
+            in_effect(&classic, true, "popups.background"),
             Some(json!("#000000"))
         );
         classic.popups.background = Some("#202024".into());
         assert_eq!(
-            in_effect(&classic, "popups.background"),
+            in_effect(&classic, true, "popups.background"),
             Some(json!("#202024"))
+        );
+    }
+
+    #[test]
+    fn the_light_look_is_the_modern_themes_colour_in_light_mode() {
+        let settings = Settings::default();
+        // OS in light mode: the light look's background is the theme's colour (SPEC §12.2), so
+        // leaving the colour box keeps following it.
+        assert_eq!(
+            in_effect(&settings, false, "background.color"),
+            Some(json!("#F3F3F3"))
+        );
+        assert!(!changes(
+            &settings,
+            false,
+            "background.color",
+            &json!("#F3F3F3")
+        ));
+        assert!(changes(
+            &settings,
+            false,
+            "background.color",
+            &json!("#1C1C1F")
+        ));
+        // Dark forced, or a text colour of the user's: the dark colour.
+        let dark = Settings {
+            color_scheme: crate::config::model::ColorScheme::Dark,
+            ..Settings::default()
+        };
+        assert_eq!(
+            in_effect(&dark, false, "background.color"),
+            Some(json!("#1C1C1F"))
+        );
+        let mut yellow = Settings::default();
+        yellow.sensors.text_color = "#FFCC00".into();
+        assert_eq!(
+            in_effect(&yellow, false, "background.color"),
+            Some(json!("#1C1C1F"))
         );
     }
 
@@ -450,14 +496,29 @@ mod tests {
     fn only_a_different_value_is_a_change() {
         let settings = Settings::default();
         // The theme's values: nothing to save, the settings stay `null`.
-        assert!(!changes(&settings, "popups.background", &json!("#202024")));
-        assert!(!changes(&settings, "popups.opacity", &json!(92)));
-        assert!(!changes(&settings, "bar.height", &json!(28)));
-        assert!(!changes(&settings, "sensors.textColor", &json!("#FFFFFF")));
+        assert!(!changes(
+            &settings,
+            true,
+            "popups.background",
+            &json!("#202024")
+        ));
+        assert!(!changes(&settings, true, "popups.opacity", &json!(92)));
+        assert!(!changes(&settings, true, "bar.height", &json!(28)));
+        assert!(!changes(
+            &settings,
+            true,
+            "sensors.textColor",
+            &json!("#FFFFFF")
+        ));
         // Anything else is saved.
-        assert!(changes(&settings, "popups.background", &json!("#202025")));
-        assert!(changes(&settings, "popups.opacity", &json!(91)));
-        assert!(changes(&settings, "bar.height", &json!(30)));
+        assert!(changes(
+            &settings,
+            true,
+            "popups.background",
+            &json!("#202025")
+        ));
+        assert!(changes(&settings, true, "popups.opacity", &json!(91)));
+        assert!(changes(&settings, true, "bar.height", &json!(30)));
         // A value set explicitly is kept as it is.
         let pinned = Settings {
             popups: crate::config::model::PopupSettings {
@@ -466,10 +527,15 @@ mod tests {
             },
             ..Settings::default()
         };
-        assert!(!changes(&pinned, "popups.background", &json!("#202024")));
+        assert!(!changes(
+            &pinned,
+            true,
+            "popups.background",
+            &json!("#202024")
+        ));
         // Invalid: saving it reports the error.
-        assert!(changes(&settings, "popups.opacity", &json!("x")));
-        assert!(changes(&settings, "nope", &json!(1)));
+        assert!(changes(&settings, true, "popups.opacity", &json!("x")));
+        assert!(changes(&settings, true, "nope", &json!(1)));
     }
 
     #[test]

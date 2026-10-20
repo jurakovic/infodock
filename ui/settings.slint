@@ -111,6 +111,8 @@ export global SettingsState {
     // Appearance (SPEC §10.3)
     // 0 = modern, 1 = classic.
     in-out property <int> theme;
+    // 0 = like Windows, 1 = light, 2 = dark; also the window's own (SPEC §10.3).
+    in-out property <int> color-scheme;
     // 0 = the theme's colour, 1 = a custom one.
     in-out property <int> background-mode;
     in-out property <string> background-color;
@@ -1007,6 +1009,24 @@ component AppearancePage inherits VerticalLayout {
     }
 
     Row {
+        label: I18n.tr("settings.appearance.colorScheme");
+        help: I18n.tr("settings.appearance.colorScheme.help");
+        ComboBox {
+            width: 240px;
+            model: [
+                I18n.tr("settings.appearance.colorScheme.system"),
+                I18n.tr("settings.appearance.colorScheme.light"),
+                I18n.tr("settings.appearance.colorScheme.dark"),
+            ];
+            current-index <=> SettingsState.color-scheme;
+            accessible-label: I18n.tr("settings.appearance.colorScheme");
+            selected => {
+                SettingsState.set-choice("colorScheme", self.current-index);
+            }
+        }
+    }
+
+    Row {
         label: I18n.tr("settings.appearance.colorMode");
         help: SettingsState.theme == 1 ? I18n.tr("settings.appearance.colorMode.classicHelp") : "";
         ComboBox {
@@ -1730,6 +1750,19 @@ export component SettingsWindow inherits Window {
     background: Palette.background;
     // The page last shown, to go back to when the navigation is left without a selection.
     property <int> shown-page: 0;
+    // The Fluent palette in the colour scheme (SPEC §10.3); `unknown` follows the OS, live.
+    property <int> color-scheme: SettingsState.color-scheme;
+    changed color-scheme => {
+        root.apply-color-scheme();
+    }
+    init => {
+        root.apply-color-scheme();
+    }
+
+    function apply-color-scheme() {
+        Palette.color-scheme = root.color-scheme == 1 ? ColorScheme.light
+            : root.color-scheme == 2 ? ColorScheme.dark : ColorScheme.unknown;
+    }
 
     HorizontalLayout {
         VerticalLayout {

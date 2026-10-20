@@ -47,6 +47,8 @@ struct Open {
     picker: Option<picker::PickerState>,
     /// The skin gallery on the Appearance page.
     gallery: appearance::Gallery,
+    /// The colour scheme the native window was given (SPEC §10.3).
+    scheme: Option<crate::config::model::ColorScheme>,
 }
 
 /// Why a change was not saved.
@@ -92,6 +94,13 @@ pub fn open(app: &Arc<App>, route: &str) {
         tracing::warn!("could not show settings: {e}");
         return;
     }
+    // The native window exists once shown: its title bar takes the colour scheme.
+    let scheme = app.store.get().settings.color_scheme;
+    WINDOW.with(|w| {
+        if let Some(open) = w.borrow_mut().as_mut() {
+            appearance::apply_scheme(open, scheme);
+        }
+    });
     focus(&window);
 }
 
@@ -124,7 +133,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     let window = ui::SettingsWindow::new()?;
     crate::install_i18n!(window);
     connect(&window, app);
-    record_hotkey(&window, app);
+    watch_window_events(&window, app);
 
     let a = Arc::clone(app);
     window.window().on_close_requested(move || {
@@ -151,6 +160,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         form: None,
         picker: None,
         gallery: appearance::Gallery::default(),
+        scheme: None,
     };
     let config = app.store.get();
     fill(&mut open, app, &config.settings);
@@ -417,7 +427,8 @@ fn save(app: &Arc<App>, patch: Value) {
 /// Saves `value` at `path` if that changes what is in effect, so a colour box losing the focus
 /// or a slider clicked without moving leaves a theme default `null` (SPEC §11.2).
 fn save_change(app: &Arc<App>, path: &str, value: Value) {
-    if model::changes(&app.store.get().settings, path, &value) {
+    let os_dark = app.platform.appearance().dark;
+    if model::changes(&app.store.get().settings, os_dark, path, &value) {
         save(app, model::patch(path, value));
         return;
     }
@@ -445,11 +456,12 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
         .map_err(SaveError::Config)
 }
 
-/// While `recording-hotkey` is set, the next key pressed with its modifiers becomes the hotkey
-/// (SPEC §6.5); Esc, leaving the window or the General page cancels. The keys are read from
-/// winit as physical keys, so the keyboard layout does not matter (Ctrl+Alt is AltGr on many
-/// layouts).
-fn record_hotkey(window: &ui::SettingsWindow, app: &Arc<App>) {
+/// Handles the native window's events: while `recording-hotkey` is set, the next key pressed
+/// with its modifiers becomes the hotkey (SPEC §6.5); Esc, leaving the window or the General
+/// page cancels. The keys are read from winit as physical keys, so the keyboard layout does not
+/// matter (Ctrl+Alt is AltGr on many layouts). When the OS switches between light and dark,
+/// what follows it shows it (the Fluent palette follows by itself, SPEC §10.3).
+fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     use slint::winit_030::winit::event::{ElementState, WindowEvent};
     use slint::winit_030::winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
     use slint::winit_030::{EventResult, WinitWindowAccessor};
@@ -467,6 +479,14 @@ fn record_hotkey(window: &ui::SettingsWindow, app: &Arc<App>) {
             state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
         };
         match event {
+            WindowEvent::ThemeChanged(_) => WINDOW.with(|w| {
+                if let Ok(mut w) = w.try_borrow_mut()
+                    && let Some(open) = w.as_mut()
+                {
+                    let settings = app.store.get().settings;
+                    fill(open, &app, &settings);
+                }
+            }),
             WindowEvent::ModifiersChanged(m) => modifiers = m.state(),
             WindowEvent::Focused(false) if state.get_recording_hotkey() => stop(),
             WindowEvent::KeyboardInput {
@@ -602,6 +622,7 @@ mod screenshots {
             form: None,
             picker: None,
             gallery: super::appearance::Gallery::default(),
+            scheme: None,
         };
         fill(&mut open, &app, &app.store.get().settings);
         super::layout::fill(&open, &app, &app.store.get().layout);
@@ -679,6 +700,22 @@ mod screenshots {
         render_sized("settings-appearance-custom", 1000);
         set(&mut open, &|s| s.classic.skin = "gone".into());
         render("settings-appearance-missing");
+        // The colour scheme (SPEC §10.3), whatever the OS: dark, then light.
+        set(&mut open, &|s| {
+            *s = crate::config::model::Settings {
+                color_scheme: crate::config::model::ColorScheme::Dark,
+                ..Default::default()
+            };
+        });
+        // The colours animate from the first frame that reads them: drawn twice.
+        (0..2).for_each(|_| render("settings-appearance-dark"));
+        state.set_page(super::model::SENSORS_PAGE as i32);
+        render("settings-sensors-dark");
+        state.set_page(super::appearance::PAGE);
+        set(&mut open, &|s| {
+            s.color_scheme = crate::config::model::ColorScheme::Light
+        });
+        (0..2).for_each(|_| render("settings-appearance-light"));
         set(&mut open, &|s| {
             *s = crate::config::model::Settings::default();
         });
@@ -819,7 +856,7 @@ mod screenshots {
         window.set_size(PhysicalSize::new(width, 1000));
         refill();
         // Carbon, the first tile of the second row.
-        click(301.0, 634.0);
+        click(301.0, 691.0);
         assert_eq!(skin(), "carbon");
         refill();
         key(Key::RightArrow.into());
