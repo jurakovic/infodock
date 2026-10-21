@@ -273,7 +273,6 @@ pub struct MonitorChoices {
     pub current: usize,
 }
 
-/// "Primary monitor", then every monitor, then the saved monitor if it is not connected.
 /// A floating bar's place with a new `width` (logical px): where it is, or, before it was ever
 /// placed, centred where it starts (SPEC §5.1).
 pub fn floating_with_width(
@@ -304,6 +303,7 @@ pub fn floating_with_width(
     }
 }
 
+/// "Primary monitor", then every monitor, then the saved monitor if it is not connected.
 pub fn monitor_choices(saved: &str, monitors: &[MonitorInfo]) -> MonitorChoices {
     let mut labels = vec![crate::i18n::t("settings.bar.monitor.primary")];
     let mut keys = vec![PRIMARY_MONITOR.to_owned()];

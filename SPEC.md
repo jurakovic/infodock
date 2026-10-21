@@ -164,53 +164,88 @@ Threads:
 
 ```
 src/
-  main.rs / lib.rs          start-up and shutdown; starts the bar thread, the sampler and the main event loop
-  app.rs                    App (state shared by all threads), bar visibility, quitting
+  main.rs / lib.rs          start-up and shutdown: the capability probe, the bar thread, the sampler,
+                            the main event loop (Settings window, hotkey)
+  app.rs                    App (state shared by all threads; AppHost, the bar's BarHost), bar
+                            visibility, quitting
   hotkey.rs                 global hotkey (main thread)
   autostart.rs              starting at sign-in: the `Run` entry follows `settings.autostart` (§10.1)
   transfer.rs               import and export as the user runs them: pickers, questions, report (main thread)
-  settings/                 Settings window glue: fills and saves the Slint state; mapping helpers
-  config/                   model.rs (typed config), store.rs (load/save/atomic write/debounce),
-                            migrate.rs (schema versions), patch.rs, legacy.rs (legacy XML layout import)
+  logging.rs                the log file (§11.1) and the panic hook (§14.2)
   i18n.rs                   message catalogs (shared with Settings), plural rules, t()
-  sampler/                  scheduler.rs (topic subscriptions, intervals, fan-out), topics.rs (ids, payloads)
-  providers/                cpu.rs, memory.rs, swap.rs, disk.rs, volumes.rs, network.rs,
-                            battery.rs, wifi.rs, uptime.rs, recycle_bin.rs
+  settings/                 Settings window glue (§10.7): mod.rs (opening, filling and saving the Slint
+                            state, the plain pages), model.rs (pure mapping helpers: pages, routes,
+                            choices, patches), appearance.rs, applications.rs, layout.rs (Layout
+                            manager), picker.rs (§6.6), properties.rs and form.rs (§6.7), welcome.rs
+                            (§11.5), about.rs; accessibility.rs (the accessible-name test, §14.4)
+  config/                   mod.rs (ConfigError), model.rs (typed config), store.rs (load/save/atomic
+                            write/debounce), migrate.rs (schema versions), patch.rs (settings patches),
+                            exchange.rs (export/import files, §11.3), legacy.rs (legacy XML reading, §11.4)
+  sampler/                  mod.rs (the sampler thread, ChangeSink), scheduler.rs (topic subscriptions,
+                            intervals, backoff), topics.rs (topics, changes and samples)
+  providers/                mod.rs (one provider per topic kind; volumes, Wi-Fi and the Recycle Bin read
+                            the platform directly), cpu.rs, memory.rs, swap.rs, disk.rs, net.rs,
+                            battery.rs, uptime.rs, worker.rs (readings that can stall, one worker per key)
   bar/                      platform-neutral bar logic; runs on the bar thread
-    mod.rs                  BarController: the cross-thread handle
-    thread.rs               bar thread: event dispatch, sensor instances, timers, redraw scheduling
+    mod.rs                  BarController (the cross-thread handle), BarHost (what the bar asks of the app)
+    thread.rs               BarLogic: event dispatch, config and theme, pointer, menus, hint, popups,
+                            drops, keyboard, motion, painting (§4.1, §4.4)
+    sensors.rs              the sensor instances: creation, samples, measuring, placing, drawing
     layout.rs               zone layout (§5.4), pure
-    interact.rs             hover, clicks and Lock rules, reorder drag, drop routing (§6)
+    interact.rs             presses, clicks and Lock rules, reorder drag (§6.1–6.2), pure
+    focus.rs                the keyboard on the bar (§14.4), pure
+    resize.rs               resizing a floating bar by its ends (§5.1), pure
+    drop.rs                 drops from other apps: what each item is, the sensor it makes (§6.3)
     hint.rs, popup.rs       hover hint (§7.1) and interactive popup host (§7.2)
     placement.rs            hint/popup placement (§7.3), pure
     menus.rs, tray.rs       context menus (§6.4) and the tray menu (§6.5)
-    theme.rs, skins/        resolved theme (§12.1), built-in skins, skin packs and tint (§12.3–12.4)
+    icons.rs                shell icons and image files, read on a worker (§4.1)
+    paint.rs                the bar's background; the screenshot and budget harness (§16, §14.1)
+    shadow.rs               the bar's shadow band (§5.5)
+    theme.rs, skins/        resolved theme (§12.1); skins/: built-in skins, skin packs, `.zip` reading,
+                            installing, tint (§12.3–12.4)
     anim.rs                 rise animation, hover highlight, fades (§5.5)
   sensors/
-    mod.rs                  SensorType and Sensor traits, SensorCtx (§8.1)
+    mod.rs                  SensorType and Sensor traits, SensorCtx, LayoutCtx, DrawCtx (§8.1)
     schema.rs               property schema, validation, defaults and storage rules (§8.2, §11.2)
     registry.rs             all sensor types
     ops.rs, import.rs       operations used by Settings (§4.5); imported sensors checked by their types (§11.3)
     legacy.rs               legacy properties to props: XML keys, encodings by field type (§11.4)
-    format.rs, color.rs     formatting (§8.6), colours and the dynamic gradient (§8.4)
-    common/                 two_line.rs, meter.rs, graph.rs, dual_graph.rs, icon_label.rs, history.rs (§8.3)
-    <type>.rs               one module per sensor type (text.rs, image.rs, cpu_graph.rs …)
+    format.rs, color.rs     formatting (§8.6), colours and the dynamic gradient (§8.4–8.5)
+    dates.rs                calendar dates, date patterns and local time (§8.6)
+    popup.rs, drop.rs       the Popup trait (§7.2); drops onto sensors (§6.3)
+    placeholder.rs          unknown and unsupported types (§4.6)
+    common/                 building blocks (§8.3): two_line.rs, meter.rs, graph.rs, dual_graph.rs,
+                            history.rs, icon.rs, icon_label.rs; the popups folder_browser.rs (§9.19)
+                            and eject_list.rs (§9.22); eject.rs (eject notifications)
+    <type>.rs               one module per sensor type or family: text.rs, image.rs, spacer.rs,
+                            date.rs, time.rs, uptime.rs, cpu.rs (CPU meter, graph, dual graph),
+                            memory.rs (memory and swap meters and graphs), disk.rs (Disk Meter),
+                            network.rs, battery.rs, wifi.rs, recycle_bin.rs, shortcut.rs,
+                            disk_launcher.rs (Disk), folder_menu.rs, start_menu.rs, power.rs, eject_usb.rs
   platform/
-    mod.rs                  traits (§4.6)
+    mod.rs                  the Platform trait and its reading types, the bar thread's BarWindow,
+                            BarHandler, UiEvent and AppBar, dialogs, app folders and the single
+                            instance (§4.6)
     canvas.rs               colours, rectangles, brushes, shapes and the Canvas trait (§4.6)
     text.rs                 fonts, text styles, TextLayout and the TextEngine trait
     bitmap.rs               Bitmap (premultiplied RGBA), format sniffing, SVG via resvg, tint (§12.3)
     recording.rs            recording canvas and fixed-metrics text engine (tests on every OS, stub)
     geometry.rs             pure placement math: docking strips, monitor selection
-    windows/                window.rs (window classes, message loop, input → events), appbar.rs,
-                            instance.rs (single-instance lock, known folders), tray.rs
-                            (notification-area icon),
-                            monitors.rs, render.rs (Direct2D canvas), text.rs (DirectWrite),
-                            image.rs (WIC decoding), menu.rs
-                            (TrackPopupMenuEx), dialog.rs (TaskDialogIndirect), droptarget.rs
-                            (IDropTarget), uia.rs (UI Automation provider), shell.rs (ShellExecuteEx,
-                            IFileOperation, known folders, .lnk/.url), icons.rs (shell icons → bitmaps),
-                            power.rs, eject.rs, wlan.rs, pdh.rs, locale.rs (NLS), sound.rs (PlaySound)
+    locale.rs               the locale as plain data (§8.6)
+    accessible.rs           the bar as screen readers see it, pure (§14.4)
+    drag.rs, notify.rs      drag & drop items and effects (§6.3); a notification's content (§7.4)
+    windows/                mod.rs (WindowsPlatform: capabilities, appearance, local time, sound),
+                            window.rs (bar thread, window class, message loop, input → events),
+                            appbar.rs, band.rs (shadow band window), hint.rs, popup.rs (layered
+                            windows), tray.rs (notification-area icon), menu.rs (TrackPopupMenuEx),
+                            dialog.rs (TaskDialogIndirect), droptarget.rs (IDropTarget), uia.rs (UI
+                            Automation provider), render.rs (Direct2D canvas), text.rs (DirectWrite),
+                            image.rs (WIC decoding), monitors.rs, instance.rs (single-instance lock,
+                            data folders), com.rs, shell.rs (ShellExecuteEx, Recycle Bin, pickers),
+                            fileops.rs (IFileOperation, .lnk/.url), icons.rs (shell icons → bitmaps),
+                            autostart.rs, toast.rs, power.rs, eject.rs, device.rs (volume devices),
+                            cpu.rs (PDH), memory.rs, disk.rs, net.rs, battery.rs, wlan.rs, locale.rs (NLS)
     stub.rs                 portable fallback for other OSes (development and tests only)
 ```
 
@@ -260,35 +295,76 @@ The bar opens Settings on a route (e.g. `sensor/<id>`, `new?zone=left&index=2`) 
 
 ### 4.6 Platform abstraction
 
-Thread-safe services (`Send + Sync`), shared by all threads:
+Thread-safe services (`Send + Sync`), shared by all threads: one `Platform` trait (`platform/mod.rs`), passed in as `Arc<dyn Platform>` (`platform::current()` is called once, at start-up), so tests replace it with fakes. Its methods fall into groups, each used by a clear set of callers:
 
 ```rust
 pub trait Platform: Send + Sync {
-    fn capabilities(&self) -> Capabilities;      // which sensors/features exist here
-    fn monitors(&self) -> Vec<MonitorInfo>;      // id, name, bounds, work area, scale, primary
-    fn appearance(&self) -> OsAppearance;        // light/dark, accent colour, transparency effects, animations
-    fn locale(&self) -> &dyn Locale;             // weekday/month names, date patterns, hour cycle,
-                                                 // first day of week, decimal separator, collation
-    fn shell(&self) -> &dyn Shell;               // open, reveal, list_dir, file ops, links, recycle bin
-    fn icons(&self) -> &dyn Icons;               // file/drive icon → RGBA bitmap
-    fn power(&self) -> &dyn Power;               // lock/sign out/switch/sleep/hibernate/shut down/restart
-    fn devices(&self) -> &dyn Devices;           // volumes, eject
-    fn keys(&self) -> Modifiers;
+    // Machine and session (all callers)
+    fn capabilities(&self) -> Capabilities;               // which sensors/features exist here
+    fn probed_capabilities(&self) -> Option<Capabilities>; // without waiting for the probe (§14.1)
+    fn monitors(&self) -> Vec<MonitorInfo>;               // id, name, bounds, work area, scale, primary
+    fn appearance(&self) -> OsAppearance;                 // light/dark, accent colour, transparency, animations
+    fn locale(&self, which: DateLocale) -> Locale;        // plain data: names, date patterns, hour cycle,
+                                                          // first day of week, decimal separator (§8.6)
+    fn local_time(&self) -> LocalTime;
+    fn font_families(&self) -> Vec<String>;
+    // Readings (providers, Settings' lists): may block, never called on the bar thread
+    fn uptime(&self) -> Duration;
+    fn logical_processors(&self) -> u32;
+    fn cpu_reader(&self) -> Option<Box<dyn CpuReader>>;
+    fn memory(&self) -> Result<MemoryStatus, String>;
+    fn page_files(&self) -> Result<Vec<PageFile>, String>;
+    fn volumes(&self) -> Vec<Volume>;
+    fn disk_space(&self, root: &str) -> Option<DiskSpace>;
+    fn net_interfaces(&self) -> Vec<NetInterface>;
+    fn net_interface(&self, id: Option<&str>) -> Option<NetInterface>;
+    fn power_status(&self) -> Result<PowerStatus, String>;
+    fn wifi_reader(&self, changed: Box<dyn Fn() + Send + Sync>) -> Option<Box<dyn WifiReader>>;
+    fn recycle_bin(&self) -> Result<RecycleBin, String>;
+    fn path_kind(&self, path: &str) -> PathKind;
+    fn list_dir(&self, path: &str) -> Result<Vec<DirItem>, String>;
+    fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap>;
+    // Shell (sensors): actions return at once and run in the background
+    fn open(&self, target: &str);
+    fn launch(&self, launch: &Launch);
+    fn reveal(&self, path: &str);
+    fn known_folder(&self, folder: KnownFolder) -> Option<String>;
+    fn compare_names(&self, a: &str, b: &str) -> Ordering;
+    fn volume_of(&self, path: &str) -> Option<String>;
+    fn file_operation(&self, op: FileOp, paths: Vec<String>, folder: String, done: Box<dyn FnOnce() + Send>);
+    fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>);
+    fn create_url_file(&self, folder: &str, stem: &str, url: &str);
+    fn empty_recycle_bin(&self, done: Box<dyn FnOnce() + Send>);
+    // Power, devices, notifications, sound (sensors)
+    fn power(&self, action: PowerAction, force: bool);
+    fn eject(&self, root: &str, report: EjectReport);
+    fn notify(&self, title: &str, body: &str);
+    fn play_sound(&self, wav: &'static [u8]);
+    // System (Settings, the app)
+    fn autostart(&self, name: &str) -> Option<String>;
+    fn set_autostart(&self, name: &str, change: &AutostartChange) -> Result<(), String>;
+    fn decode_code_page(&self, bytes: &[u8], code_page: Option<u32>) -> Option<String>;
 }
 pub struct Capabilities {
     pub appbar: bool, pub recycle_bin: bool, pub start_menu: bool, pub wifi: bool,
-    pub battery: bool, pub power_modes: Vec<PowerMode>, pub eject: bool, pub per_core_cpu: bool,
+    pub battery: bool, pub power_modes: Vec<String>, pub eject: bool, pub per_core_cpu: bool,
 }
 ```
 
-UI services, used only on the bar thread (not `Send`):
+Only `capabilities`, `monitors`, `appearance` and `uptime` are required; every other method has a default that is what other OSes get (the stub, `platform/stub.rs`, implements just the four). Windows (`platform/windows/`) overrides all of them except three that are portable (`open`, which calls `launch`; `volume_of`, by the path's form; `create_url_file`, plain file I/O).
 
-* **Windows**: create a native window of a kind (§4.1) with an event handler; set geometry (physical px), show/hide, global alpha (fades), capture the pointer, invalidate, read its scale, set a one-shot timer (the sensors' earliest wake-up, §4.4). Input arrives as platform-neutral events: pointer move/leave/down/up (button, modifiers), wheel, key, DPI change, timer, drag-enter/over/leave/drop (§6.3), and the OS broadcasts the bar cares about (resume, time change, device change, appearance change).
-* **Canvas**: drawing in logical px at the window's scale: filled and stroked rectangles, rounded rectangles, lines and polygons, linear gradients, text layouts, bitmaps (with opacity), clipping and layer opacity. **Text**: layout and measurement with a font family, size, weight and style, optional maximum width with an end ellipsis, tabular numerals. **Bitmaps**: decode files (PNG, JPEG, GIF, BMP, ICO; SVG through `resvg`) and wrap RGBA buffers.
-* **Menus** and **dialogs**: native popup menus at the cursor (checkable items, separators) and confirmation dialogs. Flows that ask in steps (an import, §11.3) go through the `Dialogs` trait: open and save pickers, a question with command links, a message with OK; `NativeDialogs` shows them modal to a given window on the calling thread.
-* **Tray icon**: shown, updated or removed on the bar window; clicks and menu requests arrive as events; removable from any thread on exit.
-* **AppBar**: attached to the bar window (`attach_appbar(window, sink) → AppBar`), because it needs that window and its thread.
-* **Accessibility**: a UI Automation provider for the bar (§14.4).
+Conventions, stated on the trait:
+* **Blocking.** A reading may wait for slow hardware or a network drive whose server is away, so none runs on the bar thread: the sampler reads the CPU, memory, page files, network and Wi-Fi itself, and volumes, disk space, paths, batteries and the Recycle Bin on its workers (§4.4); folder listings and shell icons are read on the bar's workers. Settings reads volumes (machine defaults), network adapters and fonts on the main thread. The one accepted exception: a drop onto the bar reads `path_kind` of each dropped item on the bar thread, once per drop and never per drag-over, since the sensors it creates depend on it (§6.3). Actions return at once and do their work in the background (a short-lived thread with COM, or the shell's own).
+* **Absence and failure.** A reading that can fail returns `Result<_, String>` with the OS's message (memory, page files, folder listings, power status, the Recycle Bin, the CPU and Wi-Fi readers), which the sampler turns into an error sample after three failures in a row (§14.2). Disk space, volumes, network interfaces and `path_kind` fold a failure into absence (`None`, an empty list, `Missing`), which sensors show as missing or "n/a". Typed errors (`EjectError`, `ImageError`) are for callers that act on the reason.
+
+UI services, used only on the bar thread (not `Send`), are not part of `Platform`; `start_bar_thread(make_handler)` starts the bar thread and returns its `AppBar`, tray icon and waker:
+
+* **Bar window** (`BarWindow`, the bar logic's view of the native window, §4.1): invalidate, material, tray icon, native menus at the pointer or beside the focused sensor, one-shot timers by `TimerId` (the sensors' earliest wake-up, §4.4; hint delays; animation frames; …), the hint and popup windows (shown at a physical rect with what a closure paints, faded, updated in place), pointer capture and cursors, the keyboard focus, confirmation dialogs, moving and resizing a floating bar, and the slide of the rise animation. Input arrives at the bar's `BarHandler` as platform-neutral `UiEvent`s: pointer move/leave/down/up (button, modifiers), wheel, key, timer, popup input, focus, UI Automation requests, and the OS broadcasts the bar cares about (resume, time change, regional format, device and power changes, appearance change); drags from other apps arrive as `DragEvent`s (§6.3). The handler also paints the bar into a canvas and describes the shadow band and the accessible tree after each frame.
+* **Canvas**: drawing in logical px at the window's scale: filled and stroked rectangles, rounded rectangles, lines and polygons, linear gradients, text layouts, bitmaps (with opacity), clipping and layer opacity. **Text**: layout and measurement with a font family, size, weight and style, optional maximum width with an end ellipsis, tabular numerals (`text_engine()`). **Bitmaps**: decode files (PNG, JPEG, GIF, BMP, ICO; SVG through `resvg`) and wrap RGBA buffers.
+* **Menus** and **dialogs**: native popup menus (checkable items, separators, submenus) through `BarWindow::show_menu`, and confirmations through `BarWindow::confirm`. Flows that ask in steps (an import, §11.3) go through the `Dialogs` trait: open and save pickers, a question with command links, a message with OK; `NativeDialogs` shows them modal to a given window on the calling thread.
+* **Tray icon**: shown, updated or removed through the bar window; clicks and menu requests arrive as events; removable from any thread on exit (`TrayIcon`).
+* **AppBar**: attached to the bar window when the bar thread starts, because it needs that window and its thread; `configure(DockRequest)`, `refresh`, `raise`, `release` from any thread.
+* **Accessibility**: a UI Automation provider for the bar (§14.4), fed the `AccessibleBar` the handler describes.
 
 On Windows the canvas is Direct2D with a **software** render target drawing into a premultiplied 32-bit bitmap, with DirectWrite text (grayscale antialiasing, since the background is transparent). A full 28 px bar is cheap to rasterise on the CPU, and no GPU driver is loaded into the process. Presentation: the bar copies the bitmap to its DWM-composited window; hint and popup use `UpdateLayeredWindow`; `render_offscreen` returns it as a `Bitmap` (skin previews, CI screenshots). A recording canvas with a fixed-metrics text engine records draw calls, so layout and rendering are unit-testable on any OS; the stub platform uses it as its renderer.
 
@@ -301,7 +377,7 @@ Sensor clicks open programs, files and URIs with `Platform::open`, or `Platform:
 
 **Autostart** (`Platform::autostart(name)` and `set_autostart(name, change)`, `platform/windows/autostart.rs`): reads and changes the value `name` of `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (`RegGetValueW`, `RegSetKeyValueW`, `RegDeleteKeyValueW`) and Task Manager's mark for it under `…\Explorer\StartupApproved\Run`; a change enables (writes and clears the mark), updates (writes, keeping the mark) or removes (both). Other OSes start nothing at sign-in (§10.1).
 
-**Shell icons** (`Platform::shell_icon(path, px)`, `platform/windows/icons.rs`): `IShellItemImageFactory::GetImage(SIIGBF_ICONONLY)` at the physical size, read with `GetDIBits`; the shell hands out premultiplied alpha, but a pixel whose colour exceeds its alpha marks a straight-alpha icon, and an icon without any alpha is opaque. Shell calls run in a single-threaded COM apartment entered once per thread (`platform/windows/com.rs`) with critical-error dialogs off. The bar reads icons on its `icons` worker thread (`bar/icons.rs`), keyed by path and size; sensors ask while they measure (`LayoutCtx::icons`), get *loading* until the icon arrives, and are measured again when it does (the worker wakes the bar thread through the waker its handler is built with). At most 256 icons are kept; beyond that the ready ones are dropped and read again when asked. `Platform::path_kind` (`GetFileAttributesW`, no dialogs) tells a missing path from a file or folder; it is read on the `path/<path>` topic, off the bar thread.
+**Shell icons** (`Platform::shell_icon(path, px)`, `platform/windows/icons.rs`): `IShellItemImageFactory::GetImage(SIIGBF_ICONONLY)` at the physical size, read with `GetDIBits`; the shell hands out premultiplied alpha, but a pixel whose colour exceeds its alpha marks a straight-alpha icon, and an icon without any alpha is opaque. Shell calls run in a single-threaded COM apartment entered once per thread (`platform/windows/com.rs`) with critical-error dialogs off. The bar reads icons on its `icons` worker thread (`bar/icons.rs`), keyed by path and size; sensors ask while they measure (`LayoutCtx::icons`), get *loading* until the icon arrives, and are measured again when it does (the worker wakes the bar thread through the waker its handler is built with). At most 256 icons are kept; beyond that the ready ones are dropped and read again when asked. `Platform::path_kind` (`GetFileAttributesW`, no dialogs) tells a missing path from a file or folder; it is read on the `path/<path>` topic, off the bar thread, and once per drop onto the bar (the accepted exception above).
 
 Capabilities are read once per run on Windows: `recycle_bin` when the shell knows the Recycle Bin folder (`SHGetKnownFolderIDList`, no drive is touched), `start_menu` when the per-user Programs folder exists, `wifi` when the WLAN service answers and has a wireless interface (`wlanapi.dll` is loaded only for that, since editions without wireless LAN lack it), `battery` unless `GetSystemPowerStatus` says there is no system battery (or does not know), `eject` always (Eject USB lists what there is). A Wi-Fi adapter plugged in later is found at the next start. They are probed on a thread of their own as soon as the process starts, so the probing overlaps the rest of the start-up (§14.1); the slow probes (the per-processor counters, the WLAN service, the shell's folders) run side by side, and whoever asks first waits for the answer. The bar does not wait: until the probe has answered (`Platform::probed_capabilities`), it shows only the sensors whose type needs no capability, so its first frame comes without them and none shows as unavailable for a moment; it checks every 25 ms, and the others join once the answer is there (after 2 s it waits for a probe that never started).
 
@@ -535,69 +611,92 @@ Flow (all on the bar thread): measure the content, compute the placement (`bar/p
 
 ### 8.1 Sensor type contract (Rust)
 
+`sensors/mod.rs` holds the contract; this is a summary.
+
 ```rust
-pub enum Zone { Left, Center, Right }
+pub enum Zone { Left, Center, Right }                     // config::model
 pub enum Category { General, Info, System, Network, Launchers }
 
-/// One per sensor module; registered in `sensors/registry.rs`. Static and thread-safe.
+/// One per sensor type; registered in `sensors/registry.rs`. Static and thread-safe.
 pub trait SensorType: Send + Sync {
     fn id(&self) -> &'static str;                         // stable id, e.g. "cpu-graph"
-    fn legacy_types(&self) -> &'static [&'static str];    // legacy XML type ids handled (§11.4)
     fn category(&self) -> Category;
     fn name(&self) -> MsgKey;                             // localised display name
     fn description(&self) -> MsgKey;
+    fn legacy_types(&self) -> &'static [&'static str];    // legacy XML type ids handled (§11.4)
+    fn legacy_keys(&self) -> &'static [LegacyKey];        // its XML keys and the props they set (§11.4)
+    fn convert_legacy(&self, raw: &LegacyProps, cx: &mut LegacyCtx) -> Props;
+                                                          // cx: the legacy type, machine defaults,
+                                                          // warnings, state (e.g. the uptime record);
+                                                          // by default reads legacy_keys by their
+                                                          // fields' encodings
     fn requires(&self) -> &'static [Capability];
     fn schema(&self) -> &'static [PropField];             // ordered fields: drives the Settings form,
                                                           // validation and static defaults (§8.2)
-    fn machine_defaults(&self, ctx: &DefaultsCtx) -> Props;  // ctx: locale, volumes, CPU count (§11.2)
-    fn legacy_keys(&self) -> &'static [LegacyKey];       // its XML keys and the props they set (§11.4)
-    fn convert_legacy(&self, raw: &LegacyProps, cx: &mut LegacyCtx) -> Props;
-                                                          // cx: the legacy type, warnings, state (e.g.
-                                                          // the uptime record); by default reads
-                                                          // legacy_keys by their fields' encodings
+    fn machine_defaults(&self, ctx: &DefaultsCtx) -> Props;  // ctx: the platform (volumes, locale, …; §11.2)
     fn create(&self, props: &Props, state: &State) -> serde_json::Result<Box<dyn Sensor>>;
-                                                          // fails only if the typed props do not match
-                                                          // the schema; the bar then shows a placeholder
+                                                          // props resolved; fails only if the typed
+                                                          // props do not match the schema
+    fn summary(&self, props: &Props) -> Option<String>;   // tells instances apart in lists (Layout manager)
+    fn picker_note(&self, ctx: &DefaultsCtx) -> Option<MsgKey>;  // a note on this machine (§6.6)
 }
 
-/// A placed instance. Lives on the bar thread; re-created when its props change.
+/// A placed instance. Lives on the bar thread; re-created when its props change, unless it
+/// takes them in place (`reconfigure`).
 pub trait Sensor {
-    fn topics(&self) -> Vec<TopicRequest>;                // system data needed (none for UI-only sensors)
-    fn on_sample(&mut self, topic: &Topic, sample: &Sample, cx: &mut SensorCtx) -> Dirty;
-    fn on_hover(&mut self, hovered: bool, now: Instant, cx: &SensorCtx) -> Dirty;  // pointer entered/left
-    fn wake_at(&self, now: Instant) -> Option<Instant>;   // timer-driven sensors (clock, uptime)
-    fn on_wake(&mut self, now: Instant, cx: &mut SensorCtx) -> Dirty;  // Dirty = bool: what it shows changed
-    fn measure(&mut self, cx: &LayoutCtx) -> f32;         // width in logical px; height = bar content height;
+    // Layout and drawing
+    fn measure(&mut self, cx: &LayoutCtx) -> f32;         // width in logical px; height = the bar's;
                                                           // builds and keeps text layouts and bitmaps
     fn min_width(&self) -> Option<f32>;                   // how narrow its text can be cut (§5.4)
     fn fit(&mut self, width: f32, cx: &LayoutCtx);        // the width the layout gives it (§5.4)
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
-    fn hint(&self, cx: &SensorCtx) -> Option<HintContent>;
-    fn click(&mut self, cx: &mut SensorCtx) -> ClickResult;  // None, Handled, or OpenPopup(Box<dyn Popup>)
+    fn inactive(&self) -> bool;                           // its icon/graphic is drawn inactive (§8.5)
+    // Data and time
+    fn topics(&self) -> Vec<TopicRequest>;                // system data needed; asked once per instance
+    fn on_sample(&mut self, topic: &Topic, sample: &Sample, cx: &SensorCtx) -> Dirty;
+    fn wake_at(&self, now: Instant) -> Option<Instant>;   // timer-driven sensors (clock, uptime, animations)
+    fn on_wake(&mut self, now: Instant, cx: &SensorCtx) -> Dirty;  // Dirty = bool: what it shows changed
+    fn on_clock_change(&mut self, now: Instant, cx: &SensorCtx) -> Dirty;  // time, time zone or resume
+    fn take_state(&mut self) -> Option<State>;            // state to store (e.g. the uptime record), taken once
+    // Interaction
+    fn on_hover(&mut self, hovered: bool, now: Instant, cx: &SensorCtx) -> Dirty;
+    fn hint(&self, cx: &SensorCtx) -> Option<HintContent>;   // Text or Rich (draws itself, e.g. a calendar)
+    fn click(&mut self, cx: &SensorCtx) -> ClickResult;   // None, Handled, Confirm(Question) or Popup(Box<dyn Popup>)
+    fn confirmed(&mut self, cx: &SensorCtx) -> Dirty;     // the user agreed to its Confirm question
+    fn has_popup(&self) -> bool;                          // true exactly when click can return Popup
     fn menu(&self, cx: &SensorCtx) -> Vec<MenuItem>;      // sensor-specific items (§6.4)
-    fn on_menu(&mut self, item: MenuId, cx: &mut SensorCtx);
-    fn drop_effect(&self, d: &DropPayload, cx: &SensorCtx) -> Option<DropEffect>;  // accepts? (§6.3)
-    fn on_drop(&mut self, d: DropPayload, cx: &mut SensorCtx);
-    fn take_props(&mut self) -> Option<Props>;            // props it changed itself, to save (§9.14)
+    fn on_menu(&mut self, item: MenuId, cx: &SensorCtx) -> Dirty;
+    fn drop_action(&self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) -> Option<DropAction>;
+                                                          // effect and floating hint, or None: the bar
+                                                          // inserts new sensors instead (§6.3)
+    fn drop_items(&mut self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx);
+    fn take_props(&mut self) -> Option<Props>;            // props it changed itself, to save (§9.14), taken once
     fn reconfigure(&mut self, props: &Props) -> bool;     // takes changed props in place?
-    fn inactive(&self) -> bool;                           // drives inactive rendering (§8.5)
-    fn accessible_value(&self, cx: &SensorCtx) -> String; // §14.4
+    // Accessibility (§14.4)
+    fn accessible_value(&self, cx: &SensorCtx) -> String;
+    fn focusable(&self) -> bool;                          // false only for the Spacer
 }
 
-/// What a sensor may use; built by the bar thread for each call.
+/// What a sensor may use when it handles a sample, wake-up, click, menu item or drop, or is
+/// asked for its hint, menu or accessible value; built by the bar thread for each call.
 pub struct SensorCtx<'a> {
     pub id: &'a str, pub settings: &'a Settings, pub theme: &'a Theme,
-    pub locked: bool, pub alt: bool, pub platform: &'a dyn Platform,
+    pub locked: bool, pub alt: bool, pub animate: bool, pub platform: &'a dyn Platform,
     pub changes: &'a ChangeSink,                          // what its actions changed (§4.4)
-    /* set_state(patch), update_props(patch), notify(title, body), open_settings(route), t(key, args) */
 }
 
 /// Measuring may lay out text and decode images; drawing happens in the sensor's place on the bar.
-pub struct LayoutCtx<'a> { pub theme: &'a Theme, pub text: &'a dyn TextEngine, pub scale: f32 }
+pub struct LayoutCtx<'a> {
+    pub theme: &'a Theme, pub text: &'a dyn TextEngine, pub scale: f32,
+    pub numbers: Numbers,                                 // how the locale writes numbers (§8.6)
+    pub icons: &'a dyn IconSource,                        // shell icons and image files, read on a worker
+}
 pub struct DrawCtx<'a> { pub theme: &'a Theme, pub rect: RectF }   // logical px, bar coordinates
 ```
 
 All trait methods except the identity ones, `create`, `measure` and `draw` have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. Settings reads the schemas through the sensor types operation (§4.5).
+
+Sensors act on the bar only through what they return, which the bar applies: `Dirty` (re-measure and redraw), `ClickResult` (a confirmation the bar asks, a popup it shows), and state and props it takes from them after samples, wake-ups and clicks (`take_state`, `take_props`, saved through the config store). Everything else goes through the platform (opening, launching, notifying, ejecting) or `changes` (what an action changed, so its topics are read again).
 
 ### 8.2 Property field types
 
@@ -677,7 +776,7 @@ When `inactive()` returns true, the sensor's icon or graphic is rendered as:
 * `inactiveMode = "opacity"` (default): opacity `inactiveOpacity` (default 78 %);
 * `inactiveMode = "colorize"`: tinted with `inactiveColor` (default `#555555`).
 
-Labels stay readable; only the icon/graphic dims. v1 uses it for: Disk (drive absent), Wi-Fi (disconnected), Battery (no battery), Shortcut (target missing), Swap (no page file). A sensor whose data cannot be read (an error sample, §14.2) is drawn inactive as a whole, labels too.
+Labels stay readable; only the icon/graphic dims. v1 uses it for: Disk and Disk Meter (drive absent), Wi-Fi (disconnected), Battery (no battery), Shortcut (target missing), Swap (no page file). Each sensor applies it itself while it measures and draws (`theme.inactive`, through `color::inactive` or the launchers' `Icon`); `inactive()` says when, and the bar does not ask. A sensor whose data cannot be read (an error sample, §14.2) is drawn inactive as a whole, labels too: that the bar applies, with the inactive opacity (78 % in colourise mode).
 
 ### 8.6 Formatting helpers (`sensors/format.rs`)
 

@@ -176,8 +176,8 @@ mod tests {
         assert_eq!(pushes.count(), dump.lines().filter(|l| *l == "pop").count());
     }
 
-    /// A sample of every canvas operation in bar-sized pieces, for reviewing the renderer
-    /// (CI screenshots) until the sensors draw the bar.
+    /// A sample of every canvas operation in bar-sized pieces, for reviewing the renderer in
+    /// CI's screenshots beside the bar the sensors draw.
     pub(super) mod specimen {
         use std::f32::consts::TAU;
         use std::path::Path;

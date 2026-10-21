@@ -427,8 +427,6 @@ fn kind(field: &PropField) -> Option<RowKind> {
     })
 }
 
-/// "Default" (the global sensor font, SPEC §8.2), the installed families, and `current` if it
-/// is not installed.
 /// The power modes offered, as `(id, label)`, in menu order; the stored mode stays listed when
 /// this computer lacks it (e.g. hibernate after hibernation was turned off).
 fn power_modes(offered: &[String], stored: &str) -> Vec<(String, String)> {
@@ -440,6 +438,8 @@ fn power_modes(offered: &[String], stored: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// "Default" (the global sensor font, SPEC §8.2), the installed families, and `current` if it
+/// is not installed.
 fn font_options(fonts: &[String], current: &str) -> Vec<String> {
     let mut options = vec![t("settings.props.font.default")];
     options.extend(fonts.iter().cloned());

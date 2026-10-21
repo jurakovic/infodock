@@ -121,7 +121,8 @@ impl HintBody {
     }
 }
 
-/// The hint window's geometry for one hint.
+/// The hint window's geometry for one hint, or the popup window's for a popup (SPEC §7.2):
+/// both are the same bubble with its pointer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HintFrame {
     /// The window, in logical screen px.
@@ -209,7 +210,6 @@ fn fill_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, radius: f32, grow: f3
     canvas.fill(&Shape::Polygon(points), &Brush::Solid(color));
 }
 
-/// Draws the hint into a cleared canvas the size of the frame's window.
 /// A hint's text as the hint window's title, which screen readers read (SPEC §14.4): its lines
 /// joined by commas and its columns by spaces.
 pub fn spoken(text: &str) -> String {
@@ -225,6 +225,7 @@ pub fn spoken(text: &str) -> String {
         .join(", ")
 }
 
+/// Draws the hint into a cleared canvas the size of the frame's window.
 pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, body: &HintBody, theme: &Theme) {
     paint_bubble(canvas, frame, theme);
     let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);

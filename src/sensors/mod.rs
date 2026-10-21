@@ -1,11 +1,14 @@
 //! The sensor framework (SPEC §8). A sensor *type* is a static description: its id, category,
 //! names, required capabilities and property schema; it creates *sensors*, the placed instances
 //! that live on the bar thread and are re-created when their props change. Adding a sensor
-//! type means adding one module and listing it in `registry.rs`.
+//! type means adding one module (or a type to a module of its family, as `cpu.rs` and
+//! `memory.rs` hold several) and listing it in `registry.rs`.
 //!
-//! The [`Sensor`] trait grows with the slices that need it: topics and samples arrive with the
-//! sampler (M1 S10), clicks and menus with the interaction slices (M1 S5–S8, M3 S2), drops with
-//! M3, and `convert_legacy` with the legacy import (M4 S9).
+//! Every [`Sensor`] method but `measure` and `draw` has a default, so simple types stay small.
+//! Sensors are OS-free: they reach the OS through [`Platform`], shell icons and image files
+//! through [`IconSource`], and system data through the topics they subscribe to. They act on
+//! the bar through what they return, which the bar applies: [`Dirty`], [`ClickResult`], and the
+//! state and props it takes from them ([`Sensor::take_state`], [`Sensor::take_props`]).
 
 pub mod battery;
 pub mod color;
@@ -240,8 +243,11 @@ pub struct DrawCtx<'a> {
     pub rect: RectF,
 }
 
-/// What a sensor may read when asked for its hint or accessible value (SPEC §8.1). Actions
-/// (state, props, notifications, opening Settings) arrive with the slices that need them.
+/// What a sensor may use when it handles a sample, a wake-up, a click, a menu item or a drop,
+/// or is asked for its hint, menu or accessible value (SPEC §8.1); built by the bar for each
+/// call. It acts through the platform (opening, notifying) and [`SensorCtx::changes`]; state
+/// and props to save are taken from it afterwards ([`Sensor::take_state`],
+/// [`Sensor::take_props`]).
 pub struct SensorCtx<'a> {
     pub id: &'a str,
     pub settings: &'a Settings,
@@ -429,7 +435,11 @@ pub trait Sensor {
     }
     /// `items` were dropped here, as [`Sensor::drop_action`] said.
     fn drop_items(&mut self, _items: &[drop::Dropped], _drag: drop::DragInfo, _cx: &SensorCtx) {}
-    /// Drives inactive rendering (SPEC §8.5).
+    /// Whether its icon or graphic is drawn inactive (SPEC §8.5): the drive is absent, the
+    /// target missing, …. The sensor applies §8.5 itself when it measures and draws, with
+    /// `cx.theme.inactive` (through [`color::inactive`] or `common::icon::Icon`); the bar does
+    /// not ask. A sensor whose topic failed (an error sample, §14.2) is dimmed as a whole by
+    /// the bar instead.
     fn inactive(&self) -> bool {
         false
     }
@@ -443,7 +453,8 @@ pub trait Sensor {
         true
     }
     /// Whether its click opens a popup (SPEC §7.2), which screen readers offer to expand
-    /// (§14.4).
+    /// (§14.4). It must agree with [`Sensor::click`]: `true` exactly for sensors whose click
+    /// can return [`ClickResult::Popup`].
     fn has_popup(&self) -> bool {
         false
     }

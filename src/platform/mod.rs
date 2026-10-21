@@ -2,8 +2,10 @@
 //! can be added without touching sensors. Windows lives in `windows/`; every other OS gets the
 //! portable stub in `stub.rs` (enough to develop and test on Linux).
 //!
-//! The spec's `Shell`, `Icons`, `Power` and `Devices` services are methods of [`Platform`],
-//! added with the milestones that need them (M2–M3); the locale is plain data (`locale.rs`).
+//! [`Platform`] holds the services every thread shares; the bar thread's window, menus, hint,
+//! popup, tray icon and AppBar are reached through [`BarWindow`] and [`AppBar`] from
+//! [`start_bar_thread`]; drawing goes through [`Canvas`] and [`TextEngine`]; the locale is
+//! plain data (`locale.rs`).
 
 pub mod accessible;
 pub mod bitmap;
@@ -493,6 +495,32 @@ pub enum AutostartChange<'a> {
 /// only on Windows, so no user sees it.
 pub const UNSUPPORTED: &str = "not supported on this platform";
 
+/// The OS services every thread shares (SPEC §4.6): readings for the providers and Settings,
+/// the shell, power, notifications, sound, autostart and the locale. A method's default is what
+/// other OSes get: the stub (`stub.rs`) implements only the four required methods, and Windows
+/// overrides every other one except three that are portable (`open`, `volume_of`,
+/// `create_url_file`).
+///
+/// **Calls that may block.** Readings may wait for slow hardware or for a network drive whose
+/// server is away (the SMB timeout), so none runs on the bar thread: `cpu_reader`'s reads,
+/// `memory`, `page_files`, `net_interface` and the Wi-Fi reader run on the sampler thread;
+/// `volumes`, `disk_space`, `path_kind`, `power_status` and `recycle_bin` on its workers
+/// (`providers/worker.rs`), one per key; `list_dir` and `shell_icon` on the bar's workers
+/// (the folder browser, `bar/icons.rs`). Settings reads `volumes` (machine defaults when a
+/// sensor is added), `net_interfaces` and `font_families` on the main thread. The one accepted
+/// exception: a drop onto the bar reads `path_kind` of each dropped item on the bar thread,
+/// once per drop (never per drag-over), because the sensors the drop creates depend on it
+/// (SPEC §6.3). Actions (`open`, `launch`, `reveal`, `file_operation`, `recycle`,
+/// `create_url_file`, `empty_recycle_bin`, `power`, `eject`, `notify`, `play_sound`) return at
+/// once and do their work in the background.
+///
+/// **Absence and failure.** A reading that can fail returns `Result<_, String>` with the OS's
+/// message (`memory`, `page_files`, `list_dir`, `power_status`, `recycle_bin`, the CPU and
+/// Wi-Fi readers), which the sampler turns into an error sample after three failures in a row
+/// (SPEC §14.2). `disk_space`, `volumes`, `net_interface`, `net_interfaces` and `path_kind`
+/// fold a failure into absence (`None`, an empty list, [`PathKind::Missing`]), which sensors
+/// show as missing or "n/a". Typed errors ([`EjectError`], [`ImageError`]) are for callers
+/// that act on the reason.
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// The capabilities if they are known already, without waiting for a probe still running:
@@ -570,8 +598,9 @@ pub trait Platform: Send + Sync {
     fn launch(&self, launch: &Launch) {
         tracing::info!("starting {launch:?} is not supported on this platform");
     }
-    /// What `path` names now. It may wait for a network server, so it runs off the bar
-    /// thread (the `path/<path>` topic).
+    /// What `path` names now; [`PathKind::Missing`] also when it cannot be read. It may wait
+    /// for a network server, so it runs off the bar thread (the `path/<path>` topic), except
+    /// once per drop onto the bar (see the trait's doc).
     fn path_kind(&self, path: &str) -> PathKind {
         match std::fs::metadata(path) {
             Ok(m) if m.is_dir() => PathKind::Folder,

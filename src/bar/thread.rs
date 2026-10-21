@@ -1,6 +1,9 @@
 //! The bar logic on the bar thread (SPEC §4.1, §4.4): applies the config and the OS appearance,
-//! keeps the sensors, their wake-up timer and layout, draws the bar, and handles the pointer
-//! and the keyboard: clicks, context menus, the hover hint and the focus ring (§6, §7.1, §14.4).
+//! keeps the sensors, their wake-up timer and layout, and draws the bar. It handles the pointer
+//! (clicks, the reorder drag, moving and resizing a floating bar; §5.1, §6.1–6.2), the context
+//! menus and the tray (§6.4–6.5), the hover hint and the interactive popups (§7), drops from
+//! other apps (§6.3), the keyboard and UI Automation (§14.4), and the bar's motion: showing,
+//! hiding, the rise animation and sliding out to change edges (§5.5).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -775,7 +778,6 @@ impl BarLogic {
         }
     }
 
-    /// Releasing over the pressed sensor without having moved is a click.
     /// Stores where a moved floating bar is now (SPEC §5.1).
     fn end_moving(&mut self, window: &dyn BarWindow) {
         let Some(moving) = self.moving.take() else {
@@ -813,6 +815,7 @@ impl BarLogic {
         }
     }
 
+    /// Releasing over the pressed sensor without having moved is a click.
     fn pointer_up(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
         if self.resizing.is_some() {
             self.end_resizing(window);
