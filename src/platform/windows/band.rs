@@ -43,6 +43,8 @@ pub(super) struct BandWindow {
     band: RefCell<Option<Band>>,
     /// The band's pixels are in the window: drawn since the band last changed.
     drawn: Cell<bool>,
+    /// Where the window was last put (screen px), so a frame that moves nothing moves nothing.
+    at: Cell<Option<(i32, i32)>>,
     visible: Cell<bool>,
 }
 
@@ -81,6 +83,7 @@ impl BandWindow {
                 owner,
                 band: RefCell::new(None),
                 drawn: Cell::new(false),
+                at: Cell::new(None),
                 visible: Cell::new(false),
             })
         }
@@ -125,17 +128,10 @@ impl BandWindow {
             },
         };
         let placed = if self.drawn.get() {
-            // SAFETY: moves our own window; size, z-order and content stay.
-            unsafe {
-                SetWindowPos(
-                    self.hwnd,
-                    None,
-                    at.x,
-                    at.y,
-                    0,
-                    0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-                )
+            if self.at.get() == Some((at.x, at.y)) {
+                Ok(())
+            } else {
+                self.move_to(at)
             }
         } else {
             self.draw(band, at)
@@ -145,11 +141,28 @@ impl BandWindow {
             self.hide();
             return;
         }
+        self.at.set(Some((at.x, at.y)));
         if !self.visible.replace(true) {
             // SAFETY: plain call on our own window.
             let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
         }
         self.restack();
+    }
+
+    /// Moves the window, keeping its size, z-order and content.
+    fn move_to(&self, at: POINT) -> Result<()> {
+        // SAFETY: moves our own window; size, z-order and content stay.
+        unsafe {
+            SetWindowPos(
+                self.hwnd,
+                None,
+                at.x,
+                at.y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        }
     }
 
     /// Puts the band's pixels in the window at `at`.

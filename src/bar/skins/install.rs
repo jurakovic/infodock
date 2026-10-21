@@ -106,18 +106,28 @@ fn install_zip(dir: &Path, source: &Path) -> Result<pack::Pack, InstallError> {
         Some(name) => name_of(Some(name))?,
         None => name_of(source.file_stem().and_then(|n| n.to_str()))?,
     };
+    let entry = |name: &str| {
+        let path = format!("{folder}{name}");
+        entries.iter().find(|e| e.name.eq_ignore_ascii_case(&path))
+    };
+    // `skin.json` first, and only the files it names after it: nothing else in the archive is
+    // extracted, so at most a few MB are written whatever it holds.
+    let manifest = entry(MANIFEST).ok_or(InstallError::NotAPack)?;
+    if manifest.size > pack::MAX_MANIFEST_BYTES {
+        return Err(PackError::TooLarge(MANIFEST.into()).into());
+    }
+    let manifest = zip::extract(&bytes, manifest)?;
+    let named = pack::named_files(&manifest)?;
     stage(dir, &id, |staging| {
-        // The files next to `skin.json`; those it does not name are dropped once it is read.
-        for entry in &entries {
-            let Some(name) = entry.name.strip_prefix(folder.as_str()) else {
+        fs::write(staging.join(MANIFEST), &manifest).map_err(io)?;
+        for name in &named {
+            // A name that is not a plain file name, or a file not in the archive, fails the
+            // pack's checks with its reason.
+            let Some(entry) = entry(name).filter(|_| pack::is_file_name(name)) else {
                 continue;
             };
-            if name.is_empty() || name.contains('/') || !pack::is_file_name(name) {
-                continue;
-            }
             if entry.size > pack::MAX_IMAGE_BYTES {
-                // Too large for a pack: one it names fails the checks as missing.
-                continue;
+                return Err(PackError::TooLarge(name.clone()).into());
             }
             fs::write(staging.join(name), zip::extract(&bytes, entry)?).map_err(io)?;
         }
@@ -340,6 +350,56 @@ mod tests {
             Err(InstallError::Pack(PackError::Missing("tile.png".into())))
         );
         assert_eq!(files(skins.path()), ["Dusk", "Sunset"]);
+    }
+
+    #[test]
+    fn only_what_skin_json_names_is_extracted() {
+        let (from, skins) = (
+            tempfile::tempdir().expect("temp"),
+            tempfile::tempdir().expect("temp"),
+        );
+        let source = source_pack(from.path(), "src");
+        let read = |name: &str| fs::read(source.join(name)).expect("read");
+        let (manifest, tile) = (read(MANIFEST), read("tile.png"));
+        // A stray file compressed with LZMA (method 14), which this reader cannot extract, and
+        // many others: never extracted, so they cannot fail the install or fill the disk.
+        let mut contents: Vec<(String, Vec<u8>)> = vec![
+            ("Sunset/skin.json".into(), manifest.clone()),
+            ("Sunset/tile.png".into(), tile),
+            ("Sunset/readme.txt".into(), b"read me".to_vec()),
+        ];
+        contents.extend((0..200).map(|i| (format!("Sunset/f{i}.png"), vec![0; 1000])));
+        let entries: Vec<(&str, &[u8])> = contents
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_slice()))
+            .collect();
+        let mut bytes = zip(&entries, true);
+        let name = b"Sunset/readme.txt";
+        let found: Vec<usize> = (0..bytes.len() - name.len())
+            .filter(|&at| &bytes[at..at + name.len()] == name)
+            .collect();
+        // The local header's method is 22 bytes before its name, the central one's 36.
+        bytes[found[0] - 22] = 14;
+        bytes[found[1] - 36] = 14;
+        let path = from.path().join("download.zip");
+        fs::write(&path, &bytes).expect("written");
+        let pack = install(skins.path(), &path).expect("installed");
+        assert_eq!(pack.id, "Sunset");
+        assert_eq!(
+            files(&skins.path().join("Sunset")),
+            ["skin.json", "tile.png"]
+        );
+
+        // A named tile over 1 MB is refused before it is extracted.
+        let big = vec![0; 1024 * 1024 + 1];
+        let bytes = zip(&[("skin.json", &manifest), ("tile.png", &big)], false);
+        let path = from.path().join("Big.zip");
+        fs::write(&path, bytes).expect("written");
+        assert_eq!(
+            install(skins.path(), &path),
+            Err(InstallError::Pack(PackError::TooLarge("tile.png".into())))
+        );
+        assert_eq!(files(skins.path()), ["Sunset"]);
     }
 
     /// A `.zip` another tool wrote (Python's `zipfile`, deflated, with a folder entry).

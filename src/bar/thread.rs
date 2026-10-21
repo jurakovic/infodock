@@ -31,7 +31,7 @@ use crate::config::model::{
     BarMode, Edge, FloatingRect, Layout, Material, SensorInstance, Settings,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
+use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
     Band, BarGeometry, BarHandler, BarWindow, Canvas, DragEvent, DropEffect, Key, Modifiers,
     OsAppearance, Platform, PointF, PointerButton, PopupInput, Rect, RectF, SizeF, TextEngine,
@@ -333,6 +333,15 @@ impl BarLogic {
                     && let Some(rect) = window.move_by(dx, dy)
                 {
                     moving.rect = Some(rect);
+                    // The nearer edge follows, so the shadow and hairline turn while it moves.
+                    if let Some(g) = self.geometry.as_mut() {
+                        g.rect = rect;
+                        let edge = nearer_edge(rect, &g.monitor);
+                        if edge != g.edge {
+                            g.edge = edge;
+                            window.invalidate();
+                        }
+                    }
                 }
             }
             return;
@@ -1043,6 +1052,10 @@ impl BarLogic {
             self.material = Some(theme.material);
         }
         if theme != self.theme {
+            if theme.skin.is_none() {
+                // The modern bar draws no skin: the last one need not stay in memory.
+                self.skin.forget();
+            }
             self.theme = theme;
             self.sensors.invalidate_all();
             window.invalidate();
@@ -1525,9 +1538,11 @@ impl BarHandler for BarLogic {
             .as_ref()
             .and_then(|spec| self.skin.get(spec, target));
         // A band goes on the side facing the screen centre: above a bar at the bottom. The
-        // skin's own band takes the place of the bar's shadow (SPEC §5.5).
+        // skin's own band takes the place of the bar's shadow (SPEC §5.5). None while the
+        // content fades, which a floating bar does in place.
         let above = edge == Edge::Bottom;
         let bitmap = match skin.and_then(|s| s.band.clone()) {
+            _ if opacity < 1.0 => None,
             Some(band) => Some(band),
             None if self.settings.bar.shadow => self.shadow.get(target.width, target.scale, above),
             None => None,
@@ -1901,6 +1916,10 @@ mod tests {
         use crate::bar::skins::tests::{decode_png, pack, rows_png};
         let mut settings = Settings::default();
         settings.bar.shadow = true;
+        // None while the bar rises and its content fades in.
+        let (mut rising, ..) = rising_bar(settings.clone());
+        rising.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        assert_eq!(rising.band(), None);
         let (mut logic, window, _host, config) = bar(settings);
         let size = SizeF::new(WIDTH, 28.0);
         // The modern bar at the bottom of the screen: 6 px of shadow above it, as wide as it.
@@ -2209,6 +2228,19 @@ mod tests {
                 width: DEFAULT_FLOATING_WIDTH
             })
         );
+
+        // Dragged into the upper half, its shadow turns below it at once (SPEC §5.1).
+        settings.bar.shadow = true;
+        let (mut logic, window, _, _) = bar(settings.clone());
+        window.position.set(Some(start));
+        let size = SizeF::new(WIDTH, 28.0);
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(logic.band().expect("a shadow").above);
+        press(&mut logic, &window, empty, false);
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(300.0, -300.0)));
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(!logic.band().expect("a shadow").above);
+        release(&mut logic, &window, PointF::new(300.0, -300.0));
 
         // Locked, or docked: the background does not move the bar.
         settings.locked = true;

@@ -15,7 +15,7 @@ use crate::platform::bitmap::ImageFormat;
 
 /// The file every pack has.
 pub const MANIFEST: &str = "skin.json";
-const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+pub(super) const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 pub(super) const MAX_IMAGE_BYTES: u64 = 1024 * 1024;
 const MAX_SIDE: u32 = 512;
 /// The bar height tiles are drawn for unless `skin.json` says otherwise.
@@ -192,6 +192,22 @@ pub fn list(dir: &Path) -> Vec<PackEntry> {
         .collect();
     packs.sort_by_key(|p| p.id.to_lowercase());
     packs
+}
+
+/// The files a `skin.json` names, each once, for copying a pack before it is checked.
+pub(super) fn named_files(manifest: &[u8]) -> Result<Vec<String>, PackError> {
+    let manifest: Manifest =
+        serde_json::from_slice(manifest).map_err(|e| PackError::Manifest(e.to_string()))?;
+    let mut names: Vec<String> = Vec::new();
+    for name in [manifest.image, manifest.image_top, manifest.image_bottom]
+        .into_iter()
+        .flatten()
+    {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 /// The pack `id` in `dir`; `None` when there is no such folder.
