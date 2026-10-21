@@ -149,7 +149,7 @@ pub fn decode(bytes: &[u8]) -> String {
         return String::from_utf8_lossy(utf8).into_owned();
     }
     let utf16 = |rest: &[u8], unit: fn([u8; 2]) -> u16| {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|c| unit([c[0], c[1]])).collect();
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| unit(c)).collect();
         String::from_utf16_lossy(&units)
     };
     if let Some(rest) = bytes.strip_prefix(b"\xFF\xFE") {
