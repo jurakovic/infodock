@@ -364,8 +364,8 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 (The center total deliberately includes one trailing gap.)
 
 * Sensor width is **intrinsic** (content), except for sensors with a width property (Spacer, graphs).
-* Zones MAY overlap when content exceeds the bar width; the center zone is drawn on top. The layout SHOULD then shrink text sensors with an ellipsis, center zone first, then left, then right.
-* Implementation: positions computed by `bar/layout.rs` (a pure, tested function) from the widths each sensor measures (`measure()`, §8.1). Values use tabular numerals (DirectWrite `tnum`) and per-sensor reserved minimum widths (§9) so changing numbers do not shift the bar.
+* When the zones do not fit the bar with a gap between them and the padding at its ends, sensors whose text can be cut give way with an ellipsis: the center zone first, then left, then right, each zone only as far as its own overlap needs (the left and right zones as far as they meet the center, or each other when the center is empty), its sensors in proportion to what they can give, in whole px, down to a minimum each. What still does not fit overlaps; the center zone is drawn on top. The Text sensor gives way, down to two ems of its font size (plus its shadow); its hint shows the whole text while it is cut (§9.1). Other sensors keep their width: values have reserved widths, and the launchers show only icons (§9.17–9.19).
+* Implementation: widths and positions computed by `bar/layout.rs` (pure, tested functions: `fit`, then `place`) from the widths each sensor measures (`measure()`, §8.1) and the minimums it can be cut to (`min_width()`); a sensor given less than it measured is told so (`fit()`), and lays out its text again with that maximum width (DirectWrite trimming with an ellipsis sign). Values use tabular numerals (DirectWrite `tnum`) and per-sensor reserved minimum widths (§9) so changing numbers do not shift the bar.
 
 ### 5.5 Appearance
 
@@ -569,6 +569,8 @@ pub trait Sensor {
     fn on_wake(&mut self, now: Instant, cx: &mut SensorCtx) -> Dirty;  // Dirty = bool: what it shows changed
     fn measure(&mut self, cx: &LayoutCtx) -> f32;         // width in logical px; height = bar content height;
                                                           // builds and keeps text layouts and bitmaps
+    fn min_width(&self) -> Option<f32>;                   // how narrow its text can be cut (§5.4)
+    fn fit(&mut self, width: f32, cx: &LayoutCtx);        // the width the layout gives it (§5.4)
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent>;
     fn click(&mut self, cx: &mut SensorCtx) -> ClickResult;  // None, Handled, or OpenPopup(Box<dyn Popup>)
@@ -708,7 +710,7 @@ Conventions:
 | fontSize | `fontsize` | slider 9–25 | 13 | |
 | shadow | `shadow` | bool | false | 1 px offset (1,1). Shadow colour = black if the text colour is light (grey = 0.2R + 0.5G + 0.3B ≥ 128), else white |
 
-View: one line, vertically centred, in the sensor text colour. No hint, no click action.
+View: one line, vertically centred, in the sensor text colour. No click action. No hint, except while the zones do not fit the bar and the text is cut with an ellipsis (§5.4): then the whole text.
 
 ### 9.2 `image` — Image  (General; `DockImage`)
 

@@ -38,12 +38,34 @@ struct Placed {
     topics: Vec<TopicRequest>,
     /// When it last took a sample of each topic.
     taken: Vec<(Topic, Instant)>,
-    /// Logical px, from the last measurement.
+    /// Logical px, from the last measurement, and how narrow it can be (SPEC §5.4).
+    measured: f32,
+    min: f32,
+    /// What the layout gives it, logical px: `measured`, or less when the zones do not fit.
     width: f32,
+    /// The width it was last fitted to; measuring fits it to `measured`.
+    fitted: f32,
     /// Logical px from the bar's left edge.
     x: f32,
     /// Needs measuring.
     dirty: bool,
+}
+
+impl Placed {
+    fn new(entry: SensorInstance, sensor: Box<dyn Sensor>) -> Self {
+        Self {
+            entry,
+            topics: sensor.topics(),
+            sensor,
+            taken: Vec::new(),
+            measured: 0.0,
+            min: 0.0,
+            width: 0.0,
+            fitted: 0.0,
+            x: 0.0,
+            dirty: true,
+        }
+    }
 }
 
 /// What a sensor's context is built from.
@@ -149,16 +171,7 @@ impl BarSensors {
                     self.created.push(entry.id.clone());
                     let empty = State::new();
                     let state = state.get(&entry.id).unwrap_or(&empty);
-                    let sensor = registry.create(entry, state, caps);
-                    Placed {
-                        entry: entry.clone(),
-                        topics: sensor.topics(),
-                        taken: Vec::new(),
-                        sensor,
-                        width: 0.0,
-                        x: 0.0,
-                        dirty: true,
-                    }
+                    Placed::new(entry.clone(), registry.create(entry, state, caps))
                 });
                 zone.push(placed);
             }
@@ -192,7 +205,8 @@ impl BarSensors {
     }
 
     /// Measures the sensors that need it and places the zones if a width, the bar width, the
-    /// scale or the spacing (Sensor spacing, SPEC §10.4) changed.
+    /// scale or the spacing (Sensor spacing, SPEC §10.4) changed; sensors that must give way
+    /// for the zones to fit the bar are narrowed (§5.4).
     pub fn update_layout(&mut self, cx: &LayoutCtx, bar_width: f32) {
         if cx.scale != self.scale || cx.numbers != self.numbers {
             // Images are decoded at their physical size; numbers are written as the locale
@@ -203,26 +217,38 @@ impl BarSensors {
         }
         let mut resized = false;
         for p in self.all_mut().filter(|p| p.dirty) {
-            let width = p.sensor.measure(cx).max(0.0);
-            resized |= width != p.width;
-            p.width = width;
+            let measured = p.sensor.measure(cx).max(0.0);
+            let min = p
+                .sensor
+                .min_width()
+                .map_or(measured, |m| m.clamp(0.0, measured));
+            resized |= measured != p.measured || min != p.min;
+            p.measured = measured;
+            p.min = min;
+            p.fitted = measured;
             p.dirty = false;
         }
         let spacing = (cx.theme.pad, cx.theme.gap);
         if resized || self.relayout || bar_width != self.bar_width || spacing != self.spacing {
-            let widths: Zones = self
-                .zones
-                .each_ref()
-                .map(|z| z.iter().map(|p| p.width).collect());
-            let xs = layout::place(&widths, bar_width, cx.theme.pad, cx.theme.gap);
-            for (zone, xs) in self.zones.iter_mut().zip(xs) {
-                for (p, x) in zone.iter_mut().zip(xs) {
+            let (pad, gap) = spacing;
+            let of = |f: fn(&Placed) -> f32| -> Zones {
+                self.zones.each_ref().map(|z| z.iter().map(f).collect())
+            };
+            let widths = layout::fit(&of(|p| p.measured), &of(|p| p.min), bar_width, pad, gap);
+            let xs = layout::place(&widths, bar_width, pad, gap);
+            for ((zone, widths), xs) in self.zones.iter_mut().zip(widths).zip(xs) {
+                for ((p, width), x) in zone.iter_mut().zip(widths).zip(xs) {
+                    p.width = width;
                     p.x = x;
                 }
             }
             self.bar_width = bar_width;
             self.spacing = spacing;
             self.relayout = false;
+        }
+        for p in self.all_mut().filter(|p| p.fitted != p.width) {
+            p.sensor.fit(p.width, cx);
+            p.fitted = p.width;
         }
     }
 
@@ -665,6 +691,53 @@ mod tests {
         assert_eq!(sensors.places().len(), 1);
     }
 
+    #[test]
+    fn text_gives_way_while_the_zones_do_not_fit_the_bar() {
+        let theme = theme();
+        let layout = Layout {
+            left: vec![entry("a", "text", json!({ "text": "Left side" }))],
+            center: vec![entry(
+                "b",
+                "text",
+                json!({ "text": "A rather long centre text" }),
+            )],
+            right: vec![entry("c", "spacer", json!({ "width": 40 }))],
+        };
+        let mut sensors = BarSensors::default();
+        sensors.sync(
+            &layout,
+            &BTreeMap::new(),
+            &Capabilities::default(),
+            registry(),
+        );
+        let centre = |sensors: &BarSensors| {
+            let mut canvas = RecordingCanvas::new(1.0);
+            sensors.draw(&mut canvas, &theme, 28.0);
+            let dump = canvas.dump();
+            dump.lines().last().unwrap_or_default().to_owned()
+        };
+        // 13 px text: 6.5 px a character. On 200 px the centre may start at 76, after the left
+        // and its gap, so it gets 200 − 10 − 2 × 76 = 38 px of its 163.
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 200.0);
+        assert_eq!(
+            sensors.places(),
+            [
+                ("a".into(), 7.0, 59.0),
+                ("b".into(), 76.0, 38.0),
+                ("c".into(), 153.0, 40.0)
+            ]
+        );
+        assert!(centre(&sensors).contains("\"A ra…\" "), "cut");
+        // Measured again, it stays cut.
+        sensors.invalidate_all();
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 200.0);
+        assert!(centre(&sensors).contains("\"A ra…\" "));
+        // With room, it is whole again.
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+        assert_eq!(sensors.places()[1], ("b".into(), 114.0, 163.0));
+        assert!(centre(&sensors).contains("\"A rather long centre text\""));
+    }
+
     /// Counts its wake-ups; due every 10 s from `start`.
     struct Ticker {
         start: Instant,
@@ -711,16 +784,14 @@ mod tests {
         let mut sensors = BarSensors::default();
         for (zone, id) in [(0, "a"), (2, "b")] {
             sensors.zones[zone].push(Placed {
-                entry: entry(id, "ticker", json!({})),
-                sensor: Box::new(Ticker {
-                    start,
-                    wakes: Rc::new(Cell::new(0)),
-                }),
-                topics: Vec::new(),
-                taken: Vec::new(),
-                width: 0.0,
-                x: 0.0,
                 dirty: false,
+                ..Placed::new(
+                    entry(id, "ticker", json!({})),
+                    Box::new(Ticker {
+                        start,
+                        wakes: Rc::new(Cell::new(0)),
+                    }),
+                )
             });
         }
         let later = start + Duration::from_secs(3);
@@ -748,18 +819,13 @@ mod tests {
         let start = Instant::now();
         let wakes = Rc::new(Cell::new(0));
         let mut sensors = BarSensors::default();
-        sensors.zones[0].push(Placed {
-            entry: entry("t", "ticker", json!({})),
-            sensor: Box::new(Ticker {
+        sensors.zones[0].push(Placed::new(
+            entry("t", "ticker", json!({})),
+            Box::new(Ticker {
                 start,
                 wakes: Rc::clone(&wakes),
             }),
-            topics: Vec::new(),
-            taken: Vec::new(),
-            width: 0.0,
-            x: 0.0,
-            dirty: true,
-        });
+        ));
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert_eq!(sensors.places()[0].2, 10.0);
 
@@ -817,13 +883,8 @@ mod tests {
         };
         let mut sensors = BarSensors::default();
         sensors.zones[0].push(Placed {
-            entry: entry("c", "counter", json!({})),
-            sensor: Box::new(Counter(0)),
-            topics: Vec::new(),
-            taken: Vec::new(),
-            width: 0.0,
-            x: 0.0,
             dirty: false,
+            ..Placed::new(entry("c", "counter", json!({})), Box::new(Counter(0)))
         });
         assert_eq!(sensors.menu("c", &env)[0].label, "Count (0)");
         assert!(sensors.menu("nobody", &env).is_empty());
@@ -947,29 +1008,18 @@ mod tests {
         };
         let mut sensors = BarSensors::default();
         for id in ["u1", "u2"] {
-            let sensor: Box<dyn Sensor> = Box::new(Uptime { minutes: 0 });
-            sensors.zones[0].push(Placed {
-                entry: entry(id, "uptime", json!({})),
-                topics: sensor.topics(),
-                taken: Vec::new(),
-                sensor,
-                width: 0.0,
-                x: 0.0,
-                dirty: true,
-            });
+            sensors.zones[0].push(Placed::new(
+                entry(id, "uptime", json!({})),
+                Box::new(Uptime { minutes: 0 }),
+            ));
         }
-        sensors.zones[2].push(Placed {
-            entry: entry("t", "ticker", json!({})),
-            sensor: Box::new(Ticker {
+        sensors.zones[2].push(Placed::new(
+            entry("t", "ticker", json!({})),
+            Box::new(Ticker {
                 start: Instant::now(),
                 wakes: Rc::new(Cell::new(0)),
             }),
-            topics: Vec::new(),
-            taken: Vec::new(),
-            width: 0.0,
-            x: 0.0,
-            dirty: true,
-        });
+        ));
         let mut ids: Vec<_> = sensors.subscriptions().into_keys().collect();
         ids.sort();
         assert_eq!(ids, ["u1", "u2"]);

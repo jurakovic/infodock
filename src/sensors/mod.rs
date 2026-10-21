@@ -367,6 +367,16 @@ pub trait Sensor {
     /// Width in logical px; the height is the bar's. Called after creation and whenever the
     /// sensor or the theme changed, so text layouts and bitmaps are built (and kept) here.
     fn measure(&mut self, cx: &LayoutCtx) -> f32;
+    /// How narrow it can be drawn when the zones do not fit the bar (SPEC §5.4), logical px,
+    /// for sensors whose text can end in an ellipsis; `None` (the default) keeps the measured
+    /// width. Asked after each [`Sensor::measure`].
+    fn min_width(&self) -> Option<f32> {
+        None
+    }
+    /// The width the bar gives it, from [`Sensor::min_width`] up to its measured width, which
+    /// it has after measuring; called when the width changes. Narrower than measured, its text
+    /// ends in an ellipsis and its hint shows the whole text.
+    fn fit(&mut self, _width: f32, _cx: &LayoutCtx) {}
     /// Draws into `cx.rect`.
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx);
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
@@ -705,6 +715,20 @@ pub(crate) mod test_support {
             numbers: Default::default(),
             icons: &crate::sensors::NoIcons,
         })
+    }
+
+    /// Gives `sensor` `width`, as the bar does when the zones do not fit (SPEC §5.4).
+    pub fn fit(sensor: &mut dyn Sensor, width: f32) {
+        sensor.fit(
+            width,
+            &LayoutCtx {
+                theme: &theme(),
+                text: &FixedMetrics,
+                scale: 1.0,
+                numbers: Default::default(),
+                icons: &crate::sensors::NoIcons,
+            },
+        );
     }
 
     /// What `sensor` draws at x = 7 with `width`, on a 28 px bar.

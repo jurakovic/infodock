@@ -554,3 +554,8 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 - [ ] CI's *Times* also list the sampler's cost per tick (2 ms), the hint after its delay (30 ms) and the Folder Menu's first paint for 500 items (200 ms); a test that did not record its time fails the check as well.
 - [ ] On the test laptop, a Folder Menu on a folder of about 500 items (a photo folder, say) opens with its list at once, the icons appearing after it; hovering a Date sensor shows its calendar without a visible pause after the delay.
+
+**Overlapping zones** (since M5 S3)
+
+- [ ] Add a Text sensor with a long sentence to the centre zone, and Text sensors to the left and right zones. Make the bar floating and narrow it (or add sensors) until the zones meet: the centre text ends in "…", keeping a gap to the left and right zones, and its hint shows the whole sentence. Narrower still: once the centre text is down to a few characters, the left zone's text gives way, then the right's. Widen the bar again: the texts are whole and the hint is gone.
+- [ ] With the centre zone empty, the left zone's text gives way before the right's. Sensors other than Text (graphs, meters, icons) never change width; at 150 % the cut texts stay sharp.

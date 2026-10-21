@@ -5,7 +5,9 @@ use serde_json::Value;
 
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
-use super::{Category, DrawCtx, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed};
+use super::{
+    Category, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed,
+};
 use crate::config::model::FontStyle;
 use crate::platform::{Canvas, Color, Font, PointF, TextLayout, TextStyle};
 
@@ -45,6 +47,9 @@ const SCHEMA: &[PropField] = &[
     )
     .describe("sensor.field.shadow.help"),
 ];
+
+/// A text the bar narrows (SPEC §5.4) keeps this many ems: a character or two and the ellipsis.
+const MIN_EMS: f32 = 2.0;
 
 /// SPEC §9.1.
 const LEGACY_KEYS: &[LegacyKey] = &[
@@ -90,6 +95,8 @@ impl SensorType for TextType {
         Ok(Box::new(Text {
             props: typed(props)?,
             layout: None,
+            width: 0.0,
+            cut: None,
         }))
     }
 
@@ -115,7 +122,30 @@ struct TextProps {
 
 struct Text {
     props: TextProps,
+    /// The whole text, and the width it measured.
     layout: Option<TextLayout>,
+    width: f32,
+    /// The text ending in an ellipsis, while the bar gives it less than its width.
+    cut: Option<TextLayout>,
+}
+
+impl Text {
+    fn style(&self, cx: &LayoutCtx) -> TextStyle {
+        let family = if self.props.font.is_empty() {
+            &cx.theme.sensor_font.family
+        } else {
+            &self.props.font
+        };
+        TextStyle::new(
+            &Font::new(family, self.props.font_style),
+            self.props.font_size,
+        )
+    }
+
+    /// The shadow's offset, logical px.
+    fn shadow(&self) -> f32 {
+        if self.props.shadow { 1.0 } else { 0.0 }
+    }
 }
 
 /// The shadow colour for text in `color` (SPEC §9.1): black under light text, white under dark.
@@ -130,24 +160,26 @@ pub(super) fn shadow_color(color: Color) -> Color {
 
 impl Sensor for Text {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let family = if self.props.font.is_empty() {
-            &cx.theme.sensor_font.family
-        } else {
-            &self.props.font
-        };
-        let style = TextStyle::new(
-            &Font::new(family, self.props.font_style),
-            self.props.font_size,
-        );
-        let layout = cx.text.layout(&self.props.text, &style);
-        let shadow = if self.props.shadow { 1.0 } else { 0.0 };
-        let width = (layout.width() + shadow).ceil();
+        let layout = cx.text.layout(&self.props.text, &self.style(cx));
+        self.width = (layout.width() + self.shadow()).ceil();
         self.layout = Some(layout);
-        width
+        self.cut = None;
+        self.width
+    }
+
+    fn min_width(&self) -> Option<f32> {
+        Some((self.props.font_size * MIN_EMS + self.shadow()).ceil())
+    }
+
+    fn fit(&mut self, width: f32, cx: &LayoutCtx) {
+        self.cut = (width < self.width).then(|| {
+            let style = self.style(cx).max_width((width - self.shadow()).max(0.0));
+            cx.text.layout(&self.props.text, &style)
+        });
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        let Some(layout) = &self.layout else {
+        let Some(layout) = self.cut.as_ref().or(self.layout.as_ref()) else {
             return;
         };
         let r = cx.rect;
@@ -158,6 +190,13 @@ impl Sensor for Text {
             canvas.draw_text(layout, PointF::new(r.left + 1.0, y + 1.0), shadow);
         }
         canvas.draw_text(layout, PointF::new(r.left, y), color);
+    }
+
+    /// None, unless the text is cut: then the whole text (SPEC §5.4).
+    fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
+        self.cut
+            .is_some()
+            .then(|| HintContent::Text(self.props.text.clone()))
     }
 
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
@@ -171,7 +210,7 @@ mod tests {
 
     use super::*;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, measure};
+    use crate::sensors::test_support::{draw, fit, measure, theme};
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -213,6 +252,51 @@ mod tests {
             "text \"Hi\" Consolas 700 italic 20px at 8,3 #000000\n\
              text \"Hi\" Consolas 700 italic 20px at 7,2 #FFFFFF\n"
         );
+    }
+
+    #[test]
+    fn a_narrower_width_cuts_the_text_and_its_hint_shows_it_all() {
+        let theme = theme();
+        let settings = crate::config::model::Settings::default();
+        let platform = crate::platform::current();
+        let cx = SensorCtx {
+            id: "s_1",
+            settings: &settings,
+            theme: &theme,
+            locked: false,
+            alt: false,
+            animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
+            platform: platform.as_ref(),
+        };
+        let mut sensor = create(json!({ "text": "Overlapping" }));
+        // 11 × 6.5 px; two ems of 13 px at least.
+        assert_eq!(measure(sensor.as_mut()), 72.0);
+        assert_eq!(sensor.min_width(), Some(26.0));
+        assert_eq!(sensor.hint(&cx), None, "no hint while it is whole");
+
+        // 40 px hold five characters and the ellipsis.
+        fit(sensor.as_mut(), 40.0);
+        assert_eq!(
+            draw(sensor.as_ref(), 40.0),
+            "text \"Overl…\" Segoe UI Variable Text 400 13px at 7,6 #FFFFFF\n"
+        );
+        assert_eq!(
+            sensor.hint(&cx),
+            Some(HintContent::Text("Overlapping".into()))
+        );
+
+        // Its whole width again: whole, without a hint.
+        fit(sensor.as_mut(), 72.0);
+        assert!(draw(sensor.as_ref(), 72.0).contains("\"Overlapping\""));
+        assert_eq!(sensor.hint(&cx), None);
+
+        // With a shadow, both copies are cut, and the minimum makes room for it.
+        let mut sensor = create(json!({ "text": "Overlapping", "shadow": true }));
+        assert_eq!(measure(sensor.as_mut()), 73.0);
+        assert_eq!(sensor.min_width(), Some(27.0));
+        fit(sensor.as_mut(), 41.0);
+        assert_eq!(draw(sensor.as_ref(), 41.0).matches("\"Overl…\"").count(), 2);
     }
 
     #[test]
