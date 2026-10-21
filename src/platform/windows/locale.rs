@@ -3,10 +3,10 @@
 //! the legacy import (§11.4).
 
 use windows::Win32::Globalization::{
-    CP_ACP, GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK, LOCALE_S1159, LOCALE_S2359,
-    LOCALE_SABBREVDAYNAME1, LOCALE_SABBREVMONTHNAME1, LOCALE_SDAYNAME1, LOCALE_SDECIMAL,
-    LOCALE_SLONGDATE, LOCALE_SMONTHDAY, LOCALE_SMONTHNAME1, LOCALE_SSHORTDATE, LOCALE_STIMEFORMAT,
-    MULTI_BYTE_TO_WIDE_CHAR_FLAGS, MultiByteToWideChar,
+    CP_ACP, GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK, LOCALE_RETURN_GENITIVE_NAMES, LOCALE_S1159,
+    LOCALE_S2359, LOCALE_SABBREVDAYNAME1, LOCALE_SABBREVMONTHNAME1, LOCALE_SDAYNAME1,
+    LOCALE_SDECIMAL, LOCALE_SLONGDATE, LOCALE_SMONTHDAY, LOCALE_SMONTHNAME1, LOCALE_SSHORTDATE,
+    LOCALE_STIMEFORMAT, MULTI_BYTE_TO_WIDE_CHAR_FLAGS, MultiByteToWideChar,
 };
 use windows::core::{PCWSTR, w};
 
@@ -36,11 +36,15 @@ pub fn decode(bytes: &[u8], code_page: Option<u32>) -> Option<String> {
 /// Reads `which` from Windows: the user's regional format for `System`, English (United
 /// States) for `Ui` (the only UI language in v1). Values it cannot read stay as in en-US.
 pub fn read(which: DateLocale) -> Locale {
-    let name = match which {
+    match which {
         // LOCALE_NAME_USER_DEFAULT
-        DateLocale::System => PCWSTR::null(),
-        DateLocale::Ui => w!("en-US"),
-    };
+        DateLocale::System => read_named(PCWSTR::null()),
+        DateLocale::Ui => read_named(w!("en-US")),
+    }
+}
+
+/// Reads the locale `name` (null: the user's).
+fn read_named(name: PCWSTR) -> Locale {
     let info = |lctype: u32| -> Option<String> {
         let mut buffer = [0u16; 128];
         // SAFETY: the buffer is writable for its whole length, which the call is told; the
@@ -62,6 +66,17 @@ pub fn read(which: DateLocale) -> Locale {
     fill(&mut locale.weekdays_short, LOCALE_SABBREVDAYNAME1);
     fill(&mut locale.months, LOCALE_SMONTHNAME1);
     fill(&mut locale.months_short, LOCALE_SABBREVMONTHNAME1);
+    // Languages without declined names answer with the plain ones (SPEC §8.6).
+    locale.months_genitive = locale.months.clone();
+    locale.months_short_genitive = locale.months_short.clone();
+    fill(
+        &mut locale.months_genitive,
+        LOCALE_SMONTHNAME1 | LOCALE_RETURN_GENITIVE_NAMES,
+    );
+    fill(
+        &mut locale.months_short_genitive,
+        LOCALE_SABBREVMONTHNAME1 | LOCALE_RETURN_GENITIVE_NAMES,
+    );
     for (slot, lctype) in [
         (&mut locale.long_date, LOCALE_SLONGDATE),
         (&mut locale.short_date, LOCALE_SSHORTDATE),
@@ -120,6 +135,72 @@ pub fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sensors::dates::{Date, format_date};
+
+    /// `date` written with `pattern` by Windows for the locale `name` (NUL-terminated).
+    fn windows_date(name: &[u16], date: Date, pattern: &str) -> String {
+        use windows::Win32::Foundation::SYSTEMTIME;
+        use windows::Win32::Globalization::{ENUM_DATE_FORMATS_FLAGS, GetDateFormatEx};
+        let time = SYSTEMTIME {
+            wYear: date.year as u16,
+            wMonth: u16::from(date.month),
+            wDay: u16::from(date.day),
+            // Sunday is 0.
+            wDayOfWeek: u16::from((date.weekday() + 1) % 7),
+            ..Default::default()
+        };
+        let format: Vec<u16> = pattern.encode_utf16().chain([0]).collect();
+        let mut buffer = [0u16; 256];
+        // SAFETY: NUL-terminated name and pattern; the buffer is writable for its length,
+        // which the call is told.
+        let len = unsafe {
+            GetDateFormatEx(
+                PCWSTR(name.as_ptr()),
+                ENUM_DATE_FORMATS_FLAGS(0),
+                Some(std::ptr::from_ref(&time)),
+                PCWSTR(format.as_ptr()),
+                Some(&mut buffer[..]),
+                PCWSTR::null(),
+            )
+        };
+        let len = usize::try_from(len).expect("formatted");
+        assert!(len > 0, "GetDateFormatEx failed for {pattern:?}");
+        String::from_utf16_lossy(&buffer[..len - 1])
+    }
+
+    /// Month names decline where `GetDateFormatEx` declines them (SPEC §8.6): next to a day
+    /// number, in long and short form, and stay as they are named elsewhere.
+    #[test]
+    fn dates_are_written_as_windows_writes_them() {
+        let patterns = [
+            "d. MMMM yyyy.",
+            "dddd, d MMMM",
+            "dd MMMM",
+            "MMMM d",
+            "MMMM yyyy",
+            "dddd, MMMM",
+            "MMMM",
+            "d MMM yyyy",
+            "MMM yyyy",
+            "ddd d. M. yy",
+        ];
+        for code in [
+            "hr-HR", "pl-PL", "cs-CZ", "ru-RU", "uk-UA", "en-US", "de-DE",
+        ] {
+            let name: Vec<u16> = code.encode_utf16().chain([0]).collect();
+            let locale = read_named(PCWSTR(name.as_ptr()));
+            for (month, day) in [(1, 5), (3, 1), (10, 21), (11, 30)] {
+                let date = Date::new(2026, month, day).expect("a date");
+                for pattern in patterns {
+                    assert_eq!(
+                        format_date(pattern, date, &locale),
+                        windows_date(&name, date, pattern),
+                        "{code} {pattern:?} on {date:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn decodes_ansi_code_pages() {

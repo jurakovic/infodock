@@ -11,6 +11,11 @@ pub struct Locale {
     /// Month names, January first.
     pub months: [String; 12],
     pub months_short: [String; 12],
+    /// The same as written next to a day number, where a language declines them (genitive:
+    /// Croatian "listopada" for "listopad", Polish "października"); equal to `months` and
+    /// `months_short` in languages that do not.
+    pub months_genitive: [String; 12],
+    pub months_short_genitive: [String; 12],
     /// Date patterns in the Windows picture format (`d`, `dd`, `ddd`, `dddd`, `M` … `MMMM`,
     /// `y`, `yy`, `yyyy`, `'literal'`): the long date (`dddd, MMMM d, yyyy`), the short date
     /// (`M/d/yyyy`) and month with day (`MMMM d`).
@@ -34,6 +39,23 @@ impl Locale {
     /// English (United States), the stub platform's locale and the fallback when the OS cannot
     /// be read.
     pub fn en_us() -> Self {
+        let months = strings([
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ]);
+        let months_short = strings([
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ]);
         Self {
             weekdays: strings([
                 "Monday",
@@ -45,23 +67,10 @@ impl Locale {
                 "Sunday",
             ]),
             weekdays_short: strings(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]),
-            months: strings([
-                "January",
-                "February",
-                "March",
-                "April",
-                "May",
-                "June",
-                "July",
-                "August",
-                "September",
-                "October",
-                "November",
-                "December",
-            ]),
-            months_short: strings([
-                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-            ]),
+            months_genitive: months.clone(),
+            months_short_genitive: months_short.clone(),
+            months,
+            months_short,
             long_date: "dddd, MMMM d, yyyy".into(),
             short_date: "M/d/yyyy".into(),
             month_day: "MMMM d".into(),

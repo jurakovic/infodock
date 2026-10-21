@@ -565,3 +565,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Floating and unlocked: the pointer at the bar's left or right end (within about 6 px) shows the left-right resize cursor; elsewhere the arrow. Drag the right end: the bar widens and narrows with the pointer and the left end stays; drag the left end: the right end stays. Not narrower than 200 px, nor past the screen's edge (with the taskbar, its work area); on a 4K monitor at 100 %, not wider than 3840 px.
 - [ ] Release: Settings ▸ Bar's *Width* (open meanwhile) shows the new width; quit and start again: the bar has its new width and place. At 150 %, *Width* shows logical px (1200 physical px are 800).
 - [ ] Locked, or docked: the ends show the arrow and dragging them does nothing (a docked bar's background does not move it either). While resizing, the shadow band (with *Shadow* on) follows the bar's new width.
+
+**Genitive month names** (since M5 S5)
+
+- [ ] Settings ▸ General ▸ *Date locale* on the system's regional format, with Windows' *Regional format* set to Croatian (Croatia): a Date sensor without the year shows `srijeda, 21. listopada`; Time's hint shows the long date `21. listopada 2026.`; with the year shown, the month line says `listopad`. The same with Polish (`21 października`), Czech (`21. října`) and Russian (`21 октября`); English (United States) is unchanged.
