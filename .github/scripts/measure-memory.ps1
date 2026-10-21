@@ -108,15 +108,18 @@ function Show-Log {
     }
 }
 
-# The start times the app logged, oldest first (daily log files sort by date).
+# The starts the app logged, oldest first (daily log files sort by date): the time to the
+# bar's first frame and when the start-up's steps were done.
 function Get-StartTimes {
     if (-not (Test-Path $LogDir)) { return @() }
     $lines = Get-ChildItem $LogDir -Filter 'infodock*.log' | Sort-Object Name | Get-Content
-    @($lines | Select-String -Pattern 'bar visible (\d+) ms after the process started' |
-        ForEach-Object { [int]$_.Matches[0].Groups[1].Value })
+    @($lines | Select-String -Pattern 'bar visible (\d+) ms after the process started(?: \((.*)\))?' |
+        ForEach-Object {
+            [pscustomobject]@{ Ms = [int]$_.Matches[0].Groups[1].Value; Steps = $_.Matches[0].Groups[2].Value }
+        })
 }
 
-# The start time a run logged: the one more than before it; $null if it logged none.
+# The start a run logged: the one more than before it; $null if it logged none.
 function Get-NewStartTime([object[]] $Before) {
     $after = @(Get-StartTimes)
     if ($after.Count -gt $Before.Count) { $after[-1] } else { $null }
@@ -135,7 +138,7 @@ try {
 } finally {
     Stop-Gracefully $first
 }
-$coldMs = Get-NewStartTime $startTimes
+$cold = Get-NewStartTime $startTimes
 $startTimes = @(Get-StartTimes)
 
 $app = Start-Process -FilePath $Exe -PassThru
@@ -169,12 +172,12 @@ try {
     Stop-Gracefully $app
     Show-Log
 }
-$warmMs = Get-NewStartTime $startTimes
+$warm = Get-NewStartTime $startTimes
 
 # Times (SPEC §14.1): the starts, then the budget tests' records.
 $times = [System.Collections.Generic.List[object]]::new()
-$times.Add([pscustomobject]@{ Label = 'Cold start to bar visible'; Ms = $coldMs; BudgetMs = $ColdStartBudgetMs })
-$times.Add([pscustomobject]@{ Label = 'Warm start to bar visible'; Ms = $warmMs; BudgetMs = $WarmStartBudgetMs })
+$times.Add([pscustomobject]@{ Label = 'Cold start to bar visible'; Ms = $cold.Ms; BudgetMs = $ColdStartBudgetMs })
+$times.Add([pscustomobject]@{ Label = 'Warm start to bar visible'; Ms = $warm.Ms; BudgetMs = $WarmStartBudgetMs })
 foreach ($id in $Recorded) {
     $file = if ($Measured) { Join-Path $Measured "$id.json" }
     if ($file -and (Test-Path $file)) {
@@ -194,6 +197,8 @@ $summary += $times | ForEach-Object {
     $budget = if ($null -eq $_.BudgetMs) { '' } else { "$($_.BudgetMs) ms" }
     "| $($_.Label) | $measured | $budget |"
 }
+if ($cold.Steps) { $summary += @('', "Cold start, ms after the process started: $($cold.Steps)") }
+if ($warm.Steps) { $summary += @('', "Warm start, ms after the process started: $($warm.Steps)") }
 if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
 $summary -join "`n" | Write-Host
 

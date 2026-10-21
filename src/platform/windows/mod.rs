@@ -44,6 +44,25 @@ use crate::sensors::dates::{Date, LocalTime};
 
 pub struct WindowsPlatform;
 
+/// Starts `probe` on a thread of `scope` and returns what waits for its answer; runs it there
+/// and then when no thread can be started. A probe that panics answers its default (none).
+fn side_by_side<'scope, T, F>(
+    scope: &'scope std::thread::Scope<'scope, '_>,
+    probe: F,
+) -> impl FnOnce() -> T + 'scope
+where
+    T: Send + Default + 'scope,
+    F: FnOnce() -> T + Send + Copy + 'scope,
+{
+    let thread = std::thread::Builder::new()
+        .name("probe".into())
+        .spawn_scoped(scope, probe);
+    move || match thread {
+        Ok(thread) => thread.join().unwrap_or_default(),
+        Err(_) => probe(),
+    }
+}
+
 impl Platform for WindowsPlatform {
     /// Read once: what the system offers does not change while Infodock runs (a Wi-Fi adapter
     /// plugged in later is found at the next start).
@@ -51,19 +70,38 @@ impl Platform for WindowsPlatform {
         static CAPABILITIES: std::sync::OnceLock<Capabilities> = std::sync::OnceLock::new();
         CAPABILITIES
             .get_or_init(|| {
+                let started = std::time::Instant::now();
+                // The slow probes (PDH loads its counter names, the WLAN client calls its
+                // service, the shell loads) run side by side, the shell's in an apartment.
+                let (per_core_cpu, wifi, (recycle_bin, start_menu)) = std::thread::scope(|s| {
+                    let per_core = side_by_side(s, cpu::per_processor_counters);
+                    let wifi = side_by_side(s, wlan::has_interface);
+                    let shell = side_by_side(s, || {
+                        com::enter();
+                        let programs = instance::known_folder(&FOLDERID_Programs);
+                        (
+                            shell::has_recycle_bin(),
+                            programs.is_some_and(|p| p.is_dir()),
+                        )
+                    });
+                    (per_core(), wifi(), shell())
+                });
                 let capabilities = Capabilities {
                     appbar: true,
-                    recycle_bin: shell::has_recycle_bin(),
-                    start_menu: instance::known_folder(&FOLDERID_Programs)
-                        .is_some_and(|p| p.is_dir()),
-                    wifi: wlan::has_interface(),
+                    recycle_bin,
+                    start_menu,
+                    wifi,
                     battery: power::has_battery(),
                     power_modes: power::modes(),
                     // Ejecting needs no hardware to exist; Eject USB lists what there is.
                     eject: true,
-                    per_core_cpu: cpu::per_processor_counters(),
+                    per_core_cpu,
                 };
-                tracing::info!("capabilities: {capabilities:?}");
+                tracing::info!(
+                    "capabilities: {capabilities:?} (probed in {} ms)",
+                    started.elapsed().as_millis()
+                );
+                crate::logging::startup_step("capabilities");
                 capabilities
             })
             .clone()

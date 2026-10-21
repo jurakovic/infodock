@@ -769,16 +769,27 @@ unsafe extern "system" fn window_proc(
     }
 }
 
-/// Logs how long after the process was created its first bar frame reached the window. CI
-/// reads the line from a first and a later run as the cold and warm start (SPEC §14.1).
+/// Logs how long after the process was created its first bar frame reached the window, and
+/// when the start-up's steps were done. CI reads the line from a first and a later run as the
+/// cold and warm start (SPEC §14.1).
 fn log_first_frame() {
-    match process_age() {
-        Some(age) => tracing::info!(
-            "bar visible {} ms after the process started",
-            age.as_millis()
-        ),
-        None => tracing::debug!("bar visible; the process start time is unknown"),
-    }
+    let Some(age) = process_age() else {
+        tracing::debug!("bar visible; the process start time is unknown");
+        return;
+    };
+    let created = std::time::Instant::now().checked_sub(age);
+    let steps: Vec<String> = crate::logging::take_startup_steps()
+        .into_iter()
+        .filter_map(|(name, at)| {
+            let since = at.checked_duration_since(created?)?;
+            Some(format!("{name} {}", since.as_millis()))
+        })
+        .collect();
+    tracing::info!(
+        "bar visible {} ms after the process started ({})",
+        age.as_millis(),
+        steps.join(", ")
+    );
 }
 
 /// How long ago this process was created; it is stamped to within a clock tick.
@@ -906,6 +917,7 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
     if let Err(e) = unsafe { OleInitialize(None) } {
         tracing::warn!("OLE is not available on the bar thread: {e}");
     }
+    crate::logging::startup_step("bar thread");
     let state = match create_window() {
         Ok(state) => state,
         Err(e) => {
@@ -913,6 +925,7 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
             return;
         }
     };
+    crate::logging::startup_step("window");
     let (Some(appbar), Some(tray)) = (state.appbar.get().cloned(), state.tray.get().cloned())
     else {
         let _ = ready.send(Err(PlatformError::Os("AppBar or tray missing".into())));
@@ -937,7 +950,9 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
         }
     });
     *state.handler.borrow_mut() = Some(make_handler(waker.clone()));
+    crate::logging::startup_step("bar logic");
     state.dispatch(UiEvent::Started);
+    crate::logging::startup_step("sensors");
     droptarget::register(state.hwnd(), Box::new(|event| state.drag(event)));
     let _ = ready.send(Ok(BarThread {
         appbar: Arc::new(WinAppBar { shared: appbar }),

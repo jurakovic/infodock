@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::thread::ThreadId;
+use std::time::Instant;
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{Builder, Rotation};
@@ -20,6 +21,33 @@ static GUARD: Mutex<Option<WorkerGuard>> = Mutex::new(None);
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 type Cleanup = Box<dyn Fn() + Send>;
 static FATAL_CLEANUP: Mutex<Vec<Cleanup>> = Mutex::new(Vec::new());
+/// When steps of the start-up were done, for the log line of the bar's first frame; `None`
+/// once that took them.
+static STARTUP: Mutex<Option<Vec<(&'static str, Instant)>>> = Mutex::new(Some(Vec::new()));
+
+/// Notes that start-up step `name` is done; the bar's first frame logs when each was, against
+/// the start budget (SPEC §14.1). Steps after that frame are not noted.
+pub fn startup_step(name: &'static str) {
+    if let Some(steps) = STARTUP
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+    {
+        steps.push((name, Instant::now()));
+    }
+}
+
+/// The start-up steps noted so far, in the order they were done; taken once.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn take_startup_steps() -> Vec<(&'static str, Instant)> {
+    let mut steps = STARTUP
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .unwrap_or_default();
+    steps.sort_by_key(|&(_, at)| at);
+    steps
+}
 
 /// Starts logging to `<log_dir>/infodock.YYYY-MM-DD.log` (daily files, 7 kept), plus stderr in
 /// debug builds.

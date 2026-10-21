@@ -69,13 +69,25 @@ pub fn run() {
     // Before any window: the taskbar groups them, and toasts show, as the app (SPEC §7.4).
     platform::register_app_id(IDENTIFIER, &i18n::t("app.name"));
 
+    // What the system offers is probed while the app starts, off the bar's way (SPEC §14.1).
+    let platform = platform::current();
+    let probe = Arc::clone(&platform);
+    if let Err(e) = std::thread::Builder::new()
+        .name("capabilities".into())
+        .spawn(move || {
+            probe.capabilities();
+        })
+    {
+        tracing::debug!("capabilities are probed when first asked: {e}");
+    }
+
     let (store, report) = ConfigStore::open(&dirs.config, VERSION);
     log_load_report(&report);
-    let platform = platform::current();
     if let Some(recovery) = &report.recovery {
         notify_recovery(recovery, platform.as_ref());
     }
     fill_machine_defaults(&store, platform.as_ref());
+    logging::startup_step("config");
 
     // The Settings window uses Slint's winit backend on this thread; software rendering keeps
     // GPU drivers out of the process (SPEC §3, §14.1).
@@ -90,6 +102,7 @@ pub fn run() {
         logging::shutdown();
         return;
     }
+    logging::startup_step("toolkit");
 
     let app = Arc::new(App::new(store, platform, dirs.skins()));
     autostart::init(&app.store, Arc::clone(&app.platform));
