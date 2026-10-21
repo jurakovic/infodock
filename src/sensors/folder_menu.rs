@@ -298,6 +298,11 @@ impl Sensor for FolderMenu {
         self.title()
     }
 
+    /// Once its folder is chosen (SPEC §9.19).
+    fn has_popup(&self) -> bool {
+        !self.unset()
+    }
+
     /// Files and folders are copied, moved or linked into the folder, links become Internet
     /// shortcuts (SPEC §9.19).
     fn drop_action(&self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) -> Option<DropAction> {

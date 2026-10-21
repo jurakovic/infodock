@@ -335,6 +335,10 @@ impl Popup for EjectList {
         "eject-list"
     }
 
+    fn name(&self) -> String {
+        t("sensor.ejectUsb.name")
+    }
+
     fn layout(&mut self, cx: &PopupCtx) -> SizeF {
         self.refresh();
         self.read_sizes(cx);

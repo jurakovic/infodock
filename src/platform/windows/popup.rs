@@ -277,6 +277,8 @@ unsafe extern "system" fn popup_proc(
 
 pub(super) struct PopupWindow {
     hwnd: HWND,
+    /// Its title as last set.
+    name: RefCell<String>,
     shared: &'static Shared,
     renderer: RefCell<Renderer>,
     /// When the current fade-in started.
@@ -323,6 +325,7 @@ impl PopupWindow {
             )?;
             Ok(Self {
                 hwnd,
+                name: RefCell::new(String::new()),
                 shared,
                 renderer: RefCell::new(Renderer::new()?),
                 fading_since: Cell::new(None),
@@ -330,14 +333,17 @@ impl PopupWindow {
         }
     }
 
-    /// Renders and shows the popup at `rect` (physical screen px), activated. Returns whether
-    /// a fade-in started (the caller then steps it with [`Self::fade_step`]).
+    /// Renders and shows the popup at `rect` (physical screen px), activated and titled `name`
+    /// for screen readers. Returns whether a fade-in started (the caller then steps it with
+    /// [`Self::fade_step`]).
     pub(super) fn show(
         &self,
         rect: Rect,
         scale: f32,
+        name: &str,
         paint: &mut dyn FnMut(&mut dyn Canvas),
     ) -> Result<bool> {
+        super::hint::name_window(self.hwnd, name, &self.name);
         let (width, height) = (rect.width().max(1), rect.height().max(1));
         let dc = self
             .renderer

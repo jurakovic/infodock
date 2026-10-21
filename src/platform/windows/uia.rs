@@ -1,7 +1,10 @@
 //! The bar as a UI Automation provider (SPEC §14.4). `WM_GETOBJECT` answers with a root provider
 //! for the bar window, a fragment root whose children are the sensors; both answer from the
 //! snapshot the bar logic hands over after each frame ([`AccessibleBar`]), so they never wait
-//! for the bar logic. The providers use COM threading: UI Automation calls them on the bar
+//! for the bar logic. Comparing each snapshot with the last raises the events screen readers
+//! follow (focus, values, popups, structure). What a screen reader asks of a sensor (Invoke,
+//! ExpandCollapse, SetFocus) is queued and the window is told with [`WM_UIA`], since patterns
+//! must return at once. The providers use COM threading: UI Automation calls them on the bar
 //! thread, which created them.
 
 // The Win32 constants keep their names, also as match patterns.
@@ -11,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
+use std::time::Instant;
 
 use windows::Win32::Foundation::{
     E_OUTOFMEMORY, HWND, LPARAM, LRESULT, RECT, VARIANT_FALSE, VARIANT_TRUE, WPARAM,
@@ -18,30 +22,43 @@ use windows::Win32::Foundation::{
 use windows::Win32::System::Com::SAFEARRAY;
 use windows::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement};
 use windows::Win32::System::Variant::{
-    VARENUM, VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_BOOL, VT_BSTR, VT_I4,
+    VARENUM, VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_BOOL, VT_BSTR, VT_I4, VariantClear,
 };
 use windows::Win32::UI::Accessibility::{
-    IRawElementProviderFragment, IRawElementProviderFragment_Impl, IRawElementProviderFragmentRoot,
+    ExpandCollapseState, ExpandCollapseState_Collapsed, ExpandCollapseState_Expanded,
+    ExpandCollapseState_LeafNode, IExpandCollapseProvider, IExpandCollapseProvider_Impl,
+    IInvokeProvider, IInvokeProvider_Impl, IRawElementProviderFragment,
+    IRawElementProviderFragment_Impl, IRawElementProviderFragmentRoot,
     IRawElementProviderFragmentRoot_Impl, IRawElementProviderSimple,
     IRawElementProviderSimple_Impl, IValueProvider, IValueProvider_Impl, NavigateDirection,
     NavigateDirection_FirstChild, NavigateDirection_LastChild, NavigateDirection_NextSibling,
     NavigateDirection_Parent, NavigateDirection_PreviousSibling, ProviderOptions,
     ProviderOptions_ServerSideProvider, ProviderOptions_UseComThreading,
+    StructureChangeType_ChildrenInvalidated, UIA_AutomationFocusChangedEventId,
     UIA_AutomationIdPropertyId, UIA_ButtonControlTypeId, UIA_ControlTypePropertyId,
-    UIA_E_ELEMENTNOTAVAILABLE, UIA_HasKeyboardFocusPropertyId, UIA_IsEnabledPropertyId,
-    UIA_IsKeyboardFocusablePropertyId, UIA_NamePropertyId, UIA_PATTERN_ID, UIA_PROPERTY_ID,
-    UIA_ToolBarControlTypeId, UIA_ValuePatternId, UiaAppendRuntimeId, UiaHostProviderFromHwnd,
-    UiaRect, UiaReturnRawElementProvider,
+    UIA_E_ELEMENTNOTAVAILABLE, UIA_ExpandCollapseExpandCollapseStatePropertyId,
+    UIA_ExpandCollapsePatternId, UIA_HasKeyboardFocusPropertyId, UIA_InvokePatternId,
+    UIA_IsEnabledPropertyId, UIA_IsKeyboardFocusablePropertyId, UIA_NamePropertyId, UIA_PATTERN_ID,
+    UIA_PROPERTY_ID, UIA_ToolBarControlTypeId, UIA_ValuePatternId, UIA_ValueValuePropertyId,
+    UiaAppendRuntimeId, UiaClientsAreListening, UiaHostProviderFromHwnd, UiaRaiseAutomationEvent,
+    UiaRaiseAutomationPropertyChangedEvent, UiaRaiseStructureChangedEvent, UiaRect,
+    UiaReturnRawElementProvider,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, PostMessageW, WM_APP};
 use windows::core::{BSTR, Error, HRESULT, IUnknown, IUnknownImpl, PCWSTR, Result, implement};
 
 use crate::i18n::t;
-use crate::platform::{AccessibleBar, RectF};
+use crate::platform::accessible::{self, AccessibleEvent, Announced};
+use crate::platform::{AccessibleAction, AccessibleBar, RectF};
 
 /// The bar's automation id; the sensors' are their ids.
 const BAR_ID: &str = "InfodockBar";
+/// Posted to the bar window when a screen reader asked something of a sensor; the window
+/// hands the queued actions to the bar logic ([`Uia::take_actions`]).
+pub(super) const WM_UIA: u32 = WM_APP + 3;
+/// The first part of a window's runtime id (`UiaHwndRuntimeIdBase`), followed by its handle.
+const HWND_RUNTIME_ID: i32 = 42;
 
 /// What the providers answer from, shared by all of them.
 type Shared = Rc<RefCell<Tree>>;
@@ -52,9 +69,22 @@ struct Tree {
     /// Each sensor's runtime id, given when it is first seen and kept, so a sensor keeps its
     /// element while it is moved or changes what it shows.
     runtime: HashMap<String, i32>,
+    /// Which values were last announced, and when.
+    announced: Announced,
+    /// What screen readers asked, for the bar logic.
+    actions: Vec<AccessibleAction>,
 }
 
 impl Tree {
+    /// Queues `action` for the bar logic and tells the window.
+    fn ask(&mut self, action: AccessibleAction) {
+        if self.actions.is_empty() {
+            // SAFETY: posting to the bar window, which lives as long as the process.
+            let _ = unsafe { PostMessageW(Some(self.hwnd), WM_UIA, WPARAM(0), LPARAM(0)) };
+        }
+        self.actions.push(action);
+    }
+
     fn runtime_id(&mut self, id: &str) -> i32 {
         let next = i32::try_from(self.runtime.len()).unwrap_or(i32::MAX - 1) + 1;
         *self.runtime.entry(id.to_owned()).or_insert(next)
@@ -106,6 +136,8 @@ impl Uia {
             hwnd,
             bar: AccessibleBar::default(),
             runtime: HashMap::new(),
+            announced: Announced::default(),
+            actions: Vec::new(),
         }));
         let root = BarProvider {
             tree: Rc::clone(&tree),
@@ -121,13 +153,80 @@ impl Uia {
         unsafe { UiaReturnRawElementProvider(hwnd, wparam, lparam, &self.root) }
     }
 
-    /// Takes the bar logic's latest description of the bar.
+    /// Takes the bar logic's latest description of the bar and raises the events that tell
+    /// listening screen readers what changed.
     pub(super) fn update(&self, bar: AccessibleBar) {
-        let mut tree = self.tree.borrow_mut();
-        for item in &bar.items {
-            tree.runtime_id(&item.id);
+        let events = {
+            let mut tree = self.tree.borrow_mut();
+            for item in &bar.items {
+                tree.runtime_id(&item.id);
+            }
+            let tree = &mut *tree;
+            let events = accessible::events(&tree.bar, &bar, &mut tree.announced, Instant::now());
+            tree.bar = bar;
+            events
+        };
+        // SAFETY: plain query.
+        if events.is_empty() || !unsafe { UiaClientsAreListening() }.as_bool() {
+            return;
         }
-        tree.bar = bar;
+        // Raised with the snapshot released: in-process clients may ask the providers at once.
+        for event in events {
+            if let Err(e) = self.raise(event) {
+                tracing::debug!("a UI Automation event could not be raised: {e}");
+            }
+        }
+    }
+
+    fn raise(&self, event: AccessibleEvent) -> Result<()> {
+        let simple = |id: &str| -> IRawElementProviderSimple {
+            SensorProvider {
+                tree: Rc::clone(&self.tree),
+                id: id.to_owned(),
+            }
+            .into()
+        };
+        // SAFETY: our own providers; the variants are freed after the calls.
+        unsafe {
+            match event {
+                AccessibleEvent::Structure => {
+                    let hwnd = self.tree.borrow().hwnd;
+                    let mut id = [HWND_RUNTIME_ID, hwnd.0 as isize as i32];
+                    UiaRaiseStructureChangedEvent(
+                        &self.root,
+                        StructureChangeType_ChildrenInvalidated,
+                        id.as_mut_ptr(),
+                        id.len() as i32,
+                    )
+                }
+                AccessibleEvent::Focus(id) => {
+                    UiaRaiseAutomationEvent(&simple(&id), UIA_AutomationFocusChangedEventId)
+                }
+                AccessibleEvent::Value { id, old, new } => {
+                    let (old, new) = (Owned(text(&old)), Owned(text(&new)));
+                    UiaRaiseAutomationPropertyChangedEvent(
+                        &simple(&id),
+                        UIA_ValueValuePropertyId,
+                        &old.0,
+                        &new.0,
+                    )
+                }
+                AccessibleEvent::Expanded { id, open } => {
+                    let state = |open| int(expand_state(Some(open)).0);
+                    UiaRaiseAutomationPropertyChangedEvent(
+                        &simple(&id),
+                        UIA_ExpandCollapseExpandCollapseStatePropertyId,
+                        &state(!open),
+                        &state(open),
+                    )
+                }
+            }
+        }
+    }
+
+    /// What screen readers asked since the last call.
+    pub(super) fn take_actions(&self) -> Vec<AccessibleAction> {
+        std::mem::take(&mut self.tree.borrow_mut().actions)
     }
 
     /// The window is going: UI Automation lets go of its providers.
@@ -176,6 +275,24 @@ fn text(value: &str) -> VARIANT {
             bstrVal: ManuallyDrop::new(BSTR::from(value)),
         },
     )
+}
+
+/// A variant this side owns, freed when dropped.
+struct Owned(VARIANT);
+
+impl Drop for Owned {
+    fn drop(&mut self) {
+        // SAFETY: a variant built here, freed once.
+        let _ = unsafe { VariantClear(&mut self.0) };
+    }
+}
+
+fn expand_state(popup: Option<bool>) -> ExpandCollapseState {
+    match popup {
+        Some(true) => ExpandCollapseState_Expanded,
+        Some(false) => ExpandCollapseState_Collapsed,
+        None => ExpandCollapseState_LeafNode,
+    }
 }
 
 fn int(value: i32) -> VARIANT {
@@ -313,8 +430,15 @@ impl IRawElementProviderFragmentRoot_Impl for BarProvider_Impl {
     }
 }
 
-/// A sensor on the bar: a button named by its type, its value what it shows.
-#[implement(IRawElementProviderSimple, IRawElementProviderFragment, IValueProvider)]
+/// A sensor on the bar: a button named by its type, its value what it shows; it can be
+/// clicked (Invoke) and, with a popup, expanded and collapsed.
+#[implement(
+    IRawElementProviderSimple,
+    IRawElementProviderFragment,
+    IValueProvider,
+    IInvokeProvider,
+    IExpandCollapseProvider
+)]
 struct SensorProvider {
     tree: Shared,
     id: String,
@@ -327,6 +451,14 @@ impl SensorProvider_Impl {
         let item = tree.bar.item(&self.id).ok_or_else(gone)?;
         Ok(f(item, &tree))
     }
+
+    /// Hands `action` on this sensor to the bar logic.
+    fn ask(&self, action: AccessibleAction) -> Result<()> {
+        let mut tree = self.tree.borrow_mut();
+        tree.bar.item(&self.id).ok_or_else(gone)?;
+        tree.ask(action);
+        Ok(())
+    }
 }
 
 impl IRawElementProviderSimple_Impl for SensorProvider_Impl {
@@ -335,8 +467,13 @@ impl IRawElementProviderSimple_Impl for SensorProvider_Impl {
     }
 
     fn GetPatternProvider(&self, pattern: UIA_PATTERN_ID) -> Result<IUnknown> {
+        let popup = self.with(|item, _| item.popup.is_some())?;
         match pattern {
             UIA_ValuePatternId => Ok(self.to_interface::<IValueProvider>().into()),
+            UIA_InvokePatternId => Ok(self.to_interface::<IInvokeProvider>().into()),
+            UIA_ExpandCollapsePatternId if popup => {
+                Ok(self.to_interface::<IExpandCollapseProvider>().into())
+            }
             _ => none(),
         }
     }
@@ -392,7 +529,7 @@ impl IRawElementProviderFragment_Impl for SensorProvider_Impl {
     }
 
     fn SetFocus(&self) -> Result<()> {
-        Ok(())
+        self.ask(AccessibleAction::Focus(self.id.clone()))
     }
 
     fn FragmentRoot(&self) -> Result<IRawElementProviderFragmentRoot> {
@@ -415,24 +552,56 @@ impl IValueProvider_Impl for SensorProvider_Impl {
     }
 }
 
+impl IInvokeProvider_Impl for SensorProvider_Impl {
+    fn Invoke(&self) -> Result<()> {
+        self.ask(AccessibleAction::Invoke(self.id.clone()))
+    }
+}
+
+impl IExpandCollapseProvider_Impl for SensorProvider_Impl {
+    fn Expand(&self) -> Result<()> {
+        self.ask(AccessibleAction::Expand(self.id.clone()))
+    }
+
+    fn Collapse(&self) -> Result<()> {
+        self.ask(AccessibleAction::Collapse(self.id.clone()))
+    }
+
+    fn ExpandCollapseState(&self) -> Result<ExpandCollapseState> {
+        self.with(|item, _| expand_state(item.popup))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
     use windows::Win32::System::Com::{
         CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
     };
+
     use windows::Win32::UI::Accessibility::{
-        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationValuePattern,
+        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationExpandCollapsePattern,
+        IUIAutomationInvokePattern, IUIAutomationValuePattern,
     };
     use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
 
     use super::*;
     use crate::platform::{AccessibleItem, BarHandler, BarWindow, Canvas, SizeF, UiEvent};
 
-    /// A bar logic that only describes two sensors, the second with the focus ring.
-    struct Described;
+    /// A bar logic that only describes two sensors, the first with a popup and the second with
+    /// the focus ring, and keeps what screen readers ask.
+    struct Described(Arc<Mutex<Vec<AccessibleAction>>>);
 
     impl BarHandler for Described {
-        fn on_event(&mut self, _window: &dyn BarWindow, _event: UiEvent) {}
+        fn on_event(&mut self, _window: &dyn BarWindow, event: UiEvent) {
+            if let UiEvent::Accessible(action) = event {
+                self.0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(action);
+            }
+        }
         fn paint(&mut self, _canvas: &mut dyn Canvas, _size: SizeF) {}
         fn accessible(&self) -> AccessibleBar {
             let item = |id: &str, name: &str, value: &str, left: f32| AccessibleItem {
@@ -440,10 +609,14 @@ mod tests {
                 name: name.into(),
                 value: value.into(),
                 rect: RectF::new(left, 0.0, left + 50.0, 28.0),
+                popup: None,
             };
             AccessibleBar {
                 items: vec![
-                    item("s1", "CPU Graph", "37%", 4.0),
+                    AccessibleItem {
+                        popup: Some(false),
+                        ..item("s1", "Folder Menu", "Documents", 4.0)
+                    },
                     item("s2", "Time", "12:34", 60.0),
                 ],
                 focused: true,
@@ -463,10 +636,28 @@ mod tests {
         }
     }
 
+    /// Waits up to five seconds for the bar logic to receive `action`.
+    fn received(seen: &Mutex<Vec<AccessibleAction>>, action: &AccessibleAction) -> bool {
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until {
+            if seen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(action)
+            {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        false
+    }
+
     #[test]
     #[ignore = "needs a Windows desktop session"]
-    fn ui_automation_walks_the_bars_sensors() {
-        crate::platform::start_bar_thread(Box::new(|_| Box::new(Described)))
+    fn ui_automation_walks_the_bars_sensors_and_clicks_them() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let handler_seen = Arc::clone(&seen);
+        crate::platform::start_bar_thread(Box::new(move |_| Box::new(Described(handler_seen))))
             .expect("the bar thread");
         // SAFETY: plain UI Automation client calls on this test's thread.
         unsafe {
@@ -486,13 +677,16 @@ mod tests {
 
             let walker = automation.ControlViewWalker().expect("walker");
             let first = walker.GetFirstChildElement(&bar).expect("the first sensor");
-            assert_eq!(first.CurrentName().expect("name").to_string(), "CPU Graph");
+            assert_eq!(
+                first.CurrentName().expect("name").to_string(),
+                "Folder Menu"
+            );
             assert_eq!(first.CurrentAutomationId().expect("id").to_string(), "s1");
             assert_eq!(
                 first.CurrentControlType().expect("type"),
                 UIA_ButtonControlTypeId
             );
-            assert_eq!(value(&first), "37%");
+            assert_eq!(value(&first), "Documents");
             assert!(!first.CurrentHasKeyboardFocus().expect("focus").as_bool());
             // Its place on the screen: the window's corner plus its logical place, scaled.
             let mut window = RECT::default();
@@ -514,6 +708,32 @@ mod tests {
             assert_eq!(value(&second), "12:34");
             assert!(second.CurrentHasKeyboardFocus().expect("focus").as_bool());
             assert!(walker.GetNextSiblingElement(&second).is_err(), "no third");
+
+            // Invoke and ExpandCollapse reach the bar logic.
+            second
+                .GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
+                .and_then(|p| p.Invoke())
+                .expect("invoked");
+            assert!(received(&seen, &AccessibleAction::Invoke("s2".into())));
+            let expand = first
+                .GetCurrentPatternAs::<IUIAutomationExpandCollapsePattern>(
+                    UIA_ExpandCollapsePatternId,
+                )
+                .expect("a popup to expand");
+            assert_eq!(
+                expand.CurrentExpandCollapseState().expect("state"),
+                ExpandCollapseState_Collapsed
+            );
+            expand.Expand().expect("expanded");
+            assert!(received(&seen, &AccessibleAction::Expand("s1".into())));
+            assert!(
+                second
+                    .GetCurrentPatternAs::<IUIAutomationExpandCollapsePattern>(
+                        UIA_ExpandCollapsePatternId
+                    )
+                    .is_err(),
+                "no popup, no expanding"
+            );
         }
     }
 }

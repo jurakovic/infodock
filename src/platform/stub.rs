@@ -63,11 +63,25 @@ impl BarWindow for NoWindow {
 
     fn set_timer(&self, _id: TimerId, _delay: Option<std::time::Duration>) {}
 
-    fn show_hint(&self, _rect: Rect, _scale: f32, _paint: &mut dyn FnMut(&mut dyn Canvas)) {}
+    fn show_hint(
+        &self,
+        _rect: Rect,
+        _scale: f32,
+        _name: &str,
+        _paint: &mut dyn FnMut(&mut dyn Canvas),
+    ) {
+    }
 
     fn hide_hint(&self) {}
 
-    fn show_popup(&self, _rect: Rect, _scale: f32, _paint: &mut dyn FnMut(&mut dyn Canvas)) {}
+    fn show_popup(
+        &self,
+        _rect: Rect,
+        _scale: f32,
+        _name: &str,
+        _paint: &mut dyn FnMut(&mut dyn Canvas),
+    ) {
+    }
 
     fn hide_popup(&self) {}
 

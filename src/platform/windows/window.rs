@@ -69,7 +69,7 @@ use super::menu;
 use super::popup::{self, PopupWindow};
 use super::render::Renderer;
 use super::tray::{Tray, WM_TRAY, taskbar_created};
-use super::uia::Uia;
+use super::uia::{Uia, WM_UIA};
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
@@ -241,6 +241,15 @@ impl WindowState {
                     Err(_) => self.repaint.set(true),
                 }
                 return uia.answer(wparam, lparam);
+            }
+            // Screen readers asked something of sensors (SPEC §14.4).
+            WM_UIA => {
+                if let Some(uia) = self.uia.get() {
+                    for action in uia.take_actions() {
+                        self.dispatch(UiEvent::Accessible(action));
+                    }
+                }
+                return LRESULT(0);
             }
             WM_SETFOCUS => self.dispatch(UiEvent::FocusGained),
             WM_KILLFOCUS => {
@@ -691,7 +700,13 @@ impl BarWindow for WindowState {
         }
     }
 
-    fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+    fn show_hint(
+        &self,
+        rect: Rect,
+        scale: f32,
+        name: &str,
+        paint: &mut dyn FnMut(&mut dyn Canvas),
+    ) {
         let hint = self.hint.get_or_init(|| {
             HintWindow::new(self.hwnd()).map_err(|e| {
                 tracing::warn!("the hint window could not be created: {e}");
@@ -700,7 +715,7 @@ impl BarWindow for WindowState {
         let Ok(hint) = hint else {
             return;
         };
-        match hint.show(rect, scale, paint) {
+        match hint.show(rect, scale, name, paint) {
             Ok(true) => {
                 // About 60 steps a second while it fades in.
                 // SAFETY: plain call on our own window.
@@ -717,7 +732,13 @@ impl BarWindow for WindowState {
         }
     }
 
-    fn show_popup(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+    fn show_popup(
+        &self,
+        rect: Rect,
+        scale: f32,
+        name: &str,
+        paint: &mut dyn FnMut(&mut dyn Canvas),
+    ) {
         let popup = self.popup.get_or_init(|| {
             // SAFETY: the state is leaked when the bar window is created and never freed.
             let state: &'static WindowState = unsafe { &*std::ptr::from_ref(self) };
@@ -729,7 +750,7 @@ impl BarWindow for WindowState {
         let Ok(popup) = popup else {
             return;
         };
-        match popup.show(rect, scale, paint) {
+        match popup.show(rect, scale, name, paint) {
             Ok(true) => {
                 // About 60 steps a second while it fades in.
                 // SAFETY: plain call on our own window.

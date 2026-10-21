@@ -35,9 +35,9 @@ use crate::config::model::{
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
-    AccessibleBar, Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas, DragEvent, DropEffect,
-    Key, Modifiers, OsAppearance, Platform, PointF, PointerButton, PopupCursor, PopupInput, Rect,
-    RectF, Shape, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
+    AccessibleAction, AccessibleBar, Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas,
+    DragEvent, DropEffect, Key, Modifiers, OsAppearance, Platform, PointF, PointerButton,
+    PopupCursor, PopupInput, Rect, RectF, Shape, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction};
@@ -715,13 +715,19 @@ impl BarLogic {
         else {
             return false;
         };
+        // What screen readers read of it: its text, or for a rich hint (a calendar) the
+        // sensor's value (SPEC §14.4).
+        let name = match &content {
+            crate::sensors::HintContent::Text(text) => hint::spoken(text),
+            crate::sensors::HintContent::Rich(_) => self.sensors.value(id, &env),
+        };
         let Some(body) = HintBody::new(content, self.text.as_ref(), &self.theme) else {
             return false;
         };
         let frame = HintFrame::new(body.size(), &anchor, &self.theme);
         let rect = physical_rect(frame.window, scale);
         let theme = &self.theme;
-        window.show_hint(rect, scale, &mut |canvas| {
+        window.show_hint(rect, scale, &name, &mut |canvas| {
             hint::paint(canvas, &frame, &body, theme);
         });
         true
@@ -1063,7 +1069,11 @@ impl BarLogic {
         };
         let scale = geometry.scale as f32;
         let theme = &self.theme;
-        window.show_popup(physical_rect(frame.window, scale), scale, &mut |canvas| {
+        let name = Some(open.popup.name())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| t("app.name"));
+        let rect = physical_rect(frame.window, scale);
+        window.show_popup(rect, scale, &name, &mut |canvas| {
             popup::paint(canvas, open, theme);
         });
     }
@@ -1447,7 +1457,7 @@ impl BarLogic {
         let frame = HintFrame::new(body.size(), &anchor, &self.theme);
         let rect = physical_rect(frame.window, scale);
         let theme = &self.theme;
-        window.show_hint(rect, scale, &mut |canvas| {
+        window.show_hint(rect, scale, &hint::spoken(text), &mut |canvas| {
             hint::paint(canvas, &frame, &body, theme);
         });
     }
@@ -1637,6 +1647,46 @@ impl BarLogic {
         }
     }
 
+    /// What a screen reader asks of a sensor (SPEC §14.4): a click, its popup opened or
+    /// closed, the focus ring moved to it. Deliberate, like a key, so the Lock rules for the
+    /// pointer do not apply.
+    fn accessible_action(&mut self, window: &dyn BarWindow, action: AccessibleAction) {
+        let (AccessibleAction::Invoke(id)
+        | AccessibleAction::Expand(id)
+        | AccessibleAction::Collapse(id)
+        | AccessibleAction::Focus(id)) = &action;
+        if self.sensors.find(id).is_none() {
+            return;
+        }
+        let open = self.popups.owner() == Some(id.as_str());
+        match action {
+            AccessibleAction::Invoke(id) => {
+                let step = self.hover.dismiss();
+                self.apply_hint(window, step);
+                self.click(window, &id, false);
+            }
+            AccessibleAction::Expand(id) if !open => {
+                let step = self.hover.dismiss();
+                self.apply_hint(window, step);
+                self.click(window, &id, false);
+            }
+            AccessibleAction::Collapse(_) if open => {
+                self.close_popup(window);
+                self.refocus(window);
+            }
+            AccessibleAction::Expand(_) | AccessibleAction::Collapse(_) => {}
+            AccessibleAction::Focus(id) => {
+                if !self.keys.as_ref().is_some_and(|k| k.focused) {
+                    self.focus_bar(window);
+                }
+                if let Some(keys) = self.keys.as_mut() {
+                    keys.sensor = Some(id);
+                    window.invalidate();
+                }
+            }
+        }
+    }
+
     /// A popup opened from the keyboard closed by itself (Esc, an item chosen): the bar takes
     /// the focus back, with the ring where it was (SPEC §14.4).
     fn refocus(&mut self, window: &dyn BarWindow) {
@@ -1764,6 +1814,7 @@ impl BarHandler for BarLogic {
                 self.close_popup(window);
             }
             UiEvent::Key { key, modifiers } => self.key(window, key, modifiers),
+            UiEvent::Accessible(action) => self.accessible_action(window, action),
             UiEvent::FocusGained => self.focus_gained(window),
             UiEvent::FocusLost { within_app } => self.focus_lost(window, within_app),
             UiEvent::CaptureLost => {
@@ -1909,9 +1960,11 @@ impl BarHandler for BarLogic {
             animate: self.animate,
             changes: &self.changes,
         };
-        let items = self
-            .sensors
-            .accessible(&env, self.painted.height, |kind| registry().type_name(kind));
+        let items =
+            self.sensors
+                .accessible(&env, self.painted.height, self.popups.owner(), |kind| {
+                    registry().type_name(kind)
+                });
         let focus = self
             .focused_sensor()
             .and_then(|id| items.iter().position(|i| i.id == id));
@@ -1958,8 +2011,10 @@ mod tests {
         escape: Cell<bool>,
         /// Answer confirmations with Cancel.
         decline: Cell<bool>,
-        /// The shown hint: where, and what it draws.
+        /// The shown hint: where, and what it draws; and its title, for screen readers.
         hint: RefCell<Option<(Rect, String)>>,
+        hint_name: RefCell<String>,
+        popup_name: RefCell<String>,
         /// The shown popup: where, and what it draws; and how often it was drawn.
         popup: RefCell<Option<(Rect, String)>>,
         popup_draws: Cell<u32>,
@@ -1993,15 +2048,29 @@ mod tests {
                 _ => {}
             }
         }
-        fn show_hint(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+        fn show_hint(
+            &self,
+            rect: Rect,
+            scale: f32,
+            name: &str,
+            paint: &mut dyn FnMut(&mut dyn Canvas),
+        ) {
             let mut canvas = RecordingCanvas::new(scale);
             paint(&mut canvas);
             *self.hint.borrow_mut() = Some((rect, canvas.dump()));
+            *self.hint_name.borrow_mut() = name.to_owned();
         }
-        fn show_popup(&self, rect: Rect, scale: f32, paint: &mut dyn FnMut(&mut dyn Canvas)) {
+        fn show_popup(
+            &self,
+            rect: Rect,
+            scale: f32,
+            name: &str,
+            paint: &mut dyn FnMut(&mut dyn Canvas),
+        ) {
             let mut canvas = RecordingCanvas::new(scale);
             paint(&mut canvas);
             *self.popup.borrow_mut() = Some((rect, canvas.dump()));
+            *self.popup_name.borrow_mut() = name.to_owned();
             self.popup_draws.set(self.popup_draws.get() + 1);
         }
         fn hide_popup(&self) {
@@ -3064,6 +3133,77 @@ mod tests {
     }
 
     #[test]
+    fn screen_readers_click_expand_collapse_and_focus_sensors() {
+        let (mut logic, window, _, mut config) = bar(Settings {
+            locked: true,
+            clicks_when_locked: ClicksWhenLocked::AltOnly,
+            ..Settings::default()
+        });
+        // Invoke clicks, whatever the Lock rules say for the pointer.
+        with_power_sensor(&mut logic, &window);
+        window.decline.set(true);
+        let power = logic.layout.center[0].id.clone();
+        logic.on_event(
+            &window,
+            UiEvent::Accessible(AccessibleAction::Invoke(power.clone())),
+        );
+        assert_eq!(window.confirmed.borrow().len(), 1);
+        assert_eq!(
+            logic.accessible().items[3].popup,
+            None,
+            "no popup to expand"
+        );
+        // An unknown sensor: nothing.
+        logic.on_event(
+            &window,
+            UiEvent::Accessible(AccessibleAction::Invoke("gone".into())),
+        );
+        assert_eq!(window.confirmed.borrow().len(), 1);
+
+        // A Folder Menu in the logo's place expands and collapses.
+        let dir = crate::sensors::common::folder_browser::tests::sample_folder();
+        let logo = &mut config.layout.center[0];
+        logo.kind = "folder-menu".into();
+        logo.props = serde_json::json!({ "folder": dir.path().to_string_lossy() })
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        let id = logo.id.clone();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        assert_eq!(logic.accessible().items[3].popup, Some(false));
+        let act =
+            |logic: &mut BarLogic, action| logic.on_event(&window, UiEvent::Accessible(action));
+        act(&mut logic, AccessibleAction::Expand(id.clone()));
+        assert!(window.popup.borrow().is_some());
+        assert_eq!(logic.accessible().items[3].popup, Some(true));
+        // The popup window is named by the folder it shows.
+        let folder = dir
+            .path()
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned());
+        assert_eq!(Some(window.popup_name.borrow().clone()), folder);
+        // Expanding an open one keeps it open; collapsing closes it.
+        let draws = window.popup_draws.get();
+        act(&mut logic, AccessibleAction::Expand(id.clone()));
+        assert_eq!(window.popup_draws.get(), draws, "not opened again");
+        act(&mut logic, AccessibleAction::Collapse(id.clone()));
+        assert!(window.popup.borrow().is_none());
+        assert_eq!(logic.accessible().items[3].popup, Some(false));
+        act(&mut logic, AccessibleAction::Collapse(id.clone()));
+
+        // Focus: the bar takes the keyboard with the ring on that sensor.
+        act(&mut logic, AccessibleAction::Focus(id.clone()));
+        assert_eq!(window.focus_taken.get(), 1);
+        assert_eq!(logic.focused_sensor(), Some(id.clone()));
+        assert_eq!(
+            logic.accessible().focused_item().map(|i| i.id.clone()),
+            Some(id)
+        );
+    }
+
+    #[test]
     fn a_spacer_is_passed_over() {
         let (mut logic, window, _, mut config) = bar(Settings::default());
         let spacer = SensorInstance {
@@ -3273,6 +3413,11 @@ mod tests {
             hint.1
         );
         assert!(hint.0.bottom <= 1052 + 6, "above the bar: {:?}", hint.0);
+        // Screen readers read its text as the window's title.
+        assert_eq!(
+            *window.hint_name.borrow(),
+            format!("Infodock {}", crate::VERSION)
+        );
         assert!(
             hint.0.left < 600 && hint.0.right > 600,
             "centred on the logo: {:?}",

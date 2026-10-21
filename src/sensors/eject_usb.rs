@@ -148,6 +148,10 @@ impl Sensor for EjectUsb {
         self.text().replace('\n', ", ")
     }
 
+    fn has_popup(&self) -> bool {
+        true
+    }
+
     fn topics(&self) -> Vec<TopicRequest> {
         vec![TopicRequest {
             topic: Topic::Volumes,

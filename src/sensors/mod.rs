@@ -426,6 +426,11 @@ pub trait Sensor {
     fn focusable(&self) -> bool {
         true
     }
+    /// Whether its click opens a popup (SPEC §7.2), which screen readers offer to expand
+    /// (§14.4).
+    fn has_popup(&self) -> bool {
+        false
+    }
     /// The pointer entered (`true`) or left the sensor, e.g. to fade something in. A sensor
     /// that animates asks for frames through [`Sensor::wake_at`].
     fn on_hover(&mut self, _hovered: bool, _now: Instant, _cx: &SensorCtx) -> Dirty {

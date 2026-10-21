@@ -242,6 +242,10 @@ impl Sensor for StartMenu {
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         self.title()
     }
+
+    fn has_popup(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

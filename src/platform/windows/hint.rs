@@ -11,11 +11,11 @@ use windows::Win32::Graphics::Gdi::{AC_SRC_ALPHA, AC_SRC_OVER, BLENDFUNCTION};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, HWND_TOPMOST, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow, ULW_ALPHA,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, SetWindowTextW, ShowWindow, ULW_ALPHA,
     UpdateLayeredWindow, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
-use windows::core::{PCWSTR, Result, w};
+use windows::core::{HSTRING, PCWSTR, Result, w};
 
 use super::render::Renderer;
 use crate::platform::{Canvas, Rect};
@@ -44,8 +44,21 @@ unsafe extern "system" fn hint_proc(
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
+/// Gives `hwnd` the title `name`, which screen readers read as its name (SPEC §14.4), when it
+/// differs from `last`.
+pub(super) fn name_window(hwnd: HWND, name: &str, last: &RefCell<String>) {
+    if *last.borrow() != name {
+        // SAFETY: plain call on our own window.
+        if unsafe { SetWindowTextW(hwnd, &HSTRING::from(name)) }.is_ok() {
+            *last.borrow_mut() = name.to_owned();
+        }
+    }
+}
+
 pub(super) struct HintWindow {
     hwnd: HWND,
+    /// Its title as last set.
+    name: RefCell<String>,
     renderer: RefCell<Renderer>,
     visible: Cell<bool>,
     /// When the current fade-in started.
@@ -88,6 +101,7 @@ impl HintWindow {
             )?;
             Ok(Self {
                 hwnd,
+                name: RefCell::new(String::new()),
                 renderer: RefCell::new(Renderer::new()?),
                 visible: Cell::new(false),
                 fading_since: Cell::new(None),
@@ -95,14 +109,17 @@ impl HintWindow {
         }
     }
 
-    /// Renders and shows the hint at `rect` (physical screen px). Returns whether a fade-in
+    /// Renders and shows the hint at `rect` (physical screen px), titled `name` for screen
+    /// readers. Returns whether a fade-in
     /// started (the caller then steps it with [`Self::fade_step`]).
     pub(super) fn show(
         &self,
         rect: Rect,
         scale: f32,
+        name: &str,
         paint: &mut dyn FnMut(&mut dyn Canvas),
     ) -> Result<bool> {
+        name_window(self.hwnd, name, &self.name);
         let (width, height) = (rect.width().max(1), rect.height().max(1));
         let dc = self
             .renderer

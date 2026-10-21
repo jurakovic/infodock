@@ -431,11 +431,13 @@ impl BarSensors {
     }
 
     /// The focusable sensors as screen readers see them (SPEC §14.4), in focus order, on a bar
-    /// `height` logical px high; `name` gives a sensor type's name.
+    /// `height` logical px high; `name` gives a sensor type's name. A popup of the sensor
+    /// `popup` is open.
     pub fn accessible(
         &self,
         env: &Env,
         height: f32,
+        popup: Option<&str>,
         name: impl Fn(&str) -> String,
     ) -> Vec<AccessibleItem> {
         self.zones
@@ -447,6 +449,10 @@ impl BarSensors {
                 name: name(&p.entry.kind),
                 value: p.sensor.accessible_value(&env.ctx(&p.entry.id)),
                 rect: RectF::new(p.x, 0.0, p.x + p.width, height),
+                popup: p
+                    .sensor
+                    .has_popup()
+                    .then(|| popup == Some(p.entry.id.as_str())),
             })
             .collect()
     }
@@ -458,6 +464,16 @@ impl BarSensors {
             .flatten()
             .find(|p| p.entry.id == id)
             .map(|p| (p.x, p.width))
+    }
+
+    /// What sensor `id` shows, for screen readers (SPEC §14.4).
+    pub fn value(&self, id: &str, env: &Env) -> String {
+        self.zones
+            .iter()
+            .flatten()
+            .find(|p| p.entry.id == id)
+            .map(|p| p.sensor.accessible_value(&env.ctx(id)))
+            .unwrap_or_default()
     }
 
     /// Sensor `id`'s hint.

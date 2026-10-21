@@ -210,6 +210,21 @@ fn fill_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, radius: f32, grow: f3
 }
 
 /// Draws the hint into a cleared canvas the size of the frame's window.
+/// A hint's text as the hint window's title, which screen readers read (SPEC §14.4): its lines
+/// joined by commas and its columns by spaces.
+pub fn spoken(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            line.split('\t')
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, body: &HintBody, theme: &Theme) {
     paint_bubble(canvas, frame, theme);
     let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);
@@ -387,6 +402,15 @@ mod tests {
             monitor: RectF::new(0.0, 0.0, 1920.0, 1080.0),
             edge,
         }
+    }
+
+    #[test]
+    fn a_hint_is_read_as_one_line() {
+        assert_eq!(
+            spoken("CPU:\t37%\nKernel time:\t5%\n\nClick to open Task Manager"),
+            "CPU: 37%, Kernel time: 5%, Click to open Task Manager"
+        );
+        assert_eq!(spoken("Infodock 1.0"), "Infodock 1.0");
     }
 
     #[test]

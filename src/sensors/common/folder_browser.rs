@@ -737,6 +737,11 @@ impl Popup for FolderBrowser {
         "folder-browser"
     }
 
+    /// The folder it shows now.
+    fn name(&self) -> String {
+        self.level().title.clone()
+    }
+
     fn align(&self) -> PopupAlign {
         PopupAlign::LeftEdge
     }

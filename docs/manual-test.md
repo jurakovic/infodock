@@ -582,3 +582,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 - [ ] With Accessibility Insights for Windows (or Inspect), hover the bar: the tree shows a tool bar "Infodock" (automation id `InfodockBar`) under the desktop, with one button per sensor in the order Tab follows, Spacers left out; each is named by its type ("CPU Graph", "Time"), its automation id is the sensor's id and its Value pattern reads what it shows ("37%", "12:34"), read-only. Selecting an element draws its highlight on the sensor, also at 150 % and on a second monitor.
 - [ ] Press the hotkey and Tab to a sensor: its element has *HasKeyboardFocus* true and the bar's *GetFocus* names it. Move a sensor in the Layout manager or remove one: the tree follows after the next frame (refresh the tree).
+
+**UI Automation: patterns and events** (since M5 S8)
+
+- [ ] Narrator on (Ctrl+Win+Enter). Press the hotkey: Narrator says "Infodock, tool bar". Tab: it reads each sensor as it gets the ring, its type and value ("CPU Graph, button, 37 %"); Shift+Tab backwards. A Spacer is never read.
+- [ ] With the ring on a CPU Graph, wait: Narrator reads the new value at most about once a second, not on every redraw, and goes quiet when told to stop (Ctrl). The other sensors' changes are not read.
+- [ ] Narrator's scan mode (Caps Lock+Space) on the bar: Enter on a Shortcut starts it (Invoke). On a Folder Menu Narrator says "collapsed"; Enter (or Caps Lock+Enter) opens its list ("expanded"), Esc closes it ("collapsed"). The Folder Menu's popup window is named by its folder, the Eject list "Eject USB".
+- [ ] Add, remove or move a sensor (Layout manager) while Narrator is on: the bar's children follow and Narrator reads the new order on the next Tab. Hover a sensor: Accessibility Insights shows the hint window named by the hint's text (lines joined by commas); the Date's calendar hint is named by the date.
+- [ ] With Accessibility Insights, *Invoke* on a Power sensor asks first; *Expand* and *Collapse* on an Eject USB sensor open and close its list; *SetFocus* on a sensor focuses the bar with the ring on it.

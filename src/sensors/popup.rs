@@ -70,6 +70,11 @@ pub struct PopupCtx<'a> {
 pub trait Popup {
     /// Its kind, e.g. `folder-browser`.
     fn kind(&self) -> &'static str;
+    /// What screen readers call its window (SPEC §14.4), e.g. the folder shown; empty for the
+    /// app's name.
+    fn name(&self) -> String {
+        String::new()
+    }
     fn align(&self) -> PopupAlign {
         PopupAlign::Center
     }
