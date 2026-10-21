@@ -35,11 +35,12 @@ tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 | Tests | `cargo test` |
 | Render the Settings pages to `target/screenshots/*.png` | `cargo test render_settings_pages -- --ignored` |
 | Render the bar to `target/screenshots/bar-*.png` (Windows only) | `cargo test render_bar -- --ignored` |
+| Measure the time budgets to `target/budgets/*.json` (Windows only) | `cargo test budget_ -- --ignored --test-threads=1` |
 | Type-check the Windows code from Linux | `cargo check-win` |
 | Run the app | `cargo run` (Windows; elsewhere only Settings opens) |
 | Build the installer (Windows) | `cargo build --release` then `cargo packager --release` |
 
-Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `infodock-screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, memory check, a silent install and uninstall) and by the manual checklist in `docs/manual-test.md`.
+Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `infodock-screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, budget tests and the memory and time check, a silent install and uninstall) and by the manual checklist in `docs/manual-test.md`.
 
 ## Gate before every commit
 
@@ -72,4 +73,4 @@ Reviews: after a slice that warrants it, one reviewer on the slice's `git diff` 
 - Coordinates are logical (DIP) in layout and drawing; platform code converts to physical pixels with the monitor scale.
 - Threads: the bar thread owns the bar, hint, popup and band windows, the tray icon and native menus; other threads talk to it through `BarController`, which queues a command and wakes the thread. The main thread runs Slint's event loop and owns the Settings window and the hotkey; other threads reach it with `slint::invoke_from_event_loop`. Never touch either thread's UI from another thread.
 - Slint: Fluent style; controls bind two-way to a global (`SettingsState`), and Rust saves changes through settings patches. Every component instance needs `install_i18n!`.
-- Memory budget: ≤ 30 MB with Settings closed (SPEC §14.1). CI's memory check enforces it on every Windows build (the step fails when idle or after closing Settings is over); keep an eye on it when adding dependencies or caches.
+- Memory budget: ≤ 30 MB with Settings closed (SPEC §14.1). CI's memory check enforces it on every Windows build (the step fails when idle or after closing Settings is over); keep an eye on it when adding dependencies or caches. The same step enforces the time budgets: the cold and warm start from the app's log (its first-frame line says when each start-up step was done) and the `budget_*` tests' records; keep work off the way to the bar's first frame.
