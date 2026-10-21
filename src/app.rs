@@ -139,7 +139,7 @@ impl App {
 
     /// Ends the event loop from any thread; the main thread then cleans up. If the loop does not
     /// end in time (or is gone), the process ends here after the same cleanup.
-    pub fn request_quit(self: &Arc<Self>) {
+    fn request_quit(self: &Arc<Self>) {
         let queued = slint::invoke_from_event_loop(|| {
             let _ = slint::quit_event_loop();
         })

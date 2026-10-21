@@ -120,7 +120,7 @@ pub fn insertion(lines: &[Line], boundary: usize) -> (Zone, usize) {
 /// if it stays where it is.
 ///
 /// [`ops::move_to`]: crate::sensors::ops::move_to
-pub fn drop_move(layout: &Layout, id: &str, insertion: (Zone, usize)) -> Option<(Zone, usize)> {
+fn drop_move(layout: &Layout, id: &str, insertion: (Zone, usize)) -> Option<(Zone, usize)> {
     let source = layout.find(id)?;
     let (zone, index) = insertion;
     if source.0 == zone && (index == source.1 || index == source.1 + 1) {

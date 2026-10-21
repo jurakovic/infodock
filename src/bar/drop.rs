@@ -8,7 +8,7 @@ use crate::sensors::Props;
 pub use crate::sensors::drop::Dropped;
 
 /// Whether `path` is a drive's root: `E:\` or `E:`.
-pub fn is_drive_root(path: &str) -> bool {
+fn is_drive_root(path: &str) -> bool {
     match path.as_bytes() {
         [letter, b':'] | [letter, b':', b'\\' | b'/'] => letter.is_ascii_alphabetic(),
         _ => false,
@@ -17,7 +17,7 @@ pub fn is_drive_root(path: &str) -> bool {
 
 /// Whether `url` is a web or FTP address (SPEC §6.3), without control characters, which
 /// could add lines to the `.url` file it may become.
-pub fn is_web(url: &str) -> bool {
+fn is_web(url: &str) -> bool {
     let url = url.trim();
     let lower = url.to_ascii_lowercase();
     !url.chars().any(char::is_control)

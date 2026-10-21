@@ -1,17 +1,11 @@
-//! Pointer rules on the bar (SPEC §6.1, §6.2): presses, clicks, Lock, and where a reorder drag
-//! drops.
+//! Pointer rules on the bar (SPEC §6.1, §6.2): presses, clicks, and where a reorder drag drops.
+//! The Lock rules for clicks are the config's (`Settings::clicks_allowed`).
 
-use crate::config::model::{ClicksWhenLocked, Zone};
+use crate::config::model::Zone;
 use crate::platform::PointF;
 
 /// Moving farther than this (logical px) from the press starts a drag instead of a click.
-pub const DRAG_THRESHOLD: f32 = 4.0;
-
-/// Whether a click reaches the sensor (SPEC §6.1): always while unlocked; while locked as
-/// `clicksWhenLocked` says.
-pub fn clicks_allowed(locked: bool, rule: ClicksWhenLocked, alt: bool) -> bool {
-    !locked || rule == ClicksWhenLocked::Always || alt
-}
+const DRAG_THRESHOLD: f32 = 4.0;
 
 /// The zone under `x` when no sensor is (SPEC §6.2, §6.6): by thirds of the bar.
 pub fn zone_at(x: f32, bar_width: f32) -> Zone {
@@ -132,15 +126,6 @@ impl Press {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn lock_rules() {
-        use ClicksWhenLocked::{AltOnly, Always};
-        assert!(clicks_allowed(false, AltOnly, false));
-        assert!(clicks_allowed(true, Always, false));
-        assert!(!clicks_allowed(true, AltOnly, false));
-        assert!(clicks_allowed(true, AltOnly, true));
-    }
 
     #[test]
     fn zones_by_thirds() {

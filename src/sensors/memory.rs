@@ -18,8 +18,8 @@ use super::{
     Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
     SensorType, State, color, typed,
 };
-use crate::bar::theme::Inactive;
 use crate::i18n::{t, t_args};
+use crate::look::theme::Inactive;
 use crate::platform::Canvas;
 use crate::sampler::{Sample, Topic, TopicRequest};
 
@@ -182,7 +182,7 @@ fn topics(kind: Kind, interval: u64) -> Vec<TopicRequest> {
 }
 
 fn hint(kind: Kind, reading: Option<&Reading>, cx: &SensorCtx) -> Option<HintContent> {
-    let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
+    let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
     let reading = reading?;
     let text = kind.hint(reading, numbers);
     Some(HintContent::Text(
@@ -474,7 +474,7 @@ impl Sensor for UsageGraph {
     }
 
     fn accessible_value(&self, cx: &SensorCtx) -> String {
-        self.value(cx.platform.locale(cx.settings.date_locale).numbers())
+        self.value(Numbers::from(&cx.platform.locale(cx.settings.date_locale)))
     }
 
     fn inactive(&self) -> bool {
@@ -529,7 +529,7 @@ mod tests {
     struct Harness {
         clock: FakeClock,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
+        theme: crate::look::theme::Theme,
     }
 
     impl Harness {
@@ -543,9 +543,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_memory",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: false,
                 alt: false,
                 animate: true,

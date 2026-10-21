@@ -11,8 +11,8 @@ use super::{
     Category, ColorChoice, DrawCtx, Fetched, HintContent, IconSource, LayoutCtx, Props, Sensor,
     SensorCtx, SensorType, State, typed,
 };
-use crate::bar::theme::Theme;
 use crate::i18n::t;
+use crate::look::theme::Theme;
 use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
 
 /// The default image (Appendix C): monochrome white, so a custom colour tints it.
@@ -325,13 +325,10 @@ mod tests {
 
     #[test]
     fn hint_is_the_popup_text_with_the_version() {
-        let theme = theme();
         let settings = crate::config::model::Settings::default();
         let platform = crate::platform::current();
         let cx = SensorCtx {
-            id: "s_1",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate: true,

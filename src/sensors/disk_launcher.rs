@@ -386,7 +386,6 @@ mod tests {
     struct Harness {
         platform: FakeClock,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
     }
 
     impl Harness {
@@ -394,15 +393,12 @@ mod tests {
             Self {
                 platform: FakeClock::default(),
                 settings: Settings::default(),
-                theme: theme(),
             }
         }
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_1",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: self.settings.locked,
                 alt: false,
                 animate: false,

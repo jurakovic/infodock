@@ -2,11 +2,21 @@
 //! units come from the catalog (with plural forms); the decimal separator from the locale.
 
 use crate::i18n::{t, t_args, t_count};
+use crate::platform::Locale;
 
 /// How numbers are written: the locale's decimal separator (SPEC §8.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Numbers {
     pub decimal: char,
+}
+
+impl From<&Locale> for Numbers {
+    /// How `locale` writes numbers.
+    fn from(locale: &Locale) -> Self {
+        Self {
+            decimal: locale.decimal,
+        }
+    }
 }
 
 impl Default for Numbers {

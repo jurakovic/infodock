@@ -24,8 +24,9 @@ pub enum Easing {
 }
 
 impl Easing {
-    /// Cubic: slow start (in) or slow end (out).
-    fn apply(self, t: f32) -> f32 {
+    /// `t` (0–1 through an animation) eased, cubic: slow start (in) or slow end (out).
+    pub fn apply(self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
         match self {
             Easing::In => t * t * t,
             Easing::Out => 1.0 - (1.0 - t).powi(3),

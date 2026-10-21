@@ -41,7 +41,7 @@ use windows::core::{PCWSTR, w};
 
 use super::{Capabilities, Color, Locale, MonitorInfo, OsAppearance, Platform};
 use crate::config::model::DateLocale;
-use crate::sensors::dates::{Date, LocalTime};
+use crate::platform::time::{Date, LocalTime};
 
 pub struct WindowsPlatform;
 

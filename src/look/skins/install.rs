@@ -208,8 +208,8 @@ fn replace(dir: &Path, id: &str, staging: &Path) -> Result<(), InstallError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bar::skins::tests::rows_png;
-    use crate::bar::skins::zip::tests::zip;
+    use crate::look::skins::tests::rows_png;
+    use crate::look::skins::zip::tests::zip;
 
     /// A pack folder `name` in `parent` with a 25 px tile and a stray file.
     fn source_pack(parent: &Path, name: &str) -> PathBuf {

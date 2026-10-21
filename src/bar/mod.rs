@@ -1,7 +1,6 @@
 //! The bar (SPEC §4.1, §5): a native window on its own thread. [`BarController`] is the handle
 //! the rest of the app uses; the logic in `thread.rs` runs on the bar thread.
 
-pub mod anim;
 mod drop;
 mod focus;
 mod hint;
@@ -15,12 +14,9 @@ mod popup;
 mod resize;
 mod sensors;
 mod shadow;
-pub mod skins;
-pub mod theme;
 mod thread;
 mod tray;
 
-pub(crate) use interact::clicks_allowed;
 pub use paint::skin_preview;
 
 use std::path::PathBuf;
@@ -35,6 +31,21 @@ use crate::config::model::{BarMode, SensorInstance, Settings, Zone};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use crate::sampler::{Change, Delivery, TopicRequest};
 use thread::BarLogic;
+
+/// Where and how the bar should sit (SPEC §5.1–5.3), from the settings.
+fn dock_request(s: &Settings, visible: bool) -> DockRequest {
+    DockRequest {
+        visible,
+        edge: s.bar.edge,
+        mode: s.bar.mode,
+        monitor: s.bar.monitor.clone(),
+        height: s.bar_height(),
+        reserve_space: s.bar.reserve_space,
+        z_order: s.bar.z_order,
+        hide_on_fullscreen: s.bar.hide_on_fullscreen,
+        floating: s.bar.floating,
+    }
+}
 
 /// What the bar asks of the rest of the app. Called on the bar thread.
 pub trait BarHost: Send + Sync {
@@ -147,10 +158,7 @@ impl BarController {
             // A docked bar slides out before it changes edges; the bar thread redocks it then.
             let (o, n) = (&old.settings.bar, &new.settings.bar);
             let slides = o.edge != n.edge && o.mode == BarMode::Docked && n.mode == BarMode::Docked;
-            if !slides
-                && DockRequest::from_settings(&old.settings, true)
-                    != DockRequest::from_settings(&new.settings, true)
-            {
+            if !slides && dock_request(&old.settings, true) != dock_request(&new.settings, true) {
                 c.apply(&new.settings);
             }
             c.send(Command::Config(Box::new(new.clone())));
@@ -168,10 +176,8 @@ impl BarController {
     }
 
     fn apply(&self, settings: &Settings) {
-        self.appbar.configure(DockRequest::from_settings(
-            settings,
-            self.visible.load(Ordering::SeqCst),
-        ));
+        self.appbar
+            .configure(dock_request(settings, self.visible.load(Ordering::SeqCst)));
     }
 
     pub fn is_visible(&self) -> bool {

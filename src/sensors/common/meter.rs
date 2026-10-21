@@ -7,14 +7,14 @@
 //! ```
 
 use super::two_line::{self, Align, TwoLine};
-use crate::bar::theme::{Inactive, Theme};
+use crate::look::theme::{Inactive, Theme};
 use crate::platform::{Canvas, Color, RectF, TextEngine};
 use crate::sensors::DrawCtx;
 use crate::sensors::color;
 use crate::sensors::format;
 
 /// The bar's width, logical px; it is 6 px shorter than the bar and vertically centred.
-pub const BAR_WIDTH: f32 = 4.0;
+const BAR_WIDTH: f32 = 4.0;
 /// Where the text starts.
 const TEXT_X: f32 = 8.0;
 /// The empty bar: the sensor text colour at 31 %.

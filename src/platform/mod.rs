@@ -18,6 +18,7 @@ pub mod recording;
 #[cfg(not(windows))]
 mod stub;
 pub mod text;
+pub mod time;
 #[cfg(windows)]
 mod windows;
 
@@ -27,10 +28,10 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::config::model::{BarMode, DateLocale, Edge, FloatingRect, Material, Settings, ZOrder};
+use crate::config::model::{BarMode, DateLocale, Edge, FloatingRect, Material, ZOrder};
 pub use accessible::{AccessibleAction, AccessibleBar, AccessibleItem};
 pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
-pub use canvas::{Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF};
+pub use canvas::{Brush, Canvas, Color, PointF, RectF, Shape, SizeF};
 pub use drag::{DragEvent, DragItem, DropEffect, DropEffects};
 pub use geometry::{MonitorInfo, Rect};
 pub use locale::Locale;
@@ -166,6 +167,7 @@ pub struct Volume {
 
 impl Volume {
     /// A volume of `kind` with a medium, not ejectable unless removable or optical.
+    #[cfg(test)]
     pub fn new(root: impl Into<String>, kind: DriveKind, label: impl Into<String>) -> Self {
         Self {
             root: root.into(),
@@ -307,6 +309,14 @@ pub struct WifiStatus {
     pub location_denied: bool,
 }
 
+impl WifiStatus {
+    /// The signal quality (0–100) Windows gives a signal of `rssi` dBm: −100 dBm and below is
+    /// 0, −50 dBm and above is 100, linear between.
+    pub fn quality_from_rssi(rssi: i32) -> u32 {
+        (2 * (rssi + 100)).clamp(0, 100) as u32
+    }
+}
+
 /// Reads the Wi-Fi connection. Owned by the sampler thread, so the WLAN client stays open
 /// (and its notifications registered) while the `wifi` topic has subscribers.
 pub trait WifiReader: Send {
@@ -390,8 +400,18 @@ impl FileOp {
     }
 }
 
+/// The last component of a Windows or POSIX path (`C:\Tools\app.exe` → `app.exe`), or the
+/// path itself when it has none (`C:\`).
+pub fn file_name(path: &str) -> &str {
+    let trimmed = path.trim_end_matches(['\\', '/']);
+    match trimmed.rsplit(['\\', '/']).next() {
+        Some(name) if !name.is_empty() && !name.ends_with(':') => name,
+        _ => path,
+    }
+}
+
 /// The root of `path` by its form: `C:\` for `C:\Data`, `\\server\share\` for a UNC path.
-pub fn path_root(path: &str) -> Option<String> {
+fn path_root(path: &str) -> Option<String> {
     let bytes = path.as_bytes();
     if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
         return Some(format!("{}:\\", path[..1].to_ascii_uppercase()));
@@ -414,7 +434,7 @@ pub fn unique_path(folder: &std::path::Path, stem: &str, ext: &str) -> PathBuf {
 }
 
 /// The text of an Internet shortcut (`.url`) to `url`.
-pub fn url_file_text(url: &str) -> String {
+fn url_file_text(url: &str) -> String {
     format!("[InternetShortcut]\r\nURL={url}\r\n")
 }
 
@@ -578,11 +598,11 @@ pub trait Platform: Send + Sync {
         None
     }
     /// The local wall-clock time; UTC where the platform does not know the time zone.
-    fn local_time(&self) -> crate::sensors::dates::LocalTime {
+    fn local_time(&self) -> time::LocalTime {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        crate::sensors::dates::LocalTime::from_unix(
+        time::LocalTime::from_unix(
             i64::try_from(now.as_secs()).unwrap_or(0),
             now.subsec_millis() as u16,
         )
@@ -777,22 +797,6 @@ pub struct DockRequest {
     pub floating: Option<FloatingRect>,
 }
 
-impl DockRequest {
-    pub fn from_settings(s: &Settings, visible: bool) -> Self {
-        Self {
-            visible,
-            edge: s.bar.edge,
-            mode: s.bar.mode,
-            monitor: s.bar.monitor.clone(),
-            height: s.bar_height(),
-            reserve_space: s.bar.reserve_space,
-            z_order: s.bar.z_order,
-            hide_on_fullscreen: s.bar.hide_on_fullscreen,
-            floating: s.bar.floating,
-        }
-    }
-}
-
 /// The bar's geometry after placement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BarGeometry {
@@ -812,7 +816,6 @@ pub enum AppBarEvent {
 
 /// Receives AppBar events on the bar thread. Platform-internal: the bar window forwards them to
 /// the handler as [`UiEvent`]s.
-#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) type AppBarSink = Box<dyn Fn(AppBarEvent) + Send + Sync>;
 
 /// Docks the bar window and reserves screen space (SPEC §5.2). Implementations are thread-safe;
@@ -820,8 +823,6 @@ pub(crate) type AppBarSink = Box<dyn Fn(AppBarEvent) + Send + Sync>;
 pub trait AppBar: Send + Sync {
     /// Applies a new placement. Repeating the current request is cheap.
     fn configure(&self, request: DockRequest);
-    /// Recomputes the placement, e.g. after the monitor layout changed.
-    fn refresh(&self);
     /// Brings the bar to the front and focuses it. With z-order `bottom` it stays in front until
     /// it loses focus (SPEC §5.3).
     fn raise(&self);
@@ -1460,7 +1461,27 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
 mod tests {
     use std::cmp::Ordering;
 
-    use super::{natural_cmp, path_root, unique_path, url_file_text};
+    use super::{WifiStatus, file_name, natural_cmp, path_root, unique_path, url_file_text};
+
+    #[test]
+    fn wifi_quality_from_rssi() {
+        assert_eq!(WifiStatus::quality_from_rssi(-58), 84);
+        assert_eq!(
+            (
+                WifiStatus::quality_from_rssi(-110),
+                WifiStatus::quality_from_rssi(-40)
+            ),
+            (0, 100)
+        );
+    }
+
+    #[test]
+    fn file_names_of_paths() {
+        assert_eq!(file_name("C:\\Tools\\app.exe"), "app.exe");
+        assert_eq!(file_name("C:\\Users\\me\\Downloads\\"), "Downloads");
+        assert_eq!(file_name("C:\\"), "C:\\");
+        assert_eq!(file_name("notepad.exe"), "notepad.exe");
+    }
 
     #[test]
     fn roots_of_paths() {

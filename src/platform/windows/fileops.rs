@@ -123,7 +123,7 @@ fn delete(paths: &[String]) -> Result<()> {
 /// Makes a shortcut (`name.ext.lnk`, numbered if taken) to each of `paths` in `folder`.
 fn link(paths: &[String], folder: &str) -> Result<()> {
     for path in paths {
-        let name = crate::sensors::shortcut::file_name(path).trim_end_matches(':');
+        let name = crate::platform::file_name(path).trim_end_matches(':');
         let file = unique_path(std::path::Path::new(folder), name, ".lnk");
         // SAFETY: the shell's link object in this thread's apartment; strings outlive the
         // calls.

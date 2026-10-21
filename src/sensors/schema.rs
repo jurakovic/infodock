@@ -22,7 +22,6 @@ pub enum Lit {
     Null,
     Bool(bool),
     Int(i64),
-    Num(f64),
     Str(&'static str),
     /// A `colorMode` value: `{ "mode": …, "color": "#RRGGBB" }`.
     ColorMode(&'static str, &'static str),
@@ -34,7 +33,6 @@ impl Lit {
             Lit::Null => Value::Null,
             Lit::Bool(b) => Value::Bool(b),
             Lit::Int(i) => Value::from(i),
-            Lit::Num(n) => number(n),
             Lit::Str(s) => Value::from(s),
             Lit::ColorMode(mode, color) => {
                 let mut m = Map::new();
@@ -83,7 +81,9 @@ pub enum FieldKind {
         min: f64,
         max: f64,
     },
-    /// `#RRGGBB`.
+    /// `#RRGGBB`. No v1 type has one (their colours are `colorMode`s); kept as §8.2's field
+    /// type, which validation, the legacy import and the form (a Slint row code) handle.
+    #[cfg_attr(not(test), allow(dead_code))]
     Color,
     /// `{ mode, color }`; `dynamic` allows the dynamic gradient (§8.4).
     ColorMode {
@@ -662,6 +662,5 @@ mod tests {
     fn numbers_stay_integral() {
         assert_eq!(number(9.0), json!(9));
         assert_eq!(number(2.5), json!(2.5));
-        assert_eq!(Lit::Num(0.5).to_value(), json!(0.5));
     }
 }

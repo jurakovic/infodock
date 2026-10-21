@@ -1,6 +1,10 @@
 //! Infodock core (SPEC §4): start-up, the main-thread UI (Settings window, hotkey) and shutdown.
 //! The bar, with the tray icon, runs on its own thread (`bar`).
 
+// Elsewhere only Settings opens (SPEC §2.2): most of the bar is unreachable there, so dead code
+// is looked for on Windows builds (`cargo check-win`, CI).
+#![cfg_attr(not(windows), allow(dead_code))]
+
 /// Connects a Slint component's `I18n` global to the shared catalog (SPEC §13). Every component
 /// instance has its own copy of the global.
 macro_rules! install_i18n {
@@ -18,15 +22,16 @@ pub(crate) use install_i18n;
 
 mod app;
 mod autostart;
-pub mod bar;
-pub mod config;
+mod bar;
+mod config;
 mod hotkey;
-pub mod i18n;
+mod i18n;
 mod logging;
-pub mod platform;
-pub mod providers;
-pub mod sampler;
-pub mod sensors;
+mod look;
+mod platform;
+mod providers;
+mod sampler;
+mod sensors;
 mod settings;
 #[cfg(test)]
 mod test_util;

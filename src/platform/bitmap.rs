@@ -99,12 +99,12 @@ impl Bitmap {
     }
 
     /// The pixels shared by this bitmap and its clones, for caches keyed by identity.
-    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn shared_pixels(&self) -> &Arc<[u8]> {
         &self.pixels
     }
 
     /// Straight (not premultiplied) RGBA, e.g. for PNG files.
+    #[cfg(test)]
     pub fn to_rgba(&self) -> Vec<u8> {
         let mut rgba = self.pixels.to_vec();
         for px in rgba.as_chunks_mut::<4>().0 {
@@ -221,7 +221,6 @@ pub(crate) fn scaled_size(width: u32, height: u32, target: Option<u32>) -> Optio
 
 /// [`scaled_size`] for a raster image, whose decoder reads the whole source: sources above
 /// [`MAX_SOURCE_PIXELS`] are refused too.
-#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn raster_size(width: u32, height: u32, target: Option<u32>) -> Option<(u32, u32)> {
     if u64::from(width) * u64::from(height) > MAX_SOURCE_PIXELS {
         return None;

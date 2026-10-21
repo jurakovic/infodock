@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use super::skins;
-use super::theme::Theme;
 use crate::config::model::{Edge, Settings};
+use crate::look::skins;
+use crate::look::theme::Theme;
 use crate::platform::{Bitmap, Canvas, OsAppearance, PlatformError, RectF, SizeF};
 
 /// The hover highlight multiplies the background opacity by up to this (SPEC §5.5).
@@ -182,10 +182,10 @@ mod tests {
         use std::f32::consts::TAU;
         use std::path::Path;
 
-        use crate::bar::theme::{Inactive, Theme};
+        use crate::look::theme::{Inactive, Theme};
         use crate::platform::{
-            Bitmap, Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF, TextEngine,
-            TextStyle, load_image,
+            Bitmap, Brush, Canvas, Color, PointF, RectF, Shape, SizeF, TextEngine, TextStyle,
+            load_image,
         };
 
         pub const WIDTH: f32 = 900.0;
@@ -214,7 +214,7 @@ mod tests {
             images: &[Bitmap],
         ) {
             let h = theme.bar_height as f32;
-            let stop = |offset, color| GradientStop { offset, color };
+            let stop = |offset, color| crate::platform::canvas::GradientStop { offset, color };
             // The desktop behind the translucent bar.
             canvas.fill(
                 &Shape::Rect(RectF::new(0.0, 0.0, WIDTH, h)),
@@ -231,10 +231,10 @@ mod tests {
             let size = SizeF::new(WIDTH, h);
             let edge = crate::config::model::Edge::Bottom;
             let skin = theme.skin.as_ref().and_then(|spec| {
-                crate::bar::skins::render(
+                crate::look::skins::render(
                     std::path::Path::new("no-skins"),
                     spec,
-                    crate::bar::skins::Target::of(size, canvas.scale(), edge),
+                    crate::look::skins::Target::of(size, canvas.scale(), edge),
                 )
                 .map(|s| s.bar)
             });
@@ -595,7 +595,6 @@ mod tests {
         );
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: false,
@@ -609,7 +608,7 @@ mod tests {
             theme: &theme,
             text: text.as_ref(),
             scale: 1.0,
-            numbers: platform.locale(settings.date_locale).numbers(),
+            numbers: crate::sensors::format::Numbers::from(&platform.locale(settings.date_locale)),
             icons: &crate::sensors::DirectIcons(platform.as_ref()),
         };
         let size = SizeF::new(WIDTH as f32, theme.bar_height as f32);
@@ -674,7 +673,6 @@ mod tests {
         );
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: false,
@@ -685,7 +683,7 @@ mod tests {
             theme: &theme,
             text: text.as_ref(),
             scale: 1.0,
-            numbers: platform.locale(settings.date_locale).numbers(),
+            numbers: crate::sensors::format::Numbers::from(&platform.locale(settings.date_locale)),
             icons: &crate::sensors::DirectIcons(platform.as_ref()),
         };
         sensors.update_layout(&cx, 1920.0);
@@ -787,7 +785,6 @@ mod tests {
         for _ in 0..RUNS {
             let cx = PopupCtx {
                 theme: &theme,
-                settings: &settings,
                 text: text.as_ref(),
                 scale: 1.0,
                 platform: &platform,
@@ -1313,7 +1310,6 @@ mod tests {
                 );
                 let env = crate::bar::sensors::Env {
                     settings: &settings,
-                    theme: &theme,
                     platform: platform.as_ref(),
                     alt: false,
                     animate: false,
@@ -1326,7 +1322,9 @@ mod tests {
                     theme: &theme,
                     text: text.as_ref(),
                     scale,
-                    numbers: platform.locale(settings.date_locale).numbers(),
+                    numbers: crate::sensors::format::Numbers::from(
+                        &platform.locale(settings.date_locale),
+                    ),
                     icons: &crate::sensors::DirectIcons(platform.as_ref()),
                 };
                 sensors.update_layout(&cx, size.width);
@@ -1345,10 +1343,10 @@ mod tests {
         // Date's calendar (a rich hint, §9.4).
         use crate::bar::hint::{self, HintBody, HintFrame};
         use crate::bar::placement::Anchor;
+        use crate::platform::time::Date;
         use crate::platform::{Locale, RectF};
         use crate::sensors::HintContent;
         use crate::sensors::date::MonthCalendar;
-        use crate::sensors::dates::Date;
         for (name, settings, os, edge, calendar) in [
             (
                 "hint-modern",
@@ -1498,7 +1496,6 @@ mod tests {
                 };
                 let cx = PopupCtx {
                     theme: &theme,
-                    settings: &settings,
                     text: text.as_ref(),
                     scale,
                     platform: &platform,

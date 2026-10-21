@@ -228,7 +228,7 @@ impl Sensor for Bin {
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let mut text = self.title();
         if let Some(bin) = self.bin {
-            let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
+            let numbers = format::Numbers::from(&cx.platform.locale(cx.settings.date_locale));
             let size = format::bytes(bin.bytes, None, numbers);
             for (label, value) in [
                 ("sensor.recycleBin.hint.items", bin.items.to_string()),
@@ -337,7 +337,7 @@ mod tests {
     use crate::platform::Platform;
     use crate::sampler::ChangeSink;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure, theme};
+    use crate::sensors::test_support::{FakeClock, draw, measure};
 
     fn create(stored: serde_json::Value) -> Bin {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -385,7 +385,6 @@ mod tests {
     struct Harness {
         platform: Shell,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
         changes: ChangeSink,
         reported: Arc<Mutex<Vec<Change>>>,
     }
@@ -397,7 +396,6 @@ mod tests {
             Self {
                 platform: Shell::default(),
                 settings: Settings::default(),
-                theme: theme(),
                 changes: ChangeSink::new(move |c| sink.lock().expect("lock").push(c)),
                 reported,
             }
@@ -405,9 +403,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_1",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: self.settings.locked,
                 alt: false,
                 animate: false,

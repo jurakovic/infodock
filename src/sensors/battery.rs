@@ -18,8 +18,8 @@ use super::{
     Capability, Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
     SensorType, State, typed,
 };
-use crate::bar::theme::Inactive;
 use crate::i18n::{t, t_args};
+use crate::look::theme::Inactive;
 use crate::platform::{BatteryState, Bitmap, Canvas, Color, RectF};
 use crate::sampler::{BATTERY_EVERY, BatterySample, Sample, Topic, TopicRequest};
 
@@ -318,7 +318,7 @@ pub fn status(sample: &BatterySample, assume: Option<f32>) -> Status {
 
 /// The share of the level area shown for `percent`, piecewise for visibility (SPEC §9.14):
 /// 0–15 % → 0–30 %, 15–40 % → 30–70 %, 40–100 % → 70–100 %.
-pub fn level_share(percent: f32) -> f32 {
+fn level_share(percent: f32) -> f32 {
     let p = percent.clamp(0.0, 100.0);
     if p < 15.0 {
         p / 15.0 * 0.30
@@ -331,7 +331,7 @@ pub fn level_share(percent: f32) -> f32 {
 
 /// The level's colour (SPEC §9.14): red through yellow to green, `#FF{g}00` below 50 % and
 /// `#{r}FF00` from 50 %.
-pub fn level_color(percent: f32) -> Color {
+fn level_color(percent: f32) -> Color {
     let p = percent.clamp(0.0, 100.0).round();
     if p < 50.0 {
         Color::rgba(255, (p * 5.1).round() as u8, 0, 1.0)
@@ -763,7 +763,7 @@ mod tests {
     use crate::platform::Platform;
     use crate::sampler::ChangeSink;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, measure, theme};
+    use crate::sensors::test_support::{draw, measure};
 
     fn props(stored: serde_json::Value) -> Props {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -816,7 +816,6 @@ mod tests {
     struct Harness {
         platform: Toasts,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
     }
 
     impl Harness {
@@ -824,15 +823,12 @@ mod tests {
             Self {
                 platform: Toasts::default(),
                 settings: Settings::default(),
-                theme: theme(),
             }
         }
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_1",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: false,
                 alt: false,
                 animate: false,

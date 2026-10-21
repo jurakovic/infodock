@@ -6,7 +6,7 @@ use crate::platform::geometry::{Rect, to_physical};
 /// The pointer within this many logical px of a floating bar's left or right end resizes it.
 pub const GRIP: f32 = 6.0;
 /// A floating bar's width, logical px: the range of the *Width* setting (SPEC §10.2).
-pub const MIN_WIDTH: u32 = 200;
+const MIN_WIDTH: u32 = 200;
 pub const MAX_WIDTH: u32 = 3840;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

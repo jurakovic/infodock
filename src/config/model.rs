@@ -317,6 +317,14 @@ string_enum!(HotkeyAction {
     ToggleVisibility
 });
 string_enum!(ClicksWhenLocked { Always, AltOnly });
+
+impl ClicksWhenLocked {
+    /// Whether a click reaches a sensor (SPEC §6.1): always while unlocked; while locked as
+    /// this rule says.
+    pub fn allows(self, locked: bool, alt: bool) -> bool {
+        !locked || self == ClicksWhenLocked::Always || alt
+    }
+}
 string_enum!(NewSensorMenu { Dialog, Submenu });
 string_enum!(Edge { Top, Bottom });
 string_enum!(BarMode { Docked, Floating });
@@ -428,6 +436,11 @@ impl Settings {
             && !self.dark_scheme(os_dark)
             && !custom_background
             && self.sensors.text_color == SensorDefaults::default().text_color
+    }
+
+    /// Whether a click reaches a sensor now (SPEC §6.1), with Alt held or not.
+    pub fn clicks_allowed(&self, alt: bool) -> bool {
+        self.clicks_when_locked.allows(self.locked, alt)
     }
 
     /// Bar height in logical px with the theme default applied.
@@ -602,6 +615,15 @@ impl IdGen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_rules_for_clicks() {
+        use ClicksWhenLocked::{AltOnly, Always};
+        assert!(AltOnly.allows(false, false));
+        assert!(Always.allows(true, false));
+        assert!(!AltOnly.allows(true, false));
+        assert!(AltOnly.allows(true, true));
+    }
 
     #[test]
     fn first_run_layout_matches_spec() {

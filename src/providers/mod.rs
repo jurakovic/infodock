@@ -17,6 +17,7 @@ use crate::platform::{Platform, PowerStatus, RecycleBin, Volume, WifiReader};
 use crate::sampler::{Change, ChangeSink, DiskSample, PathSample, Sample, Slow, Topic};
 use worker::SlowReader;
 
+#[cfg(test)]
 pub use battery::names as battery_names;
 
 /// The providers of all topics, with whatever state they keep between readings.

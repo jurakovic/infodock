@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::{IconSource, Props};
-use crate::bar::theme::Theme;
-use crate::config::model::{Edge, Settings};
+use crate::config::model::Edge;
+use crate::look::theme::Theme;
 use crate::platform::{
     Canvas, Platform, PointF, PopupCursor, PopupInput, SizeF, TextEngine, UiWaker,
 };
@@ -41,7 +41,6 @@ pub enum PopupReply {
 /// What a popup may use (bar thread).
 pub struct PopupCtx<'a> {
     pub theme: &'a Theme,
-    pub settings: &'a Settings,
     pub text: &'a dyn TextEngine,
     /// Physical px per logical px.
     pub scale: f32,

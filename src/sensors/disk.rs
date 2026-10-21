@@ -114,7 +114,7 @@ pub fn volume_name(volume: &Volume) -> String {
 }
 
 /// The first fixed drive (SPEC §9.12), the machine-derived default.
-pub fn first_fixed(volumes: &[Volume]) -> Option<&str> {
+fn first_fixed(volumes: &[Volume]) -> Option<&str> {
     volumes
         .iter()
         .find(|v| v.kind == DriveKind::Fixed)
@@ -279,7 +279,7 @@ impl Sensor for DiskMeter {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let s = self.sample?;
-        let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
+        let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
         let mut text = t_args("sensor.disk.hint.title", &[("drive", &self.props.drive)]);
         if !s.present {
             text.push('\n');
@@ -311,7 +311,7 @@ impl Sensor for DiskMeter {
     }
 
     fn accessible_value(&self, cx: &SensorCtx) -> String {
-        self.value(cx.platform.locale(cx.settings.date_locale).numbers())
+        self.value(Numbers::from(&cx.platform.locale(cx.settings.date_locale)))
     }
 
     fn topics(&self) -> Vec<TopicRequest> {
@@ -370,7 +370,7 @@ mod tests {
     struct Harness {
         clock: FakeClock,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
+        theme: crate::look::theme::Theme,
     }
 
     impl Harness {
@@ -384,9 +384,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_disk",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: false,
                 alt: false,
                 animate: true,

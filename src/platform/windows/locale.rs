@@ -135,7 +135,8 @@ pub fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sensors::dates::{Date, format_date};
+    use crate::platform::time::Date;
+    use crate::sensors::dates::format_date;
 
     /// `date` written with `pattern` by Windows for the locale `name` (NUL-terminated).
     fn windows_date(name: &[u16], date: Date, pattern: &str) -> String {

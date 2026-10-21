@@ -89,12 +89,12 @@ impl TextLayout {
     }
 
     /// A layout that measures zero and draws nothing, for text the OS could not lay out.
-    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn empty() -> Self {
         Self::new(SizeF::default(), 0.0, Rc::new(()))
     }
 
     /// Width and height of all lines, in logical px.
+    #[cfg(test)]
     pub fn size(&self) -> SizeF {
         self.size
     }

@@ -16,7 +16,8 @@ const ADVANCE: f32 = 0.5;
 const LINE_HEIGHT: f32 = 1.25;
 const ELLIPSIS: char = '…';
 
-/// What a recorded layout shows.
+/// What a recorded layout shows. Read by the [`RecordingCanvas`].
+#[cfg_attr(all(windows, not(test)), allow(dead_code))]
 struct RecordedText {
     text: String,
     style: TextStyle,
@@ -60,6 +61,7 @@ fn fit_line(line: &str, advance: f32, max_width: Option<f32>) -> String {
 
 /// One recorded draw call; `Display` gives a compact line for snapshot tests.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(all(windows, not(test)), allow(dead_code))]
 pub enum DrawOp {
     Fill(Shape, Brush),
     Stroke(Shape, Brush, f32),
@@ -189,13 +191,16 @@ impl fmt::Display for DrawOp {
     }
 }
 
-/// Records every call; text must come from [`FixedMetrics`].
+/// Records every call; text must come from [`FixedMetrics`]. The stub's renderer; on Windows
+/// only tests draw with it.
 #[derive(Debug)]
+#[cfg_attr(all(windows, not(test)), allow(dead_code))]
 pub struct RecordingCanvas {
     scale: f32,
     pub ops: Vec<DrawOp>,
 }
 
+#[cfg_attr(all(windows, not(test)), allow(dead_code))]
 impl RecordingCanvas {
     pub fn new(scale: f32) -> Self {
         Self {
@@ -339,11 +344,11 @@ mod tests {
                 start: PointF::new(0.0, 0.0),
                 end: PointF::new(0.0, 7.0),
                 stops: vec![
-                    crate::platform::GradientStop {
+                    crate::platform::canvas::GradientStop {
                         offset: 0.0,
                         color: Color::WHITE,
                     },
-                    crate::platform::GradientStop {
+                    crate::platform::canvas::GradientStop {
                         offset: 1.0,
                         color: Color::BLACK,
                     },

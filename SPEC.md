@@ -202,9 +202,10 @@ src/
     icons.rs                shell icons and image files, read on a worker (§4.1)
     paint.rs                the bar's background; the screenshot and budget harness (§16, §14.1)
     shadow.rs               the bar's shadow band (§5.5)
-    theme.rs, skins/        resolved theme (§12.1); skins/: built-in skins, skin packs, `.zip` reading,
-                            installing, tint (§12.3–12.4)
-    anim.rs                 rise animation, hover highlight, fades (§5.5)
+  look/                     how Infodock looks, shared by the bar, the sensors and Settings
+    theme.rs                resolved theme (§12.1)
+    skins/                  built-in skins, skin packs, `.zip` reading, installing, tint (§12.3–12.4)
+    anim.rs                 fades and easing for the rise, the hover highlight and popups (§5.5)
   sensors/
     mod.rs                  SensorType and Sensor traits, SensorCtx, LayoutCtx, DrawCtx (§8.1)
     schema.rs               property schema, validation, defaults and storage rules (§8.2, §11.2)
@@ -212,7 +213,7 @@ src/
     ops.rs, import.rs       operations used by Settings (§4.5); imported sensors checked by their types (§11.3)
     legacy.rs               legacy properties to props: XML keys, encodings by field type (§11.4)
     format.rs, color.rs     formatting (§8.6), colours and the dynamic gradient (§8.4–8.5)
-    dates.rs                calendar dates, date patterns and local time (§8.6)
+    dates.rs                dates written with the locale's patterns (§8.6)
     popup.rs, drop.rs       the Popup trait (§7.2); drops onto sensors (§6.3)
     placeholder.rs          unknown and unsupported types (§4.6)
     common/                 building blocks (§8.3): two_line.rs, meter.rs, graph.rs, dual_graph.rs,
@@ -232,7 +233,7 @@ src/
     bitmap.rs               Bitmap (premultiplied RGBA), format sniffing, SVG via resvg, tint (§12.3)
     recording.rs            recording canvas and fixed-metrics text engine (tests on every OS, stub)
     geometry.rs             pure placement math: docking strips, monitor selection
-    locale.rs               the locale as plain data (§8.6)
+    locale.rs, time.rs      the locale, calendar dates and the local time as plain data (§8.6)
     accessible.rs           the bar as screen readers see it, pure (§14.4)
     drag.rs, notify.rs      drag & drop items and effects (§6.3); a notification's content (§7.4)
     windows/                mod.rs (WindowsPlatform: capabilities, appearance, local time, sound),
@@ -248,6 +249,8 @@ src/
                             cpu.rs (PDH), memory.rs, disk.rs, net.rs, battery.rs, wlan.rs, locale.rs (NLS)
     stub.rs                 portable fallback for other OSes (development and tests only)
 ```
+
+Dependencies run one way (tests aside): `app`, `settings` and the other main-thread modules (`hotkey.rs`, `transfer.rs`) use everything below them (Settings uses the bar only for skin previews, `bar::skin_preview`); `bar` uses `sensors`, `look`, `sampler`, `platform` and `config`; `sensors` use `look`, `sampler`, `platform` and `config`; `providers` and `sampler` use `platform`; `look` uses `platform` and `config`; `platform` uses only `config`'s model types, `i18n` and `logging`. Nothing below them names `settings` or `app`, and the modules are private to the crate, so the compiler reports unused items (on Windows builds; elsewhere most of the bar is unreachable).
 
 ### 4.3 Settings UI
 
@@ -680,8 +683,8 @@ pub trait Sensor {
 /// What a sensor may use when it handles a sample, wake-up, click, menu item or drop, or is
 /// asked for its hint, menu or accessible value; built by the bar thread for each call.
 pub struct SensorCtx<'a> {
-    pub id: &'a str, pub settings: &'a Settings, pub theme: &'a Theme,
-    pub locked: bool, pub alt: bool, pub animate: bool, pub platform: &'a dyn Platform,
+    pub settings: &'a Settings, pub locked: bool, pub alt: bool, pub animate: bool,
+    pub platform: &'a dyn Platform,
     pub changes: &'a ChangeSink,                          // what its actions changed (§4.4)
 }
 
@@ -755,7 +758,7 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 
 **Icon + two-line** (`common/icon_label.rs`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap. Implementation: a 3 px gap; the icon's place is kept when it cannot be drawn.
 
-**History** (`common/history.rs`): fixed-capacity ring buffer of `f32`; resizing keeps the newest samples.
+**History** (`common/history.rs`): fixed-capacity ring buffer of `f32`. A sensor whose plot width changes is created anew, with an empty history.
 
 Implementation notes: the meter's value column fits `100%` as formatted (§8.6) or the value if wider; its bar and fill edges sit on whole physical px. Graph grid lines are one physical px, the vertical ones every 5 px from the plot's left, the horizontal ones every 5 px from its bottom; transparent layers are not drawn. Column edges are snapped, so at 150 % columns are alternately 2 and 1 physical px wide. A graph's text column fits the sensor's reserve (e.g. `100%`) or its text, and both lines end at the sensor's right edge.
 

@@ -98,10 +98,7 @@ const LEGACY_ADAPTER: &str = "net-adapter";
 
 /// The connection a legacy layout names by `adapter` (SPEC §9.13): the adapter's description,
 /// or else the connection's name, ignoring case.
-pub fn legacy_adapter<'a>(
-    interfaces: &'a [NetInterface],
-    adapter: &str,
-) -> Option<&'a NetInterface> {
+fn legacy_adapter<'a>(interfaces: &'a [NetInterface], adapter: &str) -> Option<&'a NetInterface> {
     let adapter = adapter.trim();
     let named = |name: &str| name.trim().eq_ignore_ascii_case(adapter);
     interfaces
@@ -308,7 +305,7 @@ impl Sensor for NetworkGraph {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let s = self.sample.as_ref()?;
-        let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
+        let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
         let name = if !s.present {
             adapter_name(self.props.adapter.clone())
         } else if s.description.is_empty() || s.description == s.alias {
@@ -356,7 +353,7 @@ impl Sensor for NetworkGraph {
         if self.sample.is_none() {
             return String::new();
         }
-        let (rx, tx) = self.rates(cx.platform.locale(cx.settings.date_locale).numbers());
+        let (rx, tx) = self.rates(Numbers::from(&cx.platform.locale(cx.settings.date_locale)));
         t_args("sensor.network.accessible", &[("rx", &rx), ("tx", &tx)])
     }
 
@@ -422,7 +419,7 @@ mod tests {
     struct Harness {
         clock: FakeClock,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
+        theme: crate::look::theme::Theme,
     }
 
     impl Harness {
@@ -436,9 +433,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_net",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: false,
                 alt: false,
                 animate: true,

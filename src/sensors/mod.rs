@@ -47,9 +47,9 @@ use std::time::Instant;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
-use crate::bar::theme::Theme;
 use crate::config::legacy::LegacyProps;
 use crate::config::model::Settings;
+use crate::look::theme::Theme;
 use crate::platform::{Bitmap, Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
 use crate::sampler::{ChangeSink, Sample, Topic, TopicRequest};
 use schema::PropField;
@@ -211,9 +211,11 @@ pub fn read_image(path: &str, px: u32) -> Option<Bitmap> {
         .ok()
 }
 
-/// No shell icons, image files read at once: tests, and platforms without a shell.
+/// No shell icons, image files read at once: for tests.
+#[cfg(test)]
 pub struct NoIcons;
 
+#[cfg(test)]
 impl IconSource for NoIcons {
     fn shell_icon(&self, _path: &str, _px: u32) -> Fetched {
         Fetched::None
@@ -224,8 +226,10 @@ impl IconSource for NoIcons {
 
 /// Shell icons and image files read from the platform at once, on the calling thread: for
 /// screenshots.
+#[cfg(test)]
 pub struct DirectIcons<'a>(pub &'a dyn Platform);
 
+#[cfg(test)]
 impl IconSource for DirectIcons<'_> {
     fn shell_icon(&self, path: &str, px: u32) -> Fetched {
         self.0
@@ -249,9 +253,7 @@ pub struct DrawCtx<'a> {
 /// and props to save are taken from it afterwards ([`Sensor::take_state`],
 /// [`Sensor::take_props`]).
 pub struct SensorCtx<'a> {
-    pub id: &'a str,
     pub settings: &'a Settings,
-    pub theme: &'a Theme,
     pub locked: bool,
     /// Alt is held.
     pub alt: bool,
@@ -269,7 +271,9 @@ impl SensorCtx<'_> {
     /// "Click to …" line only then. Hints are built without Alt held, so with Lock and
     /// *Alt only* they have none.
     pub fn clicks(&self) -> bool {
-        crate::bar::clicks_allowed(self.locked, self.settings.clicks_when_locked, self.alt)
+        self.settings
+            .clicks_when_locked
+            .allows(self.locked, self.alt)
     }
 
     /// `text` with the "Click to …" line `key` when a click would reach the sensor.
@@ -510,16 +514,16 @@ pub(crate) mod test_support {
 
     use serde_json::json;
 
-    use super::dates::{Date, LocalTime};
     use super::schema::{FieldKind, Lit, PropField};
     use super::{
         Category, DefaultsCtx, DrawCtx, Fetched, IconSource, LayoutCtx, Props, Sensor, SensorType,
         State, legacy,
     };
-    use crate::bar::theme::Theme;
     use crate::config::model::DateLocale;
     use crate::config::model::Settings;
+    use crate::look::theme::Theme;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
+    use crate::platform::time::{Date, LocalTime};
     use crate::platform::{
         Bitmap, Canvas, Capabilities, Locale, MonitorInfo, OsAppearance, Platform, RectF,
         TextEngine, TextStyle,

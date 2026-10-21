@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use super::anim::{self, Easing, Fade};
 use super::drop::{self, Dropped};
 use super::focus::{self, Move};
 use super::hint::{self, HintBody, HintFrame, Hover, Step};
@@ -25,8 +24,6 @@ use super::popup::{self, Open, PopupHost};
 use super::resize::{self, Resize};
 use super::sensors::{BarSensors, Env, Hit};
 use super::shadow::ShadowCache;
-use super::skins::{self, SkinCache};
-use super::theme::Theme;
 use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
 use crate::config::Config;
@@ -36,6 +33,9 @@ use crate::config::model::{
     BarMode, Edge, FloatingRect, Layout, Material, SensorInstance, Settings,
 };
 use crate::i18n::{t, t_args};
+use crate::look::anim::{self, Easing, Fade};
+use crate::look::skins::{self, SkinCache};
+use crate::look::theme::Theme;
 use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
     AccessibleAction, AccessibleBar, Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas,
@@ -239,7 +239,7 @@ impl BarLogic {
     ) -> Self {
         let appearance = platform.appearance();
         let animate = anim::enabled(config.settings.bar.animations, appearance.animations);
-        let numbers = platform.locale(config.settings.date_locale).numbers();
+        let numbers = Numbers::from(&platform.locale(config.settings.date_locale));
         Self {
             theme: Theme::resolve(&config.settings, appearance),
             settings: config.settings,
@@ -323,11 +323,6 @@ impl BarLogic {
         }
     }
 
-    fn clicks_allowed(&self, alt: bool) -> bool {
-        let s = &self.settings;
-        interact::clicks_allowed(s.locked, s.clicks_when_locked, alt)
-    }
-
     /// A left press on a sensor dims it until release, if it can lead to a click or a drag
     /// (SPEC §6.1).
     fn pointer_down(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
@@ -356,7 +351,7 @@ impl BarLogic {
             }
             return;
         };
-        if !self.clicks_allowed(modifiers.alt) {
+        if !self.settings.clicks_allowed(modifiers.alt) {
             return;
         }
         window.capture_pointer(true);
@@ -534,7 +529,6 @@ impl BarLogic {
         }
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
@@ -715,7 +709,6 @@ impl BarLogic {
     fn show_hint(&self, window: &dyn BarWindow, id: &str) -> bool {
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
@@ -850,7 +843,7 @@ impl BarLogic {
             .sensors
             .hit(at.x)
             .is_some_and(|h| h.entry.id == press.id);
-        if press.moved || !over || !self.clicks_allowed(modifiers.alt) {
+        if press.moved || !over || !self.settings.clicks_allowed(modifiers.alt) {
             return;
         }
         // The press that closed this sensor's popup does not open it again, nor does a click
@@ -865,7 +858,6 @@ impl BarLogic {
     fn click(&mut self, window: &dyn BarWindow, id: &str, alt: bool) {
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt,
             animate: self.animate,
@@ -921,7 +913,6 @@ impl BarLogic {
         let caps = self.platform.capabilities();
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
@@ -988,7 +979,6 @@ impl BarLogic {
                 if let Some(entry) = target {
                     let env = Env {
                         settings: &self.settings,
-                        theme: &self.theme,
                         platform: self.platform.as_ref(),
                         alt: false,
                         animate: self.animate,
@@ -1049,7 +1039,6 @@ impl BarLogic {
         }
         let cx = PopupCtx {
             theme: &self.theme,
-            settings: &self.settings,
             text: self.text.as_ref(),
             scale,
             platform: &self.platform,
@@ -1146,7 +1135,6 @@ impl BarLogic {
         let open = self.popups.open.as_mut()?;
         let cx = PopupCtx {
             theme: &self.theme,
-            settings: &self.settings,
             text: self.text.as_ref(),
             scale,
             platform: &self.platform,
@@ -1252,7 +1240,6 @@ impl BarLogic {
             // New clocks read the time now, so the next frame does not show them empty.
             let env = Env {
                 settings: &self.settings,
-                theme: &self.theme,
                 platform: self.platform.as_ref(),
                 alt: false,
                 animate: self.animate,
@@ -1278,7 +1265,6 @@ impl BarLogic {
     fn deliver(&mut self, window: &dyn BarWindow, delivery: &Delivery) {
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
@@ -1294,7 +1280,7 @@ impl BarLogic {
     /// The locale for dates and numbers may have changed (the setting, or the OS regional
     /// format): numbers are read again, and clocks re-read the locale as on a clock change.
     fn locale_changed(&mut self, window: &dyn BarWindow) {
-        self.numbers = self.platform.locale(self.settings.date_locale).numbers();
+        self.numbers = Numbers::from(&self.platform.locale(self.settings.date_locale));
         window.invalidate();
         self.clock_changed(window);
     }
@@ -1303,7 +1289,6 @@ impl BarLogic {
     fn clock_changed(&mut self, window: &dyn BarWindow) {
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
@@ -1342,7 +1327,6 @@ impl BarLogic {
             TimerId::Wake => {
                 let env = Env {
                     settings: &self.settings,
-                    theme: &self.theme,
                     platform: self.platform.as_ref(),
                     alt: false,
                     animate: self.animate,
@@ -1440,7 +1424,6 @@ impl BarLogic {
         if !asked {
             let env = Env {
                 settings: &self.settings,
-                theme: &self.theme,
                 platform: self.platform.as_ref(),
                 alt: drag.modifiers.alt,
                 animate: self.animate,
@@ -1527,7 +1510,6 @@ impl BarLogic {
         if let Some((id, _, Some(_))) = &external.onto {
             let env = Env {
                 settings: &self.settings,
-                theme: &self.theme,
                 platform: self.platform.as_ref(),
                 alt: drag.modifiers.alt,
                 animate: self.animate,
@@ -1992,7 +1974,6 @@ impl BarHandler for BarLogic {
     fn accessible(&self) -> AccessibleBar {
         let env = Env {
             settings: &self.settings,
-            theme: &self.theme,
             platform: self.platform.as_ref(),
             alt: false,
             animate: self.animate,
@@ -2308,7 +2289,7 @@ mod tests {
 
     #[test]
     fn a_skin_packs_band_goes_on_the_side_facing_the_screen_centre() {
-        use crate::bar::skins::tests::{decode_png, pack, rows_png};
+        use crate::look::skins::tests::{decode_png, pack, rows_png};
         let skins = tempfile::tempdir().expect("temp dir");
         let folder = pack(
             skins.path(),
@@ -2350,7 +2331,7 @@ mod tests {
 
     #[test]
     fn a_pack_installed_later_is_drawn_once_the_bar_hears_of_it() {
-        use crate::bar::skins::tests::{decode_png, pack, rows_png};
+        use crate::look::skins::tests::{decode_png, pack, rows_png};
         let skins = tempfile::tempdir().expect("temp dir");
         let mut settings = Settings {
             theme: crate::config::model::Theme::Classic,
@@ -2387,7 +2368,7 @@ mod tests {
 
     #[test]
     fn the_bars_shadow_goes_where_a_skins_band_would() {
-        use crate::bar::skins::tests::{decode_png, pack, rows_png};
+        use crate::look::skins::tests::{decode_png, pack, rows_png};
         let mut settings = Settings::default();
         settings.bar.shadow = true;
         // None while the bar rises and its content fades in (animations on, whatever the OS

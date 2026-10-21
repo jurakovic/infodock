@@ -13,7 +13,7 @@ use crate::platform::{AutostartChange, Platform};
 
 /// The `Run` value's name. Fixed: the uninstaller removes it by this name (SPEC §15.3), and
 /// later versions look for it.
-pub const RUN_VALUE: &str = "Infodock";
+const RUN_VALUE: &str = "Infodock";
 
 /// Why the entry could not be written or removed the last time; Settings shows it.
 static ERROR: Mutex<Option<String>> = Mutex::new(None);
@@ -100,7 +100,7 @@ pub fn taken(first_run_done: bool, enabled: bool, entry: bool) -> Option<bool> {
 /// mark from Task Manager, which the user set; remove one while the setting is off. An entry
 /// for another copy that is still there stays: a copy started once (a portable exe tried, a
 /// build) does not take it.
-pub fn at_start<'a>(
+fn at_start<'a>(
     enabled: bool,
     entry: Option<&str>,
     command: &'a str,

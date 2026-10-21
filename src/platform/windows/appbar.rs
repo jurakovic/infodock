@@ -602,10 +602,6 @@ impl AppBar for WinAppBar {
         self.shared.post(0);
     }
 
-    fn refresh(&self) {
-        self.shared.post(0);
-    }
-
     fn raise(&self) {
         self.shared.post(RAISE);
     }

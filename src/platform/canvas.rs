@@ -149,7 +149,8 @@ pub struct GradientStop {
 pub enum Brush {
     Solid(Color),
     /// Colours change along the line from `start` to `end`; beyond its ends the end colours
-    /// continue.
+    /// continue. Only the canvas specimen (CI's screenshots of the renderer) draws with it.
+    #[cfg_attr(not(test), allow(dead_code))]
     Linear {
         start: PointF,
         end: PointF,
@@ -182,6 +183,8 @@ pub trait Canvas {
     fn fill(&mut self, shape: &Shape, brush: &Brush);
     /// Outlines `shape` with a line `width` px wide, centred on its edge.
     fn stroke(&mut self, shape: &Shape, brush: &Brush, width: f32);
+    /// Only the canvas specimen (CI's screenshots of the renderer) draws lines.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn draw_line(&mut self, from: PointF, to: PointF, brush: &Brush, width: f32);
     /// Draws `layout` with the top-left corner of its box at `origin`.
     fn draw_text(&mut self, layout: &TextLayout, origin: PointF, color: Color);

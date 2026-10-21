@@ -15,9 +15,10 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::icon::{self, Icon};
-use crate::bar::theme::Theme;
 use crate::config::model::Edge;
 use crate::i18n::t;
+use crate::look::anim::{Easing, FRAME};
+use crate::look::theme::Theme;
 use crate::platform::{
     Bitmap, Canvas, Color, DirItem, Key, Platform, PointF, PointerButton, PopupCursor, PopupInput,
     RectF, SizeF, TextLayout, TextStyle, UiWaker,
@@ -62,8 +63,6 @@ const SLIDE: Duration = Duration::from_millis(250);
 const GLIDE: Duration = Duration::from_millis(100);
 /// Typed characters within this long make one name to jump to.
 const TYPE_AHEAD: Duration = Duration::from_secs(1);
-/// The frame interval while something animates.
-const FRAME: Duration = Duration::from_millis(16);
 
 /// A folder or file in the list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,7 +100,7 @@ pub fn display_name(name: &str, folder: bool) -> String {
 /// A folder's entries as the list shows them (SPEC §9.19): `desktop.ini` left out always,
 /// hidden and system items unless `show_hidden`; folders first, then files, each in the order
 /// of `cmp`.
-pub fn prepare(
+fn prepare(
     entries: Vec<DirItem>,
     show_hidden: bool,
     cmp: impl Fn(&str, &str) -> Ordering,
@@ -189,11 +188,6 @@ fn list(
         tracing::warn!("could not start listing a folder: {e}");
     }
     rx
-}
-
-/// `t` (0–1 through an animation) eased out: fast start, slow end.
-fn ease_out(t: f32) -> f32 {
-    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }
 
 /// How far an animation that started at `start` and lasts `length` is at `now`, 0–1.
@@ -668,14 +662,14 @@ impl FolderBrowser {
     fn animate(&mut self, now: Instant) -> bool {
         if let Some(slide) = &mut self.slide {
             let t = progress(slide.start, SLIDE, now);
-            slide.progress = ease_out(t);
+            slide.progress = Easing::Out.apply(t);
             if t >= 1.0 {
                 self.slide = None;
             }
         }
         if let Some(glide) = &self.glide {
             let t = progress(glide.start, GLIDE, now);
-            let scroll = glide.from + (glide.to - glide.from) * ease_out(t);
+            let scroll = glide.from + (glide.to - glide.from) * Easing::Out.apply(t);
             if t >= 1.0 {
                 self.glide = None;
             }
@@ -1037,7 +1031,6 @@ pub(crate) mod tests {
     use std::fs;
 
     use super::*;
-    use crate::config::model::Settings;
     use crate::platform::Modifiers;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::sensors::NoIcons;
@@ -1100,7 +1093,6 @@ pub(crate) mod tests {
         pub platform: Arc<FakeClock>,
         shared: Arc<dyn Platform>,
         theme: Theme,
-        settings: Settings,
         waker: UiWaker,
         pub room: SizeF,
         pub edge: Edge,
@@ -1116,7 +1108,6 @@ pub(crate) mod tests {
                 shared: Arc::clone(&platform) as Arc<dyn Platform>,
                 platform,
                 theme: theme(),
-                settings: Settings::default(),
                 waker: UiWaker::new(|| {}),
                 room: SizeF::new(1000.0, 1000.0),
                 edge: Edge::Bottom,
@@ -1129,7 +1120,6 @@ pub(crate) mod tests {
         pub fn ctx(&self) -> PopupCtx<'_> {
             PopupCtx {
                 theme: &self.theme,
-                settings: &self.settings,
                 text: &FixedMetrics,
                 scale: 1.0,
                 platform: &self.shared,

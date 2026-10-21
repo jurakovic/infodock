@@ -210,7 +210,7 @@ mod tests {
 
     use super::*;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, fit, measure, theme};
+    use crate::sensors::test_support::{draw, fit, measure};
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -256,13 +256,10 @@ mod tests {
 
     #[test]
     fn a_narrower_width_cuts_the_text_and_its_hint_shows_it_all() {
-        let theme = theme();
         let settings = crate::config::model::Settings::default();
         let platform = crate::platform::current();
         let cx = SensorCtx {
-            id: "s_1",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate: true,

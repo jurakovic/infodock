@@ -230,7 +230,7 @@ mod tests {
     use crate::config::model::Settings;
     use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, measure, theme};
+    use crate::sensors::test_support::{draw, measure};
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -275,11 +275,9 @@ mod tests {
     }
 
     fn with_ctx(platform: &Recorder, f: impl FnOnce(&SensorCtx)) {
-        let (settings, theme) = (Settings::default(), theme());
+        let settings = Settings::default();
         f(&SensorCtx {
-            id: "s_1",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate: false,
@@ -310,7 +308,7 @@ mod tests {
 
     #[test]
     fn the_icon_takes_the_text_colour_so_it_reads_on_a_light_bar() {
-        let light = crate::bar::theme::Theme::resolve(
+        let light = crate::look::theme::Theme::resolve(
             &Settings::default(),
             crate::platform::OsAppearance {
                 dark: false,

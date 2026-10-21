@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use super::RectF;
 
 /// A sensor's value is announced at most this often, so graphs do not flood screen readers.
-pub const VALUE_EVENTS: Duration = Duration::from_secs(1);
+const VALUE_EVENTS: Duration = Duration::from_secs(1);
 
 /// A sensor on the bar, as UI Automation lists it.
 #[derive(Debug, Clone, PartialEq)]

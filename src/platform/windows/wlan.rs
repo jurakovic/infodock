@@ -348,7 +348,7 @@ impl WifiReader for WinWifi {
                         let rssi = *data.cast::<i32>();
                         (self.free)(data);
                         status.rssi_dbm = Some(rssi);
-                        status.quality = crate::sensors::wifi::quality_from_rssi(rssi);
+                        status.quality = WifiStatus::quality_from_rssi(rssi);
                     }
                 }
                 Err(code) => return Err(message(code)),

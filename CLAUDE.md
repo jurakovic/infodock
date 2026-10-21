@@ -11,6 +11,7 @@ The repository root is the Rust crate `infodock` (lib `infodock_lib`).
 ```
 src/                 Rust sources
   bar/               the native bar: BarController (any thread) and its logic on the bar thread
+  look/              the theme, skins and animation helpers the bar, sensors and Settings share
   settings/          the Settings window (Slint) and its glue to the config
   sensors/           sensor framework: traits, property schemas, registry, placeholders; one module per type
   sampler/           the sampler thread: topic subscriptions and scheduling (SPEC §4.4)

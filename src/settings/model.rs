@@ -81,7 +81,7 @@ pub struct Choice {
     pub values: &'static [&'static str],
 }
 
-pub const CHOICES: &[Choice] = &[
+const CHOICES: &[Choice] = &[
     Choice {
         path: "hotkeyAction",
         values: &["bringToFront", "toggleVisibility"],
@@ -204,7 +204,7 @@ pub fn choice(path: &str) -> Option<&'static Choice> {
 }
 
 /// The value at a dotted path in serialized settings.
-pub fn value_at<'a>(settings: &'a Value, path: &str) -> Option<&'a Value> {
+fn value_at<'a>(settings: &'a Value, path: &str) -> Option<&'a Value> {
     path.split('.').try_fold(settings, |v, key| v.get(key))
 }
 

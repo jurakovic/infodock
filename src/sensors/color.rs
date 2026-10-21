@@ -2,7 +2,7 @@
 //! inactive sensor's icon or graphic is drawn.
 
 use super::{ColorChoice, ColorModeKind};
-use crate::bar::theme::Inactive;
+use crate::look::theme::Inactive;
 use crate::platform::Color;
 
 /// The dynamic gradient (SPEC §8.4): green at 0, yellow at 0.5, red at 1. Values outside

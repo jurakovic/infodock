@@ -15,7 +15,7 @@ use super::{
     Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, Canvas, Launch, PathKind};
+use crate::platform::{Bitmap, Canvas, Launch, PathKind, file_name};
 use crate::sampler::{Sample, Topic, TopicRequest};
 
 /// The icon for web addresses (Appendix C).
@@ -204,16 +204,6 @@ struct ShortcutProps {
     opacity: u32,
 }
 
-/// The last component of a Windows or POSIX path (`C:\Tools\app.exe` → `app.exe`), or the
-/// path itself when it has none (`C:\`).
-pub fn file_name(path: &str) -> &str {
-    let trimmed = path.trim_end_matches(['\\', '/']);
-    match trimmed.rsplit(['\\', '/']).next() {
-        Some(name) if !name.is_empty() && !name.ends_with(':') => name,
-        _ => path,
-    }
-}
-
 /// `name` without its extension (`app.exe` → `app`); a leading dot is no extension.
 fn without_extension(name: &str) -> &str {
     match name.rfind('.') {
@@ -224,7 +214,7 @@ fn without_extension(name: &str) -> &str {
 
 /// `text` with its middle cut out when it is longer than twice `keep` characters: the first and
 /// last `keep` with `…` between them (SPEC §9.17).
-pub fn middle_truncated(text: &str, keep: usize) -> String {
+fn middle_truncated(text: &str, keep: usize) -> String {
     let count = text.chars().count();
     if count <= 2 * keep {
         return text.to_owned();
@@ -236,7 +226,7 @@ pub fn middle_truncated(text: &str, keep: usize) -> String {
 
 /// The automatic title (SPEC §9.17): a web address middle-truncated to 150 characters, a
 /// folder's name, or a file's name without its extension.
-pub fn auto_title(url: &str, target: &str, kind: Option<PathKind>) -> String {
+fn auto_title(url: &str, target: &str, kind: Option<PathKind>) -> String {
     if !url.is_empty() {
         return middle_truncated(url, URL_KEEP);
     }
@@ -249,13 +239,13 @@ pub fn auto_title(url: &str, target: &str, kind: Option<PathKind>) -> String {
 
 /// Whether `target` is a bare program name such as `notepad.exe`, which the shell finds on its
 /// own (App Paths, `PATH`); such a target is not checked.
-pub fn is_bare_name(target: &str) -> bool {
+fn is_bare_name(target: &str) -> bool {
     !target.contains(['\\', '/', ':'])
 }
 
 /// The working folder for starting `target`: `work_dir`, or else the target's folder (SPEC
 /// §9.17); `None` for a bare program name.
-pub fn work_dir(target: &str, work_dir: &str) -> Option<String> {
+fn work_dir(target: &str, work_dir: &str) -> Option<String> {
     if !work_dir.is_empty() {
         return Some(work_dir.to_owned());
     }
@@ -424,7 +414,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::bar::theme::Theme;
     use crate::config::model::{ClicksWhenLocked, Settings};
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::platform::{Platform, RectF};
@@ -499,7 +488,6 @@ mod tests {
     struct Harness {
         platform: FakeClock,
         settings: Settings,
-        theme: Theme,
     }
 
     impl Harness {
@@ -507,15 +495,12 @@ mod tests {
             Self {
                 platform: FakeClock::default(),
                 settings: Settings::default(),
-                theme: theme(),
             }
         }
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_1",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: self.settings.locked,
                 alt: false,
                 animate: false,
@@ -534,10 +519,6 @@ mod tests {
 
     #[test]
     fn titles_and_names() {
-        assert_eq!(file_name("C:\\Tools\\app.exe"), "app.exe");
-        assert_eq!(file_name("C:\\Users\\me\\Downloads\\"), "Downloads");
-        assert_eq!(file_name("C:\\"), "C:\\");
-        assert_eq!(file_name("notepad.exe"), "notepad.exe");
         assert_eq!(auto_title("", "C:\\Tools\\app.exe", None), "app");
         assert_eq!(auto_title("", "C:\\Tools\\.config", None), ".config");
         assert_eq!(

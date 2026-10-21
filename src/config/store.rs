@@ -62,6 +62,7 @@ struct Shared {
 
 enum Msg {
     Dirty,
+    #[cfg(test)]
     Flush(mpsc::Sender<()>),
     Stop,
 }
@@ -103,10 +104,6 @@ impl ConfigStore {
         (store, report)
     }
 
-    pub fn dir(&self) -> &Path {
-        &self.shared.dir
-    }
-
     /// A snapshot of the current config.
     pub fn get(&self) -> Config {
         lock(&self.shared.config).clone()
@@ -144,7 +141,8 @@ impl ConfigStore {
     }
 
     /// Writes pending changes now and waits (up to 2 s) until they are on disk.
-    pub fn flush(&self) {
+    #[cfg(test)]
+    fn flush(&self) {
         let (ack_tx, ack_rx) = mpsc::channel();
         if self.tx.send(Msg::Flush(ack_tx)).is_ok() {
             let _ = ack_rx.recv_timeout(Duration::from_secs(2));
@@ -174,6 +172,7 @@ fn writer_loop(shared: &Shared, rx: &mpsc::Receiver<Msg>) {
                 let first = pending.map_or(now, |(first, _)| first);
                 pending = Some((first, (now + DEBOUNCE).min(first + MAX_DELAY)));
             }
+            #[cfg(test)]
             Ok(Msg::Flush(ack)) => {
                 if pending.is_some() {
                     pending = write_or_retry(shared);

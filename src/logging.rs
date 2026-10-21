@@ -38,7 +38,6 @@ pub fn startup_step(name: &'static str) {
 }
 
 /// The start-up steps noted so far, in the order they were done; taken once.
-#[cfg_attr(not(windows), allow(dead_code))]
 pub fn take_startup_steps() -> Vec<(&'static str, Instant)> {
     let mut steps = STARTUP
         .lock()

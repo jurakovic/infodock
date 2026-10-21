@@ -10,10 +10,10 @@ use std::hash::Hash;
 use std::time::{Duration, Instant};
 
 /// No topic is sampled more often than this, whatever a sensor asks for.
-pub const MIN_INTERVAL: Duration = Duration::from_millis(100);
+const MIN_INTERVAL: Duration = Duration::from_millis(100);
 /// Failed readings in a row before a topic's sample is an error (SPEC §14.2); until then
 /// subscribers keep the previous sample.
-pub const FAILURES_BEFORE_ERROR: u32 = 3;
+const FAILURES_BEFORE_ERROR: u32 = 3;
 /// The first retry after the error sample comes this much later, each next one twice as late,
 /// up to [`MAX_BACKOFF`] (and never sooner than the topic's interval).
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);

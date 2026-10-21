@@ -9,12 +9,12 @@ use super::common::icon::{self, Icon};
 use super::drop::{self, DragInfo, DropAction, Dropped};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
-use super::shortcut::file_name;
 use super::{
     Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, LayoutCtx, MenuId, MenuItem,
     Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::t;
+use crate::platform::file_name;
 use crate::platform::{Canvas, DropEffect, FileOp};
 
 /// The built-in folder icon (Appendix C).
@@ -360,7 +360,7 @@ mod tests {
     use crate::platform::Platform;
     use crate::sampler::ChangeSink;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure, theme};
+    use crate::sensors::test_support::{FakeClock, draw, measure};
 
     fn create(stored: serde_json::Value) -> FolderMenu {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -375,11 +375,8 @@ mod tests {
     fn with_ctx<R>(f: impl FnOnce(&SensorCtx, &FakeClock) -> R) -> R {
         let platform = FakeClock::default();
         let settings = Settings::default();
-        let theme = theme();
         let cx = SensorCtx {
-            id: "s_1",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate: false,

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use super::hint::{self, HintFrame};
 use super::placement::Anchor;
-use super::theme::Theme;
+use crate::look::theme::Theme;
 use crate::platform::{Canvas, PointF, PopupInput, SizeF};
 use crate::sensors::popup::{Popup, PopupAlign};
 

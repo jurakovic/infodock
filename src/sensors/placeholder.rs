@@ -95,8 +95,8 @@ impl Sensor for Placeholder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bar::theme::Theme;
     use crate::config::model::Settings;
+    use crate::look::theme::Theme;
     use crate::platform::OsAppearance;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
 

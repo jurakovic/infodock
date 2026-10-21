@@ -21,6 +21,7 @@ pub struct DropEffects {
 }
 
 impl DropEffects {
+    #[cfg(test)]
     pub const ALL: Self = Self {
         copy: true,
         moves: true,

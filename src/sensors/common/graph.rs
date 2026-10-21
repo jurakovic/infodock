@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use super::history::History;
 use super::two_line::{self, Align, TwoLine};
-use crate::bar::theme::Theme;
+use crate::look::theme::Theme;
 use crate::platform::{Canvas, Color, RectF, TextEngine};
 use crate::sensors::color;
 use crate::sensors::schema::{FieldKind, Lit, PropField};

@@ -2,7 +2,7 @@
 //! font at its small size (modern 10 px, classic 9 px), with tabular digits so changing values
 //! do not shift the bar.
 
-use crate::bar::theme::Theme;
+use crate::look::theme::Theme;
 use crate::platform::{Canvas, Color, PointF, TextEngine, TextLayout, TextStyle};
 
 /// Where a line goes: starting at an x, or ending at one (right-aligned), logical px.

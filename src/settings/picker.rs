@@ -90,7 +90,7 @@ pub enum Place {
 
 /// The selection after a search listed `lines` (entry indices, `-1` for headings): the
 /// selected entry while it is still listed, else the first match, so that Enter adds it.
-pub fn searched(lines: &[i32], selected: i32) -> i32 {
+fn searched(lines: &[i32], selected: i32) -> i32 {
     if selected >= 0 && lines.contains(&selected) {
         return selected;
     }

@@ -45,7 +45,7 @@ pub fn add(
 /// value is validated and normalised, and only what differs from the defaults is kept
 /// (SPEC §8.2, §11.2). Fails with `invalid` for an unknown type, an unknown key or a value of
 /// the wrong type, naming the keys.
-pub fn updated_props(
+fn updated_props(
     registry: &Registry,
     instance: &SensorInstance,
     changes: &Props,

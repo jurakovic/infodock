@@ -2,7 +2,7 @@
 //! size, centred vertically, optionally tinted (Custom colour, §8.4), drawn at the sensor's
 //! opacity; an inactive sensor's icon fades or takes the inactive colour.
 
-use crate::bar::theme::{Inactive, Theme};
+use crate::look::theme::{Inactive, Theme};
 use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
 use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx, Fetched, IconSource};
 

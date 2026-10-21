@@ -41,8 +41,6 @@ impl AppBar for StubAppBar {
         tracing::debug!("no native bar on this OS; ignoring {request:?}");
     }
 
-    fn refresh(&self) {}
-
     fn raise(&self) {}
 
     fn release(&self) {}

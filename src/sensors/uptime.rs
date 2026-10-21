@@ -367,11 +367,9 @@ mod tests {
     }
 
     fn with_ctx<R>(f: impl FnOnce(&SensorCtx) -> R) -> R {
-        let (settings, theme) = (Settings::default(), theme());
+        let settings = Settings::default();
         f(&SensorCtx {
-            id: "s_up",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate: true,

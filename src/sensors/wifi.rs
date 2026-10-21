@@ -159,12 +159,6 @@ struct WifiProps {
     display: Display,
 }
 
-/// The signal quality (0–100) Windows gives a signal of `rssi` dBm: −100 dBm and below is 0,
-/// −50 dBm and above is 100, linear between.
-pub fn quality_from_rssi(rssi: i32) -> u32 {
-    (2 * (rssi + 100)).clamp(0, 100) as u32
-}
-
 /// The icon level (SPEC §9.15): 0 offline or with the radio off, otherwise 1–5 by quality.
 pub fn level(status: &WifiStatus) -> usize {
     if !online(status) {
@@ -185,7 +179,7 @@ fn online(status: &WifiStatus) -> bool {
 }
 
 /// The band and channel of a centre frequency in MHz, e.g. 5180 → (`5 GHz`, 36).
-pub fn band_channel(mhz: u32) -> Option<(&'static str, u32)> {
+fn band_channel(mhz: u32) -> Option<(&'static str, u32)> {
     Some(match mhz {
         2484 => ("sensor.wifi.band.2", 14),
         2412..=2472 => ("sensor.wifi.band.2", (mhz - 2407) / 5),
@@ -389,7 +383,7 @@ mod tests {
     use crate::platform::Platform;
     use crate::sampler::ChangeSink;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure, theme};
+    use crate::sensors::test_support::{FakeClock, draw, measure};
 
     fn create(stored: serde_json::Value) -> Wifi {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -420,7 +414,6 @@ mod tests {
     struct Harness {
         platform: FakeClock,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
     }
 
     impl Harness {
@@ -428,15 +421,12 @@ mod tests {
             Self {
                 platform: FakeClock::default(),
                 settings: Settings::default(),
-                theme: theme(),
             }
         }
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_1",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: self.settings.locked,
                 alt: false,
                 animate: false,
@@ -474,8 +464,6 @@ mod tests {
         assert_eq!(band_channel(5935), Some(("sensor.wifi.band.6", 2)));
         assert_eq!(band_channel(5940), None, "between the bands' grids");
         assert_eq!(band_channel(900), None);
-        assert_eq!(quality_from_rssi(-58), 84);
-        assert_eq!((quality_from_rssi(-110), quality_from_rssi(-40)), (0, 100));
     }
 
     #[test]

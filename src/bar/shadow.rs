@@ -4,7 +4,7 @@
 use crate::platform::Bitmap;
 
 /// How far the shadow reaches from the bar, in logical px.
-pub const DEPTH: f32 = 6.0;
+const DEPTH: f32 = 6.0;
 /// Its alpha next to the bar; it falls to nothing with the square of the distance.
 const ALPHA: f32 = 0.18;
 

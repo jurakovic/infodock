@@ -81,18 +81,10 @@ impl Locale {
             decimal: '.',
         }
     }
-
-    /// How numbers are written in this locale.
-    pub fn numbers(&self) -> crate::sensors::format::Numbers {
-        crate::sensors::format::Numbers {
-            decimal: self.decimal,
-        }
-    }
 }
 
 /// Whether a time pattern in the Windows picture format (`h:mm:ss tt`, `HH:mm`) uses a 12-hour
 /// clock: its first hour letter outside quotes is `h`.
-#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn hour12_from_pattern(pattern: &str) -> bool {
     let mut quoted = false;
     for c in pattern.chars() {

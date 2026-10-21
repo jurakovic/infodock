@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use super::common::two_line;
-use super::dates::{LocalTime, format_date};
+use super::dates::format_date;
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::text::shadow_color;
@@ -14,8 +14,9 @@ use super::{
     Category, ClickResult, DefaultsCtx, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
     SensorType, State, typed,
 };
-use crate::bar::theme::Theme;
 use crate::config::model::DateLocale;
+use crate::look::theme::Theme;
+use crate::platform::time::LocalTime;
 use crate::platform::{Canvas, Font, PointF, TextEngine, TextLayout, TextStyle};
 
 /// The bundled chime (a placeholder until the artwork, SPEC Appendix C).
@@ -378,9 +379,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_time",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: false,
                 alt: false,
                 animate: true,

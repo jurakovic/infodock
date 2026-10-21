@@ -25,7 +25,7 @@ pub fn migrate(value: Value) -> Migrated {
 
 /// Runs the steps needed to bring `value` from its `schema` to `target`. A missing schema
 /// counts as 1.
-pub fn migrate_with(mut value: Value, steps: &[Step], target: u32) -> Migrated {
+fn migrate_with(mut value: Value, steps: &[Step], target: u32) -> Migrated {
     let start = value
         .get("schema")
         .and_then(Value::as_u64)

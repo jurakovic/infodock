@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use super::placement::{Anchor, Placement, place, place_left_edge, place_right_edge};
-use super::theme::Theme;
 use crate::config::model::Edge;
+use crate::look::theme::Theme;
 use crate::platform::{
     Brush, Canvas, Color, PointF, RectF, Shape, SizeF, TextEngine, TextLayout, TextStyle,
 };

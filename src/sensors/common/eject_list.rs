@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use super::eject;
 use super::folder_browser::{centred, highlight};
 use super::icon::{self, Icon};
-use crate::bar::theme::Theme;
 use crate::i18n::t;
+use crate::look::theme::Theme;
 use crate::platform::{
     Bitmap, Canvas, Color, Key, Launch, PointF, PointerButton, PopupInput, RectF, Shape, SizeF,
     TextLayout, TextStyle, Volume,

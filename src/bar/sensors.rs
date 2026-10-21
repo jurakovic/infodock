@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use super::layout::{self, Zones};
-use super::theme::{Inactive, Theme};
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
+use crate::look::theme::{Inactive, Theme};
 use crate::platform::{
     AccessibleItem, Brush, Canvas, Capabilities, Color, Platform, RectF, Shape, TextEngine,
 };
@@ -101,7 +101,6 @@ fn failed_opacity(inactive: Inactive) -> f32 {
 /// What a sensor's context is built from.
 pub(super) struct Env<'a> {
     pub settings: &'a Settings,
-    pub theme: &'a Theme,
     pub platform: &'a dyn Platform,
     /// Alt is held.
     pub alt: bool,
@@ -112,11 +111,9 @@ pub(super) struct Env<'a> {
 }
 
 impl Env<'_> {
-    fn ctx<'a>(&'a self, id: &'a str) -> SensorCtx<'a> {
+    fn ctx(&self) -> SensorCtx<'_> {
         SensorCtx {
-            id,
             settings: self.settings,
-            theme: self.theme,
             locked: self.settings.locked,
             alt: self.alt,
             animate: self.animate,
@@ -400,13 +397,13 @@ impl BarSensors {
         env: &Env,
     ) -> Option<DropAction> {
         let p = self.zones.iter().flatten().find(|p| p.entry.id == id)?;
-        p.sensor.drop_action(items, drag, &env.ctx(id))
+        p.sensor.drop_action(items, drag, &env.ctx())
     }
 
     /// Drops `items` onto sensor `id`.
     pub fn drop_items(&mut self, id: &str, items: &[Dropped], drag: DragInfo, env: &Env) {
         if let Some(p) = self.all_mut().find(|p| p.entry.id == id) {
-            p.sensor.drop_items(items, drag, &env.ctx(id));
+            p.sensor.drop_items(items, drag, &env.ctx());
         }
     }
 
@@ -484,7 +481,7 @@ impl BarSensors {
                 name: name(&p.entry.kind),
                 value: p
                     .error_text()
-                    .unwrap_or_else(|| p.sensor.accessible_value(&env.ctx(&p.entry.id))),
+                    .unwrap_or_else(|| p.sensor.accessible_value(&env.ctx())),
                 rect: RectF::new(p.x, 0.0, p.x + p.width, height),
                 popup: p
                     .sensor
@@ -511,7 +508,7 @@ impl BarSensors {
             .find(|p| p.entry.id == id)
             .map(|p| {
                 p.error_text()
-                    .unwrap_or_else(|| p.sensor.accessible_value(&env.ctx(id)))
+                    .unwrap_or_else(|| p.sensor.accessible_value(&env.ctx()))
             })
             .unwrap_or_default()
     }
@@ -521,7 +518,7 @@ impl BarSensors {
         let p = self.zones.iter().flatten().find(|p| p.entry.id == id)?;
         match p.error_text() {
             Some(error) => Some(HintContent::Text(error)),
-            None => p.sensor.hint(&env.ctx(id)),
+            None => p.sensor.hint(&env.ctx()),
         }
     }
 
@@ -530,7 +527,7 @@ impl BarSensors {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
             return ClickResult::None;
         };
-        let result = p.sensor.click(&env.ctx(id));
+        let result = p.sensor.click(&env.ctx());
         // What it shows may have changed, e.g. a Battery switching to the time left.
         p.dirty |= result == ClickResult::Handled;
         result
@@ -542,7 +539,7 @@ impl BarSensors {
             .iter()
             .flatten()
             .find(|p| p.entry.id == id)
-            .map(|p| p.sensor.menu(&env.ctx(id)))
+            .map(|p| p.sensor.menu(&env.ctx()))
             .unwrap_or_default()
     }
 
@@ -552,7 +549,7 @@ impl BarSensors {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
             return false;
         };
-        let dirty = p.sensor.on_menu(item, &env.ctx(id));
+        let dirty = p.sensor.on_menu(item, &env.ctx());
         p.dirty |= dirty;
         dirty
     }
@@ -563,7 +560,7 @@ impl BarSensors {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
             return false;
         };
-        let dirty = p.sensor.confirmed(&env.ctx(id));
+        let dirty = p.sensor.confirmed(&env.ctx());
         p.dirty |= dirty;
         dirty
     }
@@ -582,7 +579,7 @@ impl BarSensors {
         let mut changed = false;
         for p in self.all_mut() {
             if p.sensor.wake_at(now).is_some_and(|at| at <= now) {
-                let dirty = p.sensor.on_wake(now, &env.ctx(&p.entry.id));
+                let dirty = p.sensor.on_wake(now, &env.ctx());
                 p.dirty |= dirty;
                 changed |= dirty;
             }
@@ -609,7 +606,7 @@ impl BarSensors {
     pub fn clock_changed(&mut self, now: Instant, env: &Env) -> bool {
         let mut changed = false;
         for p in self.all_mut() {
-            let dirty = p.sensor.on_clock_change(now, &env.ctx(&p.entry.id));
+            let dirty = p.sensor.on_clock_change(now, &env.ctx());
             p.dirty |= dirty;
             changed |= dirty;
         }
@@ -621,7 +618,7 @@ impl BarSensors {
         let Some(p) = self.all_mut().find(|p| p.entry.id == id) else {
             return false;
         };
-        let dirty = p.sensor.on_hover(hovered, now, &env.ctx(id));
+        let dirty = p.sensor.on_hover(hovered, now, &env.ctx());
         p.dirty |= dirty;
         dirty
     }
@@ -687,7 +684,7 @@ impl BarSensors {
                 if let Some(i) = had {
                     p.errors.remove(i);
                 }
-                let cx = env.ctx(&p.entry.id);
+                let cx = env.ctx();
                 p.sensor.on_sample(&delivery.topic, &delivery.sample, &cx) || had.is_some()
             };
             p.dirty |= dirty;
@@ -899,12 +896,10 @@ mod tests {
 
     #[test]
     fn a_clock_change_reaches_every_sensor() {
-        let theme = theme();
         let settings = Settings::default();
         let platform = crate::platform::current();
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: true,
@@ -940,7 +935,6 @@ mod tests {
         let platform = crate::platform::current();
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: true,
@@ -1000,12 +994,10 @@ mod tests {
 
     #[test]
     fn menu_items_come_from_the_sensor_and_go_back_to_it() {
-        let theme = theme();
         let settings = Settings::default();
         let platform = crate::platform::current();
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: true,
@@ -1031,7 +1023,6 @@ mod tests {
         let platform = crate::platform::current();
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: true,
@@ -1138,7 +1129,6 @@ mod tests {
         let platform = crate::platform::current();
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: true,
@@ -1210,7 +1200,6 @@ mod tests {
         let platform = crate::platform::current();
         let env = Env {
             settings: &settings,
-            theme: &theme,
             platform: platform.as_ref(),
             alt: false,
             animate: true,

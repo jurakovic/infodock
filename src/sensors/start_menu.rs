@@ -256,7 +256,7 @@ mod tests {
     use crate::config::model::Settings;
     use crate::sampler::ChangeSink;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure, theme};
+    use crate::sensors::test_support::{FakeClock, draw, measure};
 
     fn create(stored: serde_json::Value) -> StartMenu {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -271,11 +271,8 @@ mod tests {
     fn with_ctx<R>(f: impl FnOnce(&SensorCtx, &FakeClock) -> R) -> R {
         let platform = FakeClock::default();
         let settings = Settings::default();
-        let theme = theme();
         let cx = SensorCtx {
-            id: "s_1",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate: false,

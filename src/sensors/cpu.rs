@@ -168,7 +168,7 @@ fn cpu(sample: &Sample) -> Option<&CpuSample> {
 }
 
 fn shared_hint(sample: Option<&CpuSample>, cx: &SensorCtx) -> Option<HintContent> {
-    let numbers = cx.platform.locale(cx.settings.date_locale).numbers();
+    let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
     let text = hint(sample?, numbers);
     Some(HintContent::Text(
         cx.with_click_line(text, "sensor.cpu.hint.click"),
@@ -567,7 +567,7 @@ mod tests {
     struct Harness {
         clock: FakeClock,
         settings: Settings,
-        theme: crate::bar::theme::Theme,
+        theme: crate::look::theme::Theme,
     }
 
     impl Harness {
@@ -581,9 +581,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_cpu",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: self.settings.locked,
                 alt: false,
                 animate: true,

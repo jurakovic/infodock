@@ -57,7 +57,7 @@ const LABEL_MAX: usize = 100;
 pub fn label(item: &Dropped) -> String {
     let text = match item {
         Dropped::Drive(root) => root.as_str(),
-        Dropped::Path(path) => super::shortcut::file_name(path),
+        Dropped::Path(path) => crate::platform::file_name(path),
         Dropped::Url { url, .. } => url.as_str(),
     };
     if text.chars().count() > LABEL_MAX {

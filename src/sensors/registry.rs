@@ -1,17 +1,16 @@
 //! All sensor types (SPEC §8.1), and the operations that need them: creating the sensor for a
-//! layout entry, filling machine-derived props (§11.2) and describing the types for Settings
-//! (§4.5).
+//! layout entry, and filling machine-derived props (§11.2).
 
 use std::sync::LazyLock;
 
 use super::placeholder::Placeholder;
-use super::schema::{self, PropField};
-use super::{Category, DefaultsCtx, Props, Sensor, SensorType, State};
+use super::schema;
+use super::{DefaultsCtx, Props, Sensor, SensorType, State};
 use crate::config::model::{Layout, SensorInstance};
 use crate::i18n::t;
-use crate::platform::{Capabilities, Capability};
+use crate::platform::Capabilities;
 
-/// The sensor types of this version. More launchers and hardware arrive with M3.
+/// The sensor types of this version.
 static REGISTRY: LazyLock<Registry> = LazyLock::new(|| {
     Registry::new(vec![
         &super::text::TextType,
@@ -47,20 +46,6 @@ pub fn registry() -> &'static Registry {
 
 pub struct Registry {
     types: Vec<&'static dyn SensorType>,
-}
-
-/// A sensor type as Settings sees it (SPEC §4.5).
-pub struct TypeInfo {
-    pub id: &'static str,
-    pub category: Category,
-    pub name: String,
-    pub description: String,
-    pub requires: &'static [Capability],
-    /// All required capabilities exist; the picker hides other types (SPEC §4.6).
-    pub available: bool,
-    pub schema: &'static [PropField],
-    /// This machine's values for the machine-derived fields.
-    pub machine_defaults: Props,
 }
 
 impl Registry {
@@ -183,26 +168,6 @@ impl Registry {
         }
         true
     }
-
-    /// Every type, sorted by category and then by localised name (SPEC §6.6).
-    pub fn infos(&self, caps: &Capabilities, ctx: &DefaultsCtx) -> Vec<TypeInfo> {
-        let mut infos: Vec<TypeInfo> = self
-            .types
-            .iter()
-            .map(|ty| TypeInfo {
-                id: ty.id(),
-                category: ty.category(),
-                name: t(ty.name()),
-                description: t(ty.description()),
-                requires: ty.requires(),
-                available: Self::available(*ty, caps),
-                schema: ty.schema(),
-                machine_defaults: ty.machine_defaults(ctx),
-            })
-            .collect();
-        infos.sort_by_cached_key(|i| (i.category, i.name.to_lowercase()));
-        infos
-    }
 }
 
 #[cfg(test)]
@@ -210,10 +175,12 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::bar::theme::Theme;
     use crate::config::model::Settings;
+    use crate::look::theme::Theme;
+    use crate::platform::Capability;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::platform::{OsAppearance, RectF};
+    use crate::sensors::Category;
     use crate::sensors::test_support::{Clock, Echo, NoPlatform};
     use crate::sensors::{DrawCtx, LayoutCtx};
 
@@ -332,21 +299,6 @@ mod tests {
             json!({ "a": 1 })
         );
         assert!(!r.fill_machine_defaults(&mut layout, &ctx));
-    }
-
-    #[test]
-    fn describes_types_for_settings() {
-        let r = registry();
-        let ctx = DefaultsCtx {
-            platform: &NoPlatform,
-        };
-        let infos = r.infos(&Capabilities::default(), &ctx);
-        let ids: Vec<_> = infos.iter().map(|i| i.id).collect();
-        assert_eq!(ids, ["clock", "battery"], "Info before System");
-        assert!(infos[0].available);
-        assert!(!infos[1].available);
-        assert_eq!(infos[0].machine_defaults["use24h"], false);
-        assert_eq!(infos[0].schema.len(), 2);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::time::Instant;
 use serde::Deserialize;
 
 use super::common::two_line;
-use super::dates::{Date, days_in_month, format_date};
+use super::dates::format_date;
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::text::shadow_color;
@@ -14,8 +14,9 @@ use super::{
     Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, RichHint, Sensor, SensorCtx,
     SensorType, State, typed,
 };
-use crate::bar::theme::Theme;
 use crate::i18n::t_args;
+use crate::look::theme::Theme;
+use crate::platform::time::{Date, days_in_month};
 use crate::platform::{
     Brush, Canvas, Font, Locale, PointF, RectF, Shape, SizeF, TextEngine, TextLayout, TextStyle,
 };
@@ -615,9 +616,7 @@ mod tests {
 
         fn ctx(&self) -> SensorCtx<'_> {
             SensorCtx {
-                id: "s_date",
                 settings: &self.settings,
-                theme: &self.theme,
                 locked: false,
                 alt: false,
                 animate: true,

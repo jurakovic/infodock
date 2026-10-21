@@ -9,7 +9,7 @@ use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, Dirty, DrawCtx, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed,
 };
-use crate::bar::anim::{Easing, FRAME, Fade};
+use crate::look::anim::{Easing, FRAME, Fade};
 use crate::platform::{Canvas, RectF};
 
 const SCHEMA: &[PropField] = &[
@@ -189,13 +189,10 @@ mod tests {
 
     #[test]
     fn hidden_divider_fades_in_on_hover() {
-        let theme = crate::sensors::test_support::theme();
         let settings = crate::config::model::Settings::default();
         let platform = crate::platform::current();
         let cx = |animate| SensorCtx {
-            id: "s_1",
             settings: &settings,
-            theme: &theme,
             locked: false,
             alt: false,
             animate,

@@ -70,7 +70,7 @@ impl MonitorInfo {
     }
 }
 
-pub fn monitor_key(device: &str, name: &str, width: i32, height: i32) -> String {
+fn monitor_key(device: &str, name: &str, width: i32, height: i32) -> String {
     format!("{device}|{name}|{width}x{height}")
 }
 

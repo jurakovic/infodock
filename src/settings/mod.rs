@@ -977,7 +977,7 @@ mod screenshots {
         // A pack installed shows in the gallery and the list at once.
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/skins/sunset.zip");
-        crate::bar::skins::install::install(&app.skins, &fixture).expect("installed");
+        crate::look::skins::install::install(&app.skins, &fixture).expect("installed");
         super::appearance::packs_changed(&app);
         use slint::Model;
         assert!(state.get_skins().iter().any(|t| t.name == "Sunset"));

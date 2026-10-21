@@ -12,13 +12,13 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use super::{Open, WINDOW, model, pick, save};
 use crate::app::App;
-use crate::bar::skins::pack::{self, PackEntry};
-use crate::bar::skins::{self, BuiltIn, CUSTOM};
-use crate::bar::theme::Theme;
 use crate::config::model::{
     BackgroundSettings, ClassicSettings, ColorScheme, Settings, Theme as ThemeId, ThemeDefaults,
 };
 use crate::i18n::{t, t_args};
+use crate::look::skins::pack::{self, PackEntry};
+use crate::look::skins::{self, BuiltIn, CUSTOM};
+use crate::look::theme::Theme;
 use crate::platform::Bitmap;
 use crate::ui;
 
@@ -60,7 +60,7 @@ pub fn entries(packs: &[PackEntry]) -> Vec<SkinEntry> {
 
 /// Every folder in the skins folder for the list of packs: its id, its name (the id when it
 /// cannot be used) and why it cannot be used.
-pub fn pack_rows(packs: &[PackEntry]) -> Vec<(String, String, String)> {
+fn pack_rows(packs: &[PackEntry]) -> Vec<(String, String, String)> {
     packs
         .iter()
         .map(|entry| match &entry.pack {
@@ -506,7 +506,7 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bar::skins::tests::pack as write_pack;
+    use crate::look::skins::tests::pack as write_pack;
 
     fn ids(entries: &[SkinEntry]) -> Vec<&str> {
         entries.iter().map(|e| e.id.as_str()).collect()
@@ -521,7 +521,7 @@ mod tests {
             "ocean",
             r#"{ "name": "Ocean blue", "image": "t.png" }"#,
         );
-        crate::bar::skins::tests::rows_png(&ok.join("t.png"), 2, &[100; 25]);
+        crate::look::skins::tests::rows_png(&ok.join("t.png"), 2, &[100; 25]);
         let packs = pack::list(dir.path());
         let entries = entries(&packs);
         assert_eq!(
