@@ -15,7 +15,8 @@ use crate::config::{ConfigError, ConfigStore};
 use crate::platform::{NativeDialogs, Platform};
 use crate::providers::Providers;
 use crate::sampler::{
-    Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY,
+    BATTERY_EVERY, Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest,
+    VOLUMES_EVERY,
 };
 use crate::sensors::registry::registry;
 use crate::sensors::{DefaultsCtx, Props, import, legacy, ops};
@@ -56,8 +57,9 @@ impl App {
         let _ = self.bar.set(bar);
     }
 
-    /// Starts the sampler thread, which delivers to the bar (SPEC §4.4), and the drive list to
-    /// Settings while it watches it. Subscriptions made before it starts are kept.
+    /// Starts the sampler thread, which delivers to the bar (SPEC §4.4), and the drive and
+    /// battery lists to Settings while it watches them. Subscriptions made before it starts are
+    /// kept.
     pub fn start_sampler(&self) {
         let pending = self
             .pending
@@ -70,8 +72,12 @@ impl App {
         let bar = Arc::downgrade(bar);
         let deliver = Box::new(move |delivery: Delivery| {
             let for_settings = delivery.to.as_deref().is_none_or(|to| to == SETTINGS);
-            if for_settings && let Sample::Volumes(volumes) = delivery.sample.as_ref() {
-                settings::volumes_changed(volumes.clone());
+            if for_settings {
+                match delivery.sample.as_ref() {
+                    Sample::Volumes(volumes) => settings::volumes_changed(volumes.clone()),
+                    Sample::Batteries(names) => settings::batteries_changed(names.clone()),
+                    _ => {}
+                }
             }
             if let Some(bar) = bar.upgrade() {
                 bar.deliver(delivery);
@@ -85,17 +91,24 @@ impl App {
         }
     }
 
-    /// Settings receives the drive list while `watch` (a form with a drive field is open), so
-    /// it follows drives that arrive or go (SPEC §9.12).
-    pub fn watch_volumes(&self, watch: bool) {
-        let topics = if watch {
-            vec![TopicRequest {
+    /// Settings receives the drive list while `volumes` and the battery list while
+    /// `batteries` (a form with such a field is open) from the sampler, so the main thread never
+    /// waits for a drive or a battery, and the lists follow drives that arrive or go (SPEC
+    /// §9.12). The newest sample comes at once when the topic is already read for the bar.
+    pub fn watch_lists(&self, volumes: bool, batteries: bool) {
+        let mut topics = Vec::new();
+        if volumes {
+            topics.push(TopicRequest {
                 topic: Topic::Volumes,
                 interval: VOLUMES_EVERY,
-            }]
-        } else {
-            Vec::new()
-        };
+            });
+        }
+        if batteries {
+            topics.push(TopicRequest {
+                topic: Topic::Batteries,
+                interval: BATTERY_EVERY,
+            });
+        }
         self.sampler.subscribe(SETTINGS, topics);
     }
 

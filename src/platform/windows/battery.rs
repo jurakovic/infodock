@@ -27,29 +27,24 @@ pub fn status() -> Result<PowerStatus, String> {
     // SAFETY: `system` is writable.
     unsafe { GetSystemPowerStatus(&mut system) }.map_err(|e| e.message())?;
     let ac_online = system.ACLineStatus == AC_ONLINE;
-    let mut batteries = read_batteries();
-    if batteries.is_empty()
-        && !matches!(system.BatteryFlag, NO_SYSTEM_BATTERY | UNKNOWN_STATUS)
-        && system.BatteryLifePercent != UNKNOWN_PERCENT
-    {
-        batteries.push(from_system(&system, ac_online));
-    }
+    let has_battery = !matches!(system.BatteryFlag, NO_SYSTEM_BATTERY | UNKNOWN_STATUS)
+        && system.BatteryLifePercent != UNKNOWN_PERCENT;
     Ok(PowerStatus {
         ac_online,
-        batteries,
+        batteries: with_system(
+            read_batteries(),
+            has_battery.then(|| from_system(&system, ac_online)),
+        ),
     })
 }
 
-/// The batteries the class driver lists; none (logged) if they cannot be enumerated.
-fn read_batteries() -> Vec<BatteryReading> {
+/// The batteries the class driver lists, each in its place, one that cannot be read with the
+/// driver's message; none (logged) if they cannot be enumerated.
+fn read_batteries() -> Vec<Result<BatteryReading, String>> {
     let list = Manager::new().and_then(|manager| manager.batteries());
     match list {
         Ok(batteries) => batteries
-            .filter_map(|b| {
-                b.map_err(|e| tracing::debug!("a battery cannot be read: {e}"))
-                    .ok()
-            })
-            .map(|b| reading(&b))
+            .map(|b| b.map(|b| reading(&b)).map_err(|e| e.to_string()))
             .collect(),
         Err(e) => {
             tracing::warn!("the batteries cannot be listed: {e}");
@@ -89,6 +84,24 @@ fn reading(battery: &Battery) -> BatteryReading {
     }
 }
 
+/// `batteries` with Windows' own view (`system`, if it sees a battery) in the first place
+/// when the driver gives none that can be read: none listed (one that reports its capacity
+/// only relatively), or each failing.
+fn with_system(
+    mut batteries: Vec<Result<BatteryReading, String>>,
+    system: Option<BatteryReading>,
+) -> Vec<Result<BatteryReading, String>> {
+    if let Some(system) = system
+        && !batteries.iter().any(Result::is_ok)
+    {
+        match batteries.first_mut() {
+            Some(first) => *first = Ok(system),
+            None => batteries.push(Ok(system)),
+        }
+    }
+    batteries
+}
+
 /// The system battery as `GetSystemPowerStatus` sees it: charge, charging, and Windows'
 /// estimate of the time left.
 fn from_system(system: &SYSTEM_POWER_STATUS, ac_online: bool) -> BatteryReading {
@@ -124,8 +137,37 @@ mod tests {
     fn power_status_of_this_machine() {
         let status = status().expect("readable");
         assert!(status.ac_online, "{status:?}");
-        for battery in &status.batteries {
+        for battery in status.batteries.iter().flatten() {
             assert!((0.0..=100.0).contains(&battery.percent), "{battery:?}");
         }
+    }
+
+    fn battery(name: &str) -> BatteryReading {
+        BatteryReading {
+            name: name.into(),
+            percent: 50.0,
+            state: BatteryState::Discharging,
+            time_to_empty: None,
+            time_to_full: None,
+        }
+    }
+
+    #[test]
+    fn windows_view_fills_in_only_when_no_battery_can_be_read() {
+        let system = || Some(battery("system"));
+        let failed = || Err::<BatteryReading, String>("The device is not ready.".into());
+        // None listed, or none readable: Windows' view takes the first place.
+        assert_eq!(with_system(Vec::new(), system()), [Ok(battery("system"))]);
+        assert_eq!(
+            with_system(vec![failed(), failed()], system()),
+            [Ok(battery("system")), failed()]
+        );
+        // One readable: every battery keeps its place, the failing one too.
+        assert_eq!(
+            with_system(vec![failed(), Ok(battery("second"))], system()),
+            [failed(), Ok(battery("second"))]
+        );
+        // Windows sees no battery either.
+        assert_eq!(with_system(vec![failed()], None), [failed()]);
     }
 }

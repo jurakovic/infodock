@@ -76,17 +76,11 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
             .map(|(mut form, kind)| {
                 form.set_processors(app.platform.logical_processors());
                 form.set_power_modes(app.platform.capabilities().power_modes);
-                if form.has_drive_field() {
-                    form.set_volumes(app.platform.volumes());
-                }
-                app.watch_volumes(form.has_drive_field());
                 if form.has_adapter_field() {
                     form.set_adapters(app.platform.net_interfaces());
                 }
-                if form.has_battery_field() {
-                    let status = app.platform.power_status().unwrap_or_default();
-                    form.set_batteries(status.batteries.into_iter().map(|b| b.name).collect());
-                }
+                // Drives and batteries can be slow to answer: they come from the sampler.
+                app.watch_lists(form.has_drive_field(), form.has_battery_field());
                 (form, kind)
             })
         else {
@@ -115,7 +109,7 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
 pub(super) fn cancel(open: &mut Open, app: &App) {
     if let Some(state) = open.form.take() {
         state.preview.stop();
-        app.watch_volumes(false);
+        app.watch_lists(false, false);
         app.end_preview(&state.form.id);
         if state.form.new
             && let Err(e) = app.remove_sensor(&state.form.id)
@@ -171,8 +165,28 @@ fn show_rows(state: &mut FormState, window: &ui::SettingsState, families: &[Stri
     state.rows = rows;
 }
 
-/// The drive list changed: an open form's drive choices follow it, keeping the choice.
+/// The drive list arrived or changed: an open form's drive choices follow it, keeping the
+/// choice.
 pub(super) fn volumes_changed(volumes: Vec<crate::platform::Volume>) {
+    with_form(|form| {
+        form.has_drive_field()
+            .then(|| form.set_volumes(volumes))
+            .is_some()
+    });
+}
+
+/// The battery list arrived or changed: an open form's battery choices follow it, keeping the
+/// choice.
+pub(super) fn batteries_changed(names: Vec<String>) {
+    with_form(|form| {
+        form.has_battery_field()
+            .then(|| form.set_batteries(names))
+            .is_some()
+    });
+}
+
+/// Lets `change` update the open form; its rows are shown again when it says so.
+fn with_form(change: impl FnOnce(&mut Form) -> bool) {
     WINDOW.with(|w| {
         let Ok(mut w) = w.try_borrow_mut() else {
             return;
@@ -183,9 +197,8 @@ pub(super) fn volumes_changed(volumes: Vec<crate::platform::Volume>) {
         let families = open.families.clone();
         let window = open.window.global::<ui::SettingsState>();
         if let Some(state) = open.form.as_mut()
-            && state.form.has_drive_field()
+            && change(&mut state.form)
         {
-            state.form.set_volumes(volumes);
             show_rows(state, &window, &families);
         }
     });
@@ -230,7 +243,7 @@ fn save(app: &App) {
             Ok(()) => {
                 if let Some(state) = open.form.take() {
                     state.preview.stop();
-                    app.watch_volumes(false);
+                    app.watch_lists(false, false);
                 }
                 window.set_page(super::model::SENSORS_PAGE as i32);
             }

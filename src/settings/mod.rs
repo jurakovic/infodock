@@ -144,11 +144,20 @@ pub fn owner() -> Option<isize> {
     })
 }
 
-/// The drive list changed (sampler thread): an open form's drive choices follow it.
+/// The drive list arrived or changed (sampler thread): an open form's drive choices follow it.
 pub fn volumes_changed(volumes: Vec<crate::platform::Volume>) {
     let queued = slint::invoke_from_event_loop(move || properties::volumes_changed(volumes));
     if queued.is_err() {
         tracing::debug!("the drive list arrived after the event loop ended");
+    }
+}
+
+/// The battery list arrived or changed (sampler thread): an open form's battery choices follow
+/// it.
+pub fn batteries_changed(names: Vec<String>) {
+    let queued = slint::invoke_from_event_loop(move || properties::batteries_changed(names));
+    if queued.is_err() {
+        tracing::debug!("the battery list arrived after the event loop ended");
     }
 }
 
@@ -1096,6 +1105,7 @@ mod screenshots {
             )
             .expect("added");
         super::properties::open_form(&app, &disk, true);
+        super::properties::volumes_changed(app.platform.volumes());
         render("settings-properties-disk");
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&disk).is_none());
@@ -1138,6 +1148,8 @@ mod screenshots {
             )
             .expect("added");
         super::properties::open_form(&app, &disk, true);
+        // The drives come from the sampler, which this test does not run.
+        super::properties::volumes_changed(app.platform.volumes());
         render("settings-properties-disk-launcher");
         state.invoke_props_cancel();
         // Battery: this computer's batteries (none on Linux: only the stored one, marked).
@@ -1150,6 +1162,8 @@ mod screenshots {
             )
             .expect("added");
         super::properties::open_form(&app, &battery, true);
+        let status = app.platform.power_status().unwrap_or_default();
+        super::properties::batteries_changed(crate::providers::battery_names(&status));
         render_sized("settings-properties-battery", 900);
         state.invoke_props_cancel();
         // Folder Menu: the folder, title, image, colour, opacity and hidden files (its list size

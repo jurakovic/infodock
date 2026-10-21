@@ -277,8 +277,9 @@ pub struct BatteryReading {
 pub struct PowerStatus {
     /// Running on AC power.
     pub ac_online: bool,
-    /// In the order the system lists them.
-    pub batteries: Vec<BatteryReading>,
+    /// In the order the battery driver lists them; one that cannot be read keeps its place,
+    /// with the driver's message, so the batteries after it keep theirs (SPEC §9.14).
+    pub batteries: Vec<Result<BatteryReading, String>>,
 }
 
 /// The Wi-Fi connection now (SPEC §9.15, Appendix A `wifi`).

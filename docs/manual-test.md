@@ -605,3 +605,8 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] Normal use for a day, including sleep and resume: the log has no `cannot be read` lines, and no sensor is drawn faded as a whole.
 - [ ] If a sensor does fade as a whole (labels too): its hint and Narrator say "Could not read the data: …" with Windows' message, the log has one `… cannot be read: …` line for its topic, and once the cause is gone the sensor is whole again within 30 s and the log says `… can be read again`.
 - [ ] *Sensors ▸ Inactive style* on *Colorize*: such a sensor fades to 78 % instead of taking the colour; on *Opacity* at 50 %, to half.
+
+**Batteries and volumes in Settings** (since M5 S11)
+
+- [ ] With a mapped network drive whose server is off (or a VPN share while disconnected), open the properties of a Disk Meter: the form opens at once with the stored drive; the drive list fills in a moment later, the unreachable drive listed as the others. Plug in a USB stick while the form is open: it joins the list.
+- [ ] On a laptop, open a Battery sensor's properties: the battery list shows "1. {name}" at once or within a moment, never "(not connected)" for a battery that is there. On a two-battery laptop (a ThinkPad with a second battery): both are listed, a Battery sensor on each shows its own charge, and after sleep and resume each still does. (A battery that is disabled or taken out leaves the driver's list, so the one after it moves up; only one that fails to read keeps its place, which the unit tests cover.)

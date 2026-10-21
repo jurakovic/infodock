@@ -17,6 +17,8 @@ use crate::platform::{Platform, PowerStatus, RecycleBin, Volume, WifiReader};
 use crate::sampler::{Change, ChangeSink, DiskSample, PathSample, Sample, Slow, Topic};
 use worker::SlowReader;
 
+pub use battery::names as battery_names;
+
 /// The providers of all topics, with whatever state they keep between readings.
 pub struct Providers {
     platform: Arc<dyn Platform>,
@@ -101,7 +103,7 @@ impl Providers {
                     bin.forget("");
                 }
             }
-            Topic::Battery(_) => {
+            Topic::Battery(_) | Topic::Batteries => {
                 if let Some(power) = &mut self.power {
                     power.forget("");
                 }
@@ -186,7 +188,7 @@ impl Providers {
                 });
                 return Ok(bin.sample("").transpose()?.map(Sample::RecycleBin));
             }
-            Topic::Battery(index) => {
+            Topic::Battery(_) | Topic::Batteries => {
                 let power = self.power.get_or_insert_with(|| {
                     let platform = Arc::clone(&self.platform);
                     let changes = self.changes.clone();
@@ -199,7 +201,10 @@ impl Providers {
                 let Some(status) = power.sample("").transpose()? else {
                     return Ok(None);
                 };
-                Sample::Battery(battery::sample(&status, *index))
+                match topic {
+                    Topic::Battery(index) => Sample::Battery(battery::sample(&status, *index)?),
+                    _ => Sample::Batteries(battery::names(&status)),
+                }
             }
             Topic::Wifi => {
                 let (platform, changes) = (&self.platform, &self.changes);

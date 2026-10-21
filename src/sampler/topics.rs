@@ -23,8 +23,10 @@ pub enum Topic {
     Volumes,
     /// `recycle-bin`: what the Recycle Bin holds on all drives (SPEC §9.16).
     RecycleBin,
-    /// `battery/<i>`: one battery by its place in the system's list (SPEC §9.14).
+    /// `battery/<i>`: one battery by its place in the driver's list (SPEC §9.14).
     Battery(u32),
+    /// `batteries`: the batteries' names, for Settings' battery lists (SPEC §8.2).
+    Batteries,
     /// `wifi`: the Wi-Fi connection (SPEC §9.15).
     Wifi,
 }
@@ -63,14 +65,14 @@ impl Topic {
         match change {
             Change::Devices => matches!(self, Self::Volumes | Self::Disk(_) | Self::Path(_)),
             Change::RecycleBin => *self == Self::RecycleBin,
-            Change::Power => matches!(self, Self::Battery(_)),
+            Change::Power => matches!(self, Self::Battery(_) | Self::Batteries),
             Change::Wifi => *self == Self::Wifi,
             Change::Answered(slow) => match slow {
                 Slow::Disks => matches!(self, Self::Disk(_)),
                 Slow::Paths => matches!(self, Self::Path(_)),
                 Slow::Volumes => *self == Self::Volumes,
                 Slow::RecycleBin => *self == Self::RecycleBin,
-                Slow::Batteries => matches!(self, Self::Battery(_)),
+                Slow::Batteries => matches!(self, Self::Battery(_) | Self::Batteries),
             },
         }
     }
@@ -102,6 +104,9 @@ pub enum Sample {
     Volumes(Vec<Volume>),
     RecycleBin(RecycleBin),
     Battery(BatterySample),
+    /// The batteries' names in their places; empty for one without a name or that cannot be
+    /// read.
+    Batteries(Vec<String>),
     Wifi(WifiStatus),
     /// `{ error }`: the topic failed to read a few times in a row; the platform's message
     /// (SPEC §14.2). Sensors draw inactive and show it in their hint until a reading succeeds.

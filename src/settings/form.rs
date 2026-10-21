@@ -86,14 +86,15 @@ pub struct Form {
     invalid: BTreeSet<&'static str>,
     /// This computer's logical processors, for `cpuSeries` fields.
     processors: u32,
-    /// This computer's volumes, for `drive` fields.
-    volumes: Vec<Volume>,
+    /// This computer's volumes, for `drive` fields; `None` until the sampler's list arrives.
+    volumes: Option<Vec<Volume>>,
     /// This computer's network connections, for `netAdapter` fields.
     adapters: Vec<NetInterface>,
     /// The power modes this computer offers, for `powerMode` fields.
     power_modes: Vec<String>,
-    /// This computer's batteries by name, in the system's order, for `battery` fields.
-    batteries: Vec<String>,
+    /// This computer's batteries by name, in the driver's order, for `battery` fields; `None`
+    /// until the sampler's list arrives.
+    batteries: Option<Vec<String>>,
 }
 
 impl Form {
@@ -111,10 +112,10 @@ impl Form {
             changes: Props::new(),
             invalid: BTreeSet::new(),
             processors: 1,
-            volumes: Vec::new(),
+            volumes: None,
             adapters: Vec::new(),
             power_modes: Vec::new(),
-            batteries: Vec::new(),
+            batteries: None,
         })
     }
 
@@ -125,9 +126,9 @@ impl Form {
             .any(|f| matches!(f.kind, FieldKind::Battery))
     }
 
-    /// Sets the batteries `battery` fields offer, by name in the system's order (SPEC §8.2).
+    /// Sets the batteries `battery` fields offer, by name in the driver's order (SPEC §8.2).
     pub fn set_batteries(&mut self, names: Vec<String>) {
-        self.batteries = names;
+        self.batteries = Some(names);
     }
 
     /// Sets the power modes `powerMode` fields offer (SPEC §9.21).
@@ -162,7 +163,7 @@ impl Form {
 
     /// Sets the volumes `drive` fields offer (SPEC §8.2).
     pub fn set_volumes(&mut self, volumes: Vec<Volume>) {
-        self.volumes = volumes;
+        self.volumes = Some(volumes);
     }
 
     pub fn changes(&self) -> &Props {
@@ -288,7 +289,11 @@ impl Form {
             }
             FieldKind::Drive { hide_optical } => {
                 let current = value.as_str().unwrap_or("");
-                let drives = drives(&self.volumes, hide_optical, self.opened_str(field.key));
+                let drives = drives(
+                    self.volumes.as_deref(),
+                    hide_optical,
+                    self.opened_str(field.key),
+                );
                 row.index = drives.iter().position(|(v, _)| v == current).unwrap_or(0) as i32;
                 row.options = drives.into_iter().map(|(_, label)| label).collect();
             }
@@ -300,7 +305,7 @@ impl Form {
             }
             FieldKind::Battery => {
                 let current = value.as_u64().unwrap_or(0);
-                let list = batteries(&self.batteries, self.opened_index(field.key));
+                let list = batteries(self.batteries.as_deref(), self.opened_index(field.key));
                 row.index = list.iter().position(|(v, _)| *v == current).unwrap_or(0) as i32;
                 row.options = list.into_iter().map(|(_, label)| label).collect();
             }
@@ -354,7 +359,7 @@ impl Form {
                 .nth(index)
                 .map(|(value, _)| Value::from(value)),
             FieldKind::Drive { hide_optical } => {
-                drives(&self.volumes, hide_optical, self.opened_str(key))
+                drives(self.volumes.as_deref(), hide_optical, self.opened_str(key))
                     .into_iter()
                     .nth(index)
                     .map(|(value, _)| Value::from(value))
@@ -367,7 +372,7 @@ impl Form {
                 .into_iter()
                 .nth(index)
                 .map(|(value, _)| Value::from(value)),
-            FieldKind::Battery => batteries(&self.batteries, self.opened_index(key))
+            FieldKind::Battery => batteries(self.batteries.as_deref(), self.opened_index(key))
                 .into_iter()
                 .nth(index)
                 .map(|(value, _)| Value::from(value)),
@@ -472,8 +477,15 @@ fn cpu_series(processors: u32, stored: &str) -> Vec<(String, String)> {
 
 /// The drives a `drive` field offers, as (root, label): this computer's volumes (optical ones
 /// left out with `hide_optical`, unless `stored`), e.g. `Local Disk (C:)` or `Data (D:)` by
-/// their label; a stored drive that is not connected stays listed, marked so.
-fn drives(volumes: &[Volume], hide_optical: bool, stored: &str) -> Vec<(String, String)> {
+/// their label; a stored drive that is not connected stays listed, marked so. Until the list
+/// is known (`None`), only the stored drive, by its root.
+fn drives(volumes: Option<&[Volume]>, hide_optical: bool, stored: &str) -> Vec<(String, String)> {
+    let Some(volumes) = volumes else {
+        return (!stored.is_empty())
+            .then(|| (stored.to_owned(), stored.to_owned()))
+            .into_iter()
+            .collect();
+    };
     let mut drives: Vec<(String, String)> = volumes
         .iter()
         .filter(|v| !(hide_optical && v.kind == DriveKind::Optical) || v.root == stored)
@@ -488,9 +500,17 @@ fn drives(volumes: &[Volume], hide_optical: bool, stored: &str) -> Vec<(String, 
 
 /// The batteries a `battery` field offers, as (index, label): `1. {name}` for each of this
 /// computer's batteries (`1. Battery` when it has no name); a `stored` battery it lacks stays
-/// listed, marked so.
-fn batteries(names: &[String], stored: u64) -> Vec<(u64, String)> {
+/// listed, marked so. Until the list is known (`None`), only the stored battery, unmarked.
+fn batteries(names: Option<&[String]>, stored: u64) -> Vec<(u64, String)> {
     let number = |i: u64| (i + 1).to_string();
+    let Some(names) = names else {
+        let name = t("sensor.battery.name");
+        let label = t_args(
+            "sensor.battery.option",
+            &[("n", &number(stored)), ("name", &name)],
+        );
+        return vec![(stored, label)];
+    };
     let mut list: Vec<(u64, String)> = names
         .iter()
         .enumerate()
@@ -745,10 +765,10 @@ mod tests {
             changes: Props::new(),
             invalid: BTreeSet::new(),
             processors: 1,
-            volumes: Vec::new(),
+            volumes: None,
             adapters: Vec::new(),
             power_modes: Vec::new(),
-            batteries: Vec::new(),
+            batteries: None,
         };
         assert!(!form.valid());
         assert!(form.set("custom", json!(false)));
@@ -772,10 +792,10 @@ mod tests {
             changes: Props::new(),
             invalid: BTreeSet::new(),
             processors: 1,
-            volumes: Vec::new(),
+            volumes: None,
             adapters: Vec::new(),
             power_modes: Vec::new(),
-            batteries: Vec::new(),
+            batteries: None,
         };
         assert!(!form.set("color", json!("#12")));
         assert!(!form.valid());
@@ -856,6 +876,13 @@ mod tests {
         };
         let mut form = Form::open(registry(), &instance, false).expect("known type");
         assert!(form.has_battery_field() && !form.has_drive_field());
+        // Until the sampler's list arrives, only the stored battery, not marked missing.
+        let rows = form.rows(&fonts());
+        let battery = rows.iter().find(|r| r.key == "battery").expect("battery");
+        assert_eq!(
+            (battery.options.as_slice(), battery.index),
+            (&["3. Battery".to_owned()][..], 0)
+        );
         form.set_batteries(vec!["SMP 5B10".into(), String::new()]);
         let rows = form.rows(&fonts());
         let battery = rows.iter().find(|r| r.key == "battery").expect("battery");
@@ -875,6 +902,13 @@ mod tests {
         let stored = json!({ "drive": "F:\\" });
         let mut form =
             Form::open(registry(), &instance("disk-meter", stored), false).expect("known");
+        // Until the sampler's list arrives, only the stored drive.
+        let rows = form.rows(&fonts());
+        let drive = rows.iter().find(|r| r.key == "drive").expect("drive");
+        assert_eq!(
+            (drive.options.as_slice(), drive.index),
+            (&["F:\\".to_owned()][..], 0)
+        );
         form.set_volumes(vec![
             volume("C:\\", DriveKind::Fixed, ""),
             volume("D:\\", DriveKind::Fixed, "Data"),

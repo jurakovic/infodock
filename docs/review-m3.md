@@ -39,7 +39,7 @@ From the M3 close-out review (three clean-context reviewers on `86f5994..59b84b8
 
 - **Shortcut clicked before its first sample** (`shortcut.rs`): a folder target with parameters or *Run as administrator* is launched as a program until the first `path` sample (normally within the first second). Left as is.
 - **Popup that cannot take the foreground** *(to verify)* (`platform/windows/popup.rs`): if Windows refuses the activation, the popup closes only on Esc after a click, a second click or a bar press. To check on hardware in the M3 manual test; a foreground hook if it happens.
-- **Battery positions** (`platform/windows/battery.rs`): a battery that fails to read drops out and the next takes its index. Two-battery laptops are rare; revisit with the M5 reliability pass.
-- **Settings reads batteries and volumes on the main thread** (`settings/properties.rs`): as in M2, while a form with those fields opens; the forms take the sampler's samples in M5.
+- **Battery positions** (`platform/windows/battery.rs`): a battery that fails to read drops out and the next takes its index. Two-battery laptops are rare; revisit with the M5 reliability pass. Done in M5 S11: a failing battery keeps its place.
+- **Settings reads batteries and volumes on the main thread** (`settings/properties.rs`): as in M2, while a form with those fields opens; the forms take the sampler's samples in M5. Done in M5 S11: the form subscribes to `volumes` and `batteries`.
 - **Wi-Fi capability fixed at start-up**: as §4.6 says; an adapter turned on later is found at the next start.
 - **Folder Menu's folder is not required in Properties**: the sensor says *No folder set* and does nothing; a required-field rule comes in M4 (plan S12). Done in M4 S12: the form requires it.

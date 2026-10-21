@@ -507,6 +507,7 @@ mod tests {
                     time_to_empty: Some(std::time::Duration::from_secs(161 * 60)),
                     time_to_full: None,
                 }),
+                Topic::Batteries => Sample::Batteries(vec!["Battery".into()]),
                 Topic::Wifi => Sample::Wifi(crate::platform::WifiStatus {
                     available: true,
                     radio_on: true,
