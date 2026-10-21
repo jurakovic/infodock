@@ -153,7 +153,8 @@ Check (-not (Test-Path $appIdKey)) 'the AppUserModelID registration is removed'
 
 # A deployment's install: /AUTOSTART writes the entry and clears Task Manager's Disabled mark.
 Write-Host '== Installing with /AUTOSTART'
-if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey | Out-Null }
+# -Force creates the parent keys too; only for a key that is not there, since it would clear one.
+if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey -Force | Out-Null }
 $disabled = [byte[]](3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 New-ItemProperty -Path $approvedKey -Name $runValue -Value $disabled -PropertyType Binary -Force | Out-Null
 Install-App '/S', '/AUTOSTART'
