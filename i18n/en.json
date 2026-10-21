@@ -661,6 +661,7 @@
   "import.skipped.noSide": "no side: left, center or right",
   "import.warning.unknownProperty": "{type}: the property “{key}” is not known, so it was ignored.",
   "import.warning.invalidProperty": "{type}: “{value}” is not a valid value of “{key}”, so its default is used instead.",
+  "import.warning.unknownAdapter": "{type}: this computer has no network adapter “{adapter}”, so Automatic is used instead.",
   "import.error.noLegacyLayout": "The file holds no legacy XML layout.",
   "import.error.xml": "The legacy XML layout could not be read: {error}",
   "import.pick.legacyTitle": "Import legacy XML layout",

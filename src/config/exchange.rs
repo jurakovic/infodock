@@ -125,6 +125,9 @@ pub enum Warning {
         key: String,
         value: String,
     },
+    /// A legacy network adapter this computer does not have; Automatic is used instead
+    /// (SPEC §9.13).
+    UnknownAdapter { legacy: String, adapter: String },
 }
 
 impl Warning {
@@ -144,6 +147,10 @@ impl Warning {
             Warning::InvalidProperty { legacy, key, value } => t_args(
                 "import.warning.invalidProperty",
                 &[("type", legacy), ("key", key), ("value", value)],
+            ),
+            Warning::UnknownAdapter { legacy, adapter } => t_args(
+                "import.warning.unknownAdapter",
+                &[("type", legacy), ("adapter", adapter)],
             ),
         }
     }
@@ -465,6 +472,7 @@ mod tests {
             "import.warning.invalidValue",
             "import.warning.unknownProperty",
             "import.warning.invalidProperty",
+            "import.warning.unknownAdapter",
             "import.error.noLegacyLayout",
             "import.error.xml",
             "import.warning.unknownType",

@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::common::two_line;
 use super::dates::{Date, days_in_month, format_date};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::text::shadow_color;
 use super::{
@@ -90,6 +91,48 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.date.field.calendar.help"),
 ];
 
+/// SPEC §9.4.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::options(
+        "dayname",
+        "weekday",
+        &[
+            ("0", Lit::Str("none")),
+            ("1", Lit::Str("short")),
+            ("2", Lit::Str("long")),
+        ],
+    ),
+    LegacyKey::options(
+        "month-format",
+        "month",
+        &[
+            ("0", Lit::Str("none")),
+            ("1", Lit::Str("short")),
+            ("2", Lit::Str("long")),
+            ("3", Lit::Str("number")),
+        ],
+    ),
+    LegacyKey::options(
+        "year-format",
+        "year",
+        &[
+            ("0", Lit::Str("none")),
+            ("4", Lit::Str("top")),
+            ("5", Lit::Str("bottom")),
+        ],
+    ),
+    LegacyKey::new("shadow", "shadow"),
+    LegacyKey::options(
+        "show-calendar",
+        "calendar",
+        &[
+            ("0", Lit::Str("none")),
+            ("1", Lit::Str("monday")),
+            ("2", Lit::Str("sunday")),
+        ],
+    ),
+];
+
 pub struct DateType;
 
 impl SensorType for DateType {
@@ -111,6 +154,10 @@ impl SensorType for DateType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockDate"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

@@ -465,7 +465,9 @@ pub(crate) mod test_support {
 
     use super::dates::{Date, LocalTime};
     use super::schema::{FieldKind, Lit, PropField};
-    use super::{Category, DefaultsCtx, DrawCtx, LayoutCtx, Props, Sensor, SensorType, State};
+    use super::{
+        Category, DefaultsCtx, DrawCtx, LayoutCtx, Props, Sensor, SensorType, State, legacy,
+    };
     use crate::bar::theme::Theme;
     use crate::config::model::DateLocale;
     use crate::config::model::Settings;
@@ -669,6 +671,30 @@ pub(crate) mod test_support {
 
     pub fn theme() -> Theme {
         Theme::resolve(&Settings::default(), OsAppearance::default())
+    }
+
+    /// What `ty` makes of a legacy sensor of type `legacy_type` with the properties `pairs`
+    /// on `platform`: its props (not yet checked by the import), state and warnings.
+    pub fn convert_legacy(
+        ty: &dyn SensorType,
+        platform: &dyn Platform,
+        legacy_type: &str,
+        pairs: &[(&str, &str)],
+    ) -> (Props, State, Vec<String>) {
+        let raw = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        let defaults = DefaultsCtx { platform };
+        let mut cx = legacy::LegacyCtx {
+            legacy_type,
+            defaults: &defaults,
+            warnings: Vec::new(),
+            state: State::new(),
+        };
+        let props = ty.convert_legacy(&raw, &mut cx);
+        let warnings = cx.warnings.iter().map(|w| w.message()).collect();
+        (props, cx.state, warnings)
     }
 
     pub fn measure(sensor: &mut dyn Sensor) -> f32 {

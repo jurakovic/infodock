@@ -11,6 +11,7 @@ use super::common::graph::{self, GraphStyle, GraphText, Growth, PlotStyle};
 use super::common::history::History;
 use super::common::meter::Meter;
 use super::format::{Numbers, percent, percent_digits};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, LayoutCtx, Props,
@@ -94,6 +95,27 @@ const DUAL_SCHEMA: &[PropField] = &[
         Lit::Bool(true),
     )
     .describe("sensor.dual.field.flipBottom.help"),
+];
+
+/// SPEC §9.7.
+const METER_LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("interval", "interval"),
+    LegacyKey::new("colorize", "color"),
+];
+
+/// SPEC §9.8.
+const GRAPH_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
+    LegacyKey::new("graph-color", "graphColor"),
+    LegacyKey::new("graph-opacity", "graphOpacity"),
+];
+
+/// SPEC §9.9: the series keep their defaults.
+const DUAL_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
+    LegacyKey::new("graph-top-color", "topColor"),
+    LegacyKey::new("graph-top-opacity", "topOpacity"),
+    LegacyKey::new("graph-bottom-color", "bottomColor"),
+    LegacyKey::new("graph-bottom-opacity", "bottomOpacity"),
+    LegacyKey::new("graph-bottom-flip", "flipBottom"),
 ];
 
 /// A series' value in `sample` (SPEC §9.9): `total`, `user`, `system` or `core<i>`; a
@@ -180,6 +202,10 @@ impl SensorType for CpuMeterType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockCPUMeter"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        METER_LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {
@@ -279,6 +305,10 @@ impl SensorType for CpuGraphType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockCPUGraph"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        GRAPH_LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {
@@ -390,6 +420,10 @@ impl SensorType for CpuDualType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockCPUGraphDual"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        DUAL_LEGACY_KEYS
     }
 
     /// SPEC §9.9: both halves show the one processor.

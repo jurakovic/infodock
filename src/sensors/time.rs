@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::common::two_line;
 use super::dates::{LocalTime, format_date};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::text::shadow_color;
 use super::{
@@ -74,6 +75,14 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.5: the chime's XML values are its minutes, as stored.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("24hours", "use24h"),
+    LegacyKey::new("seconds", "showSeconds"),
+    LegacyKey::new("shadow", "shadow"),
+    LegacyKey::new("chime", "chime"),
+];
+
 pub struct TimeType;
 
 impl SensorType for TimeType {
@@ -95,6 +104,10 @@ impl SensorType for TimeType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockTime"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

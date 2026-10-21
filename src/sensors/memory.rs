@@ -12,6 +12,7 @@ use super::common::history::History;
 use super::common::meter::Meter;
 use super::cpu::TASK_MANAGER;
 use super::format::{self, Numbers, percent};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
     Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
@@ -156,6 +157,23 @@ const GRAPH_SCHEMA: &[PropField] = &[
     graph::GRAPH_OPACITY,
 ];
 
+/// SPEC §9.10–9.11.
+const METER_LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("interval", "interval"),
+    LegacyKey::new("colorize", "color"),
+];
+
+/// SPEC §9.10–9.11.
+const GRAPH_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
+    LegacyKey::options(
+        "display-mode",
+        "display",
+        &[("0", Lit::Str("bytes")), ("1", Lit::Str("percent"))],
+    ),
+    LegacyKey::new("graph-color", "graphColor"),
+    LegacyKey::new("graph-opacity", "graphOpacity"),
+];
+
 fn topics(kind: Kind, interval: u64) -> Vec<TopicRequest> {
     vec![TopicRequest {
         topic: kind.topic(),
@@ -230,6 +248,10 @@ impl SensorType for UsageMeterType {
             Kind::Memory => &["DockMemMeter"],
             Kind::Swap => &["DockSwapMeter"],
         }
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        METER_LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {
@@ -352,6 +374,10 @@ impl SensorType for UsageGraphType {
             Kind::Memory => &["DockMemGraph"],
             Kind::Swap => &["DockSwapGraph"],
         }
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        GRAPH_LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

@@ -575,6 +575,112 @@ mod tests {
     }
 
     #[test]
+    fn imports_the_legacy_system_sensors() {
+        use serde_json::json;
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(fixture("system.xml"));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Legacy).expect("imported");
+        assert_eq!(
+            sensors(&f, Zone::Left),
+            [
+                (
+                    "date".into(),
+                    json!({
+                        "weekday": "short", "month": "short", "year": "bottom", "shadow": true,
+                        "calendar": "sunday"
+                    })
+                ),
+                (
+                    "time".into(),
+                    json!({ "use24h": false, "showSeconds": true, "chime": 30 })
+                ),
+                (
+                    "uptime".into(),
+                    json!({ "text": "Up", "fontStyle": "normal", "fontSize": 14, "shadow": true })
+                ),
+            ]
+        );
+        assert_eq!(
+            sensors(&f, Zone::Center),
+            [
+                (
+                    "cpu-meter".into(),
+                    json!({ "interval": 2, "color": { "mode": "dynamic", "color": "#00FF00" } })
+                ),
+                (
+                    "cpu-graph".into(),
+                    json!({
+                        "width": 100,
+                        "bkColor": { "mode": "custom", "color": "#202020" },
+                        "bkOpacity": 50,
+                        "graphColor": { "mode": "dynamic", "color": "#000000" },
+                        "graphOpacity": 100
+                    })
+                ),
+                (
+                    "cpu-graph-dual".into(),
+                    json!({
+                        "interval": 3,
+                        "gridColor": { "mode": "custom", "color": "#FFFFFF" },
+                        "gridOpacity": 20,
+                        "bottomColor": { "mode": "dynamic", "color": "#000000" },
+                        "bottomOpacity": 88,
+                        "flipBottom": false
+                    })
+                ),
+                (
+                    "memory-meter".into(),
+                    json!({ "interval": 5, "color": { "mode": "custom", "color": "#FF8000" } })
+                ),
+                ("memory-graph".into(), json!({ "display": "percent" })),
+                ("swap-meter".into(), json!({ "interval": 1 })),
+                (
+                    "swap-graph".into(),
+                    json!({ "graphColor": { "mode": "custom", "color": "#C0C0C0" } })
+                ),
+            ]
+        );
+        assert_eq!(
+            sensors(&f, Zone::Right),
+            [
+                (
+                    "disk-meter".into(),
+                    json!({ "drive": "D:\\", "mode": "freeBytes", "interval": 300 })
+                ),
+                (
+                    "network-graph".into(),
+                    json!({ "bandwidth": "12500000", "width": 150 })
+                ),
+            ]
+        );
+        let config = f.app.store.get();
+        let uptime = &config.layout.left[2].id;
+        assert_eq!(
+            config
+                .state
+                .get(uptime)
+                .map(|s| serde_json::Value::Object(s.clone())),
+            Some(json!({ "longestSecs": 3 * 86_400 + 4 * 3_600 + 12 * 60 }))
+        );
+        assert_eq!(config.state.len(), 1);
+        assert_eq!(report.added, 12);
+        assert!(report.skipped.is_empty());
+        let warnings: Vec<String> = report.warnings.iter().map(|w| w.message()).collect();
+        // This computer has no network adapters.
+        assert_eq!(
+            warnings,
+            [
+                "DockSwapGraph: “2” is not a valid value of “display-mode”, so its default is \
+                 used instead.",
+                "DockNetwork: this computer has no network adapter “Realtek PCIe GbE Family \
+                 Controller”, so Automatic is used instead."
+            ]
+        );
+    }
+
+    #[test]
     fn says_why_a_legacy_file_cannot_be_imported() {
         let f = Fixture::new();
         let script = Script::default();

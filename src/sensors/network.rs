@@ -5,19 +5,22 @@
 use std::time::Duration;
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::common::dual_graph::{self, Series};
 use super::common::graph::{self, GraphText, PlotStyle};
 use super::common::history::History;
 use super::format::{Numbers, rate};
+use super::legacy::{self, LegacyCtx, LegacyKey};
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
     SensorType, State, typed,
 };
+use crate::config::exchange::Warning;
+use crate::config::legacy::LegacyProps;
 use crate::i18n::{t, t_args};
-use crate::platform::Canvas;
+use crate::platform::{Canvas, NetInterface};
 use crate::sampler::{NetSample, Sample, Topic, TopicRequest};
 
 /// Network Connections, opened by a click (SPEC §9.13: `control.exe ncpa.cpl`).
@@ -81,6 +84,32 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.network.field.flipBottom.help"),
 ];
 
+/// SPEC §9.13; the adapter is matched against this computer's connections.
+const LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
+    LegacyKey::new("bandwidth", "bandwidth"),
+    LegacyKey::new("graph-top-color", "topColor"),
+    LegacyKey::new("graph-top-opacity", "topOpacity"),
+    LegacyKey::new("graph-bottom-color", "bottomColor"),
+    LegacyKey::new("graph-bottom-opacity", "bottomOpacity"),
+    LegacyKey::new("graph-bottom-flip", "flipBottom"),
+];
+/// The legacy adapter: its description.
+const LEGACY_ADAPTER: &str = "net-adapter";
+
+/// The connection a legacy layout names by `adapter` (SPEC §9.13): the adapter's description,
+/// or else the connection's name, ignoring case.
+pub fn legacy_adapter<'a>(
+    interfaces: &'a [NetInterface],
+    adapter: &str,
+) -> Option<&'a NetInterface> {
+    let adapter = adapter.trim();
+    let named = |name: &str| name.trim().eq_ignore_ascii_case(adapter);
+    interfaces
+        .iter()
+        .find(|i| named(&i.description))
+        .or_else(|| interfaces.iter().find(|i| named(&i.alias)))
+}
+
 /// The configured maxima (SPEC §9.13), bytes per second: `"in,out"`, or one value for both.
 /// Anything that is not a positive number scales automatically.
 pub fn bandwidth(text: &str) -> (Option<f32>, Option<f32>) {
@@ -130,6 +159,34 @@ impl SensorType for NetworkGraphType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockNetwork"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
+    }
+
+    /// The legacy adapter becomes the connection it names on this computer; empty, or one it
+    /// lacks (with a warning), is Automatic.
+    fn convert_legacy(&self, raw: &LegacyProps, cx: &mut LegacyCtx) -> Props {
+        let mut raw = raw.clone();
+        let adapter = raw.remove(LEGACY_ADAPTER);
+        let mut props = legacy::convert(SCHEMA, LEGACY_KEYS, &raw, cx);
+        if let Some(adapter) = adapter.filter(|a| !a.trim().is_empty()) {
+            let interfaces = cx.defaults.platform.net_interfaces();
+            match legacy_adapter(&interfaces, &adapter) {
+                Some(found) => {
+                    props.insert(
+                        "adapter".into(),
+                        json!({ "id": found.id, "name": found.alias }),
+                    );
+                }
+                None => cx.warnings.push(Warning::UnknownAdapter {
+                    legacy: cx.legacy_type.to_owned(),
+                    adapter,
+                }),
+            }
+        }
+        props
     }
 
     fn schema(&self) -> &'static [PropField] {
@@ -494,6 +551,108 @@ mod tests {
         assert_eq!(
             NetworkGraphType.summary(&props).as_deref(),
             Some("Automatic")
+        );
+    }
+
+    /// A computer with these connections, for the legacy adapter.
+    struct Connections(Vec<NetInterface>);
+
+    impl crate::platform::Platform for Connections {
+        fn capabilities(&self) -> crate::platform::Capabilities {
+            Default::default()
+        }
+        fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
+            Vec::new()
+        }
+        fn appearance(&self) -> crate::platform::OsAppearance {
+            Default::default()
+        }
+        fn uptime(&self) -> Duration {
+            Duration::ZERO
+        }
+        fn net_interfaces(&self) -> Vec<NetInterface> {
+            self.0.clone()
+        }
+    }
+
+    fn connection(id: &str, alias: &str, description: &str) -> NetInterface {
+        NetInterface {
+            id: id.into(),
+            alias: alias.into(),
+            description: description.into(),
+            up: true,
+            rx_bytes: 0,
+            tx_bytes: 0,
+            link_rx: 0,
+            link_tx: 0,
+        }
+    }
+
+    fn connections() -> Connections {
+        Connections(vec![
+            connection("{E1}", "Ethernet", "Realtek PCIe GbE Family Controller"),
+            connection("{W1}", "Wi-Fi", "Intel(R) Wi-Fi 6E AX211"),
+            connection("{V1}", "Intel(R) Wi-Fi 6E AX211", "WireGuard Tunnel"),
+        ])
+    }
+
+    #[test]
+    fn the_legacy_adapter_is_matched_by_description_then_name() {
+        let c = connections().0;
+        let id = |adapter| legacy_adapter(&c, adapter).map(|i| i.id.as_str());
+        assert_eq!(id("realtek pcie gbe family controller "), Some("{E1}"));
+        // A description wins over a connection named the same.
+        assert_eq!(id("Intel(R) Wi-Fi 6E AX211"), Some("{W1}"));
+        assert_eq!(id("Wi-Fi"), Some("{W1}"));
+        assert_eq!(id("3Com EtherLink"), None);
+    }
+
+    #[test]
+    fn imports_the_legacy_adapter_and_graph() {
+        let convert = |pairs: &[(&str, &str)]| {
+            let (props, _, warnings) = crate::sensors::test_support::convert_legacy(
+                &NetworkGraphType,
+                &connections(),
+                "DockNetwork",
+                pairs,
+            );
+            (Value::Object(props), warnings)
+        };
+        let (props, warnings) = convert(&[
+            ("net-adapter", "Intel(R) Wi-Fi 6E AX211"),
+            ("bandwidth", "1000000,250000"),
+            ("interval", "2"),
+            ("width", "102"),
+            ("grid-opacity", "18"),
+            ("graph-top-color", "dyn:#000000"),
+            ("graph-bottom-opacity", "137"),
+            ("graph-bottom-flip", "no"),
+        ]);
+        assert_eq!(
+            props,
+            json!({
+                "adapter": { "id": "{W1}", "name": "Wi-Fi" },
+                "bandwidth": "1000000,250000",
+                "interval": 2,
+                "width": 100,
+                "gridOpacity": 7,
+                "topColor": { "mode": "dynamic", "color": "#000000" },
+                "bottomOpacity": 54,
+                "flipBottom": false,
+            })
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (props, warnings) = convert(&[("net-adapter", "")]);
+        assert_eq!(props, json!({}));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (props, warnings) = convert(&[("net-adapter", "3Com EtherLink")]);
+        assert_eq!(props, json!({}));
+        assert_eq!(
+            warnings,
+            [
+                "DockNetwork: this computer has no network adapter “3Com EtherLink”, so \
+                 Automatic is used instead."
+            ]
         );
     }
 }

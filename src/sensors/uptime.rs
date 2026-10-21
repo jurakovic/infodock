@@ -7,11 +7,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::format::{duration_compact, duration_long};
+use super::legacy::{self, LegacyCtx, LegacyKey};
 use super::schema::{FieldKind, Lit, PropField};
 use super::text::shadow_color;
 use super::{
     Category, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed,
 };
+use crate::config::legacy::{self as encoding, LegacyProps};
 use crate::config::model::FontStyle;
 use crate::i18n::t_args;
 use crate::platform::{Canvas, Font, PointF, TextLayout, TextStyle};
@@ -24,8 +26,10 @@ const PAST_BOUNDARY: Duration = Duration::from_millis(20);
 /// A new record is stored once it has grown this much, so the config is not rewritten every
 /// minute; at most this much of a record is lost if Infodock ends abruptly.
 const RECORD_STEP: u64 = 10 * 60;
-/// The `state` key of the record (SPEC §11.2; XML `max-uptime`).
+/// The `state` key of the record (SPEC §11.2).
 const LONGEST: &str = "longestSecs";
+/// The record's XML key, `d:h:m:s` (SPEC §9.6).
+const LEGACY_LONGEST: &str = "max-uptime";
 
 const SCHEMA: &[PropField] = &[
     PropField::new(
@@ -64,6 +68,15 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.field.shadow.help"),
 ];
 
+/// SPEC §9.6; the record goes into the state.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("text", "text"),
+    LegacyKey::new("font", "font"),
+    LegacyKey::new("fontstyle", "fontStyle"),
+    LegacyKey::new("fontsize", "fontSize"),
+    LegacyKey::new("shadow", "shadow"),
+];
+
 pub struct UptimeType;
 
 impl SensorType for UptimeType {
@@ -85,6 +98,27 @@ impl SensorType for UptimeType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockUpTime"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
+    }
+
+    /// The record `max-uptime` as the state's `longestSecs`; empty means none.
+    fn convert_legacy(&self, raw: &LegacyProps, cx: &mut LegacyCtx) -> Props {
+        let mut raw = raw.clone();
+        if let Some(record) = raw.remove(LEGACY_LONGEST)
+            && !record.trim().is_empty()
+        {
+            match encoding::duration(&record) {
+                Some(0) => {}
+                Some(secs) => {
+                    cx.state.insert(LONGEST.into(), secs.into());
+                }
+                None => cx.invalid(LEGACY_LONGEST, &record),
+            }
+        }
+        legacy::convert(SCHEMA, LEGACY_KEYS, &raw, cx)
     }
 
     fn schema(&self) -> &'static [PropField] {
@@ -276,6 +310,45 @@ mod tests {
 
     fn sample(secs: u64) -> Sample {
         read(secs, Instant::now())
+    }
+
+    #[test]
+    fn imports_the_legacy_record_into_the_state() {
+        let convert = |pairs: &[(&str, &str)]| {
+            crate::sensors::test_support::convert_legacy(
+                &UptimeType,
+                &NoPlatform,
+                "DockUpTime",
+                pairs,
+            )
+        };
+        let (props, state, warnings) = convert(&[
+            ("text", ""),
+            ("fontstyle", "italic"),
+            ("max-uptime", "12:1:3:0"),
+        ]);
+        assert_eq!(
+            Value::Object(props),
+            json!({ "text": "", "fontStyle": "italic" })
+        );
+        assert_eq!(
+            Value::Object(state),
+            json!({ "longestSecs": 12 * 86_400 + 3_600 + 180 })
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        for empty in ["", " ", "0:0:0:0"] {
+            let (_, state, warnings) = convert(&[("max-uptime", empty)]);
+            assert!(state.is_empty() && warnings.is_empty(), "{empty:?}");
+        }
+        let (_, state, warnings) = convert(&[("max-uptime", "12 days")]);
+        assert!(state.is_empty());
+        assert_eq!(
+            warnings,
+            [
+                "DockUpTime: “12 days” is not a valid value of “max-uptime”, so its default is used \
+              instead."
+            ]
+        );
     }
 
     fn read(secs: u64, read_at: Instant) -> Sample {

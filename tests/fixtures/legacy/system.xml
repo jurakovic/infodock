@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<sensors>
+  <sensor side="left" type="DockDate">
+    <property name="dayname">1</property>
+    <property name="month-format">1</property>
+    <property name="year-format">5</property>
+    <property name="shadow">yes</property>
+    <property name="show-calendar">2</property>
+  </sensor>
+  <sensor side="left" type="DockTime">
+    <property name="24hours">no</property>
+    <property name="seconds">yes</property>
+    <property name="shadow">no</property>
+    <property name="chime">30</property>
+  </sensor>
+  <sensor side="left" type="DockUpTime">
+    <property name="text">Up</property>
+    <property name="font"></property>
+    <property name="fontstyle"></property>
+    <property name="fontsize">14</property>
+    <property name="shadow">yes</property>
+    <property name="max-uptime">3:4:12:0</property>
+  </sensor>
+  <sensor side="center" type="DockCPUMeter">
+    <property name="interval">2</property>
+    <property name="colorize">dyn:#00FF00</property>
+  </sensor>
+  <sensor side="center" type="DockCPUGraph">
+    <property name="interval">1</property>
+    <property name="width">100</property>
+    <property name="bk-color">col:#202020</property>
+    <property name="bk-opacity">128</property>
+    <property name="grid-color">off:#000000</property>
+    <property name="grid-opacity">0</property>
+    <property name="graph-color">dyn:#000000</property>
+    <property name="graph-opacity">255</property>
+  </sensor>
+  <sensor side="center" type="DockCPUGraphDual">
+    <property name="interval">3</property>
+    <property name="width">50</property>
+    <property name="bk-color">off:#000000</property>
+    <property name="bk-opacity">0</property>
+    <property name="grid-color">col:#FFFFFF</property>
+    <property name="grid-opacity">51</property>
+    <property name="graph-top-color">col:#20B7FF</property>
+    <property name="graph-top-opacity">219</property>
+    <property name="graph-bottom-color">dyn:#000000</property>
+    <property name="graph-bottom-opacity">225</property>
+    <property name="graph-bottom-flip">no</property>
+  </sensor>
+  <sensor side="center" type="DockMemMeter">
+    <property name="interval">5</property>
+    <property name="colorize">col:#ff8000</property>
+  </sensor>
+  <sensor side="center" type="DockMemGraph">
+    <property name="display-mode">1</property>
+    <property name="interval">1</property>
+    <property name="width">50</property>
+  </sensor>
+  <sensor side="center" type="DockSwapMeter">
+    <property name="interval">0.5</property>
+    <property name="colorize">off:#000000</property>
+  </sensor>
+  <sensor side="center" type="DockSwapGraph">
+    <property name="display-mode">2</property>
+    <property name="graph-color">#C0C0C0</property>
+  </sensor>
+  <sensor side="right" type="DockDiskMeter">
+    <property name="title"></property>
+    <property name="disk">d:</property>
+    <property name="mode">3</property>
+    <property name="interval">600</property>
+    <property name="colorize">off:#000000</property>
+  </sensor>
+  <sensor side="right" type="DockNetwork">
+    <property name="net-adapter">Realtek PCIe GbE Family Controller</property>
+    <property name="bandwidth">12500000</property>
+    <property name="interval">1</property>
+    <property name="width">150</property>
+    <property name="bk-color">off:#000000</property>
+    <property name="bk-opacity">0</property>
+    <property name="grid-color">off:#000000</property>
+    <property name="grid-opacity">0</property>
+    <property name="graph-top-color">col:#20B7FF</property>
+    <property name="graph-top-opacity">219</property>
+    <property name="graph-bottom-color">col:#FFAD5B</property>
+    <property name="graph-bottom-opacity">219</property>
+    <property name="graph-bottom-flip">yes</property>
+  </sensor>
+</sensors>

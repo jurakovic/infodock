@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::common::meter::Meter;
 use super::format::{self, Numbers, percent};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
     Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, LayoutCtx, Props,
@@ -74,6 +75,24 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.12.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("title", "title"),
+    LegacyKey::new("disk", "drive"),
+    LegacyKey::options(
+        "mode",
+        "mode",
+        &[
+            ("0", Lit::Str("usedPercent")),
+            ("1", Lit::Str("freePercent")),
+            ("2", Lit::Str("usedBytes")),
+            ("3", Lit::Str("freeBytes")),
+        ],
+    ),
+    LegacyKey::new("interval", "interval"),
+    LegacyKey::new("colorize", "color"),
+];
+
 /// How a volume is named in lists and on the Disk launcher (SPEC §9.12, §9.18): its label, or
 /// else its kind, with the letter: `Local Disk (C:)`, `Data (D:)`. Labels are read only from
 /// local drives, so naming never waits for a server or a disc.
@@ -123,6 +142,10 @@ impl SensorType for DiskMeterType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockDiskMeter"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

@@ -70,6 +70,23 @@ pub const GRAPH_OPACITY: PropField = PropField::new(
     Lit::Int(55),
 );
 
+/// The XML keys of a graph's interval, width, background and grid (SPEC §9.8), then `$more`,
+/// as a type's `legacy_keys`.
+macro_rules! legacy_keys {
+    ($($more:expr),* $(,)?) => {
+        &[
+            $crate::sensors::legacy::LegacyKey::new("interval", "interval"),
+            $crate::sensors::legacy::LegacyKey::graph_width("width", "width"),
+            $crate::sensors::legacy::LegacyKey::new("bk-color", "bkColor"),
+            $crate::sensors::legacy::LegacyKey::new("bk-opacity", "bkOpacity"),
+            $crate::sensors::legacy::LegacyKey::new("grid-color", "gridColor"),
+            $crate::sensors::legacy::LegacyKey::new("grid-opacity", "gridOpacity"),
+            $($more),*
+        ]
+    };
+}
+pub(crate) use legacy_keys;
+
 /// The standard colours of a graph's background and grid (SPEC §9.8).
 const STANDARD_BACKGROUND: Color = Color::BLACK;
 const STANDARD_GRID: Color = Color::rgba(0xA0, 0xFF, 0x9B, 1.0);

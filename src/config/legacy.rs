@@ -264,6 +264,22 @@ pub fn font_style(value: &str) -> Option<&'static str> {
     })
 }
 
+/// A duration written `d:h:m:s` (e.g. the Uptime record), in seconds.
+pub fn duration(value: &str) -> Option<u64> {
+    let parts: Vec<u64> = value
+        .trim()
+        .split(':')
+        .map(|part| part.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    let [days, hours, minutes, seconds] = parts[..] else {
+        return None;
+    };
+    days.checked_mul(86_400)?
+        .checked_add(hours.checked_mul(3_600)?)?
+        .checked_add(minutes.checked_mul(60)?)?
+        .checked_add(seconds)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,5 +511,15 @@ mod tests {
         ] {
             assert_eq!(font_style(value), expected, "{value}");
         }
+    }
+
+    #[test]
+    fn durations() {
+        assert_eq!(duration("12:1:3:0"), Some(12 * 86_400 + 3_600 + 180));
+        assert_eq!(duration(" 0:00:05:09 "), Some(309));
+        for bad in ["", "1:2:3", "1:2:3:4:5", "1:-2:3:4", "a:b:c:d", "1.5:0:0:0"] {
+            assert_eq!(duration(bad), None, "{bad}");
+        }
+        assert_eq!(duration(&format!("{}:0:0:0", u64::MAX)), None);
     }
 }
