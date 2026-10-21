@@ -106,7 +106,7 @@ fn new_sensor(settings: &Settings, registry: &Registry, caps: &Capabilities) -> 
     MenuEntry::submenu(t("menu.newSensor.submenu"), entries)
 }
 
-/// Layout tools; Help is greyed out until it exists (M5).
+/// Layout tools and Help.
 fn tools() -> MenuEntry {
     MenuEntry::submenu(
         t("menu.tools"),
@@ -116,7 +116,7 @@ fn tools() -> MenuEntry {
             item(MenuCommand::ExportLayout, "menu.exportLayout"),
             item(MenuCommand::ImportLegacy, "menu.importLegacy"),
             MenuEntry::Separator,
-            item(MenuCommand::Help, "menu.help").enabled(false),
+            item(MenuCommand::Help, "menu.help"),
         ],
     )
 }
@@ -214,7 +214,7 @@ mod tests {
                 "New sensor…",
                 "—",
                 "Tools ▸ [Layout manager…, Import layout…, Export layout…, \
-                 Import legacy XML layout…, —, Help (off)]",
+                 Import legacy XML layout…, —, Help]",
                 "Settings…",
                 "—",
                 "Lock",
@@ -242,7 +242,7 @@ mod tests {
                 "Remove sensor",
                 "—",
                 "Tools ▸ [Layout manager…, Import layout…, Export layout…, \
-                 Import legacy XML layout…, —, Help (off)]"
+                 Import legacy XML layout…, —, Help]"
             ]
         );
         assert_eq!(labels[labels.len() - 2..], ["✓ Lock", "Popups"]);

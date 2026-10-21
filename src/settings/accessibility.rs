@@ -224,6 +224,7 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
         "sensors".to_owned(),
         "popups".to_owned(),
         "applications".to_owned(),
+        "help".to_owned(),
         "about".to_owned(),
         format!("sensor/{logo}"),
         "new?zone=left&index=0".to_owned(),
@@ -267,8 +268,9 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
                 super::welcome::PAGE
             ]
         );
-        let about = super::model::PAGES.iter().position(|p| *p == "about");
-        assert_eq!(Some(pages.get_about() as usize), about);
+        let page = |name: &str| super::model::PAGES.iter().position(|p| *p == name);
+        assert_eq!(Some(pages.get_help() as usize), page("help"));
+        assert_eq!(Some(pages.get_about() as usize), page("about"));
         let (found, stops) = check_page(&window, route);
         problems.extend(found);
         assert!(stops.len() > 2, "{route}: Tab stops at {stops:?}");

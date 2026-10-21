@@ -620,3 +620,8 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 **About page** (since M5 S13)
 
 - [ ] Settings ▸ About, last in the navigation: the version matches the installer's; *Open logs folder* opens `%LOCALAPPDATA%\app.infodock.desktop\logs` in Explorer; the licence reads as paragraphs; the crate list scrolls with the wheel and the arrow keys and Narrator reads its name and each row; the Slint badge shows below. With the dark colour scheme everything stays readable.
+
+**Help page** (since M5 S14)
+
+- [ ] Right-click the bar ▸ *Tools ▸ Help* (no longer greyed out): Settings opens on Help, between Applications and About. The keyboard section names the configured hotkey; change the hotkey on General and come back: it shows the new one. *Change the hotkey* opens General; *Open the Layout manager* opens Sensors with the Layout manager at the top.
+- [ ] Try each tip once: the drops (a drive, a folder, a file, a link; onto a Folder Menu with Ctrl, Shift and Alt; onto the Recycle Bin), the Folder Menu's keys and Alt+click, and the keyboard on the bar: each does what the page says.

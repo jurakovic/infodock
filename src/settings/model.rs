@@ -13,13 +13,14 @@ use crate::platform::geometry::{floating_rect, to_physical};
 
 /// Settings pages in navigation order (SPEC §10.7); the window's `Pages` global numbers the
 /// last ones and those the navigation does not list.
-pub const PAGES: [&str; 7] = [
+pub const PAGES: [&str; 8] = [
     "general",
     "bar",
     "appearance",
     "sensors",
     "popups",
     "applications",
+    "help",
     "about",
 ];
 /// The page with the Layout manager.
@@ -383,7 +384,8 @@ mod tests {
         assert_eq!(route("appearance"), Route::Page(2));
         assert_eq!(route("popups"), Route::Page(4));
         assert_eq!(route("applications"), Route::Page(5));
-        assert_eq!(route("about"), Route::Page(6));
+        assert_eq!(route("help"), Route::Page(6));
+        assert_eq!(route("about"), Route::Page(7));
         assert_eq!(route("welcome"), Route::Welcome);
         assert_eq!(route("layout"), Route::Page(SENSORS_PAGE));
         assert_eq!(route("nope"), Route::Page(0));

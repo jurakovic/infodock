@@ -1,5 +1,5 @@
-// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors, Popups, Applications and
-// About pages, a sensor's properties, the sensor picker and the first run's welcome page (§11.5).
+// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors, Popups, Applications, Help
+// and About pages, a sensor's properties, the sensor picker and the first run's welcome page (§11.5).
 // Rust fills `SettingsState` from the config and handles its callbacks; controls bind to it
 // two-way, and every change is saved through a settings patch.
 import { AboutSlint, Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
@@ -76,11 +76,12 @@ export struct SkinPackRow {
 // 3 = Sensors, 4 = Popups, 5 = Applications): the rest of the navigation, then the pages it does
 // not list. Rust has the same numbers (`model::PAGES`, each module's `PAGE`; a test compares).
 export global Pages {
-    out property <int> about: 6;
+    out property <int> help: 6;
+    out property <int> about: 7;
     // Pages the navigation does not list.
-    out property <int> properties: 7;
-    out property <int> picker: 8;
-    out property <int> welcome: 9;
+    out property <int> properties: 8;
+    out property <int> picker: 9;
+    out property <int> welcome: 10;
 }
 
 export global SettingsState {
@@ -1707,6 +1708,157 @@ component Tip inherits HorizontalLayout {
     }
 }
 
+// Settings ▸ Help (SPEC §10.7): getting started, the keyboard on the bar (§14.4), dropping onto
+// the bar (§6.3) and Folder Menu tips (§9.19), with buttons to the pages the tips name.
+component HelpPage inherits VerticalLayout {
+    alignment: start;
+    spacing: 16px;
+
+    VerticalLayout {
+        spacing: 8px;
+        SectionHeading {
+            title: I18n.tr("welcome.tips");
+        }
+
+        Tip {
+            text: I18n.tr("welcome.tip.menu");
+        }
+
+        Tip {
+            text: I18n.tr("welcome.tip.drag");
+        }
+
+        Tip {
+            text: I18n.tr("welcome.tip.hover");
+        }
+
+        Tip {
+            text: I18n.tr("help.lock");
+        }
+    }
+
+    VerticalLayout {
+        spacing: 8px;
+        SectionHeading {
+            title: I18n.tr("help.keyboard");
+        }
+
+        Tip {
+            text: I18n.tr-with("help.keyboard.hotkey", "hotkey", SettingsState.hotkey);
+        }
+
+        Tip {
+            text: I18n.tr("help.keyboard.move");
+        }
+
+        Tip {
+            text: I18n.tr("help.keyboard.click");
+        }
+
+        Tip {
+            text: I18n.tr("help.keyboard.menu");
+        }
+
+        Tip {
+            text: I18n.tr("help.keyboard.leave");
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            Button {
+                text: I18n.tr("help.keyboard.change");
+                // General, where the hotkey is set.
+                clicked => {
+                    SettingsState.page = 0;
+                }
+            }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 8px;
+        SectionHeading {
+            title: I18n.tr("help.drop");
+        }
+
+        Text {
+            text: I18n.tr("help.drop.help");
+            wrap: word-wrap;
+            height: self.preferred-height;
+            color: Palette.foreground;
+        }
+
+        Tip {
+            text: I18n.tr("help.drop.drive");
+        }
+
+        Tip {
+            text: I18n.tr("help.drop.folder");
+        }
+
+        Tip {
+            text: I18n.tr("help.drop.file");
+        }
+
+        Tip {
+            text: I18n.tr("help.drop.link");
+        }
+
+        Tip {
+            text: I18n.tr("help.drop.onto");
+        }
+    }
+
+    VerticalLayout {
+        spacing: 8px;
+        SectionHeading {
+            title: I18n.tr("help.folderMenu");
+        }
+
+        Tip {
+            text: I18n.tr("help.folderMenu.browse");
+        }
+
+        Tip {
+            text: I18n.tr("help.folderMenu.keys");
+        }
+
+        Tip {
+            text: I18n.tr("help.folderMenu.alt");
+        }
+
+        Tip {
+            text: I18n.tr("help.folderMenu.drop");
+        }
+
+        Tip {
+            text: I18n.tr("help.folderMenu.size");
+        }
+    }
+
+    VerticalLayout {
+        spacing: 8px;
+        SectionHeading {
+            title: I18n.tr("help.layout");
+        }
+
+        Tip {
+            text: I18n.tr("help.layout.manager");
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            Button {
+                text: I18n.tr("help.layout.open");
+                // Sensors, which starts with the Layout manager.
+                clicked => {
+                    SettingsState.page = 3;
+                }
+            }
+        }
+    }
+}
+
 // Shown once, on first run (SPEC §11.5): how the bar looks, where it sits, starting with Windows,
 // a layout to bring along, and how to get going.
 component WelcomePage inherits VerticalLayout {
@@ -2132,6 +2284,7 @@ export component SettingsWindow inherits Window {
                     { text: I18n.tr("settings.nav.sensors") },
                     { text: I18n.tr("settings.nav.popups") },
                     { text: I18n.tr("settings.nav.applications") },
+                    { text: I18n.tr("settings.nav.help") },
                     { text: I18n.tr("settings.nav.about") },
                 ];
                 current-item <=> SettingsState.page;
@@ -2168,6 +2321,7 @@ export component SettingsWindow inherits Window {
                     I18n.tr("settings.nav.sensors"),
                     I18n.tr("settings.nav.popups"),
                     I18n.tr("settings.nav.applications"),
+                    I18n.tr("settings.nav.help"),
                     I18n.tr("settings.nav.about"),
                 ][SettingsState.page];
                 font-size: 20px;
@@ -2194,6 +2348,7 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == 3: SensorsPage { }
                     if SettingsState.page == 4: PopupsPage { }
                     if SettingsState.page == 5: ApplicationsPage { }
+                    if SettingsState.page == Pages.help: HelpPage { }
                     if SettingsState.page == Pages.about: AboutPage { }
                     if SettingsState.page == Pages.properties: PropertiesPage { }
                     if SettingsState.page == Pages.welcome: WelcomePage { }

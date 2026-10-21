@@ -18,7 +18,7 @@ use crate::sensors::registry::registry;
 use crate::ui;
 
 /// The page index of the form in the window.
-pub(super) const PAGE: i32 = 7;
+pub(super) const PAGE: i32 = 8;
 /// Edits are previewed this long after the last one (SPEC §6.7).
 const PREVIEW_DELAY: Duration = Duration::from_millis(150);
 

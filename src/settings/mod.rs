@@ -756,9 +756,13 @@ mod screenshots {
             state.set_page(index as i32);
             render(&format!("settings-{page}"));
         }
-        // The whole About page: the licence, the crates and Slint's attribution.
-        state.set_page(super::model::PAGES.len() as i32 - 1);
-        render_sized("settings-about-full", 1500);
+        // The whole Help and About pages: the tips; the licence, the crates and Slint's
+        // attribution.
+        for page in ["help", "about"] {
+            let index = super::model::PAGES.iter().position(|p| *p == page);
+            state.set_page(index.unwrap_or_default() as i32);
+            render_sized(&format!("settings-{page}-full"), 1500);
+        }
         // The whole Bar page.
         state.set_page(1);
         render_sized("settings-bar-full", 1000);

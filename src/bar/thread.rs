@@ -971,8 +971,7 @@ impl BarLogic {
             MenuCommand::ImportLayout => self.host.import_layout(ImportFormat::Json),
             MenuCommand::ExportLayout => self.host.export_layout(),
             MenuCommand::ImportLegacy => self.host.import_layout(ImportFormat::Legacy),
-            // Greyed out until M5.
-            MenuCommand::Help => {}
+            MenuCommand::Help => self.host.open_settings("help"),
             MenuCommand::Settings => self.host.open_settings("general"),
             MenuCommand::ToggleLock => self
                 .host
@@ -2989,7 +2988,11 @@ mod tests {
         right_click(&mut logic, &window, empty, MenuCommand::ImportLayout);
         right_click(&mut logic, &window, LOGO, MenuCommand::ExportLayout);
         right_click(&mut logic, &window, empty, MenuCommand::ImportLegacy);
-        assert_eq!(host.calls(), ["import Json", "export", "import Legacy"]);
+        right_click(&mut logic, &window, LOGO, MenuCommand::Help);
+        assert_eq!(
+            host.calls(),
+            ["import Json", "export", "import Legacy", "open help"]
+        );
     }
 
     #[test]

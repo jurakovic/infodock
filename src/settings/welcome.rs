@@ -17,7 +17,7 @@ use crate::platform::NativeDialogs;
 use crate::ui;
 
 /// The page index of the welcome page in the window; it is not in the navigation.
-pub(super) const PAGE: i32 = 9;
+pub(super) const PAGE: i32 = 10;
 /// The previews' width, logical px.
 const PREVIEW_WIDTH: f32 = 240.0;
 
