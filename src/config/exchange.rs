@@ -15,6 +15,11 @@ pub const EXTENSION: &str = "infodock.json";
 
 /// Exchange files larger than this are refused; a layout takes a few kB.
 const MAX_FILE: u64 = 16 * 1024 * 1024;
+/// Files with more sensors than this (unsupported legacy ones included) are refused: a bar
+/// holds a few dozen, and each costs memory at every start.
+pub const MAX_SENSORS: usize = 500;
+/// Names and values from a file are cut to this many characters in the report.
+const MAX_SHOWN: usize = 80;
 
 const ZONES: [(Zone, &str); 3] = [
     (Zone::Left, "left"),
@@ -88,6 +93,39 @@ pub struct Incoming {
     pub warnings: Vec<Warning>,
 }
 
+impl Incoming {
+    /// Refuses a file with more than [`MAX_SENSORS`] sensors.
+    pub fn checked(self) -> Result<Self, ImportError> {
+        if self.sensors.len() + self.unsupported.len() > MAX_SENSORS {
+            return Err(ImportError::TooMany);
+        }
+        Ok(self)
+    }
+
+    /// The network paths (`\\server\share…`) its sensors' props hold, each once: the bar
+    /// opens them as soon as the sensors are on it, which connects to that server.
+    pub fn network_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = Vec::new();
+        let values = self.sensors.iter().flat_map(|s| s.props.values());
+        for value in values.filter_map(Value::as_str) {
+            let value = value.trim();
+            let network = value.starts_with("\\\\") || value.starts_with("//");
+            if network && !paths.iter().any(|p| p.eq_ignore_ascii_case(value)) {
+                paths.push(value.to_owned());
+            }
+        }
+        paths
+    }
+}
+
+/// `text` cut to [`MAX_SHOWN`] characters with an ellipsis, for the report.
+pub fn shown(text: &str) -> String {
+    match text.char_indices().nth(MAX_SHOWN) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text.to_owned(),
+    }
+}
+
 /// The outcome of an import (SPEC §11.3).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ImportReport {
@@ -151,30 +189,32 @@ pub enum Warning {
 }
 
 impl Warning {
+    /// The report's line; what came from the file is cut to [`MAX_SHOWN`] characters.
     pub fn message(&self) -> String {
+        let s = |text: &String| shown(text);
         match self {
             Warning::InvalidValue { sensor, key } => t_args(
                 "import.warning.invalidValue",
-                &[("sensor", sensor), ("key", key)],
+                &[("sensor", &s(sensor)), ("key", &s(key))],
             ),
             Warning::UnknownType { kind } => {
-                t_args("import.warning.unknownType", &[("type", kind)])
+                t_args("import.warning.unknownType", &[("type", &s(kind))])
             }
             Warning::UnknownProperty { legacy, key } => t_args(
                 "import.warning.unknownProperty",
-                &[("type", legacy), ("key", key)],
+                &[("type", &s(legacy)), ("key", &s(key))],
             ),
             Warning::InvalidProperty { legacy, key, value } => t_args(
                 "import.warning.invalidProperty",
-                &[("type", legacy), ("key", key), ("value", value)],
+                &[("type", &s(legacy)), ("key", &s(key)), ("value", &s(value))],
             ),
             Warning::DroppedProperty { legacy, key } => t_args(
                 "import.warning.droppedProperty",
-                &[("type", legacy), ("key", key)],
+                &[("type", &s(legacy)), ("key", &s(key))],
             ),
             Warning::UnknownAdapter { legacy, adapter } => t_args(
                 "import.warning.unknownAdapter",
-                &[("type", legacy), ("adapter", adapter)],
+                &[("type", &s(legacy)), ("adapter", &s(adapter))],
             ),
         }
     }
@@ -195,6 +235,8 @@ pub enum ImportError {
     Newer(u64),
     #[error("no <sensors> element")]
     NoLegacyLayout,
+    #[error("more than {MAX_SENSORS} sensors")]
+    TooMany,
     #[error("XML: {0}")]
     Xml(String),
 }
@@ -208,6 +250,10 @@ impl ImportError {
             ImportError::Json(_) | ImportError::NotALayout => t("import.error.notALayout"),
             ImportError::Newer(_) => t("import.error.newer"),
             ImportError::NoLegacyLayout => t("import.error.noLegacyLayout"),
+            ImportError::TooMany => t_args(
+                "import.error.tooMany",
+                &[("count", &MAX_SENSORS.to_string())],
+            ),
             ImportError::Xml(e) => t_args("import.error.xml", &[("error", e)]),
         }
     }
@@ -241,7 +287,33 @@ pub fn export(config: &Config, scope: ExportScope) -> serde_json::Result<String>
 
 /// Reads an exchange file; see [`parse`].
 pub fn read(path: &Path) -> Result<Incoming, ImportError> {
-    parse(&String::from_utf8_lossy(&read_bytes(path)?))
+    let bytes = read_bytes(path)?;
+    parse(&unicode(&bytes).unwrap_or_else(|| String::from_utf8_lossy(&bytes).into_owned()))
+}
+
+/// The text of `bytes` in a Unicode encoding: UTF-8 (with or without a byte order mark), or
+/// UTF-16 with a byte order mark or, without one, starting with an ASCII character (`<`, `{`);
+/// `None` for anything else (an ANSI code page).
+pub fn unicode(bytes: &[u8]) -> Option<String> {
+    if let Some(utf8) = bytes.strip_prefix(b"\xEF\xBB\xBF") {
+        return Some(String::from_utf8_lossy(utf8).into_owned());
+    }
+    let utf16 = |rest: &[u8], unit: fn([u8; 2]) -> u16| {
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| unit(c)).collect();
+        String::from_utf16_lossy(&units)
+    };
+    match bytes {
+        [0xFF, 0xFE, rest @ ..] => return Some(utf16(rest, u16::from_le_bytes)),
+        [0xFE, 0xFF, rest @ ..] => return Some(utf16(rest, u16::from_be_bytes)),
+        [first, 0, ..] if first.is_ascii() && *first != 0 => {
+            return Some(utf16(bytes, u16::from_le_bytes));
+        }
+        [0, second, ..] if second.is_ascii() && *second != 0 => {
+            return Some(utf16(bytes, u16::from_be_bytes));
+        }
+        _ => {}
+    }
+    std::str::from_utf8(bytes).ok().map(str::to_owned)
 }
 
 /// The bytes of a file to import, refusing large ones.
@@ -487,6 +559,46 @@ mod tests {
     }
 
     #[test]
+    fn reads_utf16_files() {
+        // As Windows PowerShell 5's `>` writes them: UTF-16 with a byte order mark.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("utf16.json");
+        let text = r#"{ "layout": { "left": [ { "type": "text" } ] } }"#;
+        let bytes: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        std::fs::write(&path, bytes).expect("written");
+        assert_eq!(read(&path).expect("read").sensors.len(), 1);
+        assert_eq!(unicode(b"\xE8"), None, "ANSI");
+    }
+
+    #[test]
+    fn report_values_are_cut() {
+        let warning = Warning::InvalidProperty {
+            legacy: "DockText".into(),
+            key: "fontsize".into(),
+            value: "9".repeat(100_000),
+        };
+        let message = warning.message();
+        assert!(message.contains(&format!("“{}…”", "9".repeat(MAX_SHOWN))));
+        assert!(message.chars().count() < 200);
+        assert_eq!(shown("short"), "short");
+    }
+
+    #[test]
+    fn files_with_too_many_sensors_are_refused() {
+        let spacer = r#"{ "type": "spacer" }"#;
+        let file = |n: usize| {
+            let entries = vec![spacer; n].join(",");
+            parse(&format!(r#"{{ "layout": {{ "left": [{entries}] }} }}"#)).expect("parsed")
+        };
+        assert!(file(MAX_SENSORS).checked().is_ok());
+        let too_many = file(MAX_SENSORS + 1).checked().expect_err("refused");
+        assert!(matches!(too_many, ImportError::TooMany));
+    }
+
+    #[test]
     fn messages_exist() {
         for key in [
             "import.skipped.notASensor",
@@ -505,6 +617,8 @@ mod tests {
             "import.error.tooLarge",
             "import.error.notALayout",
             "import.error.newer",
+            "import.error.tooMany",
+            "import.mode.network",
         ] {
             assert!(crate::i18n::exists(key), "{key}");
         }

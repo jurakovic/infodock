@@ -231,6 +231,10 @@ impl Platform for WindowsPlatform {
         autostart::read(name)
     }
 
+    fn decode_code_page(&self, bytes: &[u8], code_page: Option<u32>) -> Option<String> {
+        locale::decode(bytes, code_page)
+    }
+
     fn set_autostart(&self, name: &str, change: &super::AutostartChange) -> Result<(), String> {
         autostart::change(name, change)
     }

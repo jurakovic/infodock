@@ -212,7 +212,7 @@ fn by_field(field: &PropField, value: &str) -> Option<Value> {
             legacy::number(value).map(Value::from)
         }
         FieldKind::Battery => legacy::number(value)
-            .filter(|n| *n >= 0.0 && n.fract() == 0.0)
+            .filter(|n| *n >= 0.0 && n.fract() == 0.0 && *n <= f64::from(u32::MAX))
             .map(|n| Value::from(n as u64)),
         FieldKind::Text { .. } => Some(Value::from(value)),
         FieldKind::File { .. } | FieldKind::Folder => Some(Value::from(legacy::path(value))),
@@ -229,7 +229,16 @@ fn by_field(field: &PropField, value: &str) -> Option<Value> {
                 _ => false,
             })
             .map(Lit::to_value),
-        FieldKind::CpuSeries | FieldKind::PowerMode => Some(Value::from(value.trim())),
+        FieldKind::CpuSeries => Some(Value::from(value.trim())),
+        // Ids ignoring case, as selects (`Shutdown` is `shutDown`).
+        FieldKind::PowerMode => {
+            let value = value.trim();
+            let id = crate::platform::PowerAction::ALL
+                .into_iter()
+                .map(crate::platform::PowerAction::id)
+                .find(|id| id.eq_ignore_ascii_case(value));
+            Some(Value::from(id.unwrap_or(value)))
+        }
         FieldKind::Hidden => match field.default {
             Lit::Int(_) => legacy::number(value).map(|n| Value::from(n.round() as i64)),
             Lit::Bool(_) => legacy::bool(value).map(Value::Bool),
@@ -488,6 +497,11 @@ mod tests {
         assert_eq!(
             read(&[("mode", "restart")]),
             (json!({ "power": "restart" }), vec![])
+        );
+        // Power modes ignoring case, as selects (review M4).
+        assert_eq!(
+            read(&[("mode", "LOCK")]),
+            (json!({ "power": "lock" }), vec![])
         );
         let (props, warnings) = read(&[("alert", "45"), ("mode", "9")]);
         assert_eq!(props, json!({}));

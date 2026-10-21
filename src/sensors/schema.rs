@@ -301,7 +301,11 @@ pub fn check(field: &PropField, value: &Value) -> Option<Value> {
             }
             _ => None,
         },
-        FieldKind::Battery => value.as_u64().map(Value::from),
+        // The battery's index is a `u32`; a larger number could not be read by its type.
+        FieldKind::Battery => value
+            .as_u64()
+            .filter(|n| u32::try_from(*n).is_ok())
+            .map(Value::from),
         FieldKind::CpuSeries => value
             .as_str()
             .filter(|s| {
@@ -482,6 +486,18 @@ mod tests {
                 "use24h": false, "size": null
             })
         );
+    }
+
+    #[test]
+    fn a_battery_index_fits_its_type() {
+        let field = PropField::new("battery", FieldKind::Battery, "x", Lit::Int(0));
+        assert_eq!(check(&field, &json!(2)), Some(json!(2)));
+        assert_eq!(
+            check(&field, &json!(u64::from(u32::MAX))),
+            Some(json!(u32::MAX))
+        );
+        assert_eq!(check(&field, &json!(u64::from(u32::MAX) + 1)), None);
+        assert_eq!(check(&field, &json!(-1)), None);
     }
 
     #[test]

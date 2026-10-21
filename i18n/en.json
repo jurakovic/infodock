@@ -661,7 +661,9 @@
   "import.pick.title": "Import layout",
   "import.pick.types": "Infodock layouts",
   "import.failed": "The layout could not be imported.",
-  "import.empty": "The file holds no sensors.",
+  "import.empty": "The file holds no sensors this version of Infodock can show.",
+  "import.mode.network": "Its sensors open these network locations as soon as they are on the bar, which connects to their servers. Import it only if you trust where it came from.\n{paths}",
+  "import.error.tooMany": "The file holds more than {count} sensors, more than a bar can show.",
   "import.mode.question": "Replace the current layout, or add the imported sensors to it?",
   "import.mode.detail": {
     "one": "The file holds {count} sensor.",

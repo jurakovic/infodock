@@ -704,6 +704,12 @@ pub trait Platform: Send + Sync {
         let _ = (name, change);
         Ok(())
     }
+    /// `bytes` in the Windows code page `code_page`, or the system's ANSI code page with `None`
+    /// (the legacy import, SPEC §11.4); `None` where the platform cannot convert them.
+    fn decode_code_page(&self, bytes: &[u8], code_page: Option<u32>) -> Option<String> {
+        let _ = (bytes, code_page);
+        None
+    }
     /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
     /// UI language's for `Ui`. English (United States) where the platform cannot tell.
     fn locale(&self, which: DateLocale) -> Locale {

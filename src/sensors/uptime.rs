@@ -26,6 +26,8 @@ const PAST_BOUNDARY: Duration = Duration::from_millis(20);
 /// A new record is stored once it has grown this much, so the config is not rewritten every
 /// minute; at most this much of a record is lost if Infodock ends abruptly.
 const RECORD_STEP: u64 = 10 * 60;
+/// Legacy records longer than a century are not uptimes; they are refused on import.
+const MAX_RECORD_SECS: u64 = 100 * 366 * 86_400;
 /// The `state` key of the record (SPEC §11.2).
 const LONGEST: &str = "longestSecs";
 /// The record's XML key, `d:h:m:s` (SPEC §9.6).
@@ -112,10 +114,10 @@ impl SensorType for UptimeType {
         {
             match encoding::duration(&record) {
                 Some(0) => {}
-                Some(secs) => {
+                Some(secs) if secs <= MAX_RECORD_SECS => {
                     cx.state.insert(LONGEST.into(), secs.into());
                 }
-                None => cx.invalid(LEGACY_LONGEST, &record),
+                _ => cx.invalid(LEGACY_LONGEST, &record),
             }
         }
         legacy::convert(SCHEMA, LEGACY_KEYS, &raw, cx)
@@ -280,7 +282,8 @@ impl Sensor for Uptime {
     }
 
     fn take_state(&mut self) -> Option<State> {
-        if self.longest < self.stored + RECORD_STEP {
+        // Saturating: a record from a file may be as large as a u64 holds.
+        if self.longest.saturating_sub(self.stored) < RECORD_STEP {
             return None;
         }
         self.stored = self.longest;
@@ -349,6 +352,10 @@ mod tests {
               instead."
             ]
         );
+        // Not an uptime: over a century (review M4).
+        let (_, state, warnings) = convert(&[("max-uptime", "0:0:0:18446744073709551615")]);
+        assert!(state.is_empty());
+        assert_eq!(warnings.len(), 1);
     }
 
     fn read(secs: u64, read_at: Instant) -> Sample {
@@ -473,5 +480,10 @@ mod tests {
         let state = sensor.take_state().expect("ten minutes longer");
         assert_eq!(state[LONGEST], json!(DAY + 600));
         assert_eq!(sensor.take_state(), None, "taken once");
+
+        // A record as large as a u64 holds (from a file) neither overflows nor is stored again.
+        let mut sensor = uptime(json!({}), json!({ "longestSecs": u64::MAX }));
+        with_ctx(|cx| sensor.on_sample(&Topic::Uptime, &sample(DAY), cx));
+        assert_eq!(sensor.take_state(), None);
     }
 }

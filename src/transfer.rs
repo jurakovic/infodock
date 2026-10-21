@@ -52,15 +52,17 @@ pub fn import(app: &App, dialogs: &dyn Dialogs, format: ImportFormat) -> Option<
             return None;
         }
     };
-    if incoming.sensors.is_empty() && incoming.unsupported.is_empty() {
+    if incoming.sensors.is_empty() {
+        // Nothing this version can show (perhaps only sensors it does not support yet): no
+        // question whose *Replace* would empty the bar, but what was skipped and why.
         dialogs.show_message(&Message {
             kind: MessageKind::Info,
             text: &t("import.empty"),
-            detail: "",
+            detail: &report_lines(&incoming.skipped, &incoming.warnings).join("\n"),
         });
         return None;
     }
-    let mode = ask_mode(dialogs, incoming.sensors.len())?;
+    let mode = ask_mode(dialogs, &incoming)?;
     match app.import(incoming, mode) {
         Ok(report) => {
             show_report(app, dialogs, &report);
@@ -101,16 +103,43 @@ fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
 
 /// What the file brings, or why it cannot be imported.
 fn read(app: &App, path: &Path, format: ImportFormat) -> Result<Incoming, String> {
+    let code_pages = |bytes: &[u8], code_page| app.platform.decode_code_page(bytes, code_page);
     match format.of(path) {
         ImportFormat::Json | ImportFormat::Any => exchange::read(path),
-        ImportFormat::Legacy => legacy::read(path).map(|sensors| app.legacy_incoming(sensors)),
+        ImportFormat::Legacy => {
+            legacy::read(path, &code_pages).map(|sensors| app.legacy_incoming(sensors))
+        }
     }
+    .and_then(Incoming::checked)
     .map_err(|e| e.message())
 }
 
-fn ask_mode(dialogs: &dyn Dialogs, sensors: usize) -> Option<ImportMode> {
+/// The network locations the question names, at most this many.
+const MAX_NETWORK_PATHS: usize = 3;
+
+fn ask_mode(dialogs: &dyn Dialogs, incoming: &Incoming) -> Option<ImportMode> {
     let question = t("import.mode.question");
-    let detail = t_count("import.mode.detail", sensors as u64, &[]);
+    let mut detail = t_count("import.mode.detail", incoming.sensors.len() as u64, &[]);
+    // The bar opens these as soon as the sensors are on it, which connects to their servers
+    // (and hands them the user's sign-in): said before, so a layout from elsewhere can be
+    // left alone.
+    let paths = incoming.network_paths();
+    if !paths.is_empty() {
+        let mut lines: Vec<String> = paths
+            .iter()
+            .take(MAX_NETWORK_PATHS)
+            .map(|p| exchange::shown(p))
+            .collect();
+        if paths.len() > MAX_NETWORK_PATHS {
+            let more = (paths.len() - MAX_NETWORK_PATHS) as u64;
+            lines.push(t_count("import.report.more", more, &[]));
+        }
+        detail.push_str("\n\n");
+        detail.push_str(&t_args(
+            "import.mode.network",
+            &[("paths", &lines.join("\n"))],
+        ));
+    }
     let choices = [t("import.mode.replace"), t("import.mode.merge")];
     let choice = dialogs.choose(&Choice {
         question: &question,
@@ -132,24 +161,24 @@ fn show_report(app: &App, dialogs: &dyn Dialogs, report: &ImportReport) {
     dialogs.show_message(&Message {
         kind: MessageKind::Warning,
         text: &added,
-        detail: &report_lines(report).join("\n"),
+        detail: &report_lines(&report.skipped, &report.warnings).join("\n"),
     });
 }
 
-/// The report dialog's lines: each skipped entry, then the warnings, at most [`MAX_LINES`].
-fn report_lines(report: &ImportReport) -> Vec<String> {
-    let skipped = report.skipped.iter().map(|s| {
+/// The report's lines: each skipped entry, then the warnings, at most [`MAX_LINES`].
+fn report_lines(skipped: &[exchange::Skipped], warnings: &[exchange::Warning]) -> Vec<String> {
+    let skipped = skipped.iter().map(|s| {
         let kind = if s.kind.is_empty() {
             t("import.report.noType")
         } else {
-            s.kind.clone()
+            exchange::shown(&s.kind)
         };
         t_args(
             "import.report.skipped",
             &[("type", &kind), ("reason", &s.reason.message())],
         )
     });
-    let warnings = report.warnings.iter().map(exchange::Warning::message);
+    let warnings = warnings.iter().map(exchange::Warning::message);
     let mut lines: Vec<String> = skipped.chain(warnings).collect();
     if lines.len() > MAX_LINES {
         let more = lines.len() - (MAX_LINES - 1);
@@ -212,7 +241,7 @@ mod tests {
 
     use super::*;
     use crate::config::ConfigStore;
-    use crate::config::exchange::{SkipReason, Skipped, Warning};
+    use crate::config::exchange::{MAX_SENSORS, SkipReason, Skipped, Warning};
     use crate::config::model::{LegacyUnsupported, Zone};
     use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
 
@@ -432,8 +461,56 @@ mod tests {
         assert!(import(&f.app, &script, ImportFormat::Json).is_none());
         assert_eq!(
             script.asked().last().map(String::as_str),
-            Some("Info: The file holds no sensors. | ")
+            Some("Info: The file holds no sensors this version of Infodock can show. | ")
         );
+        // Only sensors this version does not support: nothing to replace the bar with, and the
+        // message says why (review M4).
+        let only_rss = r#"<sensors><sensor side="left" type="DockRSSSensor"/>
+            <sensor type="DockText"/></sensors>"#;
+        *script.open.borrow_mut() = Some(f.file("rss.xml", only_rss));
+        assert!(import(&f.app, &script, ImportFormat::Legacy).is_none());
+        assert_eq!(
+            script.asked().last().map(String::as_str),
+            Some(
+                "Info: The file holds no sensors this version of Infodock can show. | \
+                 Not imported: DockRSSSensor (not supported yet)\n\
+                 Not imported: DockText (no side: left, center or right)"
+            )
+        );
+        // More sensors than a bar can hold.
+        let many: Vec<&str> = vec![r#"{ "type": "spacer" }"#; MAX_SENSORS + 1];
+        let many = format!(r#"{{ "layout": {{ "left": [{}] }} }}"#, many.join(","));
+        *script.open.borrow_mut() = Some(f.file("many.json", &many));
+        assert!(import(&f.app, &script, ImportFormat::Json).is_none());
+        assert_eq!(
+            script.asked().last().cloned(),
+            Some(format!(
+                "Error: The layout could not be imported. | The file holds more than \
+                 {MAX_SENSORS} sensors, more than a bar can show."
+            ))
+        );
+        assert!(f.toasts().is_empty());
+    }
+
+    #[test]
+    fn the_question_names_network_locations() {
+        let f = Fixture::new();
+        let script = Script::default();
+        let file = r#"{ "layout": { "left": [
+            { "type": "image", "props": { "file": "\\\\server\\share\\logo.png" } },
+            { "type": "folder-menu", "props": { "folder": "\\\\Server\\Share\\logo.png" } },
+            { "type": "folder-menu", "props": { "folder": "C:\\Users" } }
+        ] } }"#;
+        *script.open.borrow_mut() = Some(f.file("net.json", file));
+        script.choices.borrow_mut().push_back(None);
+        assert!(import(&f.app, &script, ImportFormat::Json).is_none());
+        let question = script.asked().last().cloned().unwrap_or_default();
+        // Each location once (names ignore case), local paths not at all.
+        assert!(
+            question.contains("trust where it came from.\n\\\\server\\share\\logo.png ["),
+            "{question}"
+        );
+        assert!(!question.contains("C:\\Users"));
     }
 
     #[test]
@@ -884,7 +961,7 @@ mod tests {
                 kind: "mail".into(),
             }],
         };
-        let lines = report_lines(&report);
+        let lines = report_lines(&report.skipped, &report.warnings);
         assert_eq!(lines.len(), MAX_LINES);
         assert_eq!(lines[0], "Not imported: DockRSSSensor (not supported yet)");
         assert_eq!(lines[MAX_LINES - 1], "… and 7 more");

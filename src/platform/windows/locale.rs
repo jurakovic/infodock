@@ -1,16 +1,37 @@
 //! The locale from Windows NLS (SPEC §8.6): `GetLocaleInfoEx` for names, date patterns, the hour
-//! cycle, the first day of the week and the decimal separator.
+//! cycle, the first day of the week and the decimal separator; and text in ANSI code pages for
+//! the legacy import (§11.4).
 
 use windows::Win32::Globalization::{
-    GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK, LOCALE_S1159, LOCALE_S2359, LOCALE_SABBREVDAYNAME1,
-    LOCALE_SABBREVMONTHNAME1, LOCALE_SDAYNAME1, LOCALE_SDECIMAL, LOCALE_SLONGDATE,
-    LOCALE_SMONTHDAY, LOCALE_SMONTHNAME1, LOCALE_SSHORTDATE, LOCALE_STIMEFORMAT,
+    CP_ACP, GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK, LOCALE_S1159, LOCALE_S2359,
+    LOCALE_SABBREVDAYNAME1, LOCALE_SABBREVMONTHNAME1, LOCALE_SDAYNAME1, LOCALE_SDECIMAL,
+    LOCALE_SLONGDATE, LOCALE_SMONTHDAY, LOCALE_SMONTHNAME1, LOCALE_SSHORTDATE, LOCALE_STIMEFORMAT,
+    MULTI_BYTE_TO_WIDE_CHAR_FLAGS, MultiByteToWideChar,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::config::model::DateLocale;
 use crate::platform::Locale;
 use crate::platform::locale::hour12_from_pattern;
+
+/// `bytes` in the Windows code page `code_page`, or the system's ANSI code page with `None`;
+/// `None` if Windows cannot convert them (e.g. a code page it does not have).
+pub fn decode(bytes: &[u8], code_page: Option<u32>) -> Option<String> {
+    if bytes.is_empty() {
+        return Some(String::new());
+    }
+    let code_page = code_page.unwrap_or(CP_ACP);
+    let flags = MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0);
+    // SAFETY: the first call only measures; the second writes into a buffer of the measured
+    // length, which the call is told. Imported files are at most 16 MB, within an i32.
+    unsafe {
+        let len = usize::try_from(MultiByteToWideChar(code_page, flags, bytes, None)).ok()?;
+        let mut wide = vec![0u16; len];
+        let written = MultiByteToWideChar(code_page, flags, bytes, Some(&mut wide));
+        let written = usize::try_from(written).ok().filter(|n| *n > 0)?;
+        Some(String::from_utf16_lossy(&wide[..written]))
+    }
+}
 
 /// Reads `which` from Windows: the user's regional format for `System`, English (United
 /// States) for `Ui` (the only UI language in v1). Values it cannot read stay as in en-US.
@@ -93,5 +114,25 @@ pub fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
         CSTR_GREATER_THAN => Ordering::Greater,
         r if r.0 == 0 => crate::platform::natural_cmp(a, b),
         _ => Ordering::Equal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_ansi_code_pages() {
+        // A Croatian title in Windows-1250 (SPEC §11.4).
+        assert_eq!(
+            decode(b"Ra\xE8unalo \x9A\xF0", Some(1250)).as_deref(),
+            Some("Računalo šđ")
+        );
+        assert_eq!(decode(b"Caf\xE9", Some(1252)).as_deref(), Some("Café"));
+        assert_eq!(decode(b"", None).as_deref(), Some(""));
+        // The system's code page reads ASCII as it is.
+        assert_eq!(decode(b"plain", None).as_deref(), Some("plain"));
+        // A code page Windows does not have.
+        assert_eq!(decode(b"x", Some(12_345)), None);
     }
 }

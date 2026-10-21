@@ -9,7 +9,7 @@ use quick_xml::Reader;
 use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::{BytesStart, Event};
 
-use super::exchange::{ImportError, read_bytes};
+use super::exchange::{ImportError, read_bytes, unicode};
 use super::model::{Zone, normalize_color};
 
 /// A legacy sensor's properties by XML key. A key given twice keeps its last value.
@@ -25,9 +25,13 @@ pub struct LegacySensor {
     pub props: LegacyProps,
 }
 
-/// Reads a legacy layout file; see [`parse`].
-pub fn read(path: &Path) -> Result<Vec<LegacySensor>, ImportError> {
-    parse(&decode(&read_bytes(path)?))
+/// Decodes text in a Windows code page: the one given, or with `None` the system's ANSI code
+/// page; `None` where the platform cannot (then Windows-1252 is used).
+pub type CodePages<'a> = &'a dyn Fn(&[u8], Option<u32>) -> Option<String>;
+
+/// Reads a legacy layout file; see [`decode`] and [`parse`].
+pub fn read(path: &Path, code_pages: CodePages) -> Result<Vec<LegacySensor>, ImportError> {
+    parse(&decode(&read_bytes(path)?, code_pages))
 }
 
 /// The sensors of the first `<sensors>…</sensors>` in `text`, which may be embedded in other
@@ -142,25 +146,46 @@ fn sensors_element(text: &str) -> Option<&str> {
     None
 }
 
-/// The text of a legacy file: UTF-8 (with or without a byte order mark), UTF-16 with a byte
-/// order mark, or else Windows-1252, which older Windows programs wrote.
-pub fn decode(bytes: &[u8]) -> String {
-    if let Some(utf8) = bytes.strip_prefix(b"\xEF\xBB\xBF") {
-        return String::from_utf8_lossy(utf8).into_owned();
+/// The text of a legacy file: UTF-8 or UTF-16 (see [`unicode`]), or else in the code page its
+/// XML declaration names, or the system's ANSI code page, which older Windows programs wrote;
+/// Windows-1252 where `code_pages` cannot decode it.
+pub fn decode(bytes: &[u8], code_pages: CodePages) -> String {
+    if let Some(text) = unicode(bytes) {
+        return text;
     }
-    let utf16 = |rest: &[u8], unit: fn([u8; 2]) -> u16| {
-        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| unit(c)).collect();
-        String::from_utf16_lossy(&units)
-    };
-    if let Some(rest) = bytes.strip_prefix(b"\xFF\xFE") {
-        return utf16(rest, u16::from_le_bytes);
+    code_pages(bytes, declared_code_page(bytes))
+        .unwrap_or_else(|| bytes.iter().map(|&b| windows_1252(b)).collect())
+}
+
+/// The Windows code page of the `encoding` an XML declaration at the start of `bytes` names,
+/// for the encodings older Windows programs wrote; `None` without one.
+fn declared_code_page(bytes: &[u8]) -> Option<u32> {
+    let head = &bytes[..bytes.len().min(256)];
+    let head: String = head.iter().map(|&b| char::from(b)).collect();
+    let declaration = &head[head.find("<?xml")?..];
+    let declaration = &declaration[..declaration.find("?>")?];
+    let at = declaration.find("encoding")? + "encoding".len();
+    let value = declaration[at..]
+        .trim_start()
+        .strip_prefix('=')?
+        .trim_start();
+    let quote = value.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+    let name = value[1..].split(quote).next()?.trim().to_ascii_lowercase();
+    let number = |prefix: &str| name.strip_prefix(prefix)?.parse::<u32>().ok();
+    if let Some(n) = number("windows-").or_else(|| number("cp")) {
+        return (874..=1258).contains(&n).then_some(n);
     }
-    if let Some(rest) = bytes.strip_prefix(b"\xFE\xFF") {
-        return utf16(rest, u16::from_be_bytes);
+    if let Some(n) = number("iso-8859-") {
+        return matches!(n, 1..=9 | 13 | 15).then_some(28_590 + n);
     }
-    match std::str::from_utf8(bytes) {
-        Ok(text) => text.to_owned(),
-        Err(_) => bytes.iter().map(|&b| windows_1252(b)).collect(),
+    match name.as_str() {
+        "shift_jis" | "shift-jis" => Some(932),
+        "gb2312" | "gbk" => Some(936),
+        "ks_c_5601-1987" | "euc-kr" => Some(949),
+        "big5" => Some(950),
+        "koi8-r" => Some(20_866),
+        "koi8-u" => Some(21_866),
+        _ => None,
     }
 }
 
@@ -381,8 +406,14 @@ mod tests {
         );
     }
 
+    /// No code pages, as on the stub platform: Windows-1252.
+    fn no_code_pages(_: &[u8], _: Option<u32>) -> Option<String> {
+        None
+    }
+
     #[test]
     fn decodes_the_files_text_encoding() {
+        let decode = |bytes: &[u8]| decode(bytes, &no_code_pages);
         assert_eq!(decode("Grüße".as_bytes()), "Grüße");
         assert_eq!(decode(b"\xEF\xBB\xBFabc"), "abc");
         assert_eq!(decode(b"Gr\xFC\xDFe \x80 \x93x\x94"), "Grüße € “x”");
@@ -396,6 +427,51 @@ mod tests {
             .chain("ok".encode_utf16().flat_map(u16::to_be_bytes))
             .collect();
         assert_eq!(decode(&utf16be), "ok");
+        // UTF-16 without a byte order mark, told by its first character.
+        let bare: Vec<u8> = "<sensors/>"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert_eq!(decode(&bare), "<sensors/>");
+        let bare: Vec<u8> = "<a/>".encode_utf16().flat_map(u16::to_be_bytes).collect();
+        assert_eq!(decode(&bare), "<a/>");
+    }
+
+    #[test]
+    fn ansi_text_goes_by_the_declared_or_the_systems_code_page() {
+        // A Croatian title in Windows-1250, decoded by the platform: "Računalo".
+        let asked = std::cell::Cell::new(None);
+        let platform = |bytes: &[u8], code_page: Option<u32>| {
+            asked.set(Some(code_page));
+            Some(
+                bytes
+                    .iter()
+                    .map(|&b| if b == 0xE8 { 'č' } else { char::from(b) })
+                    .collect(),
+            )
+        };
+        let text =
+            b"<?xml version=\"1.0\" encoding=\"windows-1250\"?><sensors>Ra\xE8unalo</sensors>";
+        assert!(decode(text, &platform).ends_with("<sensors>Računalo</sensors>"));
+        assert_eq!(asked.get(), Some(Some(1250)));
+        // Without a declaration (or with one naming no code page): the system's.
+        decode(b"<sensors>Ra\xE8unalo</sensors>", &platform);
+        assert_eq!(asked.get(), Some(None));
+        decode(b"<?xml version='1.0' encoding='utf-8'?>\xE8", &platform);
+        assert_eq!(asked.get(), Some(None));
+        for (declaration, code_page) in [
+            ("<?xml encoding='ISO-8859-2'?>", Some(28_592)),
+            ("<?xml version=\"1.0\" encoding = \"cp1251\" ?>", Some(1251)),
+            ("<?xml encoding=\"Shift_JIS\"?>", Some(932)),
+            ("<?xml encoding=\"windows-9999\"?>", None),
+            ("<sensors encoding=\"windows-1250\">", None),
+        ] {
+            assert_eq!(
+                declared_code_page(declaration.as_bytes()),
+                code_page,
+                "{declaration}"
+            );
+        }
     }
 
     #[test]
@@ -408,7 +484,10 @@ mod tests {
               <property name=\"text\">\xE9t\xE9</property></sensor></sensors>",
         )
         .expect("written");
-        assert_eq!(read(&path).expect("read")[0].props["text"], "été");
+        assert_eq!(
+            read(&path, &no_code_pages).expect("read")[0].props["text"],
+            "été"
+        );
     }
 
     #[test]
