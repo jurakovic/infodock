@@ -2193,6 +2193,8 @@ dependencies = [
  "fastrand",
  "flate2",
  "global-hotkey",
+ "i-slint-backend-testing",
+ "i-slint-core",
  "imagesize",
  "png",
  "quick-xml 0.42.0",

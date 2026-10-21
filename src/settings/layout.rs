@@ -168,6 +168,8 @@ pub(super) fn fill(open: &Open, app: &App, layout: &Layout) {
             editable: line.editable,
             up: line.kind == LineKind::Sensor && step(layout, &line.id, true).is_some(),
             down: line.kind == LineKind::Sensor && step(layout, &line.id, false).is_some(),
+            index: line.index as i32,
+            count: layout.zone(line.zone).len() as i32,
         })
         .collect();
     let state = open.window.global::<ui::SettingsState>();

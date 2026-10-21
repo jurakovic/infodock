@@ -1,7 +1,12 @@
 use std::path::{Path, PathBuf};
 
 fn main() {
-    let config = slint_build::CompilerConfiguration::new().with_style("fluent".into());
+    // Debug builds (the tests) keep the elements' names, which Slint's testing API needs to
+    // walk the Settings window (SPEC §14.4); release builds do without.
+    let debug = std::env::var("PROFILE").as_deref() == Ok("debug");
+    let config = slint_build::CompilerConfiguration::new()
+        .with_style("fluent".into())
+        .with_debug_info(debug);
     slint_build::compile_with_config("ui/app.slint", config).expect("the Slint UI compiles");
 
     // Build scripts run on the host, so check the target rather than `cfg(windows)`.

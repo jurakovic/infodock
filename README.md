@@ -13,6 +13,12 @@ Every push to `master` builds Windows downloads. Open the latest successful [CI 
 
 Neither is code-signed yet, so SmartScreen may warn.
 
+## Accessibility
+
+- **Keyboard**: the hotkey (default Ctrl+Alt+Shift+I) focuses the bar. Tab and the arrow keys move a ring between sensors, Enter or Space clicks the ringed one, Shift+F10 or the Menu key opens its menu, Esc returns to the window you were in. Settings works entirely from the keyboard.
+- **Screen readers**: the bar is a UI Automation provider, so Narrator and other screen readers read each sensor's name and value, click it and open its popup; Settings exposes every control with a name.
+- **Not yet followed**: Windows' high-contrast themes and the separate *Text size* setting apply neither to the bar nor to Settings (Slint 1.18, which draws Settings, follows neither); light and dark mode and the display scale are followed.
+
 ## Development
 
 Requirements: Rust (stable). On Linux, `libfontconfig-dev` for the UI toolkit. The bar only appears on Windows; on other systems the app opens Settings only.

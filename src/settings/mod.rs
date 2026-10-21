@@ -5,6 +5,8 @@
 //! through the config store; the store's change listener then refreshes the window, so changes
 //! made elsewhere (tray, hotkey) show up too.
 
+#[cfg(test)]
+mod accessibility;
 mod appearance;
 mod applications;
 mod form;

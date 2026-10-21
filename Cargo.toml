@@ -185,3 +185,7 @@ strip = true
 [dev-dependencies]
 png = "0.18"
 tempfile = "3"
+# The Settings accessibility test walks the window's elements and follows the keyboard focus
+# (SPEC §14.4): Slint's testing backend and its core, at the version `slint` uses.
+i-slint-backend-testing = "=1.18.1"
+i-slint-core = { version = "=1.18.1", default-features = false, features = ["std"] }

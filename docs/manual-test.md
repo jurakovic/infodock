@@ -590,3 +590,10 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Narrator's scan mode (Caps Lock+Space) on the bar: Enter on a Shortcut starts it (Invoke). On a Folder Menu Narrator says "collapsed"; Enter (or Caps Lock+Enter) opens its list ("expanded"), Esc closes it ("collapsed"). The Folder Menu's popup window is named by its folder, the Eject list "Eject USB".
 - [ ] Add, remove or move a sensor (Layout manager) while Narrator is on: the bar's children follow and Narrator reads the new order on the next Tab. Hover a sensor: Accessibility Insights shows the hint window named by the hint's text (lines joined by commas); the Date's calendar hint is named by the date.
 - [ ] With Accessibility Insights, *Invoke* on a Power sensor asks first; *Expand* and *Collapse* on an Eject USB sensor open and close its list; *SetFocus* on a sensor focuses the bar with the ring on it.
+
+**Settings accessibility** (since M5 S9)
+
+- [ ] Narrator on, open Settings: Tab goes through the navigation, then each control of the page from top to bottom, and Narrator reads a name for each ("Screen edge, combo box, Bottom"); nothing is read as "button" alone. The same on every page, the properties form, the sensor picker and the welcome page.
+- [ ] Sensors page: Tab to a row's buttons: Narrator says "Move CPU Graph up", "Properties of CPU Graph", "Remove CPU Graph"; with the scan mode on a row, "CPU Graph, 1 of 3". Move a sensor with its button: the focus stays on the moved sensor's button and Narrator reads its new place.
+- [ ] Appearance page with the classic theme: Tab to the skin gallery: Narrator says "Skin, list, Gloss" (the chosen skin); the arrow keys choose the next skin and Narrator reads its name. The theme tiles on the welcome page likewise.
+- [ ] Windows' high contrast (Settings ▸ Accessibility ▸ Contrast themes) and *Text size*: Settings and the bar keep their colours and text size, as §14.4 and the README say; light and dark mode and the display scale still apply.

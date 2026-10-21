@@ -49,6 +49,9 @@ export struct LayoutRow {
     // The sensor can move up / down the list (across zones).
     up: bool,
     down: bool,
+    // Its place in its zone and how many the zone has, for screen readers.
+    index: int,
+    count: int,
 }
 
 // A skin in the Appearance page's gallery (SPEC §12.4).
@@ -803,14 +806,18 @@ component LayoutList inherits Rectangle {
             opacity: 0.7;
         }
 
-        if row.kind == 1: Rectangle {
+        if row.kind == 1: line := Rectangle {
+            // What screen readers call it, in its row's buttons too.
+            property <string> named: row.detail == "" ? row.name : row.name + ", " + row.detail;
             border-radius: 4px;
             // Dimmed while dragged, like on the bar (SPEC §6.2).
             background: touch.has-hover || root.drag-id == row.id ? Palette.alternate-background
                 : transparent;
             opacity: root.drag-id == row.id ? 0.6 : 1;
             accessible-role: list-item;
-            accessible-label: row.detail == "" ? row.name : row.name + ", " + row.detail;
+            accessible-label: self.named;
+            accessible-item-index: row.index;
+            accessible-item-count: row.count;
 
             touch := TouchArea {
                 mouse-cursor: root.drag-id == row.id ? MouseCursor.grabbing : MouseCursor.grab;
@@ -903,7 +910,7 @@ component LayoutList inherits Rectangle {
                     }
 
                     up := IconButton {
-                        label: I18n.tr("settings.layout.up");
+                        label: I18n.tr-with("settings.layout.upNamed", "name", line.named);
                         icon: @image-url("icons/up.svg");
                         enabled: row.up;
                         clicked => {
@@ -912,7 +919,7 @@ component LayoutList inherits Rectangle {
                     }
 
                     down := IconButton {
-                        label: I18n.tr("settings.layout.down");
+                        label: I18n.tr-with("settings.layout.downNamed", "name", line.named);
                         icon: @image-url("icons/down.svg");
                         enabled: row.down;
                         clicked => {
@@ -921,7 +928,7 @@ component LayoutList inherits Rectangle {
                     }
 
                     IconButton {
-                        label: I18n.tr("settings.layout.edit");
+                        label: I18n.tr-with("settings.layout.editNamed", "name", line.named);
                         icon: @image-url("icons/edit.svg");
                         enabled: row.editable;
                         clicked => {
@@ -930,7 +937,7 @@ component LayoutList inherits Rectangle {
                     }
 
                     IconButton {
-                        label: I18n.tr("settings.layout.remove");
+                        label: I18n.tr-with("settings.layout.removeNamed", "name", line.named);
                         icon: @image-url("icons/remove.svg");
                         clicked => {
                             SettingsState.layout-confirm = row.id;
@@ -961,6 +968,10 @@ component SkinGallery inherits FocusScope {
     height: ceil(SettingsState.skins.length / self.columns) * (self.tile-height + self.gap);
     accessible-role: list;
     accessible-label: I18n.tr("settings.appearance.skin");
+    // The chosen skin, read with the list and again when the arrow keys change it.
+    accessible-value: SettingsState.skin-selected >= 0
+        && SettingsState.skin-selected < SettingsState.skins.length
+        ? SettingsState.skins[SettingsState.skin-selected].name : "";
     key-pressed(event) => {
         if event.text == Key.LeftArrow || event.text == Key.UpArrow {
             if SettingsState.skin-selected > 0 {
@@ -991,6 +1002,8 @@ component SkinGallery inherits FocusScope {
         accessible-label: tile.name;
         accessible-item-selectable: true;
         accessible-item-selected: tile.selected;
+        accessible-item-index: i;
+        accessible-item-count: SettingsState.skins.length;
         accessible-action-default => {
             SettingsState.set-skin(i);
         }
@@ -1520,6 +1533,10 @@ component ThemeChoice inherits FocusScope {
     height: tiles.preferred-height;
     accessible-role: list;
     accessible-label: I18n.tr("settings.appearance.theme");
+    // The chosen theme, read with the list and again when the arrow keys change it.
+    accessible-value: SettingsState.theme >= 0
+        && SettingsState.theme < SettingsState.welcome-themes.length
+        ? SettingsState.welcome-themes[SettingsState.theme].name : "";
     key-pressed(event) => {
         if (event.text == Key.LeftArrow || event.text == Key.UpArrow) && SettingsState.theme > 0 {
             SettingsState.set-choice("theme", SettingsState.theme - 1);
@@ -1548,6 +1565,8 @@ component ThemeChoice inherits FocusScope {
             accessible-label: tile.name;
             accessible-item-selectable: true;
             accessible-item-selected: tile.selected;
+            accessible-item-index: i;
+            accessible-item-count: SettingsState.welcome-themes.length;
             accessible-action-default => {
                 SettingsState.set-choice("theme", i);
             }
