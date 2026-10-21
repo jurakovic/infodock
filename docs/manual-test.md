@@ -462,3 +462,14 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] In light mode, click into the colour box and out again: the colour stays the theme's (the bar keeps its light look, *Use theme default* stays disabled). Set a sensor text colour or a background colour: the bar leaves the light look, as before.
 - [ ] The classic theme with any colour scheme: the bar keeps its skin; only Settings changes.
 - [ ] Close and reopen Settings with *Dark* chosen: it opens dark, title bar included.
+
+**Import and export** (since M4 S7–S8)
+
+- [ ] Right-click the bar ▸ *Tools*: *Import layout…* and *Export layout…* are enabled, *Import legacy XML layout…* and *Help* greyed out.
+- [ ] *Export layout…*: the save picker suggests `Infodock layout` with the type *Infodock layout*; save it to the desktop: `Infodock layout.infodock.json` holds `schema`, `layout` and `state`, no settings. Export again with the type *Infodock settings and layout*: the file holds the whole config. A name typed without an extension gets `.infodock.json`; an existing file asks before it is replaced.
+- [ ] While the picker is open, the bar's clock and graphs go on; a second *Export layout…* or *Import layout…* from the bar does nothing.
+- [ ] Move a sensor, then *Import layout…* the first export: the picker lists `.infodock.json` files; the question shows *Replace the layout* and *Add to the layout* with the number of sensors. *Replace*: the bar shows the exported layout again, and a toast says "Layout imported" with the count. *Add to the layout*: the sensors are added at the end of their zones (with an Uptime sensor: its longest uptime comes along).
+- [ ] Cancel at the picker or at the question: nothing changes.
+- [ ] Edit the file: give a sensor `"opacity": "x"` and add an entry `{ "type": "mail" }` and an entry `3`. Import it: no toast; a dialog says how many were added and lists the entry without a type and the invalid value; the `mail` sensor shows as a placeholder.
+- [ ] Import a text file renamed to `.infodock.json`, a file with `"schema": 99`, and `{ "layout": {} }`: a message says why (not a layout, a newer version, no sensors), and the layout is unchanged.
+- [ ] With Settings open, the dialogs are modal to it (Settings cannot be clicked until they close); with Settings closed they appear in front of other windows.

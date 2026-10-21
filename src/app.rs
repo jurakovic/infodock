@@ -6,16 +6,19 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use crate::bar::{BarController, BarHost};
+use crate::config::exchange::{
+    self, ExportScope, ImportFormat, ImportMode, ImportReport, Incoming,
+};
 use crate::config::model::{Settings, Zone};
 use crate::config::{ConfigError, ConfigStore};
-use crate::platform::Platform;
+use crate::platform::{NativeDialogs, Platform};
 use crate::providers::Providers;
 use crate::sampler::{
     Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY,
 };
 use crate::sensors::registry::registry;
-use crate::sensors::{DefaultsCtx, Props, ops};
-use crate::settings;
+use crate::sensors::{DefaultsCtx, Props, import, ops};
+use crate::{settings, transfer};
 
 /// How long a requested quit may take before the process ends anyway.
 const QUIT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -246,6 +249,33 @@ impl App {
     }
 }
 
+/// Layout exchange (SPEC §11.3). An import saves through the config store, which updates the bar
+/// and Settings.
+impl App {
+    /// The config, or its layout, as the text of an exchange file.
+    pub fn export(&self, scope: ExportScope) -> serde_json::Result<String> {
+        exchange::export(&self.store.get(), scope)
+    }
+
+    /// Adds what an exchange or legacy file brings to the layout; see [`import::import`].
+    pub fn import(
+        &self,
+        incoming: Incoming,
+        mode: ImportMode,
+    ) -> Result<ImportReport, ConfigError> {
+        let (report, _) = self.store.update(|c| {
+            Ok(import::import(
+                c,
+                registry(),
+                &self.defaults(),
+                incoming,
+                mode,
+            ))
+        })?;
+        Ok(report)
+    }
+}
+
 /// The bar's view of the app (called on the bar thread).
 pub struct AppHost(pub Arc<App>);
 
@@ -338,6 +368,26 @@ impl BarHost for AppHost {
         }
     }
 
+    fn import_layout(&self, format: ImportFormat) {
+        let app = Arc::clone(&self.0);
+        let _ = slint::invoke_from_event_loop(move || {
+            let dialogs = NativeDialogs {
+                owner: settings::owner(),
+            };
+            transfer::import(&app, &dialogs, format);
+        });
+    }
+
+    fn export_layout(&self) {
+        let app = Arc::clone(&self.0);
+        let _ = slint::invoke_from_event_loop(move || {
+            let dialogs = NativeDialogs {
+                owner: settings::owner(),
+            };
+            transfer::export(&app, &dialogs);
+        });
+    }
+
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
         let result = self.0.store.update(|c| {
             // A sensor removed meanwhile keeps no state.
@@ -387,6 +437,22 @@ mod tests {
         app.remove_sensor(&id).expect("removed");
         assert!(saved(&app).find(&id).is_none());
         assert!(app.remove_sensor(&id).is_err());
+        app.store.shutdown();
+    }
+
+    #[test]
+    fn imports_save_through_the_store() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (store, _) = ConfigStore::open(dir.path(), "test");
+        let app = App::new(store, crate::platform::current(), dir.path().join("skins"));
+        let layout = app.export(ExportScope::Layout).expect("exported");
+        let incoming = exchange::parse(&layout).expect("parsed");
+        let report = app.import(incoming, ImportMode::Merge).expect("imported");
+        assert_eq!(report.added, 6);
+        assert_eq!(app.store.get().layout.left.len(), 6);
+        let incoming = exchange::parse(&layout).expect("parsed");
+        app.import(incoming, ImportMode::Replace).expect("imported");
+        assert_eq!(app.store.get().layout.left.len(), 3);
         app.store.shutdown();
     }
 }

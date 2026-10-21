@@ -1,6 +1,6 @@
 //! Shell services (SPEC §4.6): starting programs, files and URIs for sensor clicks
 //! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), the Recycle Bin
-//! (§9.16), and the file and folder pickers Settings uses (`IFileOpenDialog`).
+//! (§9.16), and the file and folder pickers (`IFileOpenDialog`, `IFileSaveDialog`).
 
 use windows::Win32::Foundation::{ERROR_CANCELLED, HWND};
 use windows::Win32::System::Com::{
@@ -9,15 +9,16 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{
-    FOLDERID_RecycleBinFolder, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog,
-    IFileOpenDialog, ILCreateFromPathW, ILFree, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
-    SHEmptyRecycleBinW, SHGetKnownFolderIDList, SHOpenFolderAndSelectItems, SHQUERYRBINFO,
-    SHQueryRecycleBinW, SIGDN_FILESYSPATH, ShellExecuteExW,
+    FOLDERID_RecycleBinFolder, FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FOS_PICKFOLDERS,
+    FileOpenDialog, FileSaveDialog, IFileOpenDialog, IFileSaveDialog, ILCreateFromPathW, ILFree,
+    IShellItem, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, SHEmptyRecycleBinW, SHGetKnownFolderIDList,
+    SHOpenFolderAndSelectItems, SHQUERYRBINFO, SHQueryRecycleBinW, SIGDN_FILESYSPATH,
+    ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result, w};
 
-use crate::platform::{Launch, PathRequest, RecycleBin};
+use crate::platform::{Launch, PathRequest, RecycleBin, SaveRequest};
 
 /// Starts `launch` as Explorer would, on a short-lived thread: the shell can take a moment (and
 /// show its own message when the target is missing, or ask for elevation), and the bar thread
@@ -158,12 +159,22 @@ pub fn reveal(path: &str) {
 
 /// Shows the picker modal to `owner`; `None` if the user cancelled or it failed (logged).
 pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> {
-    // The dialog needs COM in a single-threaded apartment; balanced below when this call
-    // initialised it.
+    with_com(|| show(owner, request))
+}
+
+/// The save picker; see `platform::save_path`.
+pub fn save_path(owner: Option<isize>, request: &SaveRequest) -> Option<(String, usize)> {
+    with_com(|| show_save(owner, request))
+}
+
+/// Runs a picker with COM in a single-threaded apartment, which the dialogs need; `None` when
+/// it failed (logged).
+fn with_com<T>(show: impl FnOnce() -> Result<Option<T>>) -> Option<T> {
+    // Balanced below when this call initialised COM.
     // SAFETY: plain per-call initialisation.
     let initialised =
         unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) }.is_ok();
-    let result = show(owner, request);
+    let result = show();
     if initialised {
         // SAFETY: balances the successful CoInitializeEx above.
         unsafe { CoUninitialize() };
@@ -174,6 +185,24 @@ pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> 
             tracing::warn!("the file picker failed: {e}");
             None
         }
+    }
+}
+
+fn owner_hwnd(owner: Option<isize>) -> Option<HWND> {
+    owner.map(|h| HWND(h as *mut std::ffi::c_void))
+}
+
+/// The file system path of a picked item.
+///
+/// # Safety
+/// `item` must be a live shell item.
+unsafe fn item_path(item: &IShellItem) -> Result<Option<String>> {
+    // SAFETY: the returned string is freed with CoTaskMemFree once copied.
+    unsafe {
+        let path = item.GetDisplayName(SIGDN_FILESYSPATH)?;
+        let text = path.to_string().ok();
+        CoTaskMemFree(Some(path.0 as *const std::ffi::c_void));
+        Ok(text)
     }
 }
 
@@ -214,15 +243,58 @@ fn show(owner: Option<isize>, request: &PathRequest) -> Result<Option<String>> {
             dialog.SetFileTypes(&specs)?;
             dialog.SetOptions(dialog.GetOptions()? | FOS_FORCEFILESYSTEM)?;
         }
-        let owner = owner.map(|h| HWND(h as *mut std::ffi::c_void));
-        if dialog.Show(owner).is_err() {
+        if dialog.Show(owner_hwnd(owner)).is_err() {
             // Cancelled (or closed): nothing chosen.
             return Ok(None);
         }
-        let item = dialog.GetResult()?;
-        let path = item.GetDisplayName(SIGDN_FILESYSPATH)?;
-        let text = path.to_string().ok();
-        CoTaskMemFree(Some(path.0 as *const std::ffi::c_void));
-        Ok(text)
+        item_path(&dialog.GetResult()?)
+    }
+}
+
+fn show_save(owner: Option<isize>, request: &SaveRequest) -> Result<Option<(String, usize)>> {
+    // Kept alive until the dialog has closed: the filter specs point into them.
+    let names: Vec<HSTRING> = request
+        .types
+        .iter()
+        .map(|(n, _)| HSTRING::from(*n))
+        .collect();
+    let patterns: Vec<HSTRING> = request
+        .types
+        .iter()
+        .map(|(_, e)| HSTRING::from(format!("*.{e}")))
+        .collect();
+    let specs: Vec<COMDLG_FILTERSPEC> = names
+        .iter()
+        .zip(&patterns)
+        .map(|(name, pattern)| COMDLG_FILTERSPEC {
+            pszName: PCWSTR(name.as_ptr()),
+            pszSpec: PCWSTR(pattern.as_ptr()),
+        })
+        .collect();
+    let extension = HSTRING::from(request.types.first().map_or("", |(_, e)| *e));
+    let (title, file_name) = (
+        HSTRING::from(request.title),
+        HSTRING::from(request.file_name),
+    );
+    // SAFETY: plain COM calls; every string outlives the dialog.
+    unsafe {
+        let dialog: IFileSaveDialog =
+            CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER)?;
+        dialog.SetTitle(&title)?;
+        if !specs.is_empty() {
+            dialog.SetFileTypes(&specs)?;
+            dialog.SetFileTypeIndex(1)?;
+            // Added to a name typed without an extension.
+            dialog.SetDefaultExtension(&extension)?;
+        }
+        dialog.SetFileName(&file_name)?;
+        dialog.SetOptions(dialog.GetOptions()? | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT)?;
+        if dialog.Show(owner_hwnd(owner)).is_err() {
+            // Cancelled (or closed): nothing chosen.
+            return Ok(None);
+        }
+        // One-based.
+        let index = dialog.GetFileTypeIndex()?.saturating_sub(1) as usize;
+        Ok(item_path(&dialog.GetResult()?)?.map(|path| (path, index)))
     }
 }

@@ -632,5 +632,29 @@
   "import.error.io": "The file could not be read: {error}",
   "import.error.tooLarge": "The file is too large to be a layout.",
   "import.error.notALayout": "The file does not hold an Infodock layout.",
-  "import.error.newer": "The file was saved by a newer version of Infodock. Update Infodock to import it."
+  "import.error.newer": "The file was saved by a newer version of Infodock. Update Infodock to import it.",
+  "import.pick.title": "Import layout",
+  "import.pick.types": "Infodock layouts",
+  "import.failed": "The layout could not be imported.",
+  "import.empty": "The file holds no sensors.",
+  "import.mode.question": "Replace the current layout, or add the imported sensors to it?",
+  "import.mode.detail": {
+    "one": "The file holds {count} sensor.",
+    "other": "The file holds {count} sensors."
+  },
+  "import.mode.replace": "Replace the layout\nThe sensors now on the bar are removed.",
+  "import.mode.merge": "Add to the layout\nThe imported sensors are added at the end of their zones.",
+  "import.report.title": "Layout imported",
+  "import.report.added": {
+    "one": "{count} sensor added.",
+    "other": "{count} sensors added."
+  },
+  "import.report.noType": "an entry without a type",
+  "import.report.skipped": "Not imported: {type} ({reason})",
+  "import.report.more": "… and {count} more",
+  "export.pick.title": "Export layout",
+  "export.pick.fileName": "Infodock layout",
+  "export.types.layout": "Infodock layout",
+  "export.types.config": "Infodock settings and layout",
+  "export.failed": "The layout could not be saved."
 }

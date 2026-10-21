@@ -824,6 +824,108 @@ pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> 
     }
 }
 
+/// What the save picker asks for (SPEC §4.6 `IFileSaveDialog`).
+pub struct SaveRequest<'a> {
+    pub title: &'a str,
+    /// The file name suggested, without its extension.
+    pub file_name: &'a str,
+    /// The file types offered, each its name and extension (e.g. `infodock.json`); the first is
+    /// chosen at first, and its extension is added to a name typed without one.
+    pub types: &'a [(&'a str, &'a str)],
+}
+
+/// Shows the OS save picker, modal to the native window `owner`, on the calling thread: the
+/// chosen path and the index of the chosen file type. `None` if the user cancelled, or where
+/// there is no picker.
+pub fn save_path(owner: Option<isize>, request: &SaveRequest) -> Option<(String, usize)> {
+    #[cfg(windows)]
+    return windows::shell::save_path(owner, request);
+    #[cfg(not(windows))]
+    {
+        let _ = (owner, request);
+        None
+    }
+}
+
+/// A question answered with one of `choices` or Cancel (SPEC §6.4).
+pub struct Choice<'a> {
+    pub question: &'a str,
+    /// Shown under the question; may be empty.
+    pub detail: &'a str,
+    /// The first is the default.
+    pub choices: &'a [&'a str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageKind {
+    Info,
+    Warning,
+    Error,
+}
+
+/// A message with OK (SPEC §6.4).
+pub struct Message<'a> {
+    pub kind: MessageKind,
+    pub text: &'a str,
+    /// Shown under the text; may be empty.
+    pub detail: &'a str,
+}
+
+/// The native dialogs, for flows that ask in steps (an import: the file, then Replace or
+/// Merge, then the report). Tests answer with a script.
+pub trait Dialogs {
+    /// The file or folder picker; see [`pick_path`].
+    fn open_path(&self, request: &PathRequest) -> Option<String>;
+    /// The save picker; see [`save_path`].
+    fn save_path(&self, request: &SaveRequest) -> Option<(String, usize)>;
+    /// The index of the chosen answer; `None` for Cancel, or where there are no dialogs.
+    fn choose(&self, choice: &Choice) -> Option<usize>;
+    fn show_message(&self, message: &Message);
+}
+
+/// The OS dialogs (`TaskDialogIndirect`, the pickers), modal to the native window `owner`, on
+/// the calling thread, each running its own modal loop. Without them (other OSes), nothing is
+/// asked and every question is cancelled.
+pub struct NativeDialogs {
+    pub owner: Option<isize>,
+}
+
+impl Dialogs for NativeDialogs {
+    fn open_path(&self, request: &PathRequest) -> Option<String> {
+        pick_path(self.owner, request)
+    }
+
+    fn save_path(&self, request: &SaveRequest) -> Option<(String, usize)> {
+        save_path(self.owner, request)
+    }
+
+    fn choose(&self, choice: &Choice) -> Option<usize> {
+        #[cfg(windows)]
+        return windows::dialog::choose(
+            owner_hwnd(self.owner),
+            &crate::i18n::t("app.name"),
+            choice,
+        );
+        #[cfg(not(windows))]
+        {
+            let _ = choice;
+            None
+        }
+    }
+
+    fn show_message(&self, message: &Message) {
+        #[cfg(windows)]
+        windows::dialog::message(owner_hwnd(self.owner), &crate::i18n::t("app.name"), message);
+        #[cfg(not(windows))]
+        tracing::info!("message: {} {}", message.text, message.detail);
+    }
+}
+
+#[cfg(windows)]
+fn owner_hwnd(owner: Option<isize>) -> Option<::windows::Win32::Foundation::HWND> {
+    owner.map(|h| ::windows::Win32::Foundation::HWND(h as *mut std::ffi::c_void))
+}
+
 /// Renders `width`×`height` physical px at `scale` with the bar's renderer, e.g. for previews
 /// and the screenshots CI publishes (SPEC §12.4, §16). Windows only for now.
 pub fn render_offscreen(

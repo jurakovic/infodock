@@ -22,6 +22,13 @@ const ZONES: [(Zone, &str); 3] = [
     (Zone::Right, "right"),
 ];
 
+/// What kind of file an import reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportFormat {
+    /// An exchange file, `.infodock.json`.
+    Json,
+}
+
 /// What an export holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportScope {

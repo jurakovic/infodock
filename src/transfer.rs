@@ -1,0 +1,492 @@
+//! Importing and exporting layouts as the user does it (SPEC §6.4, §11.3): the file pickers,
+//! the *Replace* / *Merge* question, the report and the errors. Runs on the main thread, as
+//! Settings' pickers do, so the bar goes on while a picker is open; the Tools menu starts it.
+//!
+//! A clean import is announced with a toast (§7.4); one that skipped entries or has warnings
+//! shows the report in a dialog, so nothing goes unseen.
+
+use std::cell::Cell;
+use std::path::{Path, PathBuf};
+
+use crate::app::App;
+use crate::config::exchange::{
+    self, EXTENSION, ExportScope, ImportFormat, ImportMode, ImportReport, Incoming,
+};
+use crate::i18n::{t, t_args, t_count};
+use crate::platform::{Choice, Dialogs, Message, MessageKind, PathRequest, SaveRequest};
+
+/// The report dialog lists at most this many skipped entries and warnings.
+const MAX_LINES: usize = 15;
+
+thread_local! {
+    /// One import or export at a time (all run on the main thread): a menu click while a
+    /// picker is open does nothing.
+    static BUSY: Cell<bool> = const { Cell::new(false) };
+}
+
+struct Busy;
+
+impl Busy {
+    fn take() -> Option<Self> {
+        (!BUSY.replace(true)).then_some(Busy)
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.set(false);
+    }
+}
+
+/// Asks for a file, reads it, asks *Replace* or *Merge*, imports it and reports. Returns the
+/// report, or `None` if the user cancelled or the file could not be imported (said in a
+/// message).
+pub fn import(app: &App, dialogs: &dyn Dialogs, format: ImportFormat) -> Option<ImportReport> {
+    let _busy = Busy::take()?;
+    let path = pick_file(dialogs, format)?;
+    let incoming = match read(&path, format) {
+        Ok(incoming) => incoming,
+        Err(reason) => {
+            failed(dialogs, "import.failed", &reason);
+            return None;
+        }
+    };
+    if incoming.sensors.is_empty() && incoming.unsupported.is_empty() {
+        dialogs.show_message(&Message {
+            kind: MessageKind::Info,
+            text: &t("import.empty"),
+            detail: "",
+        });
+        return None;
+    }
+    let mode = ask_mode(dialogs, incoming.sensors.len())?;
+    match app.import(incoming, mode) {
+        Ok(report) => {
+            show_report(app, dialogs, &report);
+            Some(report)
+        }
+        Err(e) => {
+            failed(dialogs, "import.failed", &e.to_string());
+            None
+        }
+    }
+}
+
+fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
+    let (title, types_name, extension) = match format {
+        ImportFormat::Json => (t("import.pick.title"), t("import.pick.types"), EXTENSION),
+    };
+    let all_files = t("settings.props.allFiles");
+    dialogs
+        .open_path(&PathRequest {
+            title: &title,
+            folder: false,
+            extensions: &[extension],
+            types_name: &types_name,
+            all_files: &all_files,
+        })
+        .map(PathBuf::from)
+}
+
+/// What the file brings, or why it cannot be imported.
+fn read(path: &Path, format: ImportFormat) -> Result<Incoming, String> {
+    match format {
+        ImportFormat::Json => exchange::read(path).map_err(|e| e.message()),
+    }
+}
+
+fn ask_mode(dialogs: &dyn Dialogs, sensors: usize) -> Option<ImportMode> {
+    let question = t("import.mode.question");
+    let detail = t_count("import.mode.detail", sensors as u64, &[]);
+    let choices = [t("import.mode.replace"), t("import.mode.merge")];
+    let choice = dialogs.choose(&Choice {
+        question: &question,
+        detail: &detail,
+        choices: &[&choices[0], &choices[1]],
+    })?;
+    Some(match choice {
+        0 => ImportMode::Replace,
+        _ => ImportMode::Merge,
+    })
+}
+
+fn show_report(app: &App, dialogs: &dyn Dialogs, report: &ImportReport) {
+    let added = t_count("import.report.added", report.added as u64, &[]);
+    if report.skipped.is_empty() && report.warnings.is_empty() {
+        app.platform.notify(&t("import.report.title"), &added);
+        return;
+    }
+    dialogs.show_message(&Message {
+        kind: MessageKind::Warning,
+        text: &added,
+        detail: &report_lines(report).join("\n"),
+    });
+}
+
+/// The report dialog's lines: each skipped entry, then the warnings, at most [`MAX_LINES`].
+fn report_lines(report: &ImportReport) -> Vec<String> {
+    let skipped = report.skipped.iter().map(|s| {
+        let kind = if s.kind.is_empty() {
+            t("import.report.noType")
+        } else {
+            s.kind.clone()
+        };
+        t_args(
+            "import.report.skipped",
+            &[("type", &kind), ("reason", &s.reason.message())],
+        )
+    });
+    let warnings = report.warnings.iter().map(exchange::Warning::message);
+    let mut lines: Vec<String> = skipped.chain(warnings).collect();
+    if lines.len() > MAX_LINES {
+        let more = lines.len() - (MAX_LINES - 1);
+        lines.truncate(MAX_LINES - 1);
+        lines.push(t_count("import.report.more", more as u64, &[]));
+    }
+    lines
+}
+
+fn failed(dialogs: &dyn Dialogs, key: &str, reason: &str) {
+    dialogs.show_message(&Message {
+        kind: MessageKind::Error,
+        text: &t(key),
+        detail: reason,
+    });
+}
+
+/// Asks where to save, and whether the layout or the whole config (the file type chosen in the
+/// picker), and writes the file. Returns its path, or `None` if the user cancelled or it could
+/// not be written (said in a message).
+pub fn export(app: &App, dialogs: &dyn Dialogs) -> Option<PathBuf> {
+    let _busy = Busy::take()?;
+    let (title, file_name) = (t("export.pick.title"), t("export.pick.fileName"));
+    let (layout, config) = (t("export.types.layout"), t("export.types.config"));
+    let (path, type_index) = dialogs.save_path(&SaveRequest {
+        title: &title,
+        file_name: &file_name,
+        types: &[(&layout, EXTENSION), (&config, EXTENSION)],
+    })?;
+    let scope = match type_index {
+        1 => ExportScope::Config,
+        _ => ExportScope::Layout,
+    };
+    let path = export_path(path);
+    let written = app
+        .export(scope)
+        .map_err(std::io::Error::other)
+        .and_then(|text| std::fs::write(&path, text));
+    if let Err(e) = written {
+        failed(dialogs, "export.failed", &e.to_string());
+        return None;
+    }
+    Some(path)
+}
+
+/// `path` with `.infodock.json` added when it does not end in `.json`.
+fn export_path(path: String) -> PathBuf {
+    if path.to_lowercase().ends_with(".json") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from(format!("{path}.{EXTENSION}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex, PoisonError};
+
+    use super::*;
+    use crate::config::ConfigStore;
+    use crate::config::exchange::{SkipReason, Skipped, Warning};
+    use crate::config::model::Zone;
+    use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
+
+    /// Answers with a script and records what it was asked.
+    #[derive(Default)]
+    struct Script {
+        open: RefCell<Option<String>>,
+        save: RefCell<Option<(String, usize)>>,
+        choices: RefCell<VecDeque<Option<usize>>>,
+        asked: RefCell<Vec<String>>,
+    }
+
+    impl Dialogs for Script {
+        fn open_path(&self, request: &PathRequest) -> Option<String> {
+            self.asked.borrow_mut().push(format!(
+                "open {} ({}: {:?})",
+                request.title, request.types_name, request.extensions
+            ));
+            self.open.borrow_mut().take()
+        }
+        fn save_path(&self, request: &SaveRequest) -> Option<(String, usize)> {
+            let types: Vec<String> = request
+                .types
+                .iter()
+                .map(|(name, ext)| format!("{name}: {ext}"))
+                .collect();
+            self.asked.borrow_mut().push(format!(
+                "save {} as {} ({})",
+                request.title,
+                request.file_name,
+                types.join(", ")
+            ));
+            self.save.borrow_mut().take()
+        }
+        fn choose(&self, choice: &Choice) -> Option<usize> {
+            self.asked.borrow_mut().push(format!(
+                "choose {} {} {:?}",
+                choice.question, choice.detail, choice.choices
+            ));
+            self.choices.borrow_mut().pop_front().flatten()
+        }
+        fn show_message(&self, message: &Message) {
+            self.asked.borrow_mut().push(format!(
+                "{:?}: {} | {}",
+                message.kind, message.text, message.detail
+            ));
+        }
+    }
+
+    impl Script {
+        fn asked(&self) -> Vec<String> {
+            self.asked.borrow().clone()
+        }
+    }
+
+    /// Records toasts.
+    #[derive(Default)]
+    struct Toasts(Mutex<Vec<String>>);
+
+    impl Platform for Toasts {
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+        fn monitors(&self) -> Vec<MonitorInfo> {
+            Vec::new()
+        }
+        fn appearance(&self) -> OsAppearance {
+            OsAppearance::default()
+        }
+        fn uptime(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+        fn notify(&self, title: &str, body: &str) {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(format!("{title}: {body}"));
+        }
+    }
+
+    struct Fixture {
+        app: App,
+        toasts: Arc<Toasts>,
+        dir: tempfile::TempDir,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("temp dir");
+            let (store, _) = ConfigStore::open(dir.path().join("config"), "test");
+            let toasts = Arc::new(Toasts::default());
+            let app = App::new(store, toasts.clone(), dir.path().join("skins"));
+            Self { app, toasts, dir }
+        }
+
+        fn file(&self, name: &str, text: &str) -> String {
+            let path = self.dir.path().join(name);
+            std::fs::write(&path, text).expect("written");
+            path.to_string_lossy().into_owned()
+        }
+
+        fn toasts(&self) -> Vec<String> {
+            self.toasts
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        }
+
+        fn kinds(&self, zone: Zone) -> Vec<String> {
+            let layout = self.app.store.get().layout;
+            layout.zone(zone).iter().map(|s| s.kind.clone()).collect()
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            self.app.store.shutdown();
+        }
+    }
+
+    const LAYOUT: &str = r#"{ "schema": 1, "layout": {
+        "left": [ { "id": "s_a", "type": "text", "props": { "text": "Hi" } } ],
+        "right": [ { "id": "s_b", "type": "spacer" } ]
+    } }"#;
+
+    #[test]
+    fn imports_with_replace_and_announces_it() {
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(f.file("a.infodock.json", LAYOUT));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Json).expect("imported");
+        assert_eq!(report.added, 2);
+        assert_eq!(f.kinds(Zone::Left), ["text"]);
+        assert!(f.kinds(Zone::Center).is_empty());
+        assert_eq!(f.kinds(Zone::Right), ["spacer"]);
+        assert_eq!(
+            script.asked(),
+            [
+                "open Import layout (Infodock layouts: [\"infodock.json\"])",
+                "choose Replace the current layout, or add the imported sensors to it? \
+                 The file holds 2 sensors. [\"Replace the layout\\nThe sensors now on the bar \
+                 are removed.\", \"Add to the layout\\nThe imported sensors are added at the \
+                 end of their zones.\"]",
+            ]
+        );
+        assert_eq!(f.toasts(), ["Layout imported: 2 sensors added."]);
+    }
+
+    #[test]
+    fn merges_and_reports_what_was_skipped() {
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(f.file(
+            "b.json",
+            r#"{ "layout": { "center": [ 1, { "type": "image", "props": { "opacity": "x" } } ] } }"#,
+        ));
+        script.choices.borrow_mut().push_back(Some(1));
+        let report = import(&f.app, &script, ImportFormat::Json).expect("imported");
+        assert_eq!(report.added, 1);
+        assert_eq!(f.kinds(Zone::Center), ["image", "image"]);
+        assert_eq!(
+            script.asked().last().map(String::as_str),
+            Some(
+                "Warning: 1 sensor added. | Not imported: an entry without a type (not a \
+                 sensor entry)\nImage: the value of “opacity” cannot be used, so its default \
+                 is used instead."
+            )
+        );
+        assert!(f.toasts().is_empty());
+    }
+
+    #[test]
+    fn cancelling_changes_nothing() {
+        let f = Fixture::new();
+        let before = f.app.store.get();
+        // No file chosen.
+        let script = Script::default();
+        assert!(import(&f.app, &script, ImportFormat::Json).is_none());
+        assert_eq!(script.asked().len(), 1);
+        // A file, then Cancel.
+        *script.open.borrow_mut() = Some(f.file("c.json", LAYOUT));
+        script.choices.borrow_mut().push_back(None);
+        assert!(import(&f.app, &script, ImportFormat::Json).is_none());
+        assert_eq!(f.app.store.get(), before);
+        assert!(f.toasts().is_empty());
+    }
+
+    #[test]
+    fn says_why_a_file_cannot_be_imported() {
+        let f = Fixture::new();
+        let script = Script::default();
+        let newer = r#"{ "schema": 99, "layout": {} }"#;
+        for (name, text, reason) in [
+            (
+                "newer.json",
+                newer,
+                "The file was saved by a newer version of Infodock. Update Infodock to import it.",
+            ),
+            (
+                "bad.json",
+                "<xml/>",
+                "The file does not hold an Infodock layout.",
+            ),
+        ] {
+            *script.open.borrow_mut() = Some(f.file(name, text));
+            assert!(import(&f.app, &script, ImportFormat::Json).is_none());
+            assert_eq!(
+                script.asked().last().cloned(),
+                Some(format!(
+                    "Error: The layout could not be imported. | {reason}"
+                ))
+            );
+        }
+        *script.open.borrow_mut() = Some(f.file("empty.json", r#"{ "layout": {} }"#));
+        assert!(import(&f.app, &script, ImportFormat::Json).is_none());
+        assert_eq!(
+            script.asked().last().map(String::as_str),
+            Some("Info: The file holds no sensors. | ")
+        );
+    }
+
+    #[test]
+    fn exports_the_chosen_scope() {
+        let f = Fixture::new();
+        let script = Script::default();
+        let target = f.dir.path().join("mine");
+        *script.save.borrow_mut() = Some((target.to_string_lossy().into_owned(), 0));
+        let path = export(&f.app, &script).expect("exported");
+        assert_eq!(path, f.dir.path().join("mine.infodock.json"));
+        assert_eq!(
+            script.asked(),
+            [
+                "save Export layout as Infodock layout (Infodock layout: infodock.json, \
+              Infodock settings and layout: infodock.json)"
+            ]
+        );
+        let layout: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("JSON");
+        assert!(layout.get("settings").is_none());
+        assert_eq!(layout["layout"]["left"][0]["type"], "cpu-graph");
+
+        let whole = f.dir.path().join("all.json");
+        *script.save.borrow_mut() = Some((whole.to_string_lossy().into_owned(), 1));
+        assert_eq!(export(&f.app, &script), Some(whole.clone()));
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&whole).expect("read")).expect("JSON");
+        assert_eq!(config["settings"]["bar"]["edge"], "bottom");
+
+        let unwritable = f.dir.path().join("no-such-folder").join("x.json");
+        *script.save.borrow_mut() = Some((unwritable.to_string_lossy().into_owned(), 0));
+        assert!(export(&f.app, &script).is_none());
+        assert!(
+            script
+                .asked()
+                .last()
+                .is_some_and(|m| m.starts_with("Error: The layout could not be saved. | "))
+        );
+    }
+
+    #[test]
+    fn long_reports_are_cut() {
+        let report = ImportReport {
+            added: 0,
+            skipped: vec![
+                Skipped {
+                    kind: "DockRSSSensor".into(),
+                    reason: SkipReason::NotSupportedYet,
+                };
+                20
+            ],
+            warnings: vec![Warning::UnknownType {
+                kind: "mail".into(),
+            }],
+        };
+        let lines = report_lines(&report);
+        assert_eq!(lines.len(), MAX_LINES);
+        assert_eq!(lines[0], "Not imported: DockRSSSensor (not supported yet)");
+        assert_eq!(lines[MAX_LINES - 1], "… and 7 more");
+    }
+
+    #[test]
+    fn one_at_a_time() {
+        let busy = Busy::take().expect("free");
+        assert!(Busy::take().is_none());
+        drop(busy);
+        assert!(Busy::take().is_some());
+    }
+}

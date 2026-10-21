@@ -6,7 +6,7 @@ mod battery;
 mod com;
 mod cpu;
 mod device;
-mod dialog;
+pub mod dialog;
 mod disk;
 mod droptarget;
 mod eject;

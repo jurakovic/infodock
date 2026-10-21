@@ -24,6 +24,7 @@ use super::theme::Theme;
 use super::tray::{self, TrayCommand};
 use super::{BarHost, Command};
 use crate::config::Config;
+use crate::config::exchange::ImportFormat;
 use crate::config::model::Zone;
 use crate::config::model::{
     BarMode, Edge, FloatingRect, Layout, Material, SensorInstance, Settings,
@@ -808,11 +809,10 @@ impl BarLogic {
                 }
             }
             MenuCommand::LayoutManager => self.host.open_settings("layout"),
-            // Greyed out until their milestones (M4, M5).
-            MenuCommand::ImportLayout
-            | MenuCommand::ExportLayout
-            | MenuCommand::ImportLegacy
-            | MenuCommand::Help => {}
+            MenuCommand::ImportLayout => self.host.import_layout(ImportFormat::Json),
+            MenuCommand::ExportLayout => self.host.export_layout(),
+            // Greyed out until their items (M4 S9, M5).
+            MenuCommand::ImportLegacy | MenuCommand::Help => {}
             MenuCommand::Settings => self.host.open_settings("general"),
             MenuCommand::ToggleLock => self
                 .host
@@ -1737,6 +1737,12 @@ mod tests {
                 serde_json::Value::Object(changes)
             ));
         }
+        fn import_layout(&self, format: ImportFormat) {
+            self.log(format!("import {format:?}"));
+        }
+        fn export_layout(&self) {
+            self.log("export".into());
+        }
     }
 
     const WIDTH: f32 = 1200.0;
@@ -2259,6 +2265,15 @@ mod tests {
             e,
             MenuEntry::Item { id, enabled: true, .. } if *id == MenuCommand::Properties.id()
         )));
+    }
+
+    #[test]
+    fn tools_import_and_export_through_the_host() {
+        let (mut logic, window, host, _) = bar(Settings::default());
+        let empty = PointF::new(300.0, 14.0);
+        right_click(&mut logic, &window, empty, MenuCommand::ImportLayout);
+        right_click(&mut logic, &window, LOGO, MenuCommand::ExportLayout);
+        assert_eq!(host.calls(), ["import Json", "export"]);
     }
 
     #[test]

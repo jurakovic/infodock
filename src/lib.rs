@@ -29,6 +29,7 @@ pub mod sensors;
 mod settings;
 #[cfg(test)]
 mod test_util;
+mod transfer;
 
 /// The Slint UI compiled from `ui/app.slint`.
 mod ui {

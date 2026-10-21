@@ -104,6 +104,15 @@ pub fn open(app: &Arc<App>, route: &str) {
     focus(&window);
 }
 
+/// The open Settings window's native handle, to make a dialog modal to it; `None` while
+/// Settings is closed. Main thread only.
+pub fn owner() -> Option<isize> {
+    WINDOW.with(|w| {
+        let w = w.try_borrow().ok()?;
+        properties::owner(&w.as_ref()?.window)
+    })
+}
+
 /// The drive list changed (sampler thread): an open form's drive choices follow it.
 pub fn volumes_changed(volumes: Vec<crate::platform::Volume>) {
     let queued = slint::invoke_from_event_loop(move || properties::volumes_changed(volumes));

@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::Config;
 use crate::config::ConfigStore;
+use crate::config::exchange::ImportFormat;
 use crate::config::model::{BarMode, SensorInstance, Settings, Zone};
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use crate::sampler::{Change, Delivery, TopicRequest};
@@ -73,6 +74,11 @@ pub trait BarHost: Send + Sync {
     /// Saves props sensor `id` changed itself (`changes`: the changed keys), e.g. what a
     /// Battery shows after a click (SPEC §9.14).
     fn update_sensor(&self, id: &str, changes: crate::sensors::Props);
+    /// Imports a layout file as the user picks it (Tools menu, SPEC §6.4, §11.3): the picker,
+    /// the *Replace* / *Merge* question and the report, on the main thread.
+    fn import_layout(&self, format: ImportFormat);
+    /// Exports the layout or the whole config to a file the user picks (SPEC §11.3).
+    fn export_layout(&self);
 }
 
 /// Work for the bar thread, queued by [`BarController`].

@@ -124,7 +124,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Threads | A dedicated **bar thread** (§4.1), a **sampler thread** (§4.4), and worker threads for slow work (directory listings, file operations, icon extraction) | |
 | Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import) | |
 | Logging | `tracing` + `tracing-appender` (rolling files) | |
-| Other OS services | Through the platform layer (§4.6): single-instance lock, known folders, launching files and URLs, file pickers (`IFileOpenDialog`), toast notifications (WinRT), autostart (the per-user `Run` key) | |
+| Other OS services | Through the platform layer (§4.6): single-instance lock, known folders, launching files and URLs, file pickers (`IFileOpenDialog`, `IFileSaveDialog`), toast notifications (WinRT), autostart (the per-user `Run` key) | |
 | Window effects | `window-vibrancy` (Acrylic/Mica on the bar window) | Optional per theme |
 | Windows resources | `embed-resource`: exe icon, application manifest (per-monitor DPI v2, common controls 6), version information | |
 | UI tests | Rust unit tests for the bar and the Settings mapping; offscreen rendering of the Settings pages to PNG (§16) | |
@@ -167,6 +167,7 @@ src/
   main.rs / lib.rs          start-up and shutdown; starts the bar thread, the sampler and the main event loop
   app.rs                    App (state shared by all threads), bar visibility, quitting
   hotkey.rs                 global hotkey (main thread)
+  transfer.rs               import and export as the user runs them: pickers, questions, report (main thread)
   settings/                 Settings window glue: fills and saves the Slint state; mapping helpers
   config/                   model.rs (typed config), store.rs (load/save/atomic write/debounce),
                             migrate.rs (schema versions), patch.rs, legacy.rs (legacy XML layout import)
@@ -281,7 +282,7 @@ UI services, used only on the bar thread (not `Send`):
 
 * **Windows**: create a native window of a kind (§4.1) with an event handler; set geometry (physical px), show/hide, global alpha (fades), capture the pointer, invalidate, read its scale, set a one-shot timer (the sensors' earliest wake-up, §4.4). Input arrives as platform-neutral events: pointer move/leave/down/up (button, modifiers), wheel, key, DPI change, timer, drag-enter/over/leave/drop (§6.3), and the OS broadcasts the bar cares about (resume, time change, device change, appearance change).
 * **Canvas**: drawing in logical px at the window's scale: filled and stroked rectangles, rounded rectangles, lines and polygons, linear gradients, text layouts, bitmaps (with opacity), clipping and layer opacity. **Text**: layout and measurement with a font family, size, weight and style, optional maximum width with an end ellipsis, tabular numerals. **Bitmaps**: decode files (PNG, JPEG, GIF, BMP, ICO; SVG through `resvg`) and wrap RGBA buffers.
-* **Menus** and **dialogs**: native popup menus at the cursor (checkable items, separators) and confirmation dialogs.
+* **Menus** and **dialogs**: native popup menus at the cursor (checkable items, separators) and confirmation dialogs. Flows that ask in steps (an import, §11.3) go through the `Dialogs` trait: open and save pickers, a question with command links, a message with OK; `NativeDialogs` shows them modal to a given window on the calling thread.
 * **Tray icon**: shown, updated or removed on the bar window; clicks and menu requests arrive as events; removable from any thread on exit.
 * **AppBar**: attached to the bar window (`attach_appbar(window, sink) → AppBar`), because it needs that window and its thread.
 * **Accessibility**: a UI Automation provider for the bar (§14.4).
@@ -451,7 +452,7 @@ Settings…
 ✓ Popups
 ```
 
-Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a menu hides any hint/popup. The menu opens on the right button's release. Tools items whose features arrive later (import and export in M4, Help in M5) are shown greyed out until then. "New sensor…" opens Settings on `new?zone=<zone>&index=<index>` (bar menu: the zone by thirds and its insertion point, §6.6) or `new?target=<id>` (sensor menu); in submenu mode, choosing a type adds it after the target sensor (or at the zone's insertion point) and opens its Properties (`sensor/<id>`). Implementation (`bar/menus.rs`): the sensor's items (`MenuItem`: its own id, label, enabled) are asked for each time the menu opens; the chosen one goes back to the same sensor (`on_menu`), which redraws if what it shows changed. Without own items the menu has no second separator.
+Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a menu hides any hint/popup. The menu opens on the right button's release. Tools items whose features arrive later (the legacy import in M4, Help in M5) are shown greyed out until then. *Import layout…* and *Export layout…* run on the main thread (§11.3), so the bar goes on while their pickers are open. "New sensor…" opens Settings on `new?zone=<zone>&index=<index>` (bar menu: the zone by thirds and its insertion point, §6.6) or `new?target=<id>` (sensor menu); in submenu mode, choosing a type adds it after the target sensor (or at the zone's insertion point) and opens its Properties (`sensor/<id>`). Implementation (`bar/menus.rs`): the sensor's items (`MenuItem`: its own id, label, enabled) are asked for each time the menu opens; the chosen one goes back to the same sensor (`on_menu`), which redraws if what it shows changed. Without own items the menu has no second separator.
 
 ### 6.5 Global hotkey and tray
 
@@ -1270,6 +1271,7 @@ Pages:
 * **Export**: the whole config, or layout only (`{ schema, layout, state }`, with `legacy` while it holds unsupported legacy sensors), as `.infodock.json`.
 * **Import**: *replace* the layout, or *merge* (append imported sensors to their zones). Either kind of file gives only its layout, the state of its sensors and its unsupported legacy sensors: the settings of a whole-config file are not applied. *Replace* also replaces the sensor state and `legacy.unsupported`. Sensor ids are regenerated. The result is an `ImportReport { added, skipped: [{ type, reason }], warnings }`, shown in a dialog.
 * Implementation (`config/exchange.rs`, `sensors/import.rs`): the file is migrated to this schema (`migrate.rs`). A newer schema, a file that is not JSON or holds no `layout`, and a file over 16 MB are refused with a message. Layout entries that are not objects with a `type` (and, if any, object `props`) are skipped as "not a sensor entry". Each sensor is checked against its type by the §11.2 rules, as on load: a value of the wrong type gives way to its default with a warning, numbers are clamped, keys the schema does not know are kept, machine-derived props that are missing or invalid are filled from this machine, and only values that differ from the defaults are stored. A type this version does not know is kept as it is (a placeholder, §4.6) with a warning. The legacy XML import (§11.4) goes through the same steps.
+* As the user runs it (`transfer.rs`, from the Tools menu, §6.4): *Import layout…* opens the file picker (`*.infodock.json`, or all files), reads the file (an error is shown in a message), asks *Replace the layout* or *Add to the layout* (command links, with the number of sensors the file holds; Cancel changes nothing), imports, and reports: a clean import with a toast ("Layout imported", §7.4), one that skipped entries or has warnings in a dialog listing them (at most 15 lines). A file without sensors says so and asks nothing. *Export layout…* opens the save picker, whose file type chooses the content: *Infodock layout* (the default) or *Infodock settings and layout* (the whole config); `.infodock.json` is added to a name without `.json`. Dialogs are modal to Settings while it is open. One import or export runs at a time.
 
 ### 11.4 Legacy XML layout import
 
