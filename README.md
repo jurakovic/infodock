@@ -35,4 +35,4 @@ MIT, see [LICENSE](LICENSE).
 
 The Settings window is built with [Slint](https://slint.dev), used under the Slint Royalty-free License 2.0:
 
-[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
+<a href="https://slint.dev"><img src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png" alt="Made with Slint" height="50"></a>

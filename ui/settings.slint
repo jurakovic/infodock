@@ -1609,7 +1609,11 @@ component AboutPage inherits VerticalLayout {
 
     HorizontalLayout {
         alignment: start;
-        AboutSlint { }
+        // The smallest it draws cleanly: its logo keeps a 48 px minimum height and its caption
+        // needs the room (its own 256 px would dwarf the page).
+        AboutSlint {
+            width: 128px;
+        }
     }
 }
 
