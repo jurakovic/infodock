@@ -145,7 +145,7 @@ Deferred decisions (D45): asked together in S16 and answered there (D61):
 - [x] **S18b Review**: three clean-context reviewers on the M4 diff (`8daf484..674c6fc`: skins, the shadow and the bar; export, import and the legacy import; Settings, autostart and the installer); findings in `docs/review-m4.md`, checked against the code and grouped into S18c–S18e
 - [x] **S18c Skin and bar fixes**: `docs/review-m4.md` § S18c (the `.zip` install extracting only what `skin.json` names, the dragged bar's side, the band while fading, the skin cache on the modern bar, the band window's moves)
 - [x] **S18d Import fixes**: `docs/review-m4.md` § S18d (files without sensors, the 500-sensor limit, code pages, network paths in the question, report line lengths, battery and uptime values, UTF-16 JSON, power modes by case)
-- [ ] **S18e Settings, autostart and installer fixes**: `docs/review-m4.md` § S18e (the uninstall's sign-in entry after a cancel, another copy taking the entry, the reinstall page, the publisher key, CI's check of the mark, a second launch on the welcome page, the custom image's reads, the gallery after a reinstall, removing a pack by case)
+- [x] **S18e Settings, autostart and installer fixes**: `docs/review-m4.md` § S18e (the uninstall's sign-in entry after a cancel, another copy taking the entry, the reinstall page, the publisher key, CI's check of the mark, a second launch on the welcome page, the custom image's reads, the gallery after a reinstall, removing a pack by case)
 - [ ] **S18z M4 done**: the review's fixes in, `docs/manual-test.md` M4 final with the exit criteria, budgets and checks for the fixes, CI green
 
 ## M5 — Polish
