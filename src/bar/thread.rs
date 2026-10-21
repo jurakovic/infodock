@@ -1916,8 +1916,11 @@ mod tests {
         use crate::bar::skins::tests::{decode_png, pack, rows_png};
         let mut settings = Settings::default();
         settings.bar.shadow = true;
-        // None while the bar rises and its content fades in.
-        let (mut rising, ..) = rising_bar(settings.clone());
+        // None while the bar rises and its content fades in (animations on, whatever the OS
+        // says: CI's Windows runner has them off).
+        let mut animated = settings.clone();
+        animated.bar.animations = crate::config::model::Animations::On;
+        let (mut rising, ..) = rising_bar(animated);
         rising.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
         assert_eq!(rising.band(), None);
         let (mut logic, window, _host, config) = bar(settings);
