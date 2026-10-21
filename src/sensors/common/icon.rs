@@ -2,11 +2,9 @@
 //! size, centred vertically, optionally tinted (Custom colour, §8.4), drawn at the sensor's
 //! opacity; an inactive sensor's icon fades or takes the inactive colour.
 
-use std::path::Path;
-
 use crate::bar::theme::{Inactive, Theme};
-use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image, load_image};
-use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx};
+use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
+use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx, Fetched, IconSource};
 
 /// The colour an icon is tinted with (SPEC §8.4): Custom tints any icon. Standard leaves shell
 /// icons and the user's own images as they are, and gives Infodock's built-in icons, which are
@@ -23,29 +21,14 @@ pub fn physical(logical: f32, scale: f32) -> u32 {
     (logical * scale).round().max(1.0) as u32
 }
 
-/// A user's image file (an `image` prop), decoded at the height it is drawn at and kept until
-/// that changes.
-#[derive(Default)]
-pub struct ImageFile {
-    /// The height in physical px and the image (`None` inside if it cannot be read).
-    cached: Option<(u32, Option<Bitmap>)>,
-}
-
-impl ImageFile {
-    /// The image at `path`, `px` physical px tall; `None` when `path` is empty or the file
-    /// cannot be read (logged once per height).
-    pub fn get(&mut self, path: &str, px: u32) -> Option<Bitmap> {
-        if path.is_empty() {
-            return None;
-        }
-        if self.cached.as_ref().is_none_or(|(h, _)| *h != px) {
-            let image = load_image(Path::new(path), Some(px))
-                .map_err(|e| tracing::warn!("image {path:?} cannot be shown: {e}"))
-                .ok();
-            self.cached = Some((px, image));
-        }
-        self.cached.as_ref().and_then(|(_, image)| image.clone())
+/// A user's image file (an `image` prop), `px` physical px tall, from the bar's reader (SPEC
+/// §9.2): [`Fetched::None`] when `path` is empty or the file cannot be read (logged), so the
+/// sensor shows its built-in icon; [`Fetched::Loading`] while it is read.
+pub fn custom_image(path: &str, px: u32, icons: &dyn IconSource) -> Fetched {
+    if path.is_empty() {
+        return Fetched::None;
     }
+    icons.image(path, px)
 }
 
 /// An icon ready to draw.

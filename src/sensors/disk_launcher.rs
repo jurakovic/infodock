@@ -3,8 +3,6 @@
 //! optical or removable drive without a medium stays active and says so. The menu ejects a
 //! drive that can be ejected, with the result as a notification.
 
-use std::path::Path;
-
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -13,11 +11,11 @@ use super::common::icon::{self, Icon};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, IconSource, LayoutCtx,
-    MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, ShellIcon, State, typed,
+    Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, Fetched, HintContent, IconSource,
+    LayoutCtx, MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, Canvas, Volume, load_image};
+use crate::platform::{Bitmap, Canvas, Volume};
 use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
 /// The icon when the shell has none, e.g. for an absent drive (Appendix C).
@@ -124,7 +122,6 @@ impl SensorType for DiskType {
             props: typed(props)?,
             volume: None,
             refresh_icon: false,
-            custom: None,
             icon: None,
         }))
     }
@@ -165,8 +162,6 @@ pub(crate) struct Disk {
     volume: Option<Seen>,
     /// The drive arrived, went, or got or lost a medium: its icon is read again.
     refresh_icon: bool,
-    /// The custom image at a height in physical px (`None` inside if it cannot be read).
-    custom: Option<(u32, Option<Bitmap>)>,
     /// What is drawn; `None` while the shell icon is being read.
     icon: Option<Icon>,
 }
@@ -192,33 +187,22 @@ impl Disk {
             .map_or_else(|| self.props.drive.clone(), super::disk::volume_name)
     }
 
-    fn custom_image(&mut self, px: u32) -> Option<Bitmap> {
-        if self.props.image.is_empty() {
-            return None;
-        }
-        if self.custom.as_ref().is_none_or(|(h, _)| *h != px) {
-            let image = load_image(Path::new(&self.props.image), Some(px))
-                .map_err(|e| tracing::warn!("image {:?} cannot be shown: {e}", self.props.image))
-                .ok();
-            self.custom = Some((px, image));
-        }
-        self.custom.as_ref().and_then(|(_, image)| image.clone())
-    }
-
     /// The icon `px` physical px tall: the custom image, or the drive's shell icon (the
     /// built-in drive icon when it has none). `None` while loading.
     /// The bitmap says whether it is one of Infodock's built-in icons.
     fn bitmap(&mut self, px: u32, icons: &dyn IconSource) -> Option<(Bitmap, bool)> {
-        if let Some(image) = self.custom_image(px) {
-            return Some((image, false));
+        match icon::custom_image(&self.props.image, px, icons) {
+            Fetched::Ready(image) => return Some((image, false)),
+            Fetched::Loading => return None,
+            Fetched::None => {}
         }
         if std::mem::take(&mut self.refresh_icon) {
             icons.forget(&self.props.drive);
         }
         match icons.shell_icon(&self.props.drive, px) {
-            ShellIcon::Ready(icon) => Some((icon, false)),
-            ShellIcon::Loading => None,
-            ShellIcon::None => Icon::svg(DRIVE, px).map(|b| (b, true)),
+            Fetched::Ready(icon) => Some((icon, false)),
+            Fetched::Loading => None,
+            Fetched::None => Icon::svg(DRIVE, px).map(|b| (b, true)),
         }
     }
 }
@@ -349,7 +333,6 @@ mod tests {
             props: typed(&props).expect("valid props"),
             volume: None,
             refresh_icon: false,
-            custom: None,
             icon: None,
         }
     }
@@ -359,13 +342,13 @@ mod tests {
     struct Icons(std::cell::RefCell<Vec<String>>);
 
     impl IconSource for Icons {
-        fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
+        fn shell_icon(&self, path: &str, px: u32) -> Fetched {
             self.0.borrow_mut().push(format!("icon {path}"));
             if path == "C:\\" {
                 let pixels = vec![255; (px * px * 4) as usize];
-                ShellIcon::Ready(Bitmap::from_rgba(px, px, pixels).expect("a bitmap"))
+                Fetched::Ready(Bitmap::from_rgba(px, px, pixels).expect("a bitmap"))
             } else {
-                ShellIcon::None
+                Fetched::None
             }
         }
 

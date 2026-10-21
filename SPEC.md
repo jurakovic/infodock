@@ -156,7 +156,7 @@ Threads:
 * **main**: Slint's event loop — the Settings window and the global hotkey. Other threads reach it with `slint::invoke_from_event_loop`.
 * **bar thread**: a COM single-threaded apartment (`OleInitialize`, needed for drag & drop) with its own message loop. It owns the bar, hint, popup and band windows, the tray icon, the sensor instances, layout, rendering, menus and native dialogs. Other threads never touch these; they send commands through the `BarController` handle, which queues the command and posts a wake-up message to the bar window.
 * **sampler thread**: polls the providers and delivers samples to the bar thread's queue (§4.4).
-* **worker threads**: slow work (directory listings, file operations, icon extraction); results go back to the bar thread's queue.
+* **worker threads**: slow work (directory listings, file operations, icon extraction, the sensors' image files); results go back to the bar thread's queue. The bar thread never reads a file a user chose: shell icons and image files (`bar/icons.rs`, `IconSource::image`) are read and decoded on one worker, kept by path and size, so a file on a network share that does not answer holds nothing up; the sensors measure again when one arrives. (The classic skin's custom image is still read where the skin is drawn, §12.4.)
 
 **Single instance**: a named mutex (`Local\app.infodock.desktop`). A second launch finds the running bar window by its class, allows it to take the foreground and posts it a registered activation message; the running instance shows the bar and opens Settings on General (§6.5), or brings an open Settings window to the front on the page it shows (leaving the welcome page would end the first run, §11.5), and the second launch exits.
 
@@ -721,7 +721,7 @@ View: one line, vertically centred, in the sensor text colour. No click action. 
 | opacity | `opacity` | opacity, min 20 % | 100 % |
 | popupText | `text` | text | "" — `%v` is replaced by the app version |
 
-View: the image scaled to height = bar height − 1, keeping aspect ratio, decoded at that physical height. A file that cannot be read shows the logo (and is logged). Hint = popupText (none if empty). The first-run instance uses popupText "Infodock %v".
+View: the image scaled to height = bar height − 1, keeping aspect ratio, decoded at that physical height off the bar thread (§4.1); until it arrives the sensor takes no room (it keeps the image it had when only the size changed). A file that cannot be read shows the logo (and is logged). Hint = popupText (none if empty). The first-run instance uses popupText "Infodock %v".
 
 ### 9.3 `spacer` — Spacer  (General; `DockSpacer`)
 
@@ -1047,7 +1047,7 @@ Implementation (`sensors/recycle_bin.rs`, `platform/windows/shell.rs`, `platform
 * **Inactive** while the target does not exist (checked when properties change and every 60 s).
 * Created by dropping a file or URL onto the bar (§6.3).
 
-Implementation (`sensors/shortcut.rs`): `runAs` ids `normal` / `administrator`. The target is checked on the topic `path/<path>` every 60 s; a bare program name (`notepad.exe`, no folder or drive) is found by the shell itself (App Paths, `PATH`), so it is neither checked nor inactive. Until the shell icon arrives its square stays free; a target without a shell icon (missing, or a bare name) shows the built-in generic app icon, and when the target appears or changes, its icon is read again. Folder targets open without parameters. A Shortcut without a target or URL shows the generic icon, its hint says *No target set*, and a click does nothing. Paths are split at `\` and `/`, so names work the same on every OS; `C:\app.exe` starts in `C:\`. The Layout manager shows the title, the URL or the target's file name.
+Implementation (`sensors/shortcut.rs`): `runAs` ids `normal` / `administrator`. The target is checked on the topic `path/<path>` every 60 s; a bare program name (`notepad.exe`, no folder or drive) is found by the shell itself (App Paths, `PATH`), so it is neither checked nor inactive. Until the shell icon or the custom image arrives its square stays free (both are read off the bar thread, §4.1); a target without a shell icon (missing, or a bare name) shows the built-in generic app icon, and when the target appears or changes, its icon is read again. Folder targets open without parameters. A Shortcut without a target or URL shows the generic icon, its hint says *No target set*, and a click does nothing. Paths are split at `\` and `/`, so names work the same on every OS; `C:\app.exe` starts in `C:\`. The Layout manager shows the title, the URL or the target's file name.
 
 ### 9.18 `disk` — Disk  (Launchers; `DockDisk`)
 

@@ -3,7 +3,6 @@
 //! The target is checked on the `path/<path>` topic, and the sensor is inactive while it is
 //! missing.
 
-use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -12,11 +11,11 @@ use super::common::icon::{self, Icon};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
-    Category, ClickResult, ColorChoice, DrawCtx, HintContent, IconSource, LayoutCtx, Props, Sensor,
-    SensorCtx, SensorType, ShellIcon, State, typed,
+    Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, IconSource, LayoutCtx,
+    Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, Canvas, Launch, PathKind, load_image};
+use crate::platform::{Bitmap, Canvas, Launch, PathKind};
 use crate::sampler::{Sample, Topic, TopicRequest};
 
 /// The icon for web addresses (Appendix C).
@@ -162,7 +161,6 @@ impl SensorType for ShortcutType {
             props: typed(props)?,
             kind: None,
             refresh_icon: false,
-            custom: None,
             icon: None,
         }))
     }
@@ -278,9 +276,6 @@ struct Shortcut {
     kind: Option<PathKind>,
     /// The target changed what it is: its shell icon is read again at the next measure.
     refresh_icon: bool,
-    /// The custom image, decoded at a height in physical px (`None` inside if it cannot be
-    /// read).
-    custom: Option<(u32, Option<Bitmap>)>,
     /// What is drawn; `None` while the shell icon is being read.
     icon: Option<Icon>,
 }
@@ -308,26 +303,14 @@ impl Shortcut {
         }
     }
 
-    /// The custom image `px` physical px tall, if it is set and can be read.
-    fn custom_image(&mut self, px: u32) -> Option<Bitmap> {
-        if self.props.image.is_empty() {
-            return None;
-        }
-        if self.custom.as_ref().is_none_or(|(h, _)| *h != px) {
-            let image = load_image(Path::new(&self.props.image), Some(px))
-                .map_err(|e| tracing::warn!("image {:?} cannot be shown: {e}", self.props.image))
-                .ok();
-            self.custom = Some((px, image));
-        }
-        self.custom.as_ref().and_then(|(_, image)| image.clone())
-    }
-
     /// The icon `px` physical px tall: the custom image, the globe for a web address, or the
     /// target's shell icon (the generic app icon when it has none). `None` while loading.
     /// The bitmap says whether it is one of Infodock's built-in icons.
     fn bitmap(&mut self, px: u32, icons: &dyn IconSource) -> Option<(Bitmap, bool)> {
-        if let Some(image) = self.custom_image(px) {
-            return Some((image, false));
+        match icon::custom_image(&self.props.image, px, icons) {
+            Fetched::Ready(image) => return Some((image, false)),
+            Fetched::Loading => return None,
+            Fetched::None => {}
         }
         if self.has_url() {
             return Icon::svg(GLOBE, px).map(|b| (b, true));
@@ -339,9 +322,9 @@ impl Shortcut {
             icons.forget(&self.props.target);
         }
         match icons.shell_icon(&self.props.target, px) {
-            ShellIcon::Ready(icon) => Some((icon, false)),
-            ShellIcon::Loading => None,
-            ShellIcon::None => Icon::svg(APP, px).map(|b| (b, true)),
+            Fetched::Ready(icon) => Some((icon, false)),
+            Fetched::Loading => None,
+            Fetched::None => Icon::svg(APP, px).map(|b| (b, true)),
         }
     }
 }
@@ -457,7 +440,6 @@ mod tests {
             props: typed(&props).expect("valid props"),
             kind: None,
             refresh_icon: false,
-            custom: None,
             icon: None,
         }
     }
@@ -471,15 +453,15 @@ mod tests {
     }
 
     impl IconSource for Icons {
-        fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
+        fn shell_icon(&self, path: &str, px: u32) -> Fetched {
             self.log.borrow_mut().push(format!("icon {path} {px}"));
             if self.loading {
-                ShellIcon::Loading
+                Fetched::Loading
             } else if path == "C:\\Tools\\app.exe" {
                 let pixels = vec![255; (px * px * 4) as usize];
-                ShellIcon::Ready(Bitmap::from_rgba(px, px, pixels).expect("a bitmap"))
+                Fetched::Ready(Bitmap::from_rgba(px, px, pixels).expect("a bitmap"))
             } else {
-                ShellIcon::None
+                Fetched::None
             }
         }
 

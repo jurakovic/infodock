@@ -19,7 +19,7 @@ use crate::platform::{
 use crate::sampler::{Change, ChangeSink};
 use crate::sensors::format::{self, Numbers};
 use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
-use crate::sensors::{ShellIcon, disk};
+use crate::sensors::{Fetched, disk};
 
 /// A row's icon when the shell has none (Appendix C).
 const DRIVE: &[u8] = include_bytes!("../../../assets/icons/drive.svg");
@@ -377,9 +377,9 @@ impl Popup for EjectList {
                     .clone()
                     .max_width((width - TEXT_X - GAP - used - END).max(1.0));
                 let icon = match cx.icons.shell_icon(&volume.root, px) {
-                    ShellIcon::Ready(icon) => Some(icon),
-                    ShellIcon::Loading => None,
-                    ShellIcon::None => Icon::svg(DRIVE, px).map(|b| b.tinted(tint)),
+                    Fetched::Ready(icon) => Some(icon),
+                    Fetched::Loading => None,
+                    Fetched::None => Icon::svg(DRIVE, px).map(|b| b.tinted(tint)),
                 };
                 RowView {
                     icon,

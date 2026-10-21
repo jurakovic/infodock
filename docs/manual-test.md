@@ -610,3 +610,9 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] With a mapped network drive whose server is off (or a VPN share while disconnected), open the properties of a Disk Meter: the form opens at once with the stored drive; the drive list fills in a moment later, the unreachable drive listed as the others. Plug in a USB stick while the form is open: it joins the list.
 - [ ] On a laptop, open a Battery sensor's properties: the battery list shows "1. {name}" at once or within a moment, never "(not connected)" for a battery that is there. On a two-battery laptop (a ThinkPad with a second battery): both are listed, a Battery sensor on each shows its own charge, and after sleep and resume each still does. (A battery that is disabled or taken out leaves the driver's list, so the one after it moves up; only one that fails to read keeps its place, which the unit tests cover.)
+
+**Images off the bar thread** (since M5 S12)
+
+- [ ] Put a PNG on a network share, use it as an Image sensor's file and as a Shortcut's custom image, then make the share unreachable (pull the cable, or stop the server) and restart Infodock: the bar appears at once and stays responsive (hover hints, Tab, drag); the Shortcut's icon square stays empty and the Image sensor takes no room until the share answers or times out, then the image (or the logo, for a file that cannot be read) appears without anything else moving.
+- [ ] Change an Image sensor's file in Properties: the preview shows the new image within a moment; at 150 % (or after moving the bar to a monitor with another scale) the image is redrawn sharp at the new size without flashing away.
+- [ ] Custom images on a Disk, Folder Menu, Start Menu and both Recycle Bin images show as before; a missing file shows the built-in icon and one `cannot be shown` line in the log.

@@ -741,14 +741,14 @@ mod tests {
         use crate::platform::{FrameRenderer, RectF, UiWaker, text_engine};
         use crate::sensors::common::folder_browser::{FolderBrowser, Options};
         use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
-        use crate::sensors::{IconSource, ShellIcon};
+        use crate::sensors::{Fetched, IconSource};
         use crate::test_util::{median, record_budget};
 
         /// The bar's icon loader before it has any of them.
         struct Loading;
         impl IconSource for Loading {
-            fn shell_icon(&self, _path: &str, _px: u32) -> ShellIcon {
-                ShellIcon::Loading
+            fn shell_icon(&self, _path: &str, _px: u32) -> Fetched {
+                Fetched::Loading
             }
             fn forget(&self, _path: &str) {}
         }

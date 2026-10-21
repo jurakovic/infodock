@@ -5,12 +5,12 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::common::folder_browser::{FolderBrowser, Options};
-use super::common::icon::{self, Icon, ImageFile};
+use super::common::icon::{self, Icon};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props,
-    Sensor, SensorCtx, SensorType, State, typed,
+    Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, LayoutCtx, MenuId, MenuItem,
+    Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::t;
 use crate::platform::{Canvas, Capability, KnownFolder, Platform};
@@ -118,7 +118,6 @@ impl SensorType for StartMenuType {
     fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
         Ok(Box::new(StartMenu {
             props: typed(props)?,
-            image: ImageFile::default(),
             icon: None,
         }))
     }
@@ -150,7 +149,6 @@ struct StartMenuProps {
 
 struct StartMenu {
     props: StartMenuProps,
-    image: ImageFile,
     icon: Option<Icon>,
 }
 
@@ -181,9 +179,11 @@ impl Sensor for StartMenu {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
         let px = icon::physical(ICON, cx.scale);
         let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        let bitmap = match self.image.get(&self.props.image, px) {
-            Some(image) => Some((image, false)),
-            None => Icon::svg(START_MENU, px).map(|b| (b, true)),
+        let bitmap = match icon::custom_image(&self.props.image, px, cx.icons) {
+            Fetched::Ready(image) => Some((image, false)),
+            // Its square stays free until it arrives.
+            Fetched::Loading => None,
+            Fetched::None => Icon::svg(START_MENU, px).map(|b| (b, true)),
         };
         self.icon = bitmap.map(|(bitmap, built_in)| {
             let tint = icon::tint(&self.props.color, built_in, cx.theme);
@@ -264,7 +264,6 @@ mod tests {
         assert!(ignored.is_empty(), "{ignored:?}");
         StartMenu {
             props: typed(&props).expect("valid props"),
-            image: ImageFile::default(),
             icon: None,
         }
     }

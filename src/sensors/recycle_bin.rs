@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::common::icon::{self, Icon, ImageFile};
+use super::common::icon::{self, Icon};
 use super::common::icon_label::IconLabel;
 use super::common::two_line::TwoLine;
 use super::drop::{self, DragInfo, DropAction, Dropped};
@@ -14,8 +14,8 @@ use super::format;
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Capability, Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, MenuId,
-    MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
+    Capability, Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, LayoutCtx,
+    MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_count};
 use crate::platform::{Canvas, DropEffect, RecycleBin};
@@ -128,8 +128,6 @@ impl SensorType for RecycleBinType {
         Ok(Box::new(Bin {
             props: typed(props)?,
             bin: None,
-            empty_image: ImageFile::default(),
-            full_image: ImageFile::default(),
             view: None,
         }))
     }
@@ -160,8 +158,6 @@ struct Bin {
     props: BinProps,
     /// From the `recycle-bin` topic; `None` before its first sample.
     bin: Option<RecycleBin>,
-    empty_image: ImageFile,
-    full_image: ImageFile,
     view: Option<IconLabel>,
 }
 
@@ -193,14 +189,16 @@ impl Sensor for Bin {
         // As the launchers' icons: bar height − 4, centred.
         let logical = cx.theme.bar_height.saturating_sub(4).max(1) as f32;
         let px = icon::physical(logical, cx.scale);
-        let (image, path, svg) = if self.full() {
-            (&mut self.full_image, &self.props.image_full, FULL)
+        let (path, svg) = if self.full() {
+            (&self.props.image_full, FULL)
         } else {
-            (&mut self.empty_image, &self.props.image_empty, EMPTY)
+            (&self.props.image_empty, EMPTY)
         };
-        let bitmap = match image.get(path, px) {
-            Some(image) => Some((image, false)),
-            None => Icon::svg(svg, px).map(|b| (b, true)),
+        let bitmap = match icon::custom_image(path, px, cx.icons) {
+            Fetched::Ready(image) => Some((image, false)),
+            // Its square stays free until it arrives.
+            Fetched::Loading => None,
+            Fetched::None => Icon::svg(svg, px).map(|b| (b, true)),
         };
         let opacity = self.props.opacity.min(100) as f32 / 100.0;
         let icon = bitmap.map(|(bitmap, built_in)| {
@@ -348,8 +346,6 @@ mod tests {
         Bin {
             props: typed(&props).expect("valid props"),
             bin: None,
-            empty_image: ImageFile::default(),
-            full_image: ImageFile::default(),
             view: None,
         }
     }

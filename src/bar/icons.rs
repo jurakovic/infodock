@@ -1,7 +1,8 @@
-//! Shell icons for the sensors on the bar and the rows of popups (SPEC §4.1): read on a worker
-//! thread, since the shell may wait for a network server, and kept by path and size. Sensors
-//! ask while they measure, popups while they lay out; an icon that arrives wakes the bar
-//! thread, which measures and lays out again. The sensors' icons are kept; the popups' (a
+//! Shell icons for the sensors on the bar and the rows of popups, and the sensors' image files
+//! (SPEC §4.1): read on a worker thread, since the shell may wait for a network server and a
+//! file may lie on a share that does not answer, and kept by path and size. Sensors ask while
+//! they measure, popups while they lay out; an icon that arrives wakes the bar thread, which
+//! measures and lays out again. The sensors' icons and images are kept; the popups' icons (a
 //! long folder has many) are transient: only the newest requests wait to be read, and the
 //! least recently asked for are dropped beyond [`CAPACITY`].
 
@@ -11,7 +12,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::platform::{Bitmap, Platform, UiWaker};
-use crate::sensors::{IconSource, ShellIcon};
+use crate::sensors::{Fetched, IconSource, read_image};
 
 /// Transient icons kept at most; beyond it, the least recently asked for go.
 const CAPACITY: usize = 256;
@@ -19,8 +20,17 @@ const CAPACITY: usize = 256;
 /// dropped, and asked for again if their row shows again.
 const QUEUED: usize = 48;
 
-/// A path and a size in physical px.
-type Key = (String, u32);
+/// What is read from a path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Kind {
+    /// The shell's icon of a file, folder or drive.
+    Shell,
+    /// An image file, decoded (SPEC §9.2).
+    Image,
+}
+
+/// What, from which path, at which size in physical px.
+type Key = (Kind, String, u32);
 
 pub(super) struct IconLoader {
     platform: Arc<dyn Platform>,
@@ -73,7 +83,10 @@ impl Worker {
                     if gone {
                         continue;
                     }
-                    let icon = platform.shell_icon(&key.0, key.1);
+                    let icon = match key.0 {
+                        Kind::Shell => platform.shell_icon(&key.1, key.2),
+                        Kind::Image => read_image(&key.1, key.2),
+                    };
                     if answers.send((key, icon)).is_err() {
                         return;
                     }
@@ -167,19 +180,19 @@ impl IconLoader {
         any
     }
 
-    fn request(&self, path: &str, px: u32, transient: bool) -> ShellIcon {
+    fn request(&self, kind: Kind, path: &str, px: u32, transient: bool) -> Fetched {
         let mut inner = self.inner.borrow_mut();
         inner.clock += 1;
         let clock = inner.clock;
-        let key = (path.to_owned(), px);
+        let key = (kind, path.to_owned(), px);
         if let Some(entry) = inner.cache.get_mut(&key) {
             entry.used = clock;
             // A sensor's icon is kept, whoever asked first.
             entry.transient &= transient;
             return match &entry.icon {
-                Some(Some(icon)) => ShellIcon::Ready(icon.clone()),
-                Some(None) => ShellIcon::None,
-                None => ShellIcon::Loading,
+                Some(Some(icon)) => Fetched::Ready(icon.clone()),
+                Some(None) => Fetched::None,
+                None => Fetched::Loading,
             };
         }
         let (platform, waker) = (&self.platform, &self.waker);
@@ -190,7 +203,7 @@ impl IconLoader {
             .as_ref()
             .is_some_and(|w| w.requests.send(key.clone()).is_ok());
         if !sent {
-            return ShellIcon::None;
+            return Fetched::None;
         }
         if transient {
             inner.queued.push_back(key.clone());
@@ -204,13 +217,17 @@ impl IconLoader {
             },
         );
         inner.trim_queue();
-        ShellIcon::Loading
+        Fetched::Loading
     }
 }
 
 impl IconSource for IconLoader {
-    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
-        self.request(path, px, false)
+    fn shell_icon(&self, path: &str, px: u32) -> Fetched {
+        self.request(Kind::Shell, path, px, false)
+    }
+
+    fn image(&self, path: &str, px: u32) -> Fetched {
+        self.request(Kind::Image, path, px, false)
     }
 
     fn forget(&self, path: &str) {
@@ -218,7 +235,7 @@ impl IconSource for IconLoader {
         self.inner
             .borrow_mut()
             .cache
-            .retain(|(p, _), e| p != path || e.icon.is_none());
+            .retain(|(_, p, _), e| p != path || e.icon.is_none());
     }
 }
 
@@ -226,8 +243,12 @@ impl IconSource for IconLoader {
 pub(super) struct TransientIcons<'a>(&'a IconLoader);
 
 impl IconSource for TransientIcons<'_> {
-    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
-        self.0.request(path, px, true)
+    fn shell_icon(&self, path: &str, px: u32) -> Fetched {
+        self.0.request(Kind::Shell, path, px, true)
+    }
+
+    fn image(&self, path: &str, px: u32) -> Fetched {
+        self.0.request(Kind::Image, path, px, true)
     }
 
     fn forget(&self, path: &str) {
@@ -272,10 +293,10 @@ mod tests {
             let _ = woken.send(());
         });
         let icons = IconLoader::new(Arc::new(Shell), waker);
-        assert_eq!(icons.shell_icon("app.exe", 2), ShellIcon::Loading);
-        assert_eq!(icons.shell_icon("missing.exe", 2), ShellIcon::Loading);
+        assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
+        assert_eq!(icons.shell_icon("missing.exe", 2), Fetched::Loading);
         // Asked again while being read: still loading, not asked twice.
-        assert_eq!(icons.shell_icon("app.exe", 2), ShellIcon::Loading);
+        assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
         let mut arrived = 0;
         while arrived < 2 {
             wakes
@@ -291,34 +312,86 @@ mod tests {
                     .count();
             }
         }
-        assert!(matches!(icons.shell_icon("app.exe", 2), ShellIcon::Ready(b) if b.width() == 2));
-        assert_eq!(icons.shell_icon("missing.exe", 2), ShellIcon::None);
+        assert!(matches!(icons.shell_icon("app.exe", 2), Fetched::Ready(b) if b.width() == 2));
+        assert_eq!(icons.shell_icon("missing.exe", 2), Fetched::None);
         // Another size is another icon.
-        assert_eq!(icons.shell_icon("app.exe", 3), ShellIcon::Loading);
+        assert_eq!(icons.shell_icon("app.exe", 3), Fetched::Loading);
         // Forgotten: read again.
         icons.forget("missing.exe");
-        assert_eq!(icons.shell_icon("missing.exe", 2), ShellIcon::Loading);
+        assert_eq!(icons.shell_icon("missing.exe", 2), Fetched::Loading);
+    }
+
+    #[test]
+    fn image_files_are_read_on_the_worker() {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let path = dir.path().join("dot.svg");
+        std::fs::write(
+            &path,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"><rect width="4" height="2"/></svg>"#,
+        )
+        .expect("written");
+        let path = path.to_string_lossy().into_owned();
+        let (woken, wakes) = mpsc::channel();
+        let icons = IconLoader::new(
+            Arc::new(Shell),
+            UiWaker::new(move || {
+                let _ = woken.send(());
+            }),
+        );
+        assert_eq!(icons.image(&path, 6), Fetched::Loading);
+        assert_eq!(icons.image("missing.png", 6), Fetched::Loading);
+        // Not a shell icon of the same path.
+        assert_eq!(icons.shell_icon(&path, 6), Fetched::Loading);
+        let mut arrived = 0;
+        while arrived < 3 {
+            wakes
+                .recv_timeout(Duration::from_secs(5))
+                .expect("woken by the worker");
+            icons.receive();
+            arrived = icons
+                .inner
+                .borrow()
+                .cache
+                .values()
+                .filter(|e| e.icon.is_some())
+                .count();
+        }
+        // Decoded at the height asked for, keeping its aspect ratio; a file that cannot be
+        // read has none.
+        assert!(
+            matches!(icons.image(&path, 6), Fetched::Ready(b) if (b.width(), b.height()) == (12, 6))
+        );
+        assert_eq!(icons.image("missing.png", 6), Fetched::None);
+        assert_eq!(icons.shell_icon(&path, 6), Fetched::None);
     }
 
     #[test]
     fn popup_icons_are_transient_and_bounded() {
         let icons = IconLoader::new(Arc::new(Shell), UiWaker::new(|| {}));
-        assert_eq!(icons.shell_icon("app.exe", 2), ShellIcon::Loading);
+        assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
         let rows = icons.transient();
         // Scrolling through many rows: only the newest wait to be read.
         for i in 0..200 {
-            assert_eq!(rows.shell_icon(&format!("row{i}"), 2), ShellIcon::Loading);
+            assert_eq!(rows.shell_icon(&format!("row{i}"), 2), Fetched::Loading);
         }
         {
             let inner = icons.inner.borrow();
             assert_eq!(inner.queued.len(), QUEUED);
-            assert!(inner.cache.contains_key(&("row199".to_owned(), 2)));
             assert!(
-                !inner.cache.contains_key(&("row0".to_owned(), 2)),
+                inner
+                    .cache
+                    .contains_key(&(Kind::Shell, "row199".to_owned(), 2))
+            );
+            assert!(
+                !inner
+                    .cache
+                    .contains_key(&(Kind::Shell, "row0".to_owned(), 2)),
                 "cancelled"
             );
             assert!(
-                inner.cache.contains_key(&("app.exe".to_owned(), 2)),
+                inner
+                    .cache
+                    .contains_key(&(Kind::Shell, "app.exe".to_owned(), 2)),
                 "the sensor's"
             );
         }
@@ -327,7 +400,7 @@ mod tests {
             let mut inner = icons.inner.borrow_mut();
             for i in 0..300u64 {
                 inner.cache.insert(
-                    (format!("old{i}"), 2),
+                    (Kind::Shell, format!("old{i}"), 2),
                     Entry {
                         icon: Some(None),
                         transient: true,
@@ -336,7 +409,7 @@ mod tests {
                 );
             }
             inner.cache.insert(
-                ("app.exe".to_owned(), 2),
+                (Kind::Shell, "app.exe".to_owned(), 2),
                 Entry {
                     icon: Some(None),
                     transient: false,
@@ -344,12 +417,24 @@ mod tests {
                 },
             );
             inner.evict();
-            assert!(inner.cache.contains_key(&("app.exe".to_owned(), 2)));
-            assert!(!inner.cache.contains_key(&("old0".to_owned(), 2)));
-            assert!(inner.cache.contains_key(&("old299".to_owned(), 2)));
+            assert!(
+                inner
+                    .cache
+                    .contains_key(&(Kind::Shell, "app.exe".to_owned(), 2))
+            );
+            assert!(
+                !inner
+                    .cache
+                    .contains_key(&(Kind::Shell, "old0".to_owned(), 2))
+            );
+            assert!(
+                inner
+                    .cache
+                    .contains_key(&(Kind::Shell, "old299".to_owned(), 2))
+            );
         }
         // A popup asking for the sensor's icon leaves it kept.
-        assert_eq!(rows.shell_icon("app.exe", 2), ShellIcon::None);
-        assert!(!icons.inner.borrow().cache[&("app.exe".to_owned(), 2)].transient);
+        assert_eq!(rows.shell_icon("app.exe", 2), Fetched::None);
+        assert!(!icons.inner.borrow().cache[&(Kind::Shell, "app.exe".to_owned(), 2)].transient);
     }
 }

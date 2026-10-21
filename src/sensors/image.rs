@@ -8,12 +8,12 @@ use super::common::icon;
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType,
-    State, typed,
+    Category, ColorChoice, DrawCtx, Fetched, HintContent, IconSource, LayoutCtx, Props, Sensor,
+    SensorCtx, SensorType, State, typed,
 };
 use crate::bar::theme::Theme;
 use crate::i18n::t;
-use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image, load_image};
+use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
 
 /// The default image (Appendix C): monochrome white, so a custom colour tints it.
 const LOGO: &[u8] = include_bytes!("../../assets/logo.svg");
@@ -135,29 +135,31 @@ struct Image {
 }
 
 impl Image {
-    /// The image `height` physical px tall, tinted; the logo if the file cannot be read. The
-    /// logo is built in, so with Standard colour it takes the sensor text colour (SPEC §8.4).
-    fn load(&self, height: u32, theme: &Theme) -> Option<Bitmap> {
-        let file = (!self.props.image.is_empty())
-            .then(|| load_image(Path::new(&self.props.image), Some(height)))
-            .and_then(|loaded| {
-                loaded
-                    .map_err(|e| {
-                        tracing::warn!("image {:?} cannot be shown: {e}", self.props.image)
-                    })
-                    .ok()
-            });
+    /// The image `height` physical px tall, tinted; the logo if the file cannot be read; `None`
+    /// while the bar reads the file (SPEC §9.2). The logo is built in, so with Standard colour
+    /// it takes the sensor text colour (§8.4).
+    fn load(&self, height: u32, theme: &Theme, icons: &dyn IconSource) -> Option<Option<Bitmap>> {
+        let file = match self.props.image.as_str() {
+            "" => None,
+            path => match icons.image(path, height) {
+                Fetched::Loading => return None,
+                Fetched::None => None,
+                Fetched::Ready(bitmap) => Some(bitmap),
+            },
+        };
         let built_in = file.is_none();
         let bitmap = match file {
-            Some(bitmap) => bitmap,
+            Some(bitmap) => Some(bitmap),
             None => decode_image(LOGO, Some(height))
                 .map_err(|e| tracing::error!("the logo cannot be decoded: {e}"))
-                .ok()?,
+                .ok(),
         };
-        Some(match icon::tint(&self.props.color, built_in, theme) {
-            Some(tint) => bitmap.tinted(tint),
-            None => bitmap,
-        })
+        Some(bitmap.map(
+            |bitmap| match icon::tint(&self.props.color, built_in, theme) {
+                Some(tint) => bitmap.tinted(tint),
+                None => bitmap,
+            },
+        ))
     }
 
     fn popup_text(&self) -> String {
@@ -172,8 +174,12 @@ impl Sensor for Image {
         let height = (logical * cx.scale).round().max(1.0) as u32;
         // Loaded again for another size or text colour (the logo follows it).
         let key = (height, cx.theme.sensor_text);
-        if self.loaded != Some(key) {
-            self.bitmap = self.load(height, cx.theme);
+        // While the file is read it keeps what it had (nothing when new); the bar measures
+        // again once it arrives.
+        if self.loaded != Some(key)
+            && let Some(bitmap) = self.load(height, cx.theme, cx.icons)
+        {
+            self.bitmap = bitmap;
             self.loaded = Some(key);
         }
         self.bitmap
@@ -215,7 +221,7 @@ mod tests {
     use super::*;
     use crate::platform::recording::FixedMetrics;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, measure, theme};
+    use crate::sensors::test_support::{Later, draw, measure, measure_with, theme};
 
     fn image(stored: serde_json::Value) -> Image {
         let stored = stored.as_object().cloned().unwrap_or_default();
@@ -290,6 +296,31 @@ mod tests {
     fn missing_file_falls_back_to_the_logo() {
         let mut sensor = image(json!({ "image": "Z:\\no\\such\\file.png" }));
         assert_eq!(measure(&mut sensor), 27.0);
+    }
+
+    #[test]
+    fn takes_no_room_until_its_file_arrives() {
+        let mut sensor = image(json!({ "image": "\\\\server\\share\\wide.png" }));
+        let loader = Later::default();
+        assert_eq!(measure_with(&mut sensor, &loader), 0.0, "being read");
+        assert_eq!(draw(&sensor, 0.0), "");
+        assert_eq!(
+            loader.asked(),
+            [("\\\\server\\share\\wide.png".to_owned(), 27)]
+        );
+        // It arrived: 54 × 27, drawn.
+        loader.arrive(Bitmap::from_rgba(54, 27, vec![255; 54 * 27 * 4]).expect("a bitmap"));
+        assert_eq!(measure_with(&mut sensor, &loader), 54.0);
+        assert_eq!(
+            draw(&sensor, 54.0),
+            "bitmap 54×27 into 7,0 54×27 opacity 1\n"
+        );
+        // A file that cannot be read shows the logo.
+        let mut sensor = image(json!({ "image": "\\\\server\\share\\gone.png" }));
+        let loader = Later::default();
+        assert_eq!(measure_with(&mut sensor, &loader), 0.0);
+        loader.fail();
+        assert_eq!(measure_with(&mut sensor, &loader), 27.0);
     }
 
     #[test]

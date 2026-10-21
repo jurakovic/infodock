@@ -41,4 +41,4 @@ From the M4 close-out review (three clean-context reviewers on `8daf484..674c6fc
 - **Long text values in an imported file** (a 16 MB Text sensor): bounded by the 16 MB file limit and the 500-sensor limit; the file is the user's choice and the Properties form edits it.
 - **Export file names** (`transfer.rs` `export_path`) *(to verify)*: a name typed with another extension (`notes.txt`) gets `.infodock.json` after the save dialog's overwrite question; overwriting needs that exact file to exist. The import picker offers all files besides `*.infodock.json`.
 - **A non-integer `schema`** (`"2"`, `2.0`): counts as schema 1; no version of Infodock writes one.
-- **Images decoded on the bar thread** (a network image stalls the bar): carried over to M5 since M1 S4.
+- **Images decoded on the bar thread** (a network image stalls the bar): carried over to M5 since M1 S4. Done in M5 S12: they are read on the icon worker.

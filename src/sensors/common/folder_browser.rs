@@ -23,7 +23,7 @@ use crate::platform::{
     RectF, SizeF, TextLayout, TextStyle, UiWaker,
 };
 use crate::sensors::popup::{Popup, PopupAlign, PopupCtx, PopupReply};
-use crate::sensors::{Props, ShellIcon};
+use crate::sensors::{Fetched, Props};
 
 /// Row icons when the shell has none, and the Back button (Appendix C).
 const FOLDER: &[u8] = include_bytes!("../../../assets/icons/folder.svg");
@@ -789,9 +789,9 @@ impl Popup for FolderBrowser {
             .map(|i| {
                 let item = &items[i];
                 let icon = match cx.icons.shell_icon(&item.path, px) {
-                    ShellIcon::Ready(icon) => Some(icon),
-                    ShellIcon::Loading => None,
-                    ShellIcon::None => Icon::svg(if item.folder { FOLDER } else { FILE }, px)
+                    Fetched::Ready(icon) => Some(icon),
+                    Fetched::Loading => None,
+                    Fetched::None => Icon::svg(if item.folder { FOLDER } else { FILE }, px)
                         .map(|b| b.tinted(tint)),
                 };
                 (i, icon, cx.text.layout(&item.name, &row_style))

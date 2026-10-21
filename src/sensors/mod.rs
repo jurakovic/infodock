@@ -170,48 +170,64 @@ pub struct LayoutCtx<'a> {
     pub scale: f32,
     /// How the locale writes numbers (SPEC §8.6), kept by the bar.
     pub numbers: format::Numbers,
-    /// Shell icons of files, folders and drives (SPEC §9.17–9.18).
+    /// Shell icons of files, folders and drives (SPEC §9.17–9.18) and image files (§9.2).
     pub icons: &'a dyn IconSource,
 }
 
-/// A shell icon as an [`IconSource`] has it.
+/// A shell icon or an image file as an [`IconSource`] has it.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ShellIcon {
+pub enum Fetched {
     /// Being read; the sensors measure again once it is there.
     Loading,
-    /// The shell has none, e.g. for a path that does not exist.
+    /// There is none: the shell has no icon (e.g. for a path that does not exist), or the image
+    /// file cannot be read (logged).
     None,
     Ready(Bitmap),
 }
 
-/// Shell icons for measuring sensors (bar thread). The bar reads them on a worker thread,
-/// since the shell may wait for a network server (SPEC §4.1).
+/// Shell icons and image files for measuring sensors (bar thread). The bar reads them on a
+/// worker thread, since the shell may wait for a network server and a file may lie on a share
+/// that does not answer (SPEC §4.1).
 pub trait IconSource {
     /// The icon of `path`, `px` physical px square.
-    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon;
+    fn shell_icon(&self, path: &str, px: u32) -> Fetched;
+    /// The image file at `path` (a sensor's `image` prop), decoded `px` physical px tall
+    /// keeping its aspect ratio (SPEC §9.2). By default read at once, on the calling thread.
+    fn image(&self, path: &str, px: u32) -> Fetched {
+        read_image(path, px).map_or(Fetched::None, Fetched::Ready)
+    }
     /// Forgets the icons of `path`, so they are read again, e.g. once a missing target is back.
     fn forget(&self, path: &str);
 }
 
-/// No shell icons: tests, and platforms without a shell.
+/// Reads and decodes the image file at `path`, `px` physical px tall; `None` (logged) if it
+/// cannot be read.
+pub fn read_image(path: &str, px: u32) -> Option<Bitmap> {
+    crate::platform::load_image(std::path::Path::new(path), Some(px))
+        .map_err(|e| tracing::warn!("image {path:?} cannot be shown: {e}"))
+        .ok()
+}
+
+/// No shell icons, image files read at once: tests, and platforms without a shell.
 pub struct NoIcons;
 
 impl IconSource for NoIcons {
-    fn shell_icon(&self, _path: &str, _px: u32) -> ShellIcon {
-        ShellIcon::None
+    fn shell_icon(&self, _path: &str, _px: u32) -> Fetched {
+        Fetched::None
     }
 
     fn forget(&self, _path: &str) {}
 }
 
-/// Shell icons read from the platform at once, on the calling thread: for screenshots.
+/// Shell icons and image files read from the platform at once, on the calling thread: for
+/// screenshots.
 pub struct DirectIcons<'a>(pub &'a dyn Platform);
 
 impl IconSource for DirectIcons<'_> {
-    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
+    fn shell_icon(&self, path: &str, px: u32) -> Fetched {
         self.0
             .shell_icon(path, px)
-            .map_or(ShellIcon::None, ShellIcon::Ready)
+            .map_or(Fetched::None, Fetched::Ready)
     }
 
     fn forget(&self, _path: &str) {}
@@ -486,15 +502,16 @@ pub(crate) mod test_support {
     use super::dates::{Date, LocalTime};
     use super::schema::{FieldKind, Lit, PropField};
     use super::{
-        Category, DefaultsCtx, DrawCtx, LayoutCtx, Props, Sensor, SensorType, State, legacy,
+        Category, DefaultsCtx, DrawCtx, Fetched, IconSource, LayoutCtx, Props, Sensor, SensorType,
+        State, legacy,
     };
     use crate::bar::theme::Theme;
     use crate::config::model::DateLocale;
     use crate::config::model::Settings;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::platform::{
-        Canvas, Capabilities, Locale, MonitorInfo, OsAppearance, Platform, RectF, TextEngine,
-        TextStyle,
+        Bitmap, Canvas, Capabilities, Locale, MonitorInfo, OsAppearance, Platform, RectF,
+        TextEngine, TextStyle,
     };
 
     /// Draws its text as the label, so tests can see what it was created with.
@@ -718,13 +735,61 @@ pub(crate) mod test_support {
     }
 
     pub fn measure(sensor: &mut dyn Sensor) -> f32 {
+        measure_with(sensor, &crate::sensors::NoIcons)
+    }
+
+    /// Measures `sensor` with its shell icons and image files from `icons`.
+    pub fn measure_with(sensor: &mut dyn Sensor, icons: &dyn IconSource) -> f32 {
         sensor.measure(&LayoutCtx {
             theme: &theme(),
             text: &FixedMetrics,
             scale: 1.0,
             numbers: Default::default(),
-            icons: &crate::sensors::NoIcons,
+            icons,
         })
+    }
+
+    /// Image files as the bar reads them, off the bar thread: loading until the test says it
+    /// arrived (or failed); no shell icons.
+    #[derive(Default)]
+    pub struct Later {
+        image: Mutex<Option<Fetched>>,
+        asked: Mutex<Vec<(String, u32)>>,
+    }
+
+    impl Later {
+        pub fn arrive(&self, bitmap: Bitmap) {
+            *self.image.lock().expect("lock") = Some(Fetched::Ready(bitmap));
+        }
+
+        pub fn fail(&self) {
+            *self.image.lock().expect("lock") = Some(Fetched::None);
+        }
+
+        /// The images asked for, by path and height.
+        pub fn asked(&self) -> Vec<(String, u32)> {
+            self.asked.lock().expect("lock").clone()
+        }
+    }
+
+    impl IconSource for Later {
+        fn shell_icon(&self, _path: &str, _px: u32) -> Fetched {
+            Fetched::None
+        }
+
+        fn image(&self, path: &str, px: u32) -> Fetched {
+            let mut asked = self.asked.lock().expect("lock");
+            if !asked.iter().any(|(p, h)| p == path && *h == px) {
+                asked.push((path.to_owned(), px));
+            }
+            self.image
+                .lock()
+                .expect("lock")
+                .clone()
+                .unwrap_or(Fetched::Loading)
+        }
+
+        fn forget(&self, _path: &str) {}
     }
 
     /// Gives `sensor` `width`, as the bar does when the zones do not fit (SPEC §5.4).
