@@ -22,7 +22,7 @@ icons/               app icons and the installer's images (`icons/installer`)
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check, installer check)
-docs/                plan.md, manual-test.md, review findings (`review-m1.md`)
+docs/                plan.md, manual-test.md, review findings (`review-m1.md`…, `review-architecture.md`)
 tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 ```
 
