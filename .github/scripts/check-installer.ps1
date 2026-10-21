@@ -2,7 +2,9 @@
 # installs silently per user (no Program Files, no HKLM), with the Start Menu shortcut carrying
 # the AppUserModelID, and starts the app after installing (/R). The app's first run takes an
 # existing sign-in entry into its setting and points it at the installed exe (§10.1, §11.5).
-# The uninstaller removes the app, its shortcuts, its registration and the sign-in entry.
+# The uninstaller removes the app, its shortcuts, its registration and the sign-in entry. A second
+# silent install with /AUTOSTART writes the sign-in entry for the installed exe and clears Task
+# Manager's mark for it, without starting the app; its uninstall removes the entry again.
 # Runs after the memory check: it removes that run's config, so the installed app runs first.
 param(
     [Parameter(Mandatory)] [string] $Setup,
@@ -21,6 +23,7 @@ $exe = Join-Path $installDir 'infodock.exe'
 $uninstaller = Join-Path $installDir 'uninstall.exe'
 $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$product"
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$approvedKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
 $appIdKey = "HKCU:\Software\Classes\AppUserModelId\$identifier"
 $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $shortcut = Join-Path $programs "$product\$product.lnk"
@@ -51,6 +54,32 @@ function Get-RunEntry {
     (Get-ItemProperty -Path $runKey -Name $runValue -ErrorAction SilentlyContinue).$runValue
 }
 
+function Get-ApprovedMark {
+    (Get-ItemProperty -Path $approvedKey -Name $runValue -ErrorAction SilentlyContinue).$runValue
+}
+
+# Runs the installer silently with these arguments and waits for it.
+function Install-App([string[]] $Arguments) {
+    # WaitForExit, not -Wait, which would wait for the app the installer starts too.
+    $install = Start-Process -FilePath $Setup -ArgumentList $Arguments -PassThru
+    # Holding the handle keeps the exit code readable after the process ends.
+    $null = $install.Handle
+    if (-not $install.WaitForExit(120000)) { throw 'The installer did not finish within 2 minutes' }
+    Check ($install.ExitCode -eq 0) "the silent install ($($Arguments -join ' ')) ends with 0 (got $($install.ExitCode))"
+}
+
+# Runs the uninstaller silently and waits until the app and its registration are gone.
+function Uninstall-App {
+    $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+    if (-not $uninstall.WaitForExit(60000)) { throw 'The uninstaller did not finish within a minute' }
+    # It runs a copy of itself from the temp folder: wait for that to finish.
+    $deadline = (Get-Date).AddSeconds(60)
+    while (((Test-Path $exe) -or (Test-Path $uninstallKey)) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+    }
+    Start-Sleep -Seconds 2
+}
+
 function Get-InstalledApp {
     Get-Process -Name 'infodock' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
 }
@@ -65,12 +94,7 @@ if (Test-Path $configDir) { Remove-Item -Recurse -Force $configDir }
 New-ItemProperty -Path $runKey -Name $runValue -Value '"C:\Elsewhere\infodock.exe"' -PropertyType String -Force | Out-Null
 
 Write-Host "== Installing $Setup"
-# WaitForExit, not -Wait, which would wait for the app the installer starts too.
-$install = Start-Process -FilePath $Setup -ArgumentList '/S', '/R' -PassThru
-# Holding the handle keeps the exit code readable after the process ends.
-$null = $install.Handle
-if (-not $install.WaitForExit(120000)) { throw 'The installer did not finish within 2 minutes' }
-Check ($install.ExitCode -eq 0) "the silent install ends with 0 (got $($install.ExitCode))"
+Install-App '/S', '/R'
 Check (Test-Path $exe) "the app is installed in $installDir"
 Check (Test-Path $uninstaller) 'the uninstaller is installed'
 foreach ($dir in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432) | Where-Object { $_ } | Select-Object -Unique) {
@@ -119,20 +143,28 @@ $autostart = (Test-Path $config) -and ((Get-Content $config -Raw | ConvertFrom-J
 Check $autostart 'the config has autostart on'
 
 Write-Host '== Uninstalling'
-$uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
-if (-not $uninstall.WaitForExit(60000)) { throw 'The uninstaller did not finish within a minute' }
-# It runs a copy of itself from the temp folder: wait for that to finish.
-$deadline = (Get-Date).AddSeconds(60)
-while (((Test-Path $exe) -or (Test-Path $uninstallKey)) -and (Get-Date) -lt $deadline) {
-    Start-Sleep -Milliseconds 500
-}
-Start-Sleep -Seconds 2
+Uninstall-App
 Check (-not (Test-Path $installDir)) "$installDir is removed"
 Check (-not (Test-Path $uninstallKey)) 'no longer in Apps & features'
 Check (-not (Test-Path $shortcut)) 'the Start Menu shortcut is removed'
 Check (-not (Test-Path $desktopShortcut)) 'the desktop shortcut is removed'
 Check ($null -eq (Get-RunEntry)) 'the sign-in entry is removed'
 Check (-not (Test-Path $appIdKey)) 'the AppUserModelID registration is removed'
+
+# A deployment's install: /AUTOSTART writes the entry and clears Task Manager's Disabled mark.
+Write-Host '== Installing with /AUTOSTART'
+if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey | Out-Null }
+$disabled = [byte[]](3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+New-ItemProperty -Path $approvedKey -Name $runValue -Value $disabled -PropertyType Binary -Force | Out-Null
+Install-App '/S', '/AUTOSTART'
+$entry = Get-RunEntry
+Check ($entry -eq "`"$exe`"") "/AUTOSTART wrote the sign-in entry for the installed app (got '$entry')"
+Check ($null -eq (Get-ApprovedMark)) "/AUTOSTART cleared Task Manager's mark"
+Check (-not (Get-InstalledApp)) 'without /R the installer did not start the app'
+Write-Host '== Uninstalling'
+Uninstall-App
+Check (-not (Test-Path $installDir)) "$installDir is removed again"
+Check ($null -eq (Get-RunEntry)) 'the sign-in entry written by /AUTOSTART is removed'
 
 if ($failures.Count -gt 0) {
     throw "Installer check failed: $($failures -join '; ')"

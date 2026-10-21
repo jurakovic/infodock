@@ -28,11 +28,33 @@ installerIcon = "icons/icon.ico"
 # Placeholders until the final artwork (SPEC Appendix C).
 headerImage = "icons/installer/header.bmp"
 sidebarImage = "icons/installer/sidebar.bmp"
-# The template's Start Menu shortcut carries the identifier as its AppUserModelID. This adds an
-# uninstaller section, which NSIS runs before the template's own: it removes the sign-in entry
-# (`autostart::RUN_VALUE`, SPEC §10.1) and Task Manager's mark for it, except when an upgrade
-# runs the old uninstaller (with /P), and the AppUserModelID the app registers (§7.4).
+# The template's Start Menu shortcut carries the identifier as its AppUserModelID. This adds:
+# * an installer section, before the template's own, that writes the sign-in entry
+#   (`autostart::RUN_VALUE`, SPEC §10.1) for the installed exe and clears Task Manager's mark for
+#   it when the command line has /AUTOSTART (silent deployments, §15.3); the app's first run
+#   takes the entry into its setting. A failed install removes it again while the exe is missing.
+# * an uninstaller section, which NSIS runs before the template's own: it removes the sign-in
+#   entry and Task Manager's mark for it, except when an upgrade runs the old uninstaller (with
+#   /P), and the AppUserModelID the app registers (§7.4).
 preinstallSection = '''
+Var AutostartWritten
+Section "-Autostart"
+  ClearErrors
+  ${GetOptions} $CMDLINE "/AUTOSTART" $R0
+  ${IfNot} ${Errors}
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock" '"$INSTDIR\${MAINBINARYNAME}.exe"'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Infodock"
+    StrCpy $AutostartWritten 1
+  ${EndIf}
+SectionEnd
+
+Function .onInstFailed
+  ${If} $AutostartWritten == 1
+  ${AndIfNot} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
+  ${EndIf}
+FunctionEnd
+
 Section "un.Autostart"
   ClearErrors
   ${GetOptions} $CMDLINE "/P" $R0
