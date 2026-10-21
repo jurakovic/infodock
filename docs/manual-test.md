@@ -527,7 +527,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 **Budgets** (M4 S18)
 
-- [ ] Task Manager ▸ Details with the classic theme, the test pack with its band, then the modern theme with *Shadow* on: *Memory* stays within 30 MB at idle, after opening Appearance with its gallery and after closing Settings; idle CPU as with M3. CI measured the first-run layout at 12.6 MB idle, 15.8 MB with Settings open, 14.3 MB after closing it, 0.013 % CPU (`674c6fc`).
+- [ ] Task Manager ▸ Details with the classic theme, the test pack with its band, then the modern theme with *Shadow* on: *Memory* stays within 30 MB at idle, after opening Appearance with its gallery and after closing Settings; idle CPU as with M3. CI measured the first-run layout at 12.8 MB idle, 16.0 MB with Settings open, 14.2 MB after closing it, under 0.02 % CPU (`a3eb76f`; one run read 0.182 %, its re-run 0 ms, `674c6fc` 0.013 %).
 
 **Close-out fixes** (M4 S18)
 
