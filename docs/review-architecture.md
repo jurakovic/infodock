@@ -129,3 +129,30 @@ Notes the reviewers made at their area's boundary; each becomes part of an area'
 - **S-x2 — ad-hoc worker threads:** `folder_browser.rs:163` and `eject_list.rs:210` each hand-roll spawn + `mpsc` + waker, as do about 15 other places; a shared `spawn_worker(name, job, waker)` would fit (low priority; with P7).
 - **P-x1 — the platform's window owner travels as a bare `Option<isize>`** from `settings/properties.rs:316` through `settings/mod.rs:141`, `transfer` and `pick_path`/`save_path`; a `platform::native_owner(&impl HasWindowHandle) -> Option<OwnerWindow>` keeps the OS detail in `platform/` (C13).
 - **x-1 — `lib.rs` makes seven modules `pub`** whose only outside user is `main.rs` calling `run()` (C15, also noted by the platform reviewer): `pub(crate)` lets `dead_code` see unused `pub` items in every area.
+
+## Plan
+
+Weighed against the release: what keeps the spec true (CLAUDE.md makes it the source of truth, and S18 documents from it), what the remaining items build on (S17 redraws the launchers' icons, S19 measures the hints and redraws), what removes a panic path, a blocking call or a convention break, and the mechanical moves that are cheap now and dearer later go before 1.0. Rewrites of working code with no behaviour change and Windows-only refactors that only CI and a manual pass can verify wait for after 1.0. In plan order (`docs/plan.md`, D80); tick a finding here when it is fixed, with the commit.
+
+- [ ] **S14b Spec and comments match the code** (docs and comments only): S3 (§8.1 from `sensors/mod.rs`, §4.2's module lists, the stale comments), P1's spec part (§4.2, §4.6 as the code is), P2's documentation (the reads that may block named as a group on the trait; the drop's one `path_kind` as the accepted exception), P6's convention (absence vs. failure, on the trait), S10's documentation (`has_popup` agrees with `click`; who applies §8.5), the misplaced comments of B13 and C15.
+- [ ] **S14c Module boundaries**: B2 (`bar/theme.rs`, `bar/skins/`, `bar/anim.rs` to a top-level module; `clicks_allowed` onto `Settings`), P5 with S8's pair (`platform` no longer imports `sensors`; `DockRequest::from_settings` into `bar`), S11's and B-x4's one `FRAME` and easing, x-1 (`lib.rs` modules `pub(crate)`, dead `pub` items removed, S8's others narrowed). §4.2's tree follows.
+- [ ] **S14d Split `bar/thread.rs`**: B1 stage 1 (`thread/` with child modules, moved unchanged; tests split the same way), B4 (one way to build `Env`, `dismiss_hint`, `hint::Prepared`, the popup delays), B5 (`slides_out` shared by both threads), B12 (`drain`).
+- [ ] **S14e Shared test support and the locale on the context**: B-x1 (one `FakePlatform` for the 14 fakes), S5 (`sensors/test_support.rs` with a `Harness` and `resolved`), then S2 (the bar keeps the `Locale` and hands `locale` and `numbers` to `SensorCtx` and `PopupCtx`; `on_clock_change` means the clock only).
+- [ ] **S14f Launcher icons as one building block** (before S17): S1 (`IconStyle`, `LauncherIcon`, the shared fields and legacy keys, one icon size policy).
+- [ ] **S14g Settings: one way to the window and to dialogs**: C2 (`with_open`/`with_open_mut`, one borrow policy, no panicking borrows), C13 with P-x1 (one dialogs helper; the owner window as a platform type), C1's first step (`render_settings_pages` into `settings/screenshots.rs`), C15's `ThemeId`.
+- [ ] **S14h Errors, the store's lock and subscribers**: C10 (`ConfigError` with codes and localised messages), C14's first half with P2 (machine defaults computed before `ConfigStore::update`), P10 (`Subscriber` enum).
+- [ ] **S14i Contract tests**: C3's test (`RowKind` codes, every `PAGE` and `PAGES` against `ui::Pages`), C4 (every settings path Slint passes), C-x3 (every literal i18n key in Rust), S7's test (every select option creates its sensor), B3 (the drop's sensors built in `sensors/drop.rs` and checked through `ops::add`).
+
+Conditional: if S15 brings theme-dependent settings (e.g. high-contrast palettes), C5's `Settings::effective` comes first; if S19 finds the meters' and graphs' idle redraws worth fixing, S4's `Graph` component comes first.
+
+### After 1.0
+
+B1 stage 2 (`Gesture`, `Motion`); B6 (`Route` across, one menu runner) with C12; B7 (one chrome painter, the harness on a real `BarLogic`); B8; B9 with P9 (conversion helpers, `f32` scale); B10 (the classic skin on the icons worker); C1's split of `settings/mod.rs`; C3's Slint enums; C5 unless S15 needs it; C6; C7 (Settings' own sink, `transfer.rs` into `settings`); C8 (split `settings.slint`, the i18n key test made recursive in the same change); C9 (the glue's tests on the testing backend); C11; C14's `Arc<Config>`; C15's `settings/mapping.rs`; C-x2 (the `App`–`BarController` cycle); P1's trait split; P3; P4; P6's `Reading<T>`; P7 with S-x2; P8; S4 unless S19 needs it; S6; S7's typed `summary` and enums; S9 (`TypeDesc`); S10's `inactive`; S11's `IconLabel` and popup rows; B-x2 (`TimerId` owned by the bar); B-x3 (`PopupCtx`'s placement fields).
+
+### Not changed
+
+- B11 — `BarHost` stays one trait: one impl and one fake; three traits would add plumbing to both without simplifying either.
+- B9's trait split — `BarWindow` stays whole: one Windows impl, one stub, one fake.
+- C16 — the main thread's module statics are real process singletons; moving them onto `App` adds plumbing for little gain.
+- S12 — `FieldKind`'s five live lists: exhaustive matches let the compiler find every site, and there are only five.
+- S-x1 — `registry()` as a global accessor is fine for an immutable static.
