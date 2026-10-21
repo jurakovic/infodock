@@ -99,7 +99,7 @@ pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
         state.set_props(ModelRc::new(VecModel::from(shown)));
         state.set_props_title(t_args("settings.props.title", &[("name", &form.title)]).into());
         state.set_props_error(SharedString::new());
-        state.set_props_valid(true);
+        state.set_props_valid(form.valid());
         state.set_save_error(SharedString::new());
         open.form = Some(FormState {
             form,

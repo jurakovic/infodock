@@ -38,7 +38,8 @@ const SCHEMA: &[PropField] = &[
         "sensor.shortcut.field.target",
         Lit::Str(""),
     )
-    .describe("sensor.shortcut.field.target.help"),
+    .describe("sensor.shortcut.field.target.help")
+    .required_unless("url", "sensor.shortcut.field.target.required"),
     PropField::new(
         "args",
         FieldKind::Text {

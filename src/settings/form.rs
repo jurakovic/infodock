@@ -169,11 +169,12 @@ impl Form {
         &self.changes
     }
 
-    /// Whether the edits can be saved: no visible field holds an invalid value.
+    /// Whether the edits can be saved: no visible field holds an invalid value or is required
+    /// and empty (SPEC §8.2).
     pub fn valid(&self) -> bool {
         self.schema
             .iter()
-            .filter(|f| self.invalid.contains(f.key))
+            .filter(|f| self.invalid.contains(f.key) || f.missing(&self.props))
             .all(|f| !f.visible(&self.props))
     }
 
@@ -200,6 +201,8 @@ impl Form {
                     RowKind::Color | RowKind::ColorMode => "settings.color.invalid",
                     _ => "settings.props.invalid",
                 })
+            } else if field.missing(&self.props) {
+                field.required.map(|r| t(r.message)).unwrap_or_default()
             } else {
                 String::new()
             },
@@ -676,6 +679,80 @@ mod tests {
         assert!(form.color_mode("color", 1, "#123456"));
         assert!(form.valid());
         assert_eq!(error(&form), "");
+    }
+
+    fn error(form: &Form, key: &str) -> String {
+        form.rows(&fonts())
+            .into_iter()
+            .find(|r| r.key == key)
+            .map(|r| r.error)
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn required_fields_show_their_message_and_block_saving() {
+        let mut form =
+            Form::open(registry(), &instance("folder-menu", json!({})), true).expect("known");
+        assert!(!form.valid());
+        assert_eq!(
+            error(&form, "folder"),
+            t("sensor.folderMenu.field.folder.required")
+        );
+        assert!(form.set("folder", json!("  ")));
+        assert!(!form.valid(), "blank is empty");
+        assert!(form.set("folder", json!("C:\\Users\\Public")));
+        assert!(form.valid());
+        assert_eq!(error(&form, "folder"), "");
+
+        // A Shortcut needs a target or a web address.
+        let mut form =
+            Form::open(registry(), &instance("shortcut", json!({})), true).expect("known");
+        assert!(!form.valid());
+        assert_eq!(
+            error(&form, "target"),
+            t("sensor.shortcut.field.target.required")
+        );
+        assert!(form.set("url", json!("https://example.com")));
+        assert!(form.valid());
+        assert_eq!(error(&form, "target"), "");
+        let target = json!({ "target": "C:\\Windows\\notepad.exe" });
+        let form = Form::open(registry(), &instance("shortcut", target), false).expect("known");
+        assert!(form.valid());
+
+        // A Text sensor without text has nothing to show.
+        let mut form = Form::open(registry(), &instance("text", json!({})), false).expect("known");
+        assert!(form.valid());
+        assert!(form.set("text", json!("")));
+        assert!(!form.valid());
+        assert_eq!(error(&form, "text"), t("sensor.text.field.text.required"));
+    }
+
+    #[test]
+    fn hidden_required_fields_do_not_block_saving() {
+        static SCHEMA: [PropField; 2] = [
+            PropField::new("custom", FieldKind::Bool, "label", Lit::Bool(true)),
+            PropField::new("path", FieldKind::Folder, "label", Lit::Str(""))
+                .visible_if("custom", &[Lit::Bool(true)])
+                .required("label"),
+        ];
+        let mut form = Form {
+            id: "s_test1".into(),
+            title: "Test".into(),
+            new: false,
+            schema: &SCHEMA,
+            props: schema::resolve(&SCHEMA, &Props::new(), &Props::new()).0,
+            opened: Props::new(),
+            changes: Props::new(),
+            invalid: BTreeSet::new(),
+            processors: 1,
+            volumes: Vec::new(),
+            adapters: Vec::new(),
+            power_modes: Vec::new(),
+            batteries: Vec::new(),
+        };
+        assert!(!form.valid());
+        assert!(form.set("custom", json!(false)));
+        assert!(form.valid(), "the folder is hidden now");
     }
 
     #[test]

@@ -127,6 +127,16 @@ pub struct VisibleIf {
     pub values: &'static [Lit],
 }
 
+/// A field that means nothing while it is empty (SPEC §8.2): the Properties form says so on its
+/// row and does not save. Stored and imported sensors may still hold it empty.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Required {
+    /// What the row says while the field is empty.
+    pub message: MsgKey,
+    /// Another field whose value makes this one optional, e.g. a Shortcut's URL for its target.
+    pub unless: Option<&'static str>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PropField {
     pub key: &'static str,
@@ -139,6 +149,7 @@ pub struct PropField {
     /// The default comes from [`super::SensorType::machine_defaults`] and is always stored.
     pub machine_default: bool,
     pub visible_if: Option<VisibleIf>,
+    pub required: Option<Required>,
 }
 
 impl PropField {
@@ -151,6 +162,7 @@ impl PropField {
             default,
             machine_default: false,
             visible_if: None,
+            required: None,
         }
     }
 
@@ -167,6 +179,39 @@ impl PropField {
     pub const fn visible_if(mut self, key: &'static str, values: &'static [Lit]) -> Self {
         self.visible_if = Some(VisibleIf { key, values });
         self
+    }
+
+    /// The field means nothing while empty; the form's row says `message`.
+    pub const fn required(mut self, message: MsgKey) -> Self {
+        self.required = Some(Required {
+            message,
+            unless: None,
+        });
+        self
+    }
+
+    /// As [`Self::required`], while field `other` is empty too.
+    pub const fn required_unless(mut self, other: &'static str, message: MsgKey) -> Self {
+        self.required = Some(Required {
+            message,
+            unless: Some(other),
+        });
+        self
+    }
+
+    /// Whether this field is required and empty in `props`: absent, `null` or blank text.
+    pub fn missing(&self, props: &Props) -> bool {
+        let Some(required) = self.required else {
+            return false;
+        };
+        let empty = |key: &str| {
+            props.get(key).is_none_or(|value| match value {
+                Value::Null => true,
+                Value::String(s) => s.trim().is_empty(),
+                _ => false,
+            })
+        };
+        empty(self.key) && required.unless.is_none_or(empty)
     }
 
     /// Whether Settings shows this field.
@@ -437,6 +482,28 @@ mod tests {
                 "use24h": false, "size": null
             })
         );
+    }
+
+    #[test]
+    fn required_fields_are_missing_while_empty() {
+        let folder = PropField::new("folder", FieldKind::Folder, "x", Lit::Str("")).required("x");
+        let target = PropField::new(
+            "target",
+            FieldKind::File { extensions: &[] },
+            "x",
+            Lit::Str(""),
+        )
+        .required_unless("url", "x");
+        let optional = PropField::new("title", FieldKind::Folder, "x", Lit::Str(""));
+        for empty in [json!({}), json!({ "folder": "" }), json!({ "folder": " " })] {
+            assert!(folder.missing(&props(empty.clone())), "{empty}");
+            assert!(!optional.missing(&props(empty)));
+        }
+        assert!(folder.missing(&props(json!({ "folder": null }))));
+        assert!(!folder.missing(&props(json!({ "folder": "C:\\" }))));
+        assert!(target.missing(&props(json!({ "target": "", "url": "" }))));
+        assert!(!target.missing(&props(json!({ "url": "https://example.com" }))));
+        assert!(!target.missing(&props(json!({ "target": "a.exe" }))));
     }
 
     #[test]

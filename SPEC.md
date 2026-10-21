@@ -477,7 +477,7 @@ Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a me
 * Route `/settings/sensor/<id>`. The form is generated from the sensor's `props` schema (§8.2); `hidden` fields are not shown.
 * Changes **preview live** on the bar (debounced 150 ms, `preview_sensor`). **Save** persists (`update_sensor`) and ends the preview; **Cancel**, or closing Settings, ends the preview, which restores the saved props.
 * Implementation (`settings/form.rs`, `settings/properties.rs`): one row per field in schema order, with one control per field type: text box (`text`), switch (`bool`), list (`select`, `font` with a first *Default* entry, `fontStyle`), slider with its unit (`slider`, `interval` in s, `opacity` in %), colour box (`color`), mode list plus a colour box for Custom (`colorMode`), path box with *Browse…* (`file` with its extensions, `folder`; `IFileOpenDialog`). Rows hidden by `visibleIf` disappear at once. Text and path boxes preview as they are typed, colour boxes once the text is a colour (as on the settings pages, §10.7); sliders when released. A colour box reports every edit, so text that is not a colour shows its row's error and disables Save at once (Save is a click that does not take the focus). Leaving the page by the navigation counts as Cancel. `drive`, `netAdapter` and `battery` controls arrive with the sensors that use them (M2, M3).
-* Validation per field type; invalid fields show inline errors and disable Save.
+* Validation per field type; invalid fields show inline errors and disable Save, as do required fields while they are empty (§8.2), also when the form opens (a new Folder Menu cannot be saved until its folder is chosen).
 * Each field shows its description as helper text.
 
 ---
@@ -614,7 +614,9 @@ All trait methods except the identity ones, `create`, `measure` and `draw` have 
 | `battery` | dropdown from `list_batteries` | index | |
 | `hidden` | — | any | internal values (e.g. popup size) |
 
-Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf? }`. `visibleIf` is declarative so Settings can evaluate it: `{ key, in: [values] }` (shown while another field has one of these values).
+Field definition: `{ key, type, label, description?, default, machineDefault?, ...typeOptions, visibleIf?, required? }`. `visibleIf` is declarative so Settings can evaluate it: `{ key, in: [values] }` (shown while another field has one of these values).
+
+`required: { message, unless? }` marks a field that means nothing while it is empty (absent, `null` or blank text), unless the field `unless` names holds a value: the Properties form shows `message` on its row and disables Save while it is visible and empty (§6.7). It is a rule of the form only: a stored or imported sensor may hold it empty, and the sensor says so (*No folder set*, *No target set*). Required: the Text's `text` (an empty one has no width on the bar), the Shortcut's `target` unless `url`, the Folder Menu's `folder`.
 
 Validation (`sensors/schema.rs`): each value is normalised for its field type: colours to upper-case `#RRGGBB`, numbers clamped to their range (`slider`, `interval`, `opacity`), intervals rounded to whole seconds and sliders with whole steps to whole numbers (a hand-edited `2.5` would not load into an integer), drives to `X:\`. A value of the wrong type or shape is invalid: on load it is ignored (the field takes its default) and logged; `update_sensor` rejects it with error code `invalid`. An empty `text` with `emptyIsDefault` means the default.
 
@@ -696,7 +698,7 @@ Conventions:
 
 | Key | XML key | Type | Default | Notes |
 |---|---|---|---|---|
-| text | `text` | text | "Text" | |
+| text | `text` | text | "Text" | required (§8.2) |
 | font | `font` | font | `""` (Default = global sensor font) | |
 | fontStyle | `fontstyle` | fontStyle | normal | XML `""` → normal, `bold` → bold, `italic` → italic, `bold, italic` → boldItalic |
 | fontSize | `fontsize` | slider 9–25 | 13 | |
@@ -1022,7 +1024,7 @@ Implementation (`sensors/recycle_bin.rs`, `platform/windows/shell.rs`, `platform
 
 | Key | XML key | Type | Default | Notes |
 |---|---|---|---|---|
-| target | `link` | file (any file or folder; filter .exe .cmd .bat .lnk .url .ps1 + All) | "" | Application, document or folder |
+| target | `link` | file (any file or folder; filter .exe .cmd .bat .lnk .url .ps1 + All) | "" | Application, document or folder; required unless `url` is set (§8.2) |
 | args | `param` | text | "" | Parameters, passed as `lpParameters` to ShellExecuteEx; never interpreted by a shell |
 | url | `url` | text | "" | Takes precedence over target. `http(s)://`, `ftp://` or a registered URI scheme (`ms-settings:`, `mailto:` …) |
 | workDir | — | folder | "" → the target's folder | |

@@ -17,7 +17,8 @@ const SCHEMA: &[PropField] = &[
         },
         "sensor.text.field.text",
         Lit::Str("Text"),
-    ),
+    )
+    .required("sensor.text.field.text.required"),
     PropField::new("font", FieldKind::Font, "sensor.field.font", Lit::Str("")),
     PropField::new(
         "fontStyle",

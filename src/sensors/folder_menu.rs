@@ -31,7 +31,8 @@ const SCHEMA: &[PropField] = &[
         "sensor.folderMenu.field.folder",
         Lit::Str(""),
     )
-    .describe("sensor.folderMenu.field.folder.help"),
+    .describe("sensor.folderMenu.field.folder.help")
+    .required("sensor.folderMenu.field.folder.required"),
     PropField::new(
         "title",
         FieldKind::Text {

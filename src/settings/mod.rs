@@ -1011,7 +1011,11 @@ mod screenshots {
             )
             .expect("added");
         super::properties::open_form(&app, &shortcut, true);
+        // Without a target or a web address it cannot be saved (SPEC §8.2).
+        assert!(!state.get_props_valid());
         render_sized("settings-properties-shortcut", 900);
+        state.invoke_prop_text("url".into(), "https://example.com".into());
+        assert!(state.get_props_valid());
         state.invoke_props_cancel();
         assert!(app.store.get().layout.find(&shortcut).is_none());
         // Power: the modes this computer offers (none on Linux: only the stored one).
@@ -1061,7 +1065,12 @@ mod screenshots {
             )
             .expect("added");
         super::properties::open_form(&app, &folder, true);
+        // Its folder is required: the row says so and Save is disabled until one is chosen.
+        assert!(!state.get_props_valid());
         render("settings-properties-folder-menu");
+        super::properties::set_path(&app, "folder", r"C:\Users\Public".into());
+        assert!(state.get_props_valid());
+        render("settings-properties-folder-menu-set");
         state.invoke_props_cancel();
         // Start Menu: title, image, colour and opacity; no folder.
         let start_menu = app
