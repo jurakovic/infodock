@@ -1,5 +1,5 @@
-// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors and Popups pages, a
-// sensor's properties and the sensor picker. Rust fills `SettingsState` from the config and handles its
+// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors, Popups and Applications
+// pages, a sensor's properties and the sensor picker. Rust fills `SettingsState` from the config and handles its
 // callbacks; controls bind to it two-way, and every change is saved through a settings patch.
 import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
@@ -69,11 +69,14 @@ export struct SkinPackRow {
 }
 
 export global SettingsState {
-    // 0 = General, 1 = Bar, 2 = Appearance, 3 = Sensors, 4 = Popups; 5 = a sensor's properties,
-    // 6 = the picker.
+    // 0 = General, 1 = Bar, 2 = Appearance, 3 = Sensors, 4 = Popups, 5 = Applications; 6 = a
+    // sensor's properties, 7 = the picker.
     in-out property <int> page;
 
     // General (SPEC §10.1)
+    in-out property <bool> autostart;
+    // Why the sign-in entry does not follow `autostart`; empty when it does.
+    in property <string> autostart-error;
     in property <string> hotkey;
     // Set while the hotkey button waits for a combination; Rust reads the keys (they are
     // physical keys, which Slint's key events do not carry) and clears it.
@@ -172,6 +175,9 @@ export global SettingsState {
     in-out property <float> show-delay;
     in-out property <float> hide-delay;
 
+    // Applications (SPEC §10.6)
+    in-out property <string> calendar-app;
+
     // A sensor's properties (SPEC §6.7)
     in property <[PropRow]> props;
     in property <string> props-title;
@@ -227,6 +233,7 @@ export global SettingsState {
     // Moves the pack `id` to the Recycle Bin.
     callback remove-skin(id: string);
     callback open-skins-folder();
+    callback browse-calendar-app();
     // The colour of a #RRGGBB text, for swatches; transparent if it is not one.
     pure callback to-color(text: string) -> color;
     // The text is a colour as #RRGGBB.
@@ -414,6 +421,19 @@ component WithReset inherits VerticalLayout {
 
 component GeneralPage inherits VerticalLayout {
     alignment: start;
+
+    Row {
+        label: I18n.tr("settings.general.autostart");
+        help: I18n.tr("settings.general.autostart.help");
+        error: SettingsState.autostart-error;
+        Switch {
+            checked <=> SettingsState.autostart;
+            accessible-label: I18n.tr("settings.general.autostart");
+            toggled => {
+                SettingsState.set-flag("autostart", self.checked);
+            }
+        }
+    }
 
     Row {
         label: I18n.tr("settings.general.hotkey");
@@ -1447,6 +1467,34 @@ component PopupsPage inherits VerticalLayout {
 }
 
 // The properties form, generated from the sensor type's schema (SPEC §6.7).
+component ApplicationsPage inherits VerticalLayout {
+    alignment: start;
+
+    Row {
+        label: I18n.tr("settings.apps.calendar");
+        help: I18n.tr("settings.apps.calendar.help");
+        HorizontalLayout {
+            spacing: 8px;
+            // Saved as it is typed: the navigation does not take the focus.
+            LineEdit {
+                width: 220px;
+                text <=> SettingsState.calendar-app;
+                placeholder-text: "ms-settings:dateandtime";
+                accessible-label: I18n.tr("settings.apps.calendar");
+                edited(text) => {
+                    SettingsState.set-text("apps.calendar", text);
+                }
+            }
+            Button {
+                text: I18n.tr("settings.props.browse");
+                clicked => {
+                    SettingsState.browse-calendar-app();
+                }
+            }
+        }
+    }
+}
+
 component PropertiesPage inherits VerticalLayout {
     alignment: start;
 
@@ -1775,6 +1823,7 @@ export component SettingsWindow inherits Window {
                     { text: I18n.tr("settings.nav.appearance") },
                     { text: I18n.tr("settings.nav.sensors") },
                     { text: I18n.tr("settings.nav.popups") },
+                    { text: I18n.tr("settings.nav.applications") },
                 ];
                 current-item <=> SettingsState.page;
                 accessible-label: I18n.tr("settings.nav.label");
@@ -1801,13 +1850,14 @@ export component SettingsWindow inherits Window {
             spacing: 8px;
 
             Text {
-                text: SettingsState.page == 5 ? SettingsState.props-title
-                    : SettingsState.page == 6 ? I18n.tr("settings.picker.title") : [
+                text: SettingsState.page == 6 ? SettingsState.props-title
+                    : SettingsState.page == 7 ? I18n.tr("settings.picker.title") : [
                     I18n.tr("settings.nav.general"),
                     I18n.tr("settings.nav.bar"),
                     I18n.tr("settings.nav.appearance"),
                     I18n.tr("settings.nav.sensors"),
                     I18n.tr("settings.nav.popups"),
+                    I18n.tr("settings.nav.applications"),
                 ][SettingsState.page];
                 font-size: 20px;
                 font-weight: 600;
@@ -1820,7 +1870,7 @@ export component SettingsWindow inherits Window {
                 color: #d13438;
             }
 
-            if SettingsState.page != 6: scroll := ScrollView {
+            if SettingsState.page != 7: scroll := ScrollView {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
@@ -1832,11 +1882,12 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == 2: AppearancePage { }
                     if SettingsState.page == 3: SensorsPage { }
                     if SettingsState.page == 4: PopupsPage { }
-                    if SettingsState.page == 5: PropertiesPage { }
+                    if SettingsState.page == 5: ApplicationsPage { }
+                    if SettingsState.page == 6: PropertiesPage { }
                 }
             }
             // The picker scrolls only its list (SPEC §6.6).
-            if SettingsState.page == 6: PickerPage {
+            if SettingsState.page == 7: PickerPage {
                 vertical-stretch: 1;
             }
         }

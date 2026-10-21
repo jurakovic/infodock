@@ -6,6 +6,7 @@
 //! made elsewhere (tray, hotkey) show up too.
 
 mod appearance;
+mod applications;
 mod form;
 mod layout;
 mod model;
@@ -184,6 +185,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     picker::connect(window, app);
     layout::connect(window, app);
     appearance::connect(window, app);
+    applications::connect(window, app);
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_page_changed(move |page| {
@@ -307,6 +309,8 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     let json = serde_json::to_value(settings).unwrap_or_default();
     let choice = |path: &str| model::choice(path).map_or(0, |c| model::choice_index(&json, c));
 
+    state.set_autostart(settings.autostart);
+    state.set_autostart_error(crate::autostart::error().unwrap_or_default().into());
     state.set_hotkey(settings.hotkey.as_str().into());
     state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
     state.set_hotkey_action(choice("hotkeyAction"));
@@ -403,6 +407,9 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_popup_shadow(popups.shadow);
     state.set_show_delay(popups.show_delay_ms as f32);
     state.set_hide_delay(popups.hide_delay_ms as f32);
+
+    // Applications (SPEC §10.6)
+    state.set_calendar_app(settings.apps.calendar.as_str().into());
 
     appearance::fill(open, app, settings);
 }
@@ -566,6 +573,27 @@ fn apply_hotkey(app: &Arc<App>, accelerator: &str) {
             state.set_hotkey_error(error.into());
         }
     });
+}
+
+/// Shows the OS picker for a folder, or for a file of `extensions` called `types_name`, modal
+/// to the window.
+fn pick(title: &str, folder: bool, extensions: &[&str], types_name: &str) -> Option<String> {
+    let owner = WINDOW.with(|w| {
+        let w = w.try_borrow().ok()?;
+        properties::owner(&w.as_ref()?.window)
+    });
+    let all_files = crate::i18n::t("settings.props.allFiles");
+    // The picker runs its own modal loop; no window state is borrowed meanwhile.
+    crate::platform::pick_path(
+        owner,
+        &crate::platform::PathRequest {
+            title,
+            folder,
+            extensions,
+            types_name,
+            all_files: &all_files,
+        },
+    )
 }
 
 /// Brings the window to the front, e.g. when a second launch asked for Settings.
@@ -813,7 +841,8 @@ mod screenshots {
             text.chars().for_each(|c| key(c.into()));
             settle();
         };
-        let (general, bar, appearance, sensors, popups) = (27.0, 67.0, 107.0, 147.0, 187.0);
+        let (general, bar, appearance, sensors, popups, applications) =
+            (27.0, 67.0, 107.0, 147.0, 187.0, 227.0);
         let nav = |y: f32| click(49.0, y);
 
         // Ctrl+Space in the navigation unselects its item; the page stays.
@@ -941,6 +970,18 @@ mod screenshots {
         let popups_settings = app.store.get().settings.popups;
         assert_eq!(popups_settings.background, None);
         assert_eq!(popups_settings.opacity, None);
+
+        // Start with Windows is saved at once (nothing starts at sign-in on Linux).
+        nav(general);
+        let autostart = || app.store.get().settings.autostart;
+        click(729.0, 76.0);
+        assert!(autostart());
+        click(729.0, 76.0);
+        assert!(!autostart());
+        // The calendar app is saved as it is typed (SPEC §10.6).
+        nav(applications);
+        retype(554.0, 105.0, "outlookcal:");
+        assert_eq!(app.store.get().settings.apps.calendar, "outlookcal:");
 
         // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
         super::properties::open_form(&app, &logo, false);

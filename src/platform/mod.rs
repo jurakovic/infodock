@@ -474,6 +474,18 @@ pub struct MemoryStatus {
     pub load: u32,
 }
 
+/// A change to the per-user `Run` entry that starts Infodock at sign-in (SPEC §10.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutostartChange<'a> {
+    /// The user turned autostart on: write the command, and clear the mark with which Task
+    /// Manager's Startup apps keeps an entry from starting.
+    Enable(&'a str),
+    /// The exe moved: write its command, keeping that mark.
+    Update(&'a str),
+    /// Remove the entry, and its mark.
+    Remove,
+}
+
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// All active monitors, physical pixels.
@@ -679,6 +691,18 @@ pub trait Platform: Send + Sync {
     /// Plays a WAV sound in the background, e.g. the Time sensor's chime (SPEC §9.5).
     fn play_sound(&self, wav: &'static [u8]) {
         let _ = wav;
+    }
+    /// The command of the per-user `Run` entry `name` (SPEC §10.1), as written; `None` without
+    /// one, or where nothing starts at sign-in.
+    fn autostart(&self, name: &str) -> Option<String> {
+        let _ = name;
+        None
+    }
+    /// Changes the `Run` entry `name`; the error is the OS's message. Does nothing where
+    /// nothing starts at sign-in.
+    fn set_autostart(&self, name: &str, change: &AutostartChange) -> Result<(), String> {
+        let _ = (name, change);
+        Ok(())
     }
     /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
     /// UI language's for `Ui`. English (United States) where the platform cannot tell.

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use super::{Open, WINDOW, model, save};
+use super::{Open, WINDOW, model, pick, save};
 use crate::app::App;
 use crate::bar::skins::pack::{self, PackEntry};
 use crate::bar::skins::{self, BuiltIn, CUSTOM};
@@ -19,7 +19,7 @@ use crate::config::model::{
     BackgroundSettings, ClassicSettings, ColorScheme, Settings, Theme as ThemeId, ThemeDefaults,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, PathRequest};
+use crate::platform::Bitmap;
 use crate::ui;
 
 /// The page index of Appearance in the window.
@@ -279,27 +279,6 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     let selected = gallery.entries.iter().position(|e| e.id == classic.skin);
     state.set_skin_selected(selected.map_or(-1, |i| i as i32));
     state.set_skins(ModelRc::new(VecModel::from(tiles)));
-}
-
-/// Shows the OS picker for a folder, or for a file of `extensions` called `types_name`, modal
-/// to the window.
-fn pick(title: &str, folder: bool, extensions: &[&str], types_name: &str) -> Option<String> {
-    let owner = WINDOW.with(|w| {
-        let w = w.try_borrow().ok()?;
-        super::properties::owner(&w.as_ref()?.window)
-    });
-    let all_files = t("settings.props.allFiles");
-    // The picker runs its own modal loop; no window state is borrowed meanwhile.
-    crate::platform::pick_path(
-        owner,
-        &PathRequest {
-            title,
-            folder,
-            extensions,
-            types_name,
-            all_files: &all_files,
-        },
-    )
 }
 
 /// Gives the window's title bar the colour scheme (SPEC §10.3); the Fluent palette follows

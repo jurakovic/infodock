@@ -1,6 +1,7 @@
 //! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
 
 pub mod appbar;
+mod autostart;
 mod band;
 mod battery;
 mod com;
@@ -224,6 +225,14 @@ impl Platform for WindowsPlatform {
         if !played.as_bool() {
             tracing::warn!("could not play a sound");
         }
+    }
+
+    fn autostart(&self, name: &str) -> Option<String> {
+        autostart::read(name)
+    }
+
+    fn set_autostart(&self, name: &str, change: &super::AutostartChange) -> Result<(), String> {
+        autostart::change(name, change)
     }
 
     fn font_families(&self) -> Vec<String> {

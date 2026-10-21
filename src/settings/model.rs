@@ -12,7 +12,14 @@ use crate::platform::MonitorInfo;
 use crate::platform::geometry::{floating_rect, to_physical};
 
 /// Settings pages in navigation order (SPEC §10.7).
-pub const PAGES: [&str; 5] = ["general", "bar", "appearance", "sensors", "popups"];
+pub const PAGES: [&str; 6] = [
+    "general",
+    "bar",
+    "appearance",
+    "sensors",
+    "popups",
+    "applications",
+];
 /// The page with the Layout manager.
 pub const SENSORS_PAGE: usize = 3;
 

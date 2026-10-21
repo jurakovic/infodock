@@ -492,3 +492,12 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] A new Shortcut: *Target* says "Choose a target, or enter a web address below." and *Save* is disabled; type a web address: both go. Clear it and type a target instead: the same.
 - [ ] A Text sensor's Properties: clear *Text*: "Enter the text to show." and *Save* disabled; the preview shows the sensor without width meanwhile, and *Cancel* restores it.
 - [ ] A Folder Menu without a folder from an import or an older config still loads and says *No folder set*; its Properties page asks for the folder.
+
+**Autostart and Applications** (since M4 S13)
+
+- [ ] Settings ▸ General ▸ *Start with Windows* on: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holds `Infodock` with the exe's path in quotes (regedit), and Task Manager ▸ *Startup apps* lists Infodock as *Enabled*. Sign out and in: the bar starts. Off: the value is gone.
+- [ ] With it on, disable Infodock in Task Manager ▸ *Startup apps*, then turn the switch off and on again in Settings: Task Manager shows it *Enabled* again.
+- [ ] With it on, quit, copy `infodock.exe` elsewhere and start the copy: the `Run` value now names the copy (Task Manager's *Disabled*, if set, stays).
+- [ ] Turn it on, quit, delete `config.json`, start again (first run): the switch is on (the entry was taken into the setting). With the entry removed by hand before a first run, the switch is off.
+- [ ] Turn it off, then add the `Run` value by hand and restart Infodock (not a first run): the value is removed.
+- [ ] Settings ▸ *Applications*: type `outlookcal:` (or any program) in *Calendar*; a click on a Date sensor opens it. *Browse…* lists programs first; a picked shortcut gives its target. Clear the box: a click opens the date and time settings again.

@@ -17,6 +17,7 @@ macro_rules! install_i18n {
 pub(crate) use install_i18n;
 
 mod app;
+mod autostart;
 pub mod bar;
 pub mod config;
 mod hotkey;
@@ -91,6 +92,7 @@ pub fn run() {
     }
 
     let app = Arc::new(App::new(store, platform, dirs.skins()));
+    autostart::init(&app.store, Arc::clone(&app.platform));
     let bar = match BarController::create(
         &app.store,
         Arc::clone(&app.platform),
