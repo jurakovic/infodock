@@ -24,7 +24,7 @@ use std::time::Duration;
 use raw_window_handle::{
     HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
 };
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{FILETIME, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DwmEnableBlurBehindWindow,
 };
@@ -33,6 +33,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Ole::OleInitialize;
+use windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
+use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -116,6 +118,9 @@ struct WindowState {
     wake_queued: Arc<AtomicBool>,
     /// Rendering failed once; later failures are logged at debug level.
     render_failed: Cell<bool>,
+    /// A frame reached the window; the first one is logged with the time since the process
+    /// started, which CI checks against the start budget (SPEC §14.1).
+    presented: Cell<bool>,
     /// `TrackMouseEvent` asked for `WM_MOUSELEAVE`.
     tracking_leave: Cell<bool>,
     /// Created on first use; `Err` once creating it failed.
@@ -423,9 +428,16 @@ impl WindowState {
                 // SAFETY: copies the finished frame, alpha included, into the window's surface.
                 let copied =
                     unsafe { BitBlt(hdc, 0, 0, width, height, Some(frame), 0, 0, SRCCOPY) };
-                if let Err(e) = copied {
-                    self.report_render_error(&e);
-                    self.retry_render();
+                match copied {
+                    Ok(()) => {
+                        if !self.presented.replace(true) {
+                            log_first_frame();
+                        }
+                    }
+                    Err(e) => {
+                        self.report_render_error(&e);
+                        self.retry_render();
+                    }
                 }
                 self.show_band(handler.band());
             }
@@ -739,6 +751,41 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+/// Logs how long after the process was created its first bar frame reached the window. CI
+/// reads the line from a first and a later run as the cold and warm start (SPEC §14.1).
+fn log_first_frame() {
+    match process_age() {
+        Some(age) => tracing::info!(
+            "bar visible {} ms after the process started",
+            age.as_millis()
+        ),
+        None => tracing::debug!("bar visible; the process start time is unknown"),
+    }
+}
+
+/// How long ago this process was created; it is stamped to within a clock tick.
+fn process_age() -> Option<Duration> {
+    let (mut created, mut exited, mut kernel, mut user) = Default::default();
+    // SAFETY: four writable FILETIMEs; the pseudo handle needs no closing.
+    unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    }
+    .ok()?;
+    // SAFETY: plain query.
+    let now = unsafe { GetSystemTimePreciseAsFileTime() };
+    let ticks = |t: FILETIME| (u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime);
+    // FILETIMEs count 100 ns.
+    Some(Duration::from_nanos(
+        ticks(now).checked_sub(ticks(created))?.saturating_mul(100),
+    ))
+}
+
 fn os_error(what: &str, e: windows::core::Error) -> PlatformError {
     PlatformError::Os(format!("{what}: {e}"))
 }
@@ -772,6 +819,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         renderer: RefCell::new(None),
         wake_queued: Arc::new(AtomicBool::new(false)),
         render_failed: Cell::new(false),
+        presented: Cell::new(false),
         tracking_leave: Cell::new(false),
         hint: OnceCell::new(),
         popup: OnceCell::new(),

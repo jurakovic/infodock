@@ -532,15 +532,24 @@ mod tests {
         }
 
         pub fn feed(sensors: &mut BarSensors, env: &Env) {
+            feed_seconds(sensors, env, 0..150, std::time::Instant::now());
+        }
+
+        /// Delivers the samples of `seconds`, one a second from `start`, as the sampler would
+        /// read them.
+        pub fn feed_seconds(
+            sensors: &mut BarSensors,
+            env: &Env,
+            seconds: std::ops::Range<usize>,
+            start: std::time::Instant,
+        ) {
             let mut topics: Vec<Topic> = Vec::new();
             for request in sensors.subscriptions().into_values().flatten() {
                 if !topics.contains(&request.topic) {
                     topics.push(request.topic);
                 }
             }
-            // One sample a second, as the sampler would read them.
-            let start = std::time::Instant::now();
-            for i in 0..150 {
+            for i in seconds {
                 let now = start + std::time::Duration::from_secs(i as u64);
                 for topic in &topics {
                     let delivery = Delivery {
@@ -553,6 +562,77 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The full bar redraw (SPEC §14.1, ≤ 2 ms): the first-run layout on a bar 2560 px wide at
+    /// 100 %, each frame after a second's samples arrived, drawn as the bar draws one (the
+    /// sensors that changed measure again, then the background and every sensor) by Direct2D
+    /// with a renderer kept across frames. CI's budget check reads the median.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "measures a budget; run with --ignored"]
+    fn budget_bar_redraw() {
+        use std::time::{Duration, Instant};
+
+        use crate::bar::sensors::{BarSensors, Env};
+        use crate::platform::{FrameRenderer, text_engine};
+        use crate::sensors::LayoutCtx;
+        use crate::test_util::{median, record_budget};
+
+        const FRAMES: usize = 200;
+        const WIDTH: u32 = 2560;
+        let settings = Settings::default();
+        let theme = Theme::resolve(&settings, OsAppearance::default());
+        let platform = crate::platform::current();
+        let text = text_engine();
+        let mut sensors = BarSensors::default();
+        sensors.sync(
+            &crate::config::Config::first_run("1.0.0").layout,
+            &Default::default(),
+            &platform.capabilities(),
+            crate::sensors::registry::registry(),
+        );
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+            animate: false,
+            changes: &crate::sampler::ChangeSink::NONE,
+        };
+        let start = Instant::now();
+        sensors.wake(start, &env);
+        // Graphs with a full plot.
+        samples::feed_seconds(&mut sensors, &env, 0..150, start);
+        let cx = LayoutCtx {
+            theme: &theme,
+            text: text.as_ref(),
+            scale: 1.0,
+            numbers: platform.locale(settings.date_locale).numbers(),
+            icons: &crate::sensors::DirectIcons(platform.as_ref()),
+        };
+        let size = SizeF::new(WIDTH as f32, theme.bar_height as f32);
+        let mut renderer = FrameRenderer::new().expect("a renderer");
+        let mut times = Vec::with_capacity(FRAMES);
+        for i in 150..150 + FRAMES {
+            samples::feed_seconds(&mut sensors, &env, i..i + 1, start);
+            let began = Instant::now();
+            renderer
+                .draw(WIDTH, theme.bar_height, 1.0, &mut |canvas| {
+                    sensors.update_layout(&cx, size.width);
+                    paint_bar(canvas, size, &theme, Edge::Bottom, 0.0, None);
+                    sensors.draw(canvas, &theme, size.height);
+                })
+                .expect("drawn");
+            times.push(began.elapsed());
+        }
+        record_budget(
+            "redraw",
+            "Full bar redraw (2560 px)",
+            median(&mut times),
+            Duration::from_millis(2),
+            FRAMES,
+        );
     }
 
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads

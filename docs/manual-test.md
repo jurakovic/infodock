@@ -542,3 +542,10 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] While the welcome page is open (first run), double-click the desktop shortcut or start Infodock from the Start Menu: Settings comes to the front still on the welcome page, and the next start shows it again until it is left.
 - [ ] Classic theme with a custom image on a network share: type its path character by character; the line under it says what is wrong until the path is complete, without pauses between characters on a local drive. Choose another skin: nothing is read for the path any more.
 - [ ] Install the test pack, then change its tile (same `skin.json`) and install it again: the gallery shows the new tile at once. Quit, write the pack's name in other case in the config's `classic.skin` (`TEST`), start again, then *Remove* the pack: the skin becomes Gloss.
+
+## M5 — Polish
+
+**Start and redraw budgets** (since M5 S1)
+
+- [ ] CI's job summary lists *Times* next to memory and idle CPU: the cold and the warm start to the bar visible (budgets 500 ms and 300 ms) and the full bar redraw (2 ms); the check fails when one is over its budget or missing.
+- [ ] On the test laptop, start Infodock after signing in (cold) and again after quitting it (warm): the log's `bar visible … ms after the process started` lines stay within 500 ms and 300 ms.

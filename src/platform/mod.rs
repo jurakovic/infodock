@@ -973,6 +973,10 @@ pub fn render_offscreen(
     }
 }
 
+/// A renderer kept across frames, for the budget tests (SPEC §14.1).
+#[cfg(all(windows, test))]
+pub use windows::render::FrameRenderer;
+
 // ---------------------------------------------------------------------------------------------
 // The bar thread (SPEC §4.1)
 // ---------------------------------------------------------------------------------------------

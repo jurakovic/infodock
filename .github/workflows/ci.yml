@@ -76,7 +76,14 @@ jobs:
         run: cargo test
       # Includes rendering the Settings pages and the bar to target/screenshots.
       - name: Windows integration tests
-        run: cargo test -- --ignored
+        run: cargo test -- --ignored --skip budget_
+      # The time budgets the app cannot log (SPEC §14.1), one test at a time so they do not
+      # compete for the processors; the memory check reads their records.
+      - name: Budget tests
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/budgets -ErrorAction SilentlyContinue
+          cargo test budget_ -- --ignored --test-threads=1 --nocapture
       - name: Build release
         run: cargo build --release
       # Pinned: the installer's uninstaller section (Cargo.toml) relies on its NSIS template.
@@ -104,10 +111,10 @@ jobs:
           path: target/screenshots
           if-no-files-found: ignore
           retention-days: 14
-      # Memory and idle CPU budgets (SPEC §14.1), enforced.
-      - name: Memory and CPU check
+      # Memory, idle CPU and time budgets (SPEC §14.1), enforced.
+      - name: Memory, CPU and time check
         shell: pwsh
-        run: .github/scripts/measure-memory.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/memory-check" -Enforce
+        run: .github/scripts/measure-memory.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/memory-check" -Measured target/budgets -Enforce
       - uses: actions/upload-artifact@v6
         if: always()
         with:

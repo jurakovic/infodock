@@ -290,6 +290,38 @@ pub fn render_offscreen(
         .ok_or_else(|| PlatformError::Os("no frame was rendered".into()))
 }
 
+/// A renderer kept across frames, as the bar window keeps its own: what drawing a frame costs,
+/// for the budget tests (SPEC §14.1).
+#[cfg(test)]
+pub struct FrameRenderer(Renderer);
+
+#[cfg(test)]
+impl FrameRenderer {
+    pub fn new() -> std::result::Result<Self, PlatformError> {
+        Renderer::new()
+            .map(Self)
+            .map_err(|e| PlatformError::Os(format!("no renderer: {e}")))
+    }
+
+    /// Draws a frame of `width`×`height` physical px at `scale` and waits until its pixels are
+    /// written, as before the bar copies them to its window.
+    pub fn draw(
+        &mut self,
+        width: u32,
+        height: u32,
+        scale: f32,
+        paint: &mut dyn FnMut(&mut dyn Canvas),
+    ) -> std::result::Result<(), PlatformError> {
+        let size = |n: u32| i32::try_from(n).map_err(|_| PlatformError::Os("too large".into()));
+        self.0
+            .draw(size(width)?, size(height)?, scale, |canvas| paint(canvas))
+            .map_err(|e| PlatformError::Os(format!("rendering failed: {e}")))?;
+        // SAFETY: waits for GDI to finish writing to the DIB.
+        let _ = unsafe { GdiFlush() };
+        Ok(())
+    }
+}
+
 fn color_f(c: Color) -> D2D1_COLOR_F {
     D2D1_COLOR_F {
         r: c.r,
