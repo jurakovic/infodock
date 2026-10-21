@@ -1249,15 +1249,17 @@ pub trait BarHandler {
     }
     /// Draws the bar into a cleared canvas of `size` logical px.
     fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF);
-    /// The skin's shadow band to show beside the bar (SPEC §5.1), asked after each frame.
+    /// The skin's shadow band or the bar's shadow to show beside the bar (SPEC §5.1, §5.5),
+    /// asked after each frame.
     fn band(&self) -> Option<Band> {
         None
     }
 }
 
-/// A skin's shadow band (SPEC §5.1, §12.4): a transparent shadow as wide as the bar, beside it on
-/// the side facing the screen centre. The platform shows it in a click-through window of its
-/// own that follows the bar's window, outside the reserved work area.
+/// A skin's shadow band or the bar's shadow (SPEC §5.1, §5.5, §12.4): a transparent shadow as
+/// wide as the bar, beside it on the side facing the screen centre. The platform shows it in a
+/// click-through window of its own that follows the bar's window, outside the reserved work
+/// area.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Band {
     /// Physical px; its rows nearest the bar are the darkest.

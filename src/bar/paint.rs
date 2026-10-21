@@ -743,6 +743,54 @@ mod tests {
             .expect("rendered");
             save(name, &bitmap);
         }
+        // The bar's own shadow (SPEC §5.5) over a light desktop, where it shows best: modern on
+        // both edges and classic at 150 %.
+        for (name, settings, os, edge, scale) in [
+            ("bar-shadow", Settings::default(), dark, Edge::Bottom, 1.0),
+            ("bar-shadow-top", Settings::default(), light, Edge::Top, 1.0),
+            (
+                "bar-shadow-classic@1.5x",
+                skinned("gloss", None),
+                dark,
+                Edge::Bottom,
+                1.5,
+            ),
+        ] {
+            let theme = Theme::resolve(&settings, os);
+            let (size, width, bar) = window(400.0, theme.bar_height, scale);
+            let skin = skin_of(&theme, size, scale, edge);
+            let drawn = render_offscreen(width, bar, scale, &mut |canvas| {
+                paint_bar(
+                    canvas,
+                    size,
+                    &theme,
+                    edge,
+                    0.0,
+                    skin.as_ref().map(|s| &s.bar),
+                )
+            })
+            .expect("rendered");
+            let band =
+                crate::bar::shadow::band(width, scale, edge == Edge::Bottom).expect("a shadow");
+            let depth = band.height();
+            let (band_top, bar_top) = match edge {
+                Edge::Bottom => (0, depth),
+                Edge::Top => (bar, 0),
+            };
+            let rect = |top: u32, height: u32| {
+                crate::platform::RectF::new(0.0, top as f32, width as f32, (top + height) as f32)
+            };
+            let bitmap = render_offscreen(width, bar + depth, 1.0, &mut |canvas| {
+                canvas.fill_rect(
+                    rect(0, bar + depth),
+                    crate::platform::Color::rgba(0xD8, 0xDC, 0xE0, 1.0),
+                );
+                canvas.draw_bitmap(&band, rect(band_top, depth), 1.0);
+                canvas.draw_bitmap(&drawn, rect(bar_top, bar), 1.0);
+            })
+            .expect("rendered");
+            save(name, &bitmap);
+        }
 
         let text = text_engine();
         for (name, settings, os) in [

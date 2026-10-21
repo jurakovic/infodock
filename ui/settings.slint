@@ -104,6 +104,7 @@ export global SettingsState {
     in-out property <int> z-order;
     in-out property <bool> hide-on-fullscreen;
     in-out property <bool> highlight-on-hover;
+    in-out property <bool> shadow;
     // 0 = like Windows, 1 = on, 2 = off.
     in-out property <int> animations;
     in-out property <float> height;
@@ -687,6 +688,18 @@ component BarPage inherits VerticalLayout {
             accessible-label: I18n.tr("settings.bar.highlightOnHover");
             toggled => {
                 SettingsState.set-flag("bar.highlightOnHover", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.shadow");
+        help: I18n.tr("settings.bar.shadow.help");
+        Switch {
+            checked <=> SettingsState.shadow;
+            accessible-label: I18n.tr("settings.bar.shadow");
+            toggled => {
+                SettingsState.set-flag("bar.shadow", self.checked);
             }
         }
     }

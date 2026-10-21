@@ -1,8 +1,9 @@
-//! The shadow band window (SPEC §5.1, §12.4): a skin's transparent shadow beside the bar, on the
-//! side facing the screen centre, outside the reserved work area. Layered (`UpdateLayeredWindow`,
-//! per-pixel alpha), click-through, never activated, and owned by the bar window, so it keeps
-//! to the bar's z-order. Created when a skin first has a band; it follows the bar's window: moved
-//! with it, and hidden while the bar is hidden or off its place (rising or sliding out).
+//! The shadow band window (SPEC §5.1, §5.5, §12.4): a skin's transparent shadow, or the bar's
+//! own, beside the bar on the side facing the screen centre, outside the reserved work area.
+//! Layered (`UpdateLayeredWindow`, per-pixel alpha), click-through, never activated, and owned
+//! by the bar window, so it keeps to the bar's z-order. Created when a band is first shown; it
+//! follows the bar's window: moved with it, and hidden while the bar is hidden or off its place
+//! (rising or sliding out).
 
 use std::cell::{Cell, RefCell};
 use std::mem::size_of;

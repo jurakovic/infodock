@@ -435,6 +435,12 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] A full-screen video on the bar's monitor (*Hide on full screen* on): no shadow over the video. *Z-order* → *Bottom*: the shadow stays behind windows as the bar does; *Topmost*: above them.
 - [ ] Switch to a built-in skin or the modern theme: the shadow goes. Two monitors at 100 % and 150 %: on the second the shadow is 1.5 times as tall.
 
+**Bar shadow** (since M4 S17)
+
+- [ ] Settings ▸ Bar ▸ *Shadow* on, modern theme, bar at the bottom: a soft shadow about 6 px deep lies above the bar, darkest next to it, over the desktop and windows; a maximised window still stops at the bar and the shadow lies over its bottom edge. Clicks and scrolls in the shadow reach the window below. Off: it goes at once.
+- [ ] On a top bar the shadow is below the bar; a floating bar casts it away from the nearer screen edge and keeps it while dragged. Change the edge: the shadow appears once the bar is in place. Hide the bar: the shadow goes with it. At 150 % it is 1.5 times as deep. CI shows it over a light backdrop (`bar-shadow*`).
+- [ ] Classic theme with a built-in skin: the same shadow. With the test pack of *Shadow band* above: the pack's band shows instead, with *Shadow* on or off.
+
 **Appearance page** (since M4 S4)
 
 - [ ] Settings ▸ Appearance lies between Bar and Sensors. *Theme* → *Classic*: the bar switches at once to the classic look (25 px, Arial, Gloss); the page shows the skin gallery. Back to *Modern*: the gallery goes.

@@ -373,6 +373,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_z_order(choice("bar.zOrder"));
     state.set_hide_on_fullscreen(settings.bar.hide_on_fullscreen);
     state.set_highlight_on_hover(settings.bar.highlight_on_hover);
+    state.set_shadow(settings.bar.shadow);
     state.set_animations(choice("bar.animations"));
     state.set_height(settings.bar_height() as f32);
     state.set_theme_height(

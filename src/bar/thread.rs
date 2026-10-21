@@ -19,6 +19,7 @@ use super::paint::paint_bar;
 use super::placement::Anchor;
 use super::popup::{self, Open, PopupHost};
 use super::sensors::{BarSensors, Env};
+use super::shadow::ShadowCache;
 use super::skins::{self, SkinCache};
 use super::theme::Theme;
 use super::tray::{self, TrayCommand};
@@ -122,7 +123,10 @@ pub(super) struct BarLogic {
     theme: Theme,
     /// The classic bar's skin as last drawn (SPEC §12.4).
     skin: SkinCache,
-    /// Its shadow band as last drawn, for the platform to show beside the bar (SPEC §5.1).
+    /// The bar's own shadow as last drawn (SPEC §5.5).
+    shadow: ShadowCache,
+    /// The skin's shadow band or the bar's shadow as last drawn, for the platform to show beside
+    /// the bar (SPEC §5.1).
     band: Option<Band>,
     /// The material last applied to the window; `None` until the first application.
     material: Option<Material>,
@@ -219,6 +223,7 @@ impl BarLogic {
             icons: IconLoader::new(Arc::clone(&platform), waker),
             appearance,
             skin: SkinCache::new(skins),
+            shadow: ShadowCache::default(),
             band: None,
             material: None,
             tray_shown: None,
@@ -504,7 +509,10 @@ impl BarLogic {
     /// Takes a new config; returns whether the sensors need syncing.
     fn apply_config(&mut self, window: &dyn BarWindow, config: Config) -> bool {
         let (old, new) = (&self.settings.bar, &config.settings.bar);
-        if old.edge != new.edge || config.settings.sensor_spacing != self.settings.sensor_spacing {
+        if old.edge != new.edge
+            || old.shadow != new.shadow
+            || config.settings.sensor_spacing != self.settings.sensor_spacing
+        {
             window.invalidate();
         }
         // A docked bar changing edges slides out toward the old one first (SPEC §5.5); the
@@ -1510,15 +1518,21 @@ impl BarHandler for BarLogic {
             .geometry
             .as_ref()
             .map_or(self.settings.bar.edge, |g| g.edge);
-        let skin = self.theme.skin.as_ref().and_then(|spec| {
-            self.skin
-                .get(spec, skins::Target::of(size, canvas.scale(), edge))
-        });
-        // A band goes on the side facing the screen centre: above a bar at the bottom.
-        self.band = skin.and_then(|s| s.band.clone()).map(|bitmap| Band {
-            bitmap,
-            above: edge == Edge::Bottom,
-        });
+        let target = skins::Target::of(size, canvas.scale(), edge);
+        let skin = self
+            .theme
+            .skin
+            .as_ref()
+            .and_then(|spec| self.skin.get(spec, target));
+        // A band goes on the side facing the screen centre: above a bar at the bottom. The
+        // skin's own band takes the place of the bar's shadow (SPEC §5.5).
+        let above = edge == Edge::Bottom;
+        let bitmap = match skin.and_then(|s| s.band.clone()) {
+            Some(band) => Some(band),
+            None if self.settings.bar.shadow => self.shadow.get(target.width, target.scale, above),
+            None => None,
+        };
+        self.band = bitmap.map(|bitmap| Band { bitmap, above });
         paint_bar(
             canvas,
             size,
@@ -1880,6 +1894,65 @@ mod tests {
         logic.on_event(&window, UiEvent::Wake);
         logic.paint(&mut RecordingCanvas::new(1.0), size);
         assert!(logic.band().is_some());
+    }
+
+    #[test]
+    fn the_bars_shadow_goes_where_a_skins_band_would() {
+        use crate::bar::skins::tests::{decode_png, pack, rows_png};
+        let mut settings = Settings::default();
+        settings.bar.shadow = true;
+        let (mut logic, window, _host, config) = bar(settings);
+        let size = SizeF::new(WIDTH, 28.0);
+        // The modern bar at the bottom of the screen: 6 px of shadow above it, as wide as it.
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        let band = logic.band().expect("a shadow");
+        assert!(band.above);
+        assert_eq!((band.bitmap.width(), band.bitmap.height()), (1200, 6));
+        // The next frame hands over the same shadow; at 150 % it is wider and 9 px deep.
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(logic.band().expect("a shadow").same(&band));
+        logic.paint(&mut RecordingCanvas::new(1.5), size);
+        let scaled = logic.band().expect("a shadow").bitmap;
+        assert_eq!((scaled.width(), scaled.height()), (1800, 9));
+        // Placed at the top (or floating nearer the top): below it.
+        if let Some(g) = logic.geometry.as_mut() {
+            g.edge = Edge::Top;
+        }
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert!(!logic.band().expect("a shadow").above);
+
+        // A skin pack's own band takes its place (SPEC §12.4).
+        let skins = tempfile::tempdir().expect("temp dir");
+        let folder = pack(
+            skins.path(),
+            "stripes",
+            r#"{ "image": "t.png", "shadowBand": 2 }"#,
+        );
+        rows_png(
+            &folder.join("t.png"),
+            3,
+            &[[10, 20].as_slice(), &[100; 25]].concat(),
+        );
+        let mut classic = config.clone();
+        classic.settings.theme = crate::config::model::Theme::Classic;
+        classic.settings.classic.skin = "stripes".into();
+        logic.skin = SkinCache::with_decoder(skins.path().into(), decode_png);
+        logic.apply_config(&window, classic.clone());
+        logic.refresh_theme(&window);
+        let size = SizeF::new(WIDTH, 25.0);
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert_eq!(logic.band().expect("the pack's band").bitmap.height(), 2);
+        // A built-in skin has none: the shadow again.
+        classic.settings.classic.skin = "gloss".into();
+        logic.apply_config(&window, classic.clone());
+        logic.refresh_theme(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert_eq!(logic.band().expect("a shadow").bitmap.height(), 6);
+        // Turned off: nothing beside the bar.
+        classic.settings.bar.shadow = false;
+        logic.apply_config(&window, classic);
+        logic.paint(&mut RecordingCanvas::new(1.0), size);
+        assert_eq!(logic.band(), None);
     }
 
     fn press(logic: &mut BarLogic, window: &FakeWindow, at: PointF, alt: bool) {

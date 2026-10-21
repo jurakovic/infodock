@@ -122,7 +122,7 @@ struct WindowState {
     hint: OnceCell<std::result::Result<HintWindow, ()>>,
     /// The same for the popup window.
     popup: OnceCell<std::result::Result<PopupWindow, ()>>,
-    /// The skin's shadow band; created when a skin first has one.
+    /// The shadow band window; created when a band is first shown.
     band: OnceCell<std::result::Result<BandWindow, ()>>,
 }
 
@@ -437,7 +437,7 @@ impl WindowState {
         }
     }
 
-    /// Shows the skin's shadow band beside the bar, or none (SPEC §5.1).
+    /// Shows the shadow band beside the bar, or none (SPEC §5.1).
     fn show_band(&self, band: Option<Band>) {
         if band.is_none() && self.band.get().is_none() {
             return;

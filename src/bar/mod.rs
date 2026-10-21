@@ -12,6 +12,7 @@ mod paint;
 mod placement;
 mod popup;
 mod sensors;
+mod shadow;
 pub mod skins;
 pub mod theme;
 mod thread;
