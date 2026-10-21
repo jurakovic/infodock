@@ -10,7 +10,10 @@ fn main() {
     }
 }
 
-/// Embeds the exe icon, the application manifest and version information.
+/// Embeds the exe icon, the application manifest and version information, into the test
+/// executables too: they then load as the app does (common controls 6, which alone has
+/// `TaskDialogIndirect`, and the DPI awareness), so code that reaches native dialogs can be
+/// tested.
 fn windows_resources() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("set by cargo"));
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("set by cargo"));
@@ -64,7 +67,7 @@ END
     );
     let rc_file = out_dir.join("infodock.rc");
     std::fs::write(&rc_file, rc).expect("the resource script can be written");
-    embed_resource::compile(&rc_file, embed_resource::NONE)
+    embed_resource::compile_for_everything(&rc_file, embed_resource::NONE)
         .manifest_required()
         .expect("the Windows resources compile");
 }
