@@ -29,6 +29,24 @@ pub enum ImportFormat {
     Json,
     /// A legacy XML layout (SPEC §11.4).
     Legacy,
+    /// Either, told apart by the file's name: a `.json` file is an exchange file, any other a
+    /// legacy layout (the welcome page, §11.5).
+    Any,
+}
+
+impl ImportFormat {
+    /// The kind of file at `path`: `Any` decided by its name.
+    pub fn of(self, path: &std::path::Path) -> Self {
+        match self {
+            Self::Any => {
+                let json = path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+                if json { Self::Json } else { Self::Legacy }
+            }
+            format => format,
+        }
+    }
 }
 
 /// What an export holds.

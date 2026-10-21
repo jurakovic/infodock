@@ -110,11 +110,13 @@ fn preview_settings(settings: &Settings, id: &str) -> Settings {
 
 /// What a preview was drawn from, so it is drawn again only when that changed.
 #[derive(Debug, Clone, PartialEq)]
-struct PreviewKey {
-    settings: Settings,
+pub(super) struct PreviewKey {
+    pub(super) settings: Settings,
     /// The skin's pack as listed.
-    pack: Option<PackEntry>,
-    scale: f32,
+    pub(super) pack: Option<PackEntry>,
+    /// Logical px.
+    pub(super) width: f32,
+    pub(super) scale: f32,
 }
 
 #[derive(Clone)]
@@ -124,6 +126,45 @@ enum Preview {
     Swatch(slint::Color),
 }
 
+/// Previews of the bar's background kept with what they were drawn from.
+#[derive(Default)]
+pub(super) struct Previews(Vec<(PreviewKey, Preview)>);
+
+impl Previews {
+    /// A tile for each of `items` (what its preview shows, its name, and whether it is the one
+    /// chosen), drawing only the previews not kept; afterwards only these are kept.
+    pub(super) fn tiles(
+        &mut self,
+        app: &App,
+        items: Vec<(PreviewKey, String, bool)>,
+    ) -> Vec<ui::SkinTile> {
+        let mut kept = Vec::with_capacity(items.len());
+        let mut tiles = Vec::with_capacity(items.len());
+        for (key, name, selected) in items {
+            let shown = self
+                .0
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, p)| p.clone());
+            let image = shown.unwrap_or_else(|| preview(app, &key));
+            let (preview, has_preview, swatch) = match &image {
+                Preview::Image(image) => (image.clone(), true, slint::Color::default()),
+                Preview::Swatch(color) => (slint::Image::default(), false, *color),
+            };
+            tiles.push(ui::SkinTile {
+                name: name.into(),
+                preview,
+                has_preview,
+                swatch,
+                selected,
+            });
+            kept.push((key, image));
+        }
+        self.0 = kept;
+        tiles
+    }
+}
+
 /// The gallery as last shown.
 #[derive(Default)]
 pub(super) struct Gallery {
@@ -131,7 +172,7 @@ pub(super) struct Gallery {
     packs: Vec<PackEntry>,
     listed: bool,
     entries: Vec<SkinEntry>,
-    previews: Vec<(PreviewKey, Preview)>,
+    previews: Previews,
 }
 
 impl Gallery {
@@ -154,7 +195,7 @@ fn to_image(bitmap: &Bitmap) -> slint::Image {
 
 fn preview(app: &App, key: &PreviewKey) -> Preview {
     let os = app.platform.appearance();
-    match crate::bar::skin_preview(&key.settings, os, &app.skins, PREVIEW_WIDTH, key.scale) {
+    match crate::bar::skin_preview(&key.settings, os, &app.skins, key.width, key.scale) {
         Ok(bitmap) => Preview::Image(to_image(&bitmap)),
         Err(_) => {
             let c = Theme::resolve(&key.settings, os).bar_background;
@@ -248,34 +289,20 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     );
     gallery.entries = entries(&gallery.packs);
     let scale = open.window.window().scale_factor();
-    let mut previews = Vec::with_capacity(gallery.entries.len());
-    let mut tiles = Vec::with_capacity(gallery.entries.len());
-    for entry in &gallery.entries {
-        let key = PreviewKey {
-            settings: preview_settings(settings, &entry.id),
-            pack: gallery.packs.iter().find(|p| p.id == entry.id).cloned(),
-            scale,
-        };
-        let shown = gallery
-            .previews
-            .iter()
-            .find(|(k, _)| *k == key)
-            .map(|(_, p)| p.clone());
-        let image = shown.unwrap_or_else(|| preview(app, &key));
-        let (preview, has_preview, swatch) = match &image {
-            Preview::Image(image) => (image.clone(), true, slint::Color::default()),
-            Preview::Swatch(color) => (slint::Image::default(), false, *color),
-        };
-        tiles.push(ui::SkinTile {
-            name: entry.name.as_str().into(),
-            preview,
-            has_preview,
-            swatch,
-            selected: entry.id == classic.skin,
-        });
-        previews.push((key, image));
-    }
-    gallery.previews = previews;
+    let items = gallery
+        .entries
+        .iter()
+        .map(|entry| {
+            let key = PreviewKey {
+                settings: preview_settings(settings, &entry.id),
+                pack: gallery.packs.iter().find(|p| p.id == entry.id).cloned(),
+                width: PREVIEW_WIDTH,
+                scale,
+            };
+            (key, entry.name.clone(), entry.id == classic.skin)
+        })
+        .collect();
+    let tiles = gallery.previews.tiles(app, items);
     let selected = gallery.entries.iter().position(|e| e.id == classic.skin);
     state.set_skin_selected(selected.map_or(-1, |i| i as i32));
     state.set_skins(ModelRc::new(VecModel::from(tiles)));

@@ -111,7 +111,9 @@ pub fn run() {
 
     hotkey::init(&app);
     settings::watch(&app);
-    if !app.platform.capabilities().appbar {
+    if !app.store.get().meta.first_run_done {
+        settings::open(&app, "welcome");
+    } else if !app.platform.capabilities().appbar {
         // No bar on this OS (development builds): open Settings so something is visible.
         settings::open(&app, "general");
     }

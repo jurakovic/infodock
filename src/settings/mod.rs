@@ -12,6 +12,7 @@ mod layout;
 mod model;
 mod picker;
 mod properties;
+mod welcome;
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -50,6 +51,8 @@ struct Open {
     gallery: appearance::Gallery,
     /// The colour scheme the native window was given (SPEC §10.3).
     scheme: Option<crate::config::model::ColorScheme>,
+    /// The welcome page (SPEC §11.5).
+    welcome: welcome::Welcome,
 }
 
 /// Why a change was not saved.
@@ -67,6 +70,7 @@ pub fn open(app: &Arc<App>, route: &str) {
         model::Route::Page(index) => *index as i32,
         model::Route::New { .. } => picker::PAGE,
         model::Route::Sensor(_) => properties::PAGE,
+        model::Route::Welcome => welcome::PAGE,
     };
     let existing = WINDOW.with(|w| w.borrow().as_ref().map(|open| open.window.clone_strong()));
     let window = match existing {
@@ -90,16 +94,23 @@ pub fn open(app: &Arc<App>, route: &str) {
             picker::open_picker(app, place);
         }
         model::Route::Page(_) => window.global::<ui::SettingsState>().set_page(page),
+        model::Route::Welcome => WINDOW.with(|w| {
+            if let Some(open) = w.borrow_mut().as_mut() {
+                welcome::show(open, app);
+            }
+        }),
     }
     if let Err(e) = window.show() {
         tracing::warn!("could not show settings: {e}");
         return;
     }
-    // The native window exists once shown: its title bar takes the colour scheme.
-    let scheme = app.store.get().settings.color_scheme;
+    // The native window exists once shown: its title bar takes the colour scheme, and the
+    // welcome page's previews its scale.
+    let settings = app.store.get().settings;
     WINDOW.with(|w| {
         if let Some(open) = w.borrow_mut().as_mut() {
-            appearance::apply_scheme(open, scheme);
+            appearance::apply_scheme(open, settings.color_scheme);
+            welcome::fill(open, app, &settings);
         }
     });
     focus(&window);
@@ -147,18 +158,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
 
     let a = Arc::clone(app);
     window.window().on_close_requested(move || {
-        // Closing drops an open properties form (SPEC §6.7), then the window once it is hidden,
-        // which frees what it allocated.
-        WINDOW.with(|w| {
-            if let Ok(mut w) = w.try_borrow_mut()
-                && let Some(open) = w.as_mut()
-            {
-                properties::cancel(open, &a);
-            }
-        });
-        let _ = slint::invoke_from_event_loop(|| {
-            WINDOW.with(|w| w.borrow_mut().take());
-        });
+        closing(&a);
         CloseRequestResponse::HideWindow
     });
 
@@ -171,12 +171,43 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         picker: None,
         gallery: appearance::Gallery::default(),
         scheme: None,
+        welcome: welcome::Welcome::default(),
     };
     let config = app.store.get();
     fill(&mut open, app, &config.settings);
     layout::fill(&open, app, &config.layout);
     WINDOW.with(|w| *w.borrow_mut() = Some(open));
     Ok(window)
+}
+
+/// Closing drops an open properties form (SPEC §6.7) and leaves the welcome page (§11.5), then
+/// drops the window once it is hidden, which frees what it allocated.
+fn closing(app: &Arc<App>) {
+    WINDOW.with(|w| {
+        if let Ok(mut w) = w.try_borrow_mut()
+            && let Some(open) = w.as_mut()
+        {
+            properties::cancel(open, app);
+            welcome::left(open, app);
+        }
+    });
+    let _ = slint::invoke_from_event_loop(|| {
+        WINDOW.with(|w| w.borrow_mut().take());
+    });
+}
+
+/// Closes the window, as its close button does.
+fn close(app: &Arc<App>) {
+    let window = WINDOW.with(|w| {
+        let w = w.try_borrow().ok()?;
+        Some(w.as_ref()?.window.clone_strong())
+    });
+    closing(app);
+    if let Some(window) = window
+        && let Err(e) = window.hide()
+    {
+        tracing::warn!("could not close settings: {e}");
+    }
 }
 
 /// Handles the window's callbacks: saving changes and converting colours.
@@ -186,6 +217,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     layout::connect(window, app);
     appearance::connect(window, app);
     applications::connect(window, app);
+    welcome::connect(window, app);
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_page_changed(move |page| {
@@ -199,6 +231,9 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
                 }
                 if page != picker::PAGE {
                     open.picker = None;
+                }
+                if page != welcome::PAGE {
+                    welcome::left(open, &a);
                 }
                 // Packs installed or removed meanwhile show in the gallery.
                 if page == appearance::PAGE {
@@ -412,6 +447,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_calendar_app(settings.apps.calendar.as_str().into());
 
     appearance::fill(open, app, settings);
+    welcome::fill(open, app, settings);
 }
 
 /// Saves a settings patch and shows the outcome. A changed hotkey is registered first; if that
@@ -660,6 +696,7 @@ mod screenshots {
             picker: None,
             gallery: super::appearance::Gallery::default(),
             scheme: None,
+            welcome: super::welcome::Welcome::default(),
         };
         fill(&mut open, &app, &app.store.get().settings);
         super::layout::fill(&open, &app, &app.store.get().layout);
@@ -1190,6 +1227,49 @@ mod screenshots {
         assert_eq!(app.store.get().layout.center[1].kind, "date");
         state.invoke_props_cancel();
         assert_eq!(app.store.get().layout.center.len(), 1);
+
+        // The welcome page (SPEC §11.5), as the first run opens it.
+        let show_welcome = || {
+            super::WINDOW.with(|w| {
+                if let Some(open) = w.borrow_mut().as_mut() {
+                    super::welcome::show(open, &app);
+                }
+            });
+            settle();
+        };
+        let first_run_done = || app.store.get().meta.first_run_done;
+        show_welcome();
+        assert_eq!(state.get_page(), super::welcome::PAGE);
+        render_sized("settings-welcome", 900);
+        // A click on a theme's tile chooses it.
+        window.set_size(PhysicalSize::new(760, 900));
+        click(600.0, 165.0);
+        assert_eq!(
+            app.store.get().settings.theme,
+            crate::config::model::Theme::Classic
+        );
+        refill();
+        render_sized("settings-welcome-classic", 900);
+        click(340.0, 165.0);
+        assert_eq!(
+            app.store.get().settings.theme,
+            crate::config::model::Theme::Modern
+        );
+        // Leaving the page ends the first run.
+        assert!(!first_run_done());
+        nav(general);
+        assert!(first_run_done());
+        // So does *Get started*, which closes the window.
+        app.store
+            .update(|c| {
+                c.meta.first_run_done = false;
+                Ok(())
+            })
+            .expect("saved");
+        show_welcome();
+        state.invoke_welcome_done();
+        assert!(first_run_done());
+        assert!(!ui.window().is_visible());
         super::WINDOW.with(|w| w.borrow_mut().take());
         app.store.shutdown();
     }

@@ -74,12 +74,17 @@ pub fn import(app: &App, dialogs: &dyn Dialogs, format: ImportFormat) -> Option<
 }
 
 fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
-    let (title, types_name, extension) = match format {
-        ImportFormat::Json => (t("import.pick.title"), t("import.pick.types"), EXTENSION),
+    let (title, types_name, extensions): (_, _, &[&str]) = match format {
+        ImportFormat::Json => (t("import.pick.title"), t("import.pick.types"), &[EXTENSION]),
         ImportFormat::Legacy => (
             t("import.pick.legacyTitle"),
             t("import.pick.legacyTypes"),
-            "xml",
+            &["xml"],
+        ),
+        ImportFormat::Any => (
+            t("import.pick.title"),
+            t("import.pick.anyTypes"),
+            &[EXTENSION, "xml"],
         ),
     };
     let all_files = t("settings.props.allFiles");
@@ -87,7 +92,7 @@ fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
         .open_path(&PathRequest {
             title: &title,
             folder: false,
-            extensions: &[extension],
+            extensions,
             types_name: &types_name,
             all_files: &all_files,
         })
@@ -96,8 +101,8 @@ fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
 
 /// What the file brings, or why it cannot be imported.
 fn read(app: &App, path: &Path, format: ImportFormat) -> Result<Incoming, String> {
-    match format {
-        ImportFormat::Json => exchange::read(path),
+    match format.of(path) {
+        ImportFormat::Json | ImportFormat::Any => exchange::read(path),
         ImportFormat::Legacy => legacy::read(path).map(|sensors| app.legacy_incoming(sensors)),
     }
     .map_err(|e| e.message())
@@ -572,6 +577,30 @@ mod tests {
             Some(&("spacer".into(), json!({ "showDivider": true })))
         );
         assert_eq!(f.toasts(), ["Layout imported: 2 sensors added."]);
+    }
+
+    /// The welcome page offers both kinds in one picker; the name tells them apart.
+    #[test]
+    fn imports_either_kind_by_its_name() {
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(f.file("a.infodock.json", LAYOUT));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Any).expect("imported");
+        assert_eq!(report.added, 2);
+        assert_eq!(
+            script.asked().first().map(String::as_str),
+            Some(
+                "open Import layout (Infodock and legacy XML layouts: \
+                 [\"infodock.json\", \"xml\"])"
+            )
+        );
+        // Any other name is a legacy layout, e.g. a settings dump.
+        *script.open.borrow_mut() = Some(fixture("settings-dump.txt"));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Any).expect("imported");
+        assert_eq!(report.added, 2);
+        assert_eq!(f.kinds(Zone::Center), ["text"]);
     }
 
     #[test]

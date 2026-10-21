@@ -148,7 +148,7 @@ One process (single instance enforced). No browser engine runs at any time.
 | `hint` | native, bar thread | layered (`UpdateLayeredWindow`, per-pixel alpha), topmost, non-activating, click-through (`WS_EX_TRANSPARENT`), tool window; created on first use and reused | Hover popups (text hints, calendar) |
 | `popup` | native, bar thread | layered, topmost, tool window, focusable; hides when it loses activation; created on first use and reused | Interactive popups (Folder Menu, Start Menu, Eject list) |
 | `band` | native, bar thread | layered, click-through (`WS_EX_TRANSPARENT`), non-activating, tool window, owned by the bar window and kept right above it in the z-order; created when a skin first has a shadow band | A skin pack's shadow band beside the bar (§5.1) |
-| `settings` | Slint window, main thread | normal decorated window, opened on a route (a page such as `general`, `bar`, `sensors` or `popups`; `layout` for the Layout manager on the Sensors page; `sensor/<id>`; `new?zone=…&index=…` or `new?target=<id>`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
+| `settings` | Slint window, main thread | normal decorated window, opened on a route (a page such as `general`, `bar`, `sensors`, `popups` or `applications`; `layout` for the Layout manager on the Sensors page; `sensor/<id>`; `new?zone=…&index=…` or `new?target=<id>`; `welcome`), created on demand, single instance, **dropped on close** | Settings, sensor properties, sensor picker, layout manager, welcome, help, about |
 
 Plus a **tray icon** (native, registered for the bar window, bar thread), menu: Show/Hide bar · Lock · Popups · Settings… · Quit. The menu is built from the current state each time it opens.
 
@@ -1360,6 +1360,8 @@ Implementation (`config/legacy.rs`, `sensors/legacy.rs`):
 
 1. Create the default config with the layout of §11.2: **left** — CPU Graph, Memory Meter, Network Graph; **center** — Image (logo, popup "Infodock %v"); **right** — Date, Time.
 2. Show a one-time welcome page in Settings: theme choice (Modern/Classic with previews), edge (top/bottom), autostart opt-in, an "Import layout…" button (JSON or legacy XML), and short getting-started tips.
+
+Implementation (`settings/welcome.rs`): Settings opens on the route `welcome` at start-up while `meta.firstRunDone` is false, so a run that ends with the page open shows it again. The page is not in the navigation: an introduction; a tile per theme with a preview of the bar's background in it (`skin_preview`, 240 logical px, the bar's height in that theme, its edge and colours, the colour scheme as the OS's mode resolves it), chosen by a click or the arrow keys and saved at once; *Screen edge*; *Start with Windows* (§10.1); *Import layout…*, whose picker offers both kinds (a `.json` file is read as an exchange file, any other as a legacy layout) and runs the import of §11.3; four tips (the menu, dragging and dropping, hovering and clicking, the hotkey); *Get started*, which closes Settings. `meta.firstRunDone` is set when the page is left: *Get started*, another page, or closing Settings.
 
 ---
 

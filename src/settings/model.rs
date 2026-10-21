@@ -36,6 +36,8 @@ pub enum Route {
     },
     /// A sensor's properties.
     Sensor(String),
+    /// The welcome page (SPEC §11.5).
+    Welcome,
 }
 
 /// Parses a route such as `bar`, `layout`, `sensor/s_1a2b3` or `new?zone=left&index=2`;
@@ -54,6 +56,7 @@ pub fn route(route: &str) -> Route {
     match first {
         // The layout manager is on the Sensors page.
         "layout" => Route::Page(SENSORS_PAGE),
+        "welcome" => Route::Welcome,
         "sensor" => match parts.next() {
             Some(id) if !id.is_empty() => Route::Sensor(id.to_owned()),
             _ => Route::Page(SENSORS_PAGE),
@@ -377,6 +380,8 @@ mod tests {
         assert_eq!(route("bar/height"), Route::Page(1));
         assert_eq!(route("appearance"), Route::Page(2));
         assert_eq!(route("popups"), Route::Page(4));
+        assert_eq!(route("applications"), Route::Page(5));
+        assert_eq!(route("welcome"), Route::Welcome);
         assert_eq!(route("layout"), Route::Page(SENSORS_PAGE));
         assert_eq!(route("nope"), Route::Page(0));
         assert_eq!(route(""), Route::Page(0));

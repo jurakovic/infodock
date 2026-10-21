@@ -1,8 +1,11 @@
 # Measures Infodock's budgets (SPEC §14.1, §16): the private working set (Task Manager's
 # "Memory" column) of infodock.exe and all its child processes, at idle, with Settings open,
 # and after Settings was closed; and its CPU use at idle over 60 s, as a share of all
-# processors (Task Manager's "CPU" column). Also saves a screenshot, quits the app gracefully
+# processors (Task Manager's "CPU" column). Also saves screenshots, quits the app gracefully
 # and prints its log. Writes a summary table to the job summary.
+#
+# The first run opens the welcome page (SPEC §11.5): a run before the measured one closes it,
+# which ends the first run, so the measured run starts with the bar alone.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -64,6 +67,26 @@ function Save-Screenshot([string] $Path) {
     $bitmap.Dispose()
 }
 
+# Closes the Settings window as its close button does; $false if it is not open.
+function Close-Settings {
+    # [NullString]: PowerShell would pass $null to a string parameter as "".
+    $settings = [User32]::FindWindowW([NullString]::Value, 'Infodock Settings')
+    if ($settings -eq [IntPtr]::Zero) { return $false }
+    [User32]::PostMessageW($settings, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null # WM_CLOSE
+    return $true
+}
+
+# Graceful quit: WM_CLOSE to the app's windows, as Restart Manager or a plain taskkill does.
+function Stop-Gracefully($Process) {
+    if (-not $Process.HasExited) {
+        & taskkill.exe /pid $Process.Id | Out-Null
+        if (-not $Process.WaitForExit(10000)) {
+            Write-Warning 'Infodock did not quit within 10 s; killing it'
+            & taskkill.exe /f /t /pid $Process.Id | Out-Null
+        }
+    }
+}
+
 function Show-Log {
     $logs = Join-Path $env:LOCALAPPDATA 'app.infodock.desktop\logs'
     if (Test-Path $logs) {
@@ -73,6 +96,18 @@ function Show-Log {
             Copy-Item $_.FullName $OutDir
         }
     }
+}
+
+# The first run: the welcome page, closed.
+$first = Start-Process -FilePath $Exe -PassThru
+try {
+    Start-Sleep -Seconds 10
+    if ($first.HasExited) { throw "Infodock exited during its first run (code $($first.ExitCode))" }
+    Save-Screenshot (Join-Path $OutDir 'welcome.png')
+    if (-not (Close-Settings)) { Write-Warning 'The welcome page did not open on the first run' }
+    Start-Sleep -Seconds 3
+} finally {
+    Stop-Gracefully $first
 }
 
 $app = Start-Process -FilePath $Exe -PassThru
@@ -98,25 +133,12 @@ try {
     Measure-Tree 'Settings open' $app.Id
     Save-Screenshot (Join-Path $OutDir 'settings.png')
 
-    # [NullString]: PowerShell would pass $null to a string parameter as "".
-    $settings = [User32]::FindWindowW([NullString]::Value, 'Infodock Settings')
-    if ($settings -eq [IntPtr]::Zero) {
-        Write-Warning 'Settings window not found'
-    } else {
-        [User32]::PostMessageW($settings, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null # WM_CLOSE
-    }
+    if (-not (Close-Settings)) { Write-Warning 'Settings window not found' }
     Start-Sleep -Seconds 10
     if ($app.HasExited) { throw 'Infodock quit when Settings was closed' }
     Measure-Tree 'Settings closed' $app.Id
 } finally {
-    # Graceful quit: WM_CLOSE to the app's windows, as Restart Manager or a plain taskkill does.
-    if (-not $app.HasExited) {
-        & taskkill.exe /pid $app.Id | Out-Null
-        if (-not $app.WaitForExit(10000)) {
-            Write-Warning 'Infodock did not quit within 10 s; killing it'
-            & taskkill.exe /f /t /pid $app.Id | Out-Null
-        }
-    }
+    Stop-Gracefully $app
     Show-Log
 }
 

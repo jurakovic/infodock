@@ -501,3 +501,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Turn it on, quit, delete `config.json`, start again (first run): the switch is on (the entry was taken into the setting). With the entry removed by hand before a first run, the switch is off.
 - [ ] Turn it off, then add the `Run` value by hand and restart Infodock (not a first run): the value is removed.
 - [ ] Settings ▸ *Applications*: type `outlookcal:` (or any program) in *Calendar*; a click on a Date sensor opens it. *Browse…* lists programs first; a picked shortcut gives its target. Clear the box: a click opens the date and time settings again.
+
+**First-run welcome** (since M4 S14)
+
+- [ ] Quit Infodock, rename `%APPDATA%\app.infodock.desktop` and start it: the bar shows the first-run layout and Settings opens on *Welcome to Infodock*, no navigation item selected; the theme tiles show the modern bar and the Gloss skin as the bar draws them, at the bar's height.
+- [ ] Click *Classic*: the bar turns classic at once and the tile is outlined; Tab to the tiles and use the arrow keys: the theme follows. Choose *Top*: the bar moves. Turn *Start with Windows* on: the `Run` value appears (S13).
+- [ ] *Import layout…*: the picker lists `.infodock.json` and `.xml` files together; an exported layout and `tests/fixtures/legacy/example.xml` both import as from the Tools menu.
+- [ ] The last tip names the configured hotkey.
+- [ ] Quit from the tray while the page is open and start again: the welcome page opens again. Then *Get started*: Settings closes; start again: no welcome page, and `config.json` holds `"firstRunDone": true`. Leaving the page by the navigation or closing the window ends the first run the same way.
