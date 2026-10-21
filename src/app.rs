@@ -117,6 +117,13 @@ impl App {
         }
     }
 
+    /// Gives the bar the keyboard focus if it is shown (hotkey, SPEC §14.4).
+    pub fn focus_bar(&self) {
+        if let Some(bar) = self.bar.get() {
+            bar.focus();
+        }
+    }
+
     /// Ends the event loop from any thread; the main thread then cleans up. If the loop does not
     /// end in time (or is gone), the process ends here after the same cleanup.
     pub fn request_quit(self: &Arc<Self>) {

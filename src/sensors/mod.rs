@@ -421,6 +421,11 @@ pub trait Sensor {
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         String::new()
     }
+    /// Whether the keyboard focus stops at it and screen readers list it (SPEC §14.4); only
+    /// the Spacer, a divider, says no.
+    fn focusable(&self) -> bool {
+        true
+    }
     /// The pointer entered (`true`) or left the sensor, e.g. to fade something in. A sensor
     /// that animates asks for frames through [`Sensor::wake_at`].
     fn on_hover(&mut self, _hovered: bool, _now: Instant, _cx: &SensorCtx) -> Dirty {

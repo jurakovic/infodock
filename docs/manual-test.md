@@ -569,3 +569,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 **Genitive month names** (since M5 S5)
 
 - [ ] Settings ▸ General ▸ *Date locale* on the system's regional format, with Windows' *Regional format* set to Croatian (Croatia): a Date sensor without the year shows `srijeda, 21. listopada`; Time's hint shows the long date `21. listopada 2026.`; with the year shown, the month line says `listopad`. The same with Polish (`21 października`), Czech (`21. října`) and Russian (`21 октября`); English (United States) is unchanged.
+
+**Keyboard on the bar** (since M5 S6)
+
+- [ ] With Notepad focused, press the hotkey: a ring in the accent colour goes around the whole bar and typing no longer reaches Notepad. Tab moves the ring to the first sensor of the left zone, then on through the centre and right zones, and from the last back to the first; Shift+Tab goes backwards, the arrows too, Home and End to the ends. A Spacer is never ringed. After the show delay the ringed sensor's hint appears.
+- [ ] Enter (or Space) on a Shortcut starts it; on a Folder Menu its list opens with the keyboard in it (the arrows move in the list); Esc closes the list and the ring is back on the Folder Menu. Choosing an item closes the list as well, the ring back on the bar until the started program takes the focus.
+- [ ] Shift+F10 (or the Menu key) on a sensor opens its menu beside it, above the bar at the bottom and below it at the top; with the ring around the whole bar, the bar menu. *Remove sensor* from the keyboard: after the confirmation the ring is on the sensor that took its place.
+- [ ] Esc: the ring goes and Notepad has the focus again (typing reaches it). Press the hotkey, then click into Notepad: the ring goes. Alt+F4 on the focused bar does nothing. With *Hotkey action* on *Toggle visibility*, the hotkey that shows the bar focuses it and the one that hides it gives the focus back to Notepad.
+- [ ] Locked with *Clicks when locked* on *Alt only*: Enter still clicks the ringed sensor.

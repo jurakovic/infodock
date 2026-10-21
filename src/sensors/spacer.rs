@@ -117,6 +117,11 @@ impl Sensor for Spacer {
         self.props.width
     }
 
+    /// A divider: nothing to read or click (SPEC §14.4).
+    fn focusable(&self) -> bool {
+        false
+    }
+
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
         // Without the divider it is a transparent hit area, where the divider shows on hover.
         let opacity = if self.props.show_divider {

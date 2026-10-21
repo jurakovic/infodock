@@ -399,7 +399,6 @@ impl BarSensors {
         })
     }
 
-    /// Where sensor `id` is: its x and width, logical px.
     /// Whether sensor `id` changed what it shows since it was last measured.
     pub fn is_dirty(&self, id: &str) -> bool {
         self.zones
@@ -408,6 +407,28 @@ impl BarSensors {
             .any(|p| p.entry.id == id && p.dirty)
     }
 
+    /// Sensor `id` as [`Self::hit`] finds it.
+    pub fn get(&self, id: &str) -> Option<Hit> {
+        let (zone, index) = self.find(id)?;
+        Some(Hit {
+            zone,
+            index,
+            entry: self.zones[zone as usize][index].entry.clone(),
+        })
+    }
+
+    /// The ids of the sensors the keyboard focus moves between (SPEC §14.4), in visual order:
+    /// the zones from left to right, each in its order.
+    pub fn focus_order(&self) -> Vec<String> {
+        self.zones
+            .iter()
+            .flatten()
+            .filter(|p| p.sensor.focusable())
+            .map(|p| p.entry.id.clone())
+            .collect()
+    }
+
+    /// Where sensor `id` is: its x and width, logical px.
     pub fn place_of(&self, id: &str) -> Option<(f32, f32)> {
         self.zones
             .iter()

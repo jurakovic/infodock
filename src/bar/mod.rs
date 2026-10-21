@@ -3,6 +3,7 @@
 
 pub mod anim;
 mod drop;
+mod focus;
 mod hint;
 mod icons;
 mod interact;
@@ -94,6 +95,8 @@ enum Command {
     Sample(Delivery),
     /// The bar was hidden (tray, hotkey): its hint and popup close.
     Hidden,
+    /// The hotkey focuses the bar (SPEC §14.4).
+    Focus,
     /// A skin pack was installed or removed (SPEC §12.4): the skin is drawn again.
     SkinsChanged,
 }
@@ -198,6 +201,13 @@ impl BarController {
     pub fn bring_to_front(&self) {
         self.set_visible(true);
         self.appbar.raise();
+    }
+
+    /// Gives the shown bar the keyboard focus (hotkey, SPEC §14.4).
+    pub fn focus(&self) {
+        if self.is_visible() {
+            self.send(Command::Focus);
+        }
     }
 
     /// Shows `sensor` (matched by id) instead of its saved entry until [`Self::end_preview`].

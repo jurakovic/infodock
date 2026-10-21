@@ -1,6 +1,6 @@
 //! The bar logic on the bar thread (SPEC §4.1, §4.4): applies the config and the OS appearance,
-//! keeps the sensors, their wake-up timer and layout, draws the bar, and handles the pointer:
-//! clicks, context menus and the hover hint (§6, §7.1).
+//! keeps the sensors, their wake-up timer and layout, draws the bar, and handles the pointer
+//! and the keyboard: clicks, context menus, the hover hint and the focus ring (§6, §7.1, §14.4).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use super::anim::{self, Easing, Fade};
 use super::drop::{self, Dropped};
+use super::focus::{self, Move};
 use super::hint::{self, HintBody, HintFrame, Hover, Step};
 use super::icons::IconLoader;
 use super::interact::{self, DropTarget, Press};
@@ -19,7 +20,7 @@ use super::paint::paint_bar;
 use super::placement::Anchor;
 use super::popup::{self, Open, PopupHost};
 use super::resize::{self, Resize};
-use super::sensors::{BarSensors, Env};
+use super::sensors::{BarSensors, Env, Hit};
 use super::shadow::ShadowCache;
 use super::skins::{self, SkinCache};
 use super::theme::Theme;
@@ -34,9 +35,9 @@ use crate::config::model::{
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
-    Band, BarGeometry, BarHandler, BarWindow, Canvas, DragEvent, DropEffect, Key, Modifiers,
-    OsAppearance, Platform, PointF, PointerButton, PopupCursor, PopupInput, Rect, RectF, SizeF,
-    TextEngine, TimerId, UiEvent, UiWaker,
+    Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas, DragEvent, DropEffect, Key, Modifiers,
+    OsAppearance, Platform, PointF, PointerButton, PopupCursor, PopupInput, Rect, RectF, Shape,
+    SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction};
@@ -72,6 +73,16 @@ struct ExternalDrag {
     /// The sensor under the pointer, the keys it was asked with, and what it would do
     /// (`None` when it leaves the drop to the bar). Asked again only when either changes.
     onto: Option<(String, DragInfo, Option<DropAction>)>,
+}
+
+/// The keyboard on the bar (SPEC §14.4), from the hotkey until Esc or the focus goes to
+/// another app.
+struct KeyFocus {
+    /// The sensor with the focus ring; `None`: the bar itself.
+    sensor: Option<String>,
+    /// The bar window has the focus; while a popup or a confirmation of the bar's has it, the
+    /// ring waits for it to come back.
+    focused: bool,
 }
 
 /// `rect` in logical screen px as physical px at `scale`.
@@ -148,6 +159,8 @@ pub(super) struct BarLogic {
     inside: bool,
     /// The sensor under the pointer, told when the pointer enters and leaves it.
     hovered: Option<String>,
+    /// The keyboard on the bar (SPEC §14.4); `None` unless the hotkey focused it.
+    keys: Option<KeyFocus>,
     /// The hover highlight (SPEC §5.5), 0–1.
     highlight: Fade,
     /// How far the bar has risen into place, 0–1: its content's opacity, and how far it is
@@ -246,6 +259,7 @@ impl BarLogic {
             numbers,
             inside: false,
             hovered: None,
+            keys: None,
             highlight: Fade::at(0.0, Instant::now()),
             // Hidden until it rises, if it does.
             shown: Fade::at(if animate { 0.0 } else { 1.0 }, Instant::now()),
@@ -276,7 +290,10 @@ impl BarLogic {
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
         let entries = tray::menu(&self.settings, self.host.bar_visible());
-        let Some(command) = window.show_menu(&entries).and_then(TrayCommand::from_id) else {
+        let Some(command) = window
+            .show_menu(&entries, None)
+            .and_then(TrayCommand::from_id)
+        else {
             return;
         };
         match command {
@@ -822,26 +839,31 @@ impl BarLogic {
         if press.closed_popup || self.popups.guarded(&press.id, Instant::now()) {
             return;
         }
+        self.click(window, &press.id, modifiers.alt);
+    }
+
+    /// Clicks sensor `id`, with the pointer or the keyboard (SPEC §6.1, §14.4).
+    fn click(&mut self, window: &dyn BarWindow, id: &str, alt: bool) {
         let env = Env {
             settings: &self.settings,
             theme: &self.theme,
             platform: self.platform.as_ref(),
-            alt: modifiers.alt,
+            alt,
             animate: self.animate,
             changes: &self.changes,
         };
-        match self.sensors.click(&press.id, &env) {
+        match self.sensors.click(id, &env) {
             ClickResult::None => {}
             ClickResult::Handled => window.invalidate(),
             // Asked first (SPEC §9.21); the sensor acts only if the user agrees.
             ClickResult::Confirm(question) => {
                 if window.confirm(&question.message, &question.action)
-                    && self.sensors.confirmed(&press.id, &env)
+                    && self.sensors.confirmed(id, &env)
                 {
                     window.invalidate();
                 }
             }
-            ClickResult::Popup(popup) => self.open_popup(window, &press.id, popup),
+            ClickResult::Popup(popup) => self.open_popup(window, id, popup),
         }
         // A click may change what a sensor shows for good (SPEC §9.14).
         self.store_states();
@@ -849,12 +871,35 @@ impl BarLogic {
 
     /// The bar or sensor menu at `at` (SPEC §6.4), and what its command does.
     fn context_menu(&mut self, window: &dyn BarWindow, at: PointF) {
+        let hit = self.sensors.hit(at.x);
+        // New sensors go after the sensor, or to the zone under the pointer (SPEC §6.6).
+        let place = match &hit {
+            Some(h) => (h.zone, h.index + 1),
+            None => {
+                let zone = interact::zone_at(at.x, self.sensors.bar_width());
+                (
+                    zone,
+                    interact::insertion_index(zone, self.sensors.len(zone)),
+                )
+            }
+        };
+        self.menu(window, hit, place, None);
+    }
+
+    /// The sensor menu of `hit`, or the bar menu with new sensors going to `place` (zone and
+    /// index), shown at the pointer or beside `near` (SPEC §6.4); and what its command does.
+    fn menu(
+        &mut self,
+        window: &dyn BarWindow,
+        hit: Option<Hit>,
+        place: (Zone, usize),
+        near: Option<Rect>,
+    ) {
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
         self.close_popup(window);
         self.cancel_drag(window);
         let caps = self.platform.capabilities();
-        let hit = self.sensors.hit(at.x);
         let env = Env {
             settings: &self.settings,
             theme: &self.theme,
@@ -871,20 +916,13 @@ impl BarLogic {
             }
             None => menus::bar_menu(&self.settings, registry(), &caps),
         };
-        let Some(command) = window.show_menu(&entries).and_then(MenuCommand::from_id) else {
+        let Some(command) = window
+            .show_menu(&entries, near)
+            .and_then(MenuCommand::from_id)
+        else {
             return;
         };
-        // New sensors go after the sensor, or to the zone under the pointer (SPEC §6.6).
-        let (zone, index) = match &hit {
-            Some(h) => (h.zone, h.index + 1),
-            None => {
-                let zone = interact::zone_at(at.x, self.sensors.bar_width());
-                (
-                    zone,
-                    interact::insertion_index(zone, self.sensors.len(zone)),
-                )
-            }
-        };
+        let (zone, index) = place;
         let target = hit.as_ref().map(|h| &h.entry);
         match command {
             MenuCommand::NewSensor => self.host.open_settings(&match target {
@@ -1065,7 +1103,10 @@ impl BarLogic {
             PopupReply::Nothing => {}
             PopupReply::Redraw => self.render_popup(window),
             PopupReply::Relayout => self.relayout_popup(window),
-            PopupReply::Close => self.close_popup(window),
+            PopupReply::Close => {
+                self.close_popup(window);
+                self.refocus(window);
+            }
         }
         self.arm_popup_timer(window);
     }
@@ -1109,6 +1150,7 @@ impl BarLogic {
             }
         ) {
             self.close_popup(window);
+            self.refocus(window);
             return;
         }
         let reply = self.with_popup(|open, cx| {
@@ -1161,7 +1203,14 @@ impl BarLogic {
                 *entry = preview.clone();
             }
         }
+        let order = self.sensors.focus_order();
         if self.sensors.sync(&shown, &self.state, &caps, registry()) {
+            // A removed sensor's focus goes to the one that took its place (SPEC §14.4).
+            if let Some(keys) = self.keys.as_mut()
+                && let Some(id) = keys.sensor.take()
+            {
+                keys.sensor = focus::after_change(&order, &self.sensors.focus_order(), &id);
+            }
             // New clocks read the time now, so the next frame does not show them empty.
             let env = Env {
                 settings: &self.settings,
@@ -1294,6 +1343,7 @@ impl BarLogic {
 impl BarLogic {
     /// The bar was hidden: nothing may stay on screen pointing at a bar that is gone.
     fn hidden(&mut self, window: &dyn BarWindow) {
+        self.leave_keyboard(window, true);
         self.cancel_drag(window);
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
@@ -1454,6 +1504,149 @@ impl BarLogic {
     }
 }
 
+impl BarLogic {
+    /// The hotkey focuses the bar (SPEC §14.4): the window takes the keyboard focus and the
+    /// ring goes around the bar itself, or stays on its sensor when the bar had the focus.
+    fn focus_bar(&mut self, window: &dyn BarWindow) {
+        if !self.host.bar_visible() {
+            return;
+        }
+        let sensor = match &self.keys {
+            Some(keys) if keys.focused => keys.sensor.clone(),
+            _ => None,
+        };
+        self.keys = window.take_focus().then_some(KeyFocus {
+            sensor,
+            focused: true,
+        });
+        window.invalidate();
+    }
+
+    /// The sensor with the focus ring.
+    fn focused_sensor(&self) -> Option<String> {
+        self.keys.as_ref()?.sensor.clone()
+    }
+
+    /// A key on the focused bar: Tab and the arrows move the ring, Enter and Space click its
+    /// sensor, Shift+F10 and the Menu key open its menu, Esc gives the focus back (§14.4).
+    fn key(&mut self, window: &dyn BarWindow, key: Key, modifiers: Modifiers) {
+        if !self.keys.as_ref().is_some_and(|k| k.focused) {
+            return;
+        }
+        match key {
+            Key::Tab if modifiers.shift => self.move_focus(window, Move::Previous),
+            Key::Tab | Key::Right => self.move_focus(window, Move::Next),
+            Key::Left => self.move_focus(window, Move::Previous),
+            Key::Home => self.move_focus(window, Move::First),
+            Key::End => self.move_focus(window, Move::Last),
+            // A deliberate key, so the Lock rules for the pointer do not apply.
+            Key::Enter | Key::Space => {
+                if let Some(id) = self.focused_sensor() {
+                    let step = self.hover.dismiss();
+                    self.apply_hint(window, step);
+                    self.click(window, &id, modifiers.alt);
+                }
+            }
+            Key::Menu => self.keyboard_menu(window),
+            Key::F10 if modifiers.shift => self.keyboard_menu(window),
+            Key::Escape => self.leave_keyboard(window, true),
+            _ => {}
+        }
+    }
+
+    /// Moves the focus ring; the sensor's hint follows after the show delay, as on hover.
+    fn move_focus(&mut self, window: &dyn BarWindow, to: Move) {
+        let order = self.sensors.focus_order();
+        let Some(keys) = self.keys.as_mut() else {
+            return;
+        };
+        let next = focus::step(&order, keys.sensor.as_deref(), to);
+        if next == keys.sensor {
+            return;
+        }
+        keys.sensor = next;
+        window.invalidate();
+        if self.popups.open.is_none() {
+            let id = self
+                .focused_sensor()
+                .filter(|_| self.settings.popups_enabled);
+            let popups = &self.settings.popups;
+            let step = self.hover.over(
+                id.as_deref(),
+                Duration::from_millis(u64::from(popups.show_delay_ms)),
+                Duration::from_millis(u64::from(popups.hide_delay_ms)),
+            );
+            self.apply_hint(window, step);
+        }
+    }
+
+    /// The focused sensor's menu, or the bar menu with no sensor focused, beside it (§6.4).
+    fn keyboard_menu(&mut self, window: &dyn BarWindow) {
+        let hit = self.focused_sensor().and_then(|id| self.sensors.get(&id));
+        // The bar menu's new sensors go to the end of the left zone.
+        let place = match &hit {
+            Some(h) => (h.zone, h.index + 1),
+            None => (
+                Zone::Left,
+                interact::insertion_index(Zone::Left, self.sensors.len(Zone::Left)),
+            ),
+        };
+        let near = match &hit {
+            Some(h) => self
+                .anchor(&h.entry.id)
+                .map(|(anchor, scale)| physical_rect(anchor.rect, scale)),
+            None => self.geometry.as_ref().map(|g| g.rect),
+        };
+        self.menu(window, hit, place, near);
+    }
+
+    /// Ends the keyboard on the bar: the ring and its hint go, and with `restore` the focus
+    /// goes back to the window that had it before the hotkey (Esc, hiding the bar).
+    fn leave_keyboard(&mut self, window: &dyn BarWindow, restore: bool) {
+        let Some(keys) = self.keys.take() else {
+            return;
+        };
+        window.invalidate();
+        let step = self.hover.dismiss();
+        self.apply_hint(window, step);
+        if restore && keys.focused {
+            window.restore_focus();
+        }
+    }
+
+    /// The bar window lost the focus: to a popup or a confirmation of its own the ring waits
+    /// for it to come back; anywhere else (a click elsewhere) the keyboard on the bar ends.
+    fn focus_lost(&mut self, window: &dyn BarWindow, within_app: bool) {
+        match self.keys.as_mut() {
+            Some(keys) if within_app => {
+                keys.focused = false;
+                window.invalidate();
+            }
+            Some(_) => self.leave_keyboard(window, false),
+            None => {}
+        }
+    }
+
+    fn focus_gained(&mut self, window: &dyn BarWindow) {
+        if let Some(keys) = self.keys.as_mut().filter(|k| !k.focused) {
+            keys.focused = true;
+            window.invalidate();
+        }
+    }
+
+    /// A popup opened from the keyboard closed by itself (Esc, an item chosen): the bar takes
+    /// the focus back, with the ring where it was (SPEC §14.4).
+    fn refocus(&mut self, window: &dyn BarWindow) {
+        if self.keys.as_ref().is_some_and(|k| !k.focused) {
+            if window.take_focus() {
+                self.focus_gained(window);
+            } else {
+                self.leave_keyboard(window, false);
+            }
+        }
+    }
+}
+
 impl BarHandler for BarLogic {
     fn on_drag(&mut self, window: &dyn BarWindow, event: DragEvent) -> DropEffect {
         match event {
@@ -1484,6 +1677,13 @@ impl BarHandler for BarLogic {
     }
 
     fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent) {
+        // A press on the bar after the focus went elsewhere ends what is left of the keyboard
+        // on it, so the ring does not come back with a menu's activation.
+        if matches!(event, UiEvent::PointerDown { .. })
+            && self.keys.as_ref().is_some_and(|k| !k.focused)
+        {
+            self.keys = None;
+        }
         match event {
             UiEvent::Started => {
                 self.refresh_theme(window);
@@ -1508,6 +1708,7 @@ impl BarHandler for BarLogic {
                         }
                         Command::Sample(delivery) => self.deliver(window, &delivery),
                         Command::Hidden => self.hidden(window),
+                        Command::Focus => self.focus_bar(window),
                         Command::SkinsChanged => {
                             self.skin.forget();
                             window.invalidate();
@@ -1552,7 +1753,16 @@ impl BarHandler for BarLogic {
             } => self.context_menu(window, at),
             UiEvent::PointerLeave => self.pointer_left(window),
             UiEvent::Popup(input) => self.popup_input(window, input),
-            UiEvent::PopupDeactivated => self.close_popup(window),
+            UiEvent::PopupDeactivated => {
+                // The focus went elsewhere, not back to the bar.
+                if self.keys.as_ref().is_some_and(|k| !k.focused) {
+                    self.leave_keyboard(window, false);
+                }
+                self.close_popup(window);
+            }
+            UiEvent::Key { key, modifiers } => self.key(window, key, modifiers),
+            UiEvent::FocusGained => self.focus_gained(window),
+            UiEvent::FocusLost { within_app } => self.focus_lost(window, within_app),
             UiEvent::CaptureLost => {
                 self.cancel_drag(window);
                 self.end_moving(window);
@@ -1661,6 +1871,22 @@ impl BarHandler for BarLogic {
                 self.theme.accent,
             );
         }
+        // The focus ring in the accent colour, while the bar has the keyboard (SPEC §14.4).
+        if let Some(keys) = self.keys.as_ref().filter(|k| k.focused) {
+            let place = keys
+                .sensor
+                .as_deref()
+                .and_then(|id| self.sensors.place_of(id));
+            let rect = focus::ring(place, size, self.theme.gap);
+            canvas.stroke(
+                &Shape::RoundedRect {
+                    rect,
+                    radius: focus::RING_RADIUS,
+                },
+                &Brush::Solid(self.theme.accent),
+                focus::RING_WIDTH,
+            );
+        }
         if opacity < 1.0 {
             canvas.pop();
         }
@@ -1687,6 +1913,13 @@ mod tests {
     struct FakeWindow {
         choose: Cell<Option<u32>>,
         menus: RefCell<Vec<Vec<MenuEntry>>>,
+        /// Where each menu was shown: at the pointer (`None`) or beside a rect.
+        menus_near: RefCell<Vec<Option<Rect>>>,
+        /// The bar took the keyboard focus, and gave it back this often.
+        focus_taken: Cell<u32>,
+        focus_restored: Cell<u32>,
+        /// The window cannot take the focus.
+        no_focus: Cell<bool>,
         captured: Cell<bool>,
         confirmed: RefCell<Vec<String>>,
         hint_timer: Cell<Option<std::time::Duration>>,
@@ -1714,9 +1947,17 @@ mod tests {
         fn invalidate(&self) {}
         fn set_material(&self, _material: Material) {}
         fn set_tray_icon(&self, _tooltip: Option<&str>) {}
-        fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32> {
+        fn show_menu(&self, entries: &[MenuEntry], near: Option<Rect>) -> Option<u32> {
             self.menus.borrow_mut().push(entries.to_vec());
+            self.menus_near.borrow_mut().push(near);
             self.choose.take()
+        }
+        fn take_focus(&self) -> bool {
+            self.focus_taken.set(self.focus_taken.get() + 1);
+            !self.no_focus.get()
+        }
+        fn restore_focus(&self) {
+            self.focus_restored.set(self.focus_restored.get() + 1);
         }
         fn set_timer(&self, id: TimerId, delay: Option<std::time::Duration>) {
             match id {
@@ -2498,48 +2739,60 @@ mod tests {
         assert!(!dimmed(&mut logic));
     }
 
-    #[test]
-    fn a_click_that_asks_first_waits_for_the_answer() {
-        /// Records power actions instead of taking them: this test runs on Windows too.
-        #[derive(Default)]
-        struct NoPower(Mutex<Vec<String>>);
-        impl Platform for NoPower {
-            fn capabilities(&self) -> crate::platform::Capabilities {
-                crate::platform::Capabilities {
-                    power_modes: vec!["shutDown".into()],
-                    ..Default::default()
-                }
-            }
-            fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-                Vec::new()
-            }
-            fn appearance(&self) -> OsAppearance {
-                OsAppearance::default()
-            }
-            fn uptime(&self) -> Duration {
-                Duration::ZERO
-            }
-            fn power(&self, action: crate::platform::PowerAction, _force: bool) {
-                self.0
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(format!("{action:?}"));
+    /// Records power actions instead of taking them: the tests run on Windows too.
+    #[derive(Default)]
+    struct NoPower(Mutex<Vec<String>>);
+
+    impl Platform for NoPower {
+        fn capabilities(&self) -> crate::platform::Capabilities {
+            crate::platform::Capabilities {
+                power_modes: vec!["shutDown".into()],
+                ..Default::default()
             }
         }
+        fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
+            Vec::new()
+        }
+        fn appearance(&self) -> OsAppearance {
+            OsAppearance::default()
+        }
+        fn uptime(&self) -> Duration {
+            Duration::ZERO
+        }
+        fn power(&self, action: crate::platform::PowerAction, _force: bool) {
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(format!("{action:?}"));
+        }
+    }
 
-        let (mut logic, window, _host, mut config) = bar(Settings::default());
+    /// Puts a Power sensor, whose click asks first, in the logo's place.
+    fn with_power_sensor(logic: &mut BarLogic, window: &FakeWindow) -> Arc<NoPower> {
         let power = Arc::new(NoPower::default());
         logic.platform = Arc::clone(&power) as Arc<dyn Platform>;
-        // A Power sensor in the logo's place.
+        let mut config = Config {
+            settings: logic.settings.clone(),
+            layout: logic.layout.clone(),
+            state: logic.state.clone(),
+            ..Config::default()
+        };
         let logo = &mut config.layout.center[0];
         logo.kind = "power".into();
         logo.props = serde_json::json!({ "mode": "shutDown" })
             .as_object()
             .cloned()
             .unwrap_or_default();
-        logic.apply_config(&window, config);
-        logic.sync_sensors(&window);
+        logic.apply_config(window, config);
+        logic.sync_sensors(window);
         logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        power
+    }
+
+    #[test]
+    fn a_click_that_asks_first_waits_for_the_answer() {
+        let (mut logic, window, _host, _) = bar(Settings::default());
+        let power = with_power_sensor(&mut logic, &window);
         let actions = || power.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
         // Declined: nothing happens.
         window.decline.set(true);
@@ -2660,6 +2913,268 @@ mod tests {
             .expect("text type");
         right_click(&mut logic, &window, LOGO, MenuCommand::Add(text));
         assert_eq!(host.calls(), ["add text center 1", "open sensor/s_new"]);
+    }
+
+    fn key(logic: &mut BarLogic, window: &FakeWindow, key: Key, shift: bool) {
+        let modifiers = Modifiers {
+            shift,
+            ..Modifiers::default()
+        };
+        logic.on_event(window, UiEvent::Key { key, modifiers });
+    }
+
+    /// The focus ring the last frame drew: its rectangle, or `None`.
+    fn ring(logic: &mut BarLogic) -> Option<String> {
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        canvas
+            .dump()
+            .lines()
+            .find(|l| l.starts_with("stroke rounded") && l.ends_with("w2"))
+            .map(str::to_owned)
+    }
+
+    /// The x where the focus ring starts.
+    fn ring_left(logic: &mut BarLogic) -> Option<f32> {
+        let ring = ring(logic)?;
+        let rect = ring.split_whitespace().nth(2)?;
+        rect.split(',').next()?.parse().ok()
+    }
+
+    /// The x where the ring around sensor `id` starts.
+    fn ring_left_of(logic: &BarLogic, id: &str) -> f32 {
+        let (x, _) = logic.sensors.place_of(id).expect("placed");
+        (x - (logic.theme.gap / 2.0).min(3.0)).max(1.5)
+    }
+
+    #[test]
+    fn the_hotkey_focuses_the_bar_and_tab_moves_the_ring_in_visual_order() {
+        let (mut logic, window, _, config) = bar(Settings::default());
+        assert_eq!(ring(&mut logic), None, "no ring before the hotkey");
+        // Keys reach only a focused bar.
+        key(&mut logic, &window, Key::Tab, false);
+        assert_eq!(ring(&mut logic), None);
+        logic.focus_bar(&window);
+        assert_eq!(window.focus_taken.get(), 1);
+        assert_eq!(ring_left(&mut logic), Some(1.5), "around the bar itself");
+        // Left, centre, right, each zone in its order; then around again.
+        let order: Vec<String> = [
+            &config.layout.left,
+            &config.layout.center,
+            &config.layout.right,
+        ]
+        .into_iter()
+        .flatten()
+        .map(|s| s.id.clone())
+        .collect();
+        assert_eq!(logic.sensors.focus_order(), order);
+        for id in order.iter().chain(&order[..1]) {
+            key(&mut logic, &window, Key::Tab, false);
+            assert_eq!(logic.focused_sensor().as_ref(), Some(id));
+            let expected = ring_left_of(&logic, id);
+            assert_eq!(ring_left(&mut logic), Some(expected));
+        }
+        // Shift+Tab before the first wraps to the last; Home and End; the arrows.
+        key(&mut logic, &window, Key::Tab, true);
+        assert_eq!(logic.focused_sensor().as_ref(), order.last());
+        key(&mut logic, &window, Key::Home, false);
+        assert_eq!(logic.focused_sensor().as_ref(), order.first());
+        key(&mut logic, &window, Key::Right, false);
+        assert_eq!(logic.focused_sensor().as_ref(), order.get(1));
+        key(&mut logic, &window, Key::Left, false);
+        key(&mut logic, &window, Key::End, false);
+        assert_eq!(logic.focused_sensor().as_ref(), order.last());
+        // The hotkey again keeps the ring where it is.
+        logic.focus_bar(&window);
+        assert_eq!(logic.focused_sensor().as_ref(), order.last());
+        // A window that cannot take the focus: no keyboard on the bar.
+        let (mut logic, window, _, _) = bar(Settings::default());
+        window.no_focus.set(true);
+        logic.focus_bar(&window);
+        assert_eq!(ring(&mut logic), None);
+    }
+
+    #[test]
+    fn a_spacer_is_passed_over() {
+        let (mut logic, window, _, mut config) = bar(Settings::default());
+        let spacer = SensorInstance {
+            id: "s_spacer".into(),
+            kind: "spacer".into(),
+            props: crate::sensors::Props::new(),
+        };
+        config.layout.center.push(spacer);
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        assert!(!logic.sensors.focus_order().contains(&"s_spacer".to_owned()));
+        assert_eq!(logic.sensors.focus_order().len(), 6);
+    }
+
+    #[test]
+    fn the_focused_sensors_hint_shows_after_the_delay() {
+        let (mut logic, window, _, _) = bar(Settings::default());
+        logic.focus_bar(&window);
+        key(&mut logic, &window, Key::Home, false);
+        key(&mut logic, &window, Key::End, false);
+        assert_eq!(window.hint_timer.get(), Some(Duration::from_millis(600)));
+        hint_timer(&mut logic, &window);
+        assert!(window.hint.borrow().is_some(), "the Time's hint");
+        // Esc: the hint goes with the ring.
+        key(&mut logic, &window, Key::Escape, false);
+        assert!(window.hint.borrow().is_none());
+    }
+
+    #[test]
+    fn enter_and_space_click_the_focused_sensor() {
+        let (mut logic, window, _, config) = bar(Settings {
+            locked: true,
+            clicks_when_locked: ClicksWhenLocked::AltOnly,
+            ..Settings::default()
+        });
+        with_power_sensor(&mut logic, &window);
+        window.decline.set(true);
+        logic.focus_bar(&window);
+        // Nothing focused: nothing to click.
+        key(&mut logic, &window, Key::Enter, false);
+        assert!(window.confirmed.borrow().is_empty());
+        logic.keys.as_mut().expect("keys").sensor = Some(config.layout.center[0].id.clone());
+        // A deliberate key: even a locked Alt-only bar clicks.
+        key(&mut logic, &window, Key::Enter, false);
+        key(&mut logic, &window, Key::Space, false);
+        assert_eq!(window.confirmed.borrow().len(), 2);
+    }
+
+    #[test]
+    fn shift_f10_and_the_menu_key_open_the_menu_beside_the_focus() {
+        let (mut logic, window, host, config) = bar(Settings::default());
+        logic.focus_bar(&window);
+        // No sensor focused: the bar menu beside the bar, new sensors at the end of the left zone.
+        window.choose.set(Some(MenuCommand::NewSensor.id()));
+        key(&mut logic, &window, Key::F10, true);
+        assert_eq!(host.calls(), ["open new?zone=left&index=3"]);
+        assert_eq!(
+            window.menus_near.borrow().last(),
+            Some(&Some(Rect::new(0, 1052, 1200, 1080)))
+        );
+        // F10 alone opens nothing.
+        key(&mut logic, &window, Key::F10, false);
+        assert_eq!(window.menus.borrow().len(), 1);
+        // The logo focused: its menu, beside it.
+        let logo = config.layout.center[0].id.clone();
+        logic.keys.as_mut().expect("keys").sensor = Some(logo.clone());
+        window.choose.set(Some(MenuCommand::Properties.id()));
+        key(&mut logic, &window, Key::Menu, false);
+        assert_eq!(host.calls().last(), Some(&format!("open sensor/{logo}")));
+        let (x, width) = logic.sensors.place_of(&logo).expect("placed");
+        let near = Rect::new(x as i32, 1052, (x + width) as i32, 1080);
+        assert_eq!(window.menus_near.borrow().last(), Some(&Some(near)));
+        // The pointer's menus stay at the pointer.
+        right_click(&mut logic, &window, LOGO, MenuCommand::Settings);
+        assert_eq!(window.menus_near.borrow().last(), Some(&None));
+    }
+
+    #[test]
+    fn esc_or_a_click_elsewhere_ends_the_keyboard_on_the_bar() {
+        let (mut logic, window, _, _) = bar(Settings::default());
+        logic.focus_bar(&window);
+        key(&mut logic, &window, Key::Tab, false);
+        key(&mut logic, &window, Key::Escape, false);
+        assert_eq!(
+            window.focus_restored.get(),
+            1,
+            "back to the window that had it"
+        );
+        assert_eq!(ring(&mut logic), None);
+        key(&mut logic, &window, Key::Tab, false);
+        assert_eq!(ring(&mut logic), None, "keys no longer reach it");
+
+        // Another app took the focus: the ring goes, nothing is given back.
+        logic.focus_bar(&window);
+        logic.on_event(&window, UiEvent::FocusLost { within_app: false });
+        assert_eq!(ring(&mut logic), None);
+        logic.on_event(&window, UiEvent::FocusGained);
+        assert_eq!(ring(&mut logic), None, "a menu's activation brings no ring");
+        assert_eq!(window.focus_restored.get(), 1);
+
+        // A confirmation of the bar's took it: the ring waits and comes back with the focus.
+        logic.focus_bar(&window);
+        key(&mut logic, &window, Key::Tab, false);
+        logic.on_event(&window, UiEvent::FocusLost { within_app: true });
+        assert_eq!(ring(&mut logic), None);
+        logic.on_event(&window, UiEvent::FocusGained);
+        assert!(ring(&mut logic).is_some());
+        assert!(logic.focused_sensor().is_some(), "on the same sensor");
+        // Lost to its own window, then a press on the bar: what was left ends.
+        logic.on_event(&window, UiEvent::FocusLost { within_app: true });
+        press(&mut logic, &window, PointF::new(300.0, 14.0), false);
+        logic.on_event(&window, UiEvent::FocusGained);
+        assert_eq!(ring(&mut logic), None);
+
+        // Hiding the bar gives the focus back.
+        logic.focus_bar(&window);
+        logic.hidden(&window);
+        assert_eq!(window.focus_restored.get(), 2);
+        assert_eq!(ring(&mut logic), None);
+    }
+
+    #[test]
+    fn a_removed_sensors_focus_goes_to_the_one_in_its_place() {
+        let (mut logic, window, _, mut config) = bar(Settings::default());
+        logic.focus_bar(&window);
+        let logo = config.layout.center[0].id.clone();
+        let date = config.layout.right[0].id.clone();
+        logic.keys.as_mut().expect("keys").sensor = Some(logo);
+        config.layout.center.clear();
+        logic.apply_config(&window, config.clone());
+        logic.sync_sensors(&window);
+        assert_eq!(logic.focused_sensor(), Some(date));
+        // The bar emptied: the ring goes around the bar itself.
+        config.layout = Layout::default();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        assert_eq!(logic.focused_sensor(), None);
+        assert_eq!(ring_left(&mut logic), Some(1.5));
+        key(&mut logic, &window, Key::Tab, false);
+        assert_eq!(logic.focused_sensor(), None, "nothing to move to");
+    }
+
+    #[test]
+    fn a_popup_opened_from_the_keyboard_gives_the_focus_back_to_the_bar() {
+        let (mut logic, window, _, config) = bar(Settings::default());
+        let logo = config.layout.center[0].id.clone();
+        logic.focus_bar(&window);
+        logic.keys.as_mut().expect("keys").sensor = Some(logo.clone());
+        let (probe, _, _) = new_probe();
+        logic.open_popup(&window, &logo, Box::new(probe));
+        // The popup takes the focus, as on a click.
+        logic.on_event(&window, UiEvent::FocusLost { within_app: true });
+        let esc = UiEvent::Popup(PopupInput::Key {
+            key: Key::Escape,
+            modifiers: Modifiers::default(),
+        });
+        logic.on_event(&window, esc);
+        assert!(window.popup.borrow().is_none());
+        assert_eq!(window.focus_taken.get(), 2, "the bar took it back");
+        assert_eq!(logic.focused_sensor(), Some(logo.clone()));
+        assert!(ring(&mut logic).is_some());
+
+        // Closed by itself (an item chosen): the same.
+        let (probe, _, reply) = new_probe();
+        logic.open_popup(&window, &logo, Box::new(probe));
+        logic.on_event(&window, UiEvent::FocusLost { within_app: true });
+        reply.set(PopupReply::Close);
+        logic.on_event(
+            &window,
+            UiEvent::Popup(PopupInput::PointerMove(PointF::new(20.0, 20.0))),
+        );
+        assert_eq!(window.focus_taken.get(), 3);
+
+        // Closed by a click in another app: the keyboard on the bar ends with it.
+        let (probe, _, _) = new_probe();
+        logic.open_popup(&window, &logo, Box::new(probe));
+        logic.on_event(&window, UiEvent::FocusLost { within_app: true });
+        logic.on_event(&window, UiEvent::PopupDeactivated);
+        assert_eq!(window.focus_taken.get(), 3);
+        assert_eq!(ring(&mut logic), None);
     }
 
     fn hover(logic: &mut BarLogic, window: &FakeWindow, at: PointF) {

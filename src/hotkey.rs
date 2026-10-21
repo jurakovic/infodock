@@ -59,6 +59,8 @@ fn on_pressed(app: &Arc<App>) {
         HotkeyAction::BringToFront => app.bring_bar_to_front(),
         HotkeyAction::ToggleVisibility => app.toggle_bar(),
     }
+    // A shown bar takes the keyboard (SPEC §14.4); a hidden one gave it back.
+    app.focus_bar();
 }
 
 /// Parses an accelerator such as `Ctrl+Alt+Shift+I` or `Win+Ctrl+1`.

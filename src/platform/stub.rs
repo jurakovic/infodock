@@ -57,7 +57,7 @@ impl BarWindow for NoWindow {
 
     fn set_tray_icon(&self, _tooltip: Option<&str>) {}
 
-    fn show_menu(&self, _entries: &[MenuEntry]) -> Option<u32> {
+    fn show_menu(&self, _entries: &[MenuEntry], _near: Option<Rect>) -> Option<u32> {
         None
     }
 
@@ -80,6 +80,12 @@ impl BarWindow for NoWindow {
     fn escape_down(&self) -> bool {
         false
     }
+
+    fn take_focus(&self) -> bool {
+        false
+    }
+
+    fn restore_focus(&self) {}
 
     fn confirm(&self, _message: &str, _action: &str) -> bool {
         false

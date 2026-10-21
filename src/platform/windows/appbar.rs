@@ -427,6 +427,7 @@ impl Shared {
         self.set_window_pos(z, Rect::default(), SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         // SAFETY: plain calls. The foreground lock may refuse; then the bar never gets the
         // WA_INACTIVE that ends the raise, so end it now instead of leaving a bottom bar in front.
+        super::window::remember_foreground();
         let focused = unsafe {
             let _ = SetForegroundWindow(self.hwnd());
             GetForegroundWindow() == self.hwnd()

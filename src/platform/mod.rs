@@ -1107,11 +1107,23 @@ pub enum UiEvent {
     /// The popup window lost the activation: another window was clicked or activated, or it
     /// was asked to close (Alt+F4). It is hidden already.
     PopupDeactivated,
+    /// A key pressed while the bar window has the keyboard focus (SPEC §14.4).
+    Key { key: Key, modifiers: Modifiers },
+    /// The bar window got the keyboard focus.
+    FocusGained,
+    /// The bar window lost the keyboard focus; `within_app`: to another window of this app on
+    /// the bar thread (its popup, a confirmation), so it may come back.
+    FocusLost { within_app: bool },
 }
 
-/// A key the popup window passes on (SPEC §9.19).
+/// A key the popup window (SPEC §9.19) or the focused bar (§14.4) passes on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
+    Tab,
+    Space,
+    /// The context-menu key.
+    Menu,
+    F10,
     Up,
     Down,
     Left,
@@ -1294,9 +1306,10 @@ pub trait BarWindow {
     fn set_material(&self, material: Material);
     /// Shows the notification-area icon with this tooltip, or removes it with `None`.
     fn set_tray_icon(&self, tooltip: Option<&str>);
-    /// Shows a menu at the pointer and returns the chosen item's id. Runs the menu's modal loop;
-    /// events that arrive meanwhile are delivered after the current handler call.
-    fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32>;
+    /// Shows a menu and returns the chosen item's id: at the pointer, or beside `near`
+    /// (physical screen px, e.g. the focused sensor) without covering it. Runs the menu's modal
+    /// loop; events that arrive meanwhile are delivered after the current handler call.
+    fn show_menu(&self, entries: &[MenuEntry], near: Option<Rect>) -> Option<u32>;
     /// Delivers [`UiEvent::Timer`] once after `delay` (it may come a few ms early), replacing the
     /// previous timer with this id; `None` cancels it.
     fn set_timer(&self, id: TimerId, delay: Option<std::time::Duration>);
@@ -1317,8 +1330,14 @@ pub trait BarWindow {
     fn capture_popup_pointer(&self, capture: bool);
     /// While captured, pointer events keep coming when the pointer leaves the window.
     fn capture_pointer(&self, capture: bool);
-    /// Whether Esc is held now, read without focus (the bar never takes it; SPEC §6.2).
+    /// Whether Esc is held now, read without focus (clicks never give the bar the focus; SPEC
+    /// §6.2).
     fn escape_down(&self) -> bool;
+    /// Gives the bar window the keyboard focus (the hotkey, SPEC §14.4), remembering which
+    /// window of another app had it; returns whether the bar has it now.
+    fn take_focus(&self) -> bool;
+    /// Gives the keyboard focus back to the window that had it before [`Self::take_focus`].
+    fn restore_focus(&self);
     /// Asks a yes/no question in a native dialog (SPEC §6.4): `message` as the main text and
     /// `action` on the confirming button. Returns whether the user confirmed.
     fn confirm(&self, message: &str, action: &str) -> bool;

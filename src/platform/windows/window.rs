@@ -17,7 +17,7 @@ use std::ffi::c_void;
 use std::mem::size_of;
 use std::num::NonZeroIsize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::Duration;
 
@@ -34,24 +34,27 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Ole::OleInitialize;
 use windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
-use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+use windows::Win32::System::Threading::{GetCurrentProcess, GetCurrentThreadId, GetProcessTimes};
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT,
-    TrackMouseEvent, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_SHIFT,
+    GetAsyncKeyState, GetFocus, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE,
+    TRACKMOUSEEVENT, TrackMouseEvent, VIRTUAL_KEY, VK_APPS, VK_CONTROL, VK_DOWN, VK_END, VK_ESCAPE,
+    VK_F10, VK_HOME, VK_LEFT, VK_MENU, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, HTCLIENT, IDC_ARROW, KillTimer,
-    LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PBT_APMPOWERSTATUSCHANGE,
-    PBT_APMRESUMEAUTOMATIC, PostMessageW, PostQuitMessage, RegisterClassExW, SWP_HIDEWINDOW,
-    SetTimer, SetWindowLongPtrW, TranslateMessage, WINDOWPOS, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
-    WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED,
-    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    GWLP_USERDATA, GetClientRect, GetForegroundWindow, GetMessageW, GetWindowLongPtrW,
+    GetWindowThreadProcessId, HTCLIENT, IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MA_NOACTIVATE,
+    MSG, MSGFLT_ALLOW, PBT_APMPOWERSTATUSCHANGE, PBT_APMRESUMEAUTOMATIC, PostMessageW,
+    PostQuitMessage, RegisterClassExW, SC_KEYMENU, SWP_HIDEWINDOW, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, TranslateMessage, WINDOWPOS, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND,
+    WM_SYSKEYDOWN, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED, WNDCLASSEXW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -69,7 +72,7 @@ use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
     AppBarEvent, Band, BarHandler, BarThread, BarWindow, Canvas, DragEvent, DropEffect,
-    HandlerFactory, MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect, SizeF,
+    HandlerFactory, Key, MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect, SizeF,
     TimerId, TrayIcon, UiEvent, UiWaker,
 };
 
@@ -131,6 +134,21 @@ struct WindowState {
     popup: OnceCell<std::result::Result<PopupWindow, ()>>,
     /// The shadow band window; created when a band is first shown.
     band: OnceCell<std::result::Result<BandWindow, ()>>,
+}
+
+/// The window of another app that had the foreground before the bar took it for the keyboard
+/// (SPEC §14.4); 0 for none. Bar thread only.
+static PREVIOUS: AtomicIsize = AtomicIsize::new(0);
+
+/// Remembers the foreground window before the bar takes it (the hotkey's raise, then its
+/// focus), unless it is one of the bar thread's own windows (the bar, its popup): Esc goes back
+/// past them.
+pub(super) fn remember_foreground() {
+    // SAFETY: plain query.
+    let foreground = unsafe { GetForegroundWindow() };
+    if !foreground.is_invalid() && !on_this_thread(foreground) {
+        PREVIOUS.store(foreground.0 as isize, Ordering::Relaxed);
+    }
 }
 
 impl WindowState {
@@ -195,6 +213,22 @@ impl WindowState {
             WM_CLOSE => {
                 self.dispatch(UiEvent::CloseRequested);
                 return LRESULT(0);
+            }
+            // The keyboard on the focused bar (SPEC §14.4); F10 comes as a system key.
+            WM_KEYDOWN | WM_SYSKEYDOWN => {
+                if let Some(key) = bar_key(VIRTUAL_KEY(wparam.0 as u16)) {
+                    let modifiers = modifiers();
+                    self.dispatch(UiEvent::Key { key, modifiers });
+                    return LRESULT(0);
+                }
+            }
+            // Alt alone starts no menu mode in a window without a menu (Alt+F4 is the AppBar's).
+            WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => return LRESULT(0),
+            WM_SETFOCUS => self.dispatch(UiEvent::FocusGained),
+            WM_KILLFOCUS => {
+                let to = HWND(wparam.0 as *mut c_void);
+                let within_app = on_this_thread(to);
+                self.dispatch(UiEvent::FocusLost { within_app });
             }
             WM_MOUSEMOVE => {
                 if !self.tracking_leave.replace(true) {
@@ -543,8 +577,8 @@ impl BarWindow for WindowState {
         }
     }
 
-    fn show_menu(&self, entries: &[MenuEntry]) -> Option<u32> {
-        menu::show(self.hwnd(), entries)
+    fn show_menu(&self, entries: &[MenuEntry], near: Option<Rect>) -> Option<u32> {
+        menu::show(self.hwnd(), entries, near)
     }
 
     fn capture_pointer(&self, capture: bool) {
@@ -582,6 +616,33 @@ impl BarWindow for WindowState {
     fn escape_down(&self) -> bool {
         // SAFETY: plain key-state query; the high bit is set while the key is down.
         unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) < 0 }
+    }
+
+    fn take_focus(&self) -> bool {
+        let hwnd = self.hwnd();
+        remember_foreground();
+        // SAFETY: plain window and focus calls; the hotkey was this process's input, so it may
+        // take the foreground.
+        unsafe {
+            if !SetForegroundWindow(hwnd).as_bool() {
+                tracing::debug!("the bar could not take the foreground");
+            }
+            let _ = SetFocus(Some(hwnd));
+            GetFocus() == hwnd
+        }
+    }
+
+    fn restore_focus(&self) {
+        let previous = HWND(PREVIOUS.swap(0, Ordering::Relaxed) as *mut c_void);
+        // SAFETY: plain window calls; a window that closed meanwhile is left alone.
+        unsafe {
+            if !previous.is_invalid()
+                && IsWindow(Some(previous)).as_bool()
+                && !SetForegroundWindow(previous).as_bool()
+            {
+                tracing::debug!("the focus could not go back to the previous window");
+            }
+        }
     }
 
     fn confirm(&self, message: &str, action: &str) -> bool {
@@ -694,6 +755,32 @@ fn modifiers() -> Modifiers {
         ctrl: down(VK_CONTROL),
         shift: down(VK_SHIFT),
     }
+}
+
+/// The keys the focused bar handles (SPEC §14.4).
+fn bar_key(vk: VIRTUAL_KEY) -> Option<Key> {
+    Some(match vk {
+        VK_TAB => Key::Tab,
+        VK_SPACE => Key::Space,
+        VK_RETURN => Key::Enter,
+        VK_ESCAPE => Key::Escape,
+        VK_APPS => Key::Menu,
+        VK_F10 => Key::F10,
+        VK_LEFT => Key::Left,
+        VK_RIGHT => Key::Right,
+        VK_UP => Key::Up,
+        VK_DOWN => Key::Down,
+        VK_HOME => Key::Home,
+        VK_END => Key::End,
+        _ => return None,
+    })
+}
+
+/// Whether `hwnd` belongs to the calling thread: the bar's own popup, hint or a dialog it
+/// shows. `false` for no window.
+fn on_this_thread(hwnd: HWND) -> bool {
+    // SAFETY: plain queries; a null or stale window gives thread 0.
+    !hwnd.is_invalid() && unsafe { GetWindowThreadProcessId(hwnd, None) == GetCurrentThreadId() }
 }
 
 /// Whether a `WM_DEVICECHANGE` says a volume arrived or went (`DBT_DEVICEARRIVAL`,
