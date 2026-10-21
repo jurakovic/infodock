@@ -148,16 +148,33 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
         }
         let now = Instant::now();
         for topic in scheduler.due(now) {
-            let sample = providers.sample(&topic).map(Arc::new);
-            if let Some(sample) = &sample {
+            let deliver = |sample: &Arc<Sample>| {
                 deliver(Delivery {
                     topic: topic.clone(),
                     sample: Arc::clone(sample),
                     to: None,
                     pushed: changes.iter().any(|&c| topic.follows(c)),
                 });
+            };
+            match providers.sample(&topic) {
+                Ok(sample) => {
+                    let sample = sample.map(Arc::new);
+                    if let Some(sample) = &sample {
+                        deliver(sample);
+                    }
+                    if scheduler.sampled(&topic, now, sample) {
+                        tracing::info!("{topic:?} can be read again");
+                    }
+                }
+                // After a few in a row, the error is the topic's sample (SPEC §14.2).
+                Err(message) => {
+                    let error = Arc::new(Sample::Error(message.clone()));
+                    if let Some(error) = scheduler.failed(&topic, now, error) {
+                        tracing::warn!("{topic:?} cannot be read: {message}");
+                        deliver(&error);
+                    }
+                }
             }
-            scheduler.sampled(&topic, now, sample);
         }
         changes.clear();
     }

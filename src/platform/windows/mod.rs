@@ -130,11 +130,11 @@ impl Platform for WindowsPlatform {
         cpu::logical_processors()
     }
 
-    fn memory(&self) -> Option<super::MemoryStatus> {
+    fn memory(&self) -> Result<super::MemoryStatus, String> {
         memory::status()
     }
 
-    fn page_files(&self) -> Option<Vec<super::PageFile>> {
+    fn page_files(&self) -> Result<Vec<super::PageFile>, String> {
         memory::page_files()
     }
 
@@ -225,11 +225,11 @@ impl Platform for WindowsPlatform {
         wlan::WinWifi::open(changed).map(|w| Box::new(w) as Box<dyn super::WifiReader>)
     }
 
-    fn power_status(&self) -> Option<super::PowerStatus> {
+    fn power_status(&self) -> Result<super::PowerStatus, String> {
         battery::status()
     }
 
-    fn recycle_bin(&self) -> Option<super::RecycleBin> {
+    fn recycle_bin(&self) -> Result<super::RecycleBin, String> {
         shell::recycle_bin()
     }
 

@@ -1,6 +1,7 @@
 {
   "app.name": "Infodock",
   "app.notAvailable": "Not available on this system",
+  "sensor.error": "Could not read the data: {error}",
   "notify.configRestored.backup": "Your settings could not be read, so the last good copy was restored. The unreadable file is kept as {file}.",
   "notify.configRestored.defaults": "Your settings could not be read, so Infodock started with its default settings. The unreadable file is kept as {file}.",
   "common.items": {

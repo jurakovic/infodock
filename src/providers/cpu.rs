@@ -19,12 +19,14 @@ impl Cpu {
         }
     }
 
-    /// Reads the processors; `None` for the first reading (it only sets the baseline) and when
-    /// nothing could be read.
-    pub fn sample(&mut self) -> Option<CpuSample> {
+    /// Reads the processors; `None` for the first reading (it only sets the baseline), the
+    /// platform's message when nothing could be read.
+    pub fn sample(&mut self) -> Result<Option<CpuSample>, String> {
         let reading = self.reader.read()?;
-        let previous = self.previous.replace(reading.times)?;
-        Some(sample(previous, &reading))
+        Ok(self
+            .previous
+            .replace(reading.times)
+            .map(|previous| sample(previous, &reading)))
     }
 
     /// The next reading starts a new baseline (SPEC §4.4: after resume).
@@ -106,8 +108,11 @@ mod tests {
     struct Fixed(Vec<CpuReading>);
 
     impl CpuReader for Fixed {
-        fn read(&mut self) -> Option<CpuReading> {
-            (!self.0.is_empty()).then(|| self.0.remove(0))
+        fn read(&mut self) -> Result<CpuReading, String> {
+            if self.0.is_empty() {
+                return Err("gone".into());
+            }
+            Ok(self.0.remove(0))
         }
     }
 
@@ -123,11 +128,11 @@ mod tests {
             reading(200),
             reading(300),
         ])));
-        assert!(cpu.sample().is_none(), "discarded");
-        assert!(cpu.sample().is_some());
+        assert_eq!(cpu.sample(), Ok(None), "discarded");
+        assert!(matches!(cpu.sample(), Ok(Some(_))));
         cpu.resume();
-        assert!(cpu.sample().is_none(), "a new baseline after resume");
-        assert!(cpu.sample().is_some());
-        assert!(cpu.sample().is_none(), "nothing more to read");
+        assert_eq!(cpu.sample(), Ok(None), "a new baseline after resume");
+        assert!(matches!(cpu.sample(), Ok(Some(_))));
+        assert_eq!(cpu.sample(), Err("gone".into()), "nothing more to read");
     }
 }

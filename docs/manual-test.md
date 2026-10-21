@@ -597,3 +597,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Sensors page: Tab to a row's buttons: Narrator says "Move CPU Graph up", "Properties of CPU Graph", "Remove CPU Graph"; with the scan mode on a row, "CPU Graph, 1 of 3". Move a sensor with its button: the focus stays on the moved sensor's button and Narrator reads its new place.
 - [ ] Appearance page with the classic theme: Tab to the skin gallery: Narrator says "Skin, list, Gloss" (the chosen skin); the arrow keys choose the next skin and Narrator reads its name. The theme tiles on the welcome page likewise.
 - [ ] Windows' high contrast (Settings ▸ Accessibility ▸ Contrast themes) and *Text size*: Settings and the bar keep their colours and text size, as §14.4 and the README say; light and dark mode and the display scale still apply.
+
+**Error samples and backoff** (since M5 S10)
+
+Failed readings are hard to provoke on a healthy machine; the unit tests cover the count, the backoff and the recovery with a failing provider. What to look at here:
+
+- [ ] Normal use for a day, including sleep and resume: the log has no `cannot be read` lines, and no sensor is drawn faded as a whole.
+- [ ] If a sensor does fade as a whole (labels too): its hint and Narrator say "Could not read the data: …" with Windows' message, the log has one `… cannot be read: …` line for its topic, and once the cause is gone the sensor is whole again within 30 s and the log says `… can be read again`.
+- [ ] *Sensors ▸ Inactive style* on *Colorize*: such a sensor fades to 78 % instead of taking the colour; on *Opacity* at 50 %, to half.

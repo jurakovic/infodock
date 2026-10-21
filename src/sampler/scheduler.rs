@@ -1,7 +1,9 @@
 //! Which topics to sample when (SPEC §4.4): each topic is sampled at the shortest interval its
 //! subscribers asked for and keeps its newest sample for subscribers that join later. All
 //! topics keep to one grid, counted from the first sample, so topics with whole-second
-//! intervals are read (and drawn) together. Pure; the sampler thread supplies the clock.
+//! intervals are read (and drawn) together. A topic that keeps failing turns into an error
+//! sample and is retried less and less often (SPEC §14.2). Pure; the sampler thread supplies
+//! the clock.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -9,6 +11,13 @@ use std::time::{Duration, Instant};
 
 /// No topic is sampled more often than this, whatever a sensor asks for.
 pub const MIN_INTERVAL: Duration = Duration::from_millis(100);
+/// Failed readings in a row before a topic's sample is an error (SPEC §14.2); until then
+/// subscribers keep the previous sample.
+pub const FAILURES_BEFORE_ERROR: u32 = 3;
+/// The first retry after the error sample comes this much later, each next one twice as late,
+/// up to [`MAX_BACKOFF`] (and never sooner than the topic's interval).
+const FIRST_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
 struct Entry<S> {
     /// Each subscriber's interval.
@@ -16,6 +25,8 @@ struct Entry<S> {
     next: Instant,
     last: Option<Instant>,
     latest: Option<S>,
+    /// Failed readings since the last success.
+    failures: u32,
 }
 
 impl<S> Entry<S> {
@@ -53,7 +64,18 @@ fn grid_after(epoch: Instant, interval: Duration, at: Instant) -> Instant {
     epoch + Duration::from_nanos(u64::try_from(steps * step).unwrap_or(u64::MAX))
 }
 
-impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
+/// How long after the `failures`-th failed reading in a row the next try comes, at least:
+/// nothing extra before the error sample, then 1 s, 2 s, 4 s … up to 30 s (SPEC §14.2).
+fn backoff(failures: u32) -> Duration {
+    match failures.checked_sub(FAILURES_BEFORE_ERROR) {
+        None => Duration::ZERO,
+        Some(n) => FIRST_BACKOFF
+            .saturating_mul(1 << n.min(16))
+            .min(MAX_BACKOFF),
+    }
+}
+
+impl<K: Clone + Eq + Hash, S: Clone + PartialEq> Scheduler<K, S> {
     /// Replaces `subscriber`'s requests (an empty list unsubscribes it). Returns the newest
     /// sample of each requested topic, if there is one yet, since the subscriber may be new
     /// (or a re-created sensor with the same id); a new topic is due at once.
@@ -75,6 +97,7 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
                 next: now,
                 last: None,
                 latest: None,
+                failures: 0,
             });
             entry
                 .subscribers
@@ -137,18 +160,39 @@ impl<K: Clone + Eq + Hash, S: Clone> Scheduler<K, S> {
             .collect()
     }
 
-    /// Records that `topic` was sampled at `now` (`None`: it could not be read) and schedules
-    /// the next sample at the grid's next point for its interval.
-    pub fn sampled(&mut self, topic: &K, now: Instant, sample: Option<S>) {
+    /// Records that `topic` was read at `now` (`None`: nothing to show yet, e.g. a first
+    /// reading that only sets a baseline) and schedules the next sample at the grid's next
+    /// point for its interval. Returns whether the topic had failed until now.
+    pub fn sampled(&mut self, topic: &K, now: Instant, sample: Option<S>) -> bool {
         let epoch = *self.epoch.get_or_insert(now);
         let Some(entry) = self.topics.get_mut(topic) else {
-            return;
+            return false;
         };
         entry.last = Some(now);
         entry.next = grid_after(epoch, entry.interval(), now);
+        let failed = entry.failures >= FAILURES_BEFORE_ERROR;
         if sample.is_some() {
             entry.latest = sample;
+            entry.failures = 0;
         }
+        failed && entry.failures == 0
+    }
+
+    /// Records that `topic` could not be read at `now` (SPEC §14.2). Until the third failure
+    /// in a row its subscribers keep the previous sample and the next try comes at the next
+    /// tick; from then on its sample is `error`, returned when it differs from the one
+    /// delivered last, and the tries back off from 1 s to 30 s.
+    pub fn failed(&mut self, topic: &K, now: Instant, error: S) -> Option<S> {
+        let epoch = *self.epoch.get_or_insert(now);
+        let entry = self.topics.get_mut(topic)?;
+        entry.last = Some(now);
+        entry.failures = entry.failures.saturating_add(1);
+        entry.next = grid_after(epoch, entry.interval(), now).max(now + backoff(entry.failures));
+        if entry.failures < FAILURES_BEFORE_ERROR || entry.latest.as_ref() == Some(&error) {
+            return None;
+        }
+        entry.latest = Some(error.clone());
+        Some(error)
     }
 
     /// When the next topic is due; `None` without subscribers.
@@ -294,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn intervals_have_a_floor_and_failed_reads_keep_the_old_sample() {
+    fn intervals_have_a_floor_and_empty_reads_keep_the_old_sample() {
         let t0 = Instant::now();
         let mut s: Scheduler<&str, u32> = Scheduler::default();
         s.subscribe("a", &requests(&[("cpu", 0)]), t0);
@@ -302,5 +346,69 @@ mod tests {
         s.sampled(&"cpu", t0, Some(1));
         s.sampled(&"cpu", t0 + MIN_INTERVAL, None);
         assert_eq!(s.subscribe("b", &requests(&[("cpu", 0)]), t0), [("cpu", 1)]);
+    }
+
+    #[test]
+    fn the_third_failure_in_a_row_is_an_error_and_retries_back_off() {
+        const ERROR: u32 = 99;
+        let t0 = Instant::now();
+        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        s.subscribe("a", &requests(&[("memory", 1000)]), t0);
+        s.sampled(&"memory", t0, Some(1));
+        // Two failures: the old sample stays and the next tries come at the next ticks.
+        let mut at = t0 + SEC;
+        for _ in 0..2 {
+            assert_eq!(s.failed(&"memory", at, ERROR), None);
+            assert_eq!(s.next_due(), Some(at + SEC));
+            at += SEC;
+        }
+        assert_eq!(
+            s.subscribe("b", &requests(&[("memory", 1000)]), at),
+            [("memory", 1)]
+        );
+        // The third: the error is the sample now, for late subscribers too.
+        assert_eq!(s.failed(&"memory", at, ERROR), Some(ERROR));
+        assert_eq!(
+            s.subscribe("c", &requests(&[("memory", 1000)]), at),
+            [("memory", ERROR)]
+        );
+        // Retries back off: 1 s, 2 s, 4 s … 30 s; the same error is not delivered again.
+        let mut waits = Vec::new();
+        for _ in 0..7 {
+            let next = s.next_due().expect("due");
+            waits.push((next - at).as_secs());
+            at = next;
+            assert_eq!(s.failed(&"memory", at, ERROR), None);
+        }
+        assert_eq!(waits, [1, 2, 4, 8, 16, 30, 30]);
+        // Another message is news.
+        assert_eq!(s.failed(&"memory", at, ERROR + 1), Some(ERROR + 1));
+        // The first success: the sample is back, and so is the topic's interval on its grid.
+        let back = s.next_due().expect("due");
+        assert!(s.sampled(&"memory", back, Some(2)));
+        assert_eq!(s.next_due(), Some(grid_after(t0, SEC, back)));
+        assert_eq!(
+            s.subscribe("d", &requests(&[("memory", 1000)]), back),
+            [("memory", 2)]
+        );
+        // And the count starts again.
+        assert!(!s.sampled(&"memory", back + SEC, Some(3)));
+        assert_eq!(s.failed(&"memory", back + 2 * SEC, ERROR), None);
+    }
+
+    #[test]
+    fn a_slow_topic_is_not_retried_sooner_than_its_interval() {
+        let t0 = Instant::now();
+        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        s.subscribe("a", &requests(&[("volumes", 60_000)]), t0);
+        for n in 0..4 {
+            let at = t0 + 60 * n * SEC;
+            s.failed(&"volumes", at, 0);
+            assert_eq!(s.next_due(), Some(at + 60 * SEC));
+        }
+        // A change still reads it at once.
+        let later = t0 + 200 * SEC;
+        s.refresh(later, |_| true);
+        assert_eq!(s.due(later), ["volumes"]);
     }
 }

@@ -103,6 +103,9 @@ pub enum Sample {
     RecycleBin(RecycleBin),
     Battery(BatterySample),
     Wifi(WifiStatus),
+    /// `{ error }`: the topic failed to read a few times in a row; the platform's message
+    /// (SPEC §14.2). Sensors draw inactive and show it in their hint until a reading succeeds.
+    Error(String),
 }
 
 /// `battery/<i>`: one battery and the power line (SPEC §9.14).

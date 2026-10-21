@@ -21,21 +21,21 @@ const NAME_AT: usize = 16;
 const NAME_BUFFER_AT: usize = NAME_AT + size_of::<usize>();
 const ENTRY_SIZE: usize = NAME_AT + 2 * size_of::<usize>();
 
-pub fn status() -> Option<MemoryStatus> {
+pub fn status() -> Result<MemoryStatus, String> {
     let mut status = MEMORYSTATUSEX {
         dwLength: size_of::<MEMORYSTATUSEX>() as u32,
         ..Default::default()
     };
     // SAFETY: `status` is writable and its length field is set, as the call requires.
-    unsafe { GlobalMemoryStatusEx(&mut status) }.ok()?;
-    Some(MemoryStatus {
+    unsafe { GlobalMemoryStatusEx(&mut status) }.map_err(|e| e.message())?;
+    Ok(MemoryStatus {
         total: status.ullTotalPhys,
         available: status.ullAvailPhys,
         load: status.dwMemoryLoad,
     })
 }
 
-pub fn page_files() -> Option<Vec<PageFile>> {
+pub fn page_files() -> Result<Vec<PageFile>, String> {
     let mut info = SYSTEM_INFO::default();
     // SAFETY: `info` is writable.
     unsafe { GetSystemInfo(&mut info) };
@@ -58,13 +58,11 @@ pub fn page_files() -> Option<Vec<PageFile>> {
             buffer.resize(buffer.len() * 2, 0);
             continue;
         }
-        if status.is_err() {
-            return None;
-        }
+        status.ok().map_err(|e| e.message())?;
         let base = buffer.as_ptr() as usize;
         let bytes: Vec<u8> = buffer.iter().flat_map(|w| w.to_ne_bytes()).collect();
         let used = (returned as usize).min(bytes.len());
-        return Some(parse(&bytes[..used], base, page));
+        return Ok(parse(&bytes[..used], base, page));
     }
 }
 

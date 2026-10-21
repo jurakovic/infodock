@@ -21,14 +21,11 @@ const UNKNOWN_STATUS: u8 = 255;
 const UNKNOWN_PERCENT: u8 = 255;
 const UNKNOWN_TIME: u32 = u32::MAX;
 
-/// The power line and the batteries now; `None` (logged) when Windows cannot say.
-pub fn status() -> Option<PowerStatus> {
+/// The power line and the batteries now; Windows' message when it cannot say.
+pub fn status() -> Result<PowerStatus, String> {
     let mut system = SYSTEM_POWER_STATUS::default();
     // SAFETY: `system` is writable.
-    if let Err(e) = unsafe { GetSystemPowerStatus(&mut system) } {
-        tracing::warn!("the power status cannot be read: {e}");
-        return None;
-    }
+    unsafe { GetSystemPowerStatus(&mut system) }.map_err(|e| e.message())?;
     let ac_online = system.ACLineStatus == AC_ONLINE;
     let mut batteries = read_batteries();
     if batteries.is_empty()
@@ -37,7 +34,7 @@ pub fn status() -> Option<PowerStatus> {
     {
         batteries.push(from_system(&system, ac_online));
     }
-    Some(PowerStatus {
+    Ok(PowerStatus {
         ac_online,
         batteries,
     })

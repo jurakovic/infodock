@@ -91,20 +91,17 @@ pub fn has_recycle_bin() -> bool {
     }
 }
 
-/// What the Recycle Bin holds on all drives (`SHQueryRecycleBinW` without a root); `None`
-/// (logged) if the shell cannot say.
-pub fn recycle_bin() -> Option<RecycleBin> {
+/// What the Recycle Bin holds on all drives (`SHQueryRecycleBinW` without a root); the
+/// shell's message if it cannot say.
+pub fn recycle_bin() -> std::result::Result<RecycleBin, String> {
     super::com::enter();
     let mut info = SHQUERYRBINFO {
         cbSize: size_of::<SHQUERYRBINFO>() as u32,
         ..Default::default()
     };
     // SAFETY: `info` is initialised with its size; a null root means all drives.
-    if let Err(e) = unsafe { SHQueryRecycleBinW(PCWSTR::null(), &mut info) } {
-        tracing::warn!("the Recycle Bin cannot be read: {e}");
-        return None;
-    }
-    Some(RecycleBin {
+    unsafe { SHQueryRecycleBinW(PCWSTR::null(), &mut info) }.map_err(|e| e.message())?;
+    Ok(RecycleBin {
         items: u64::try_from(info.i64NumItems).unwrap_or(0),
         bytes: u64::try_from(info.i64Size).unwrap_or(0),
     })

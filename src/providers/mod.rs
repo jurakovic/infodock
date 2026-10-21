@@ -29,9 +29,9 @@ pub struct Providers {
     /// The same for the drive list (one key, `""`).
     volumes: Option<SlowReader<Vec<Volume>>>,
     /// The same for the Recycle Bin (one key, `""`), which can take a while to count.
-    recycle_bin: Option<SlowReader<Option<RecycleBin>>>,
+    recycle_bin: Option<SlowReader<Result<RecycleBin, String>>>,
     /// The same for the batteries (one key, `""`), whose firmware can be slow to answer.
-    power: Option<SlowReader<Option<PowerStatus>>>,
+    power: Option<SlowReader<Result<PowerStatus, String>>>,
     /// Created on first use and dropped when nobody reads Wi-Fi; `None` inside where there is
     /// no WLAN.
     wifi: Option<Option<Box<dyn WifiReader>>>,
@@ -113,29 +113,28 @@ impl Providers {
         }
     }
 
-    /// Reads `topic` now; `None` if it cannot be read.
-    pub fn sample(&mut self, topic: &Topic) -> Option<Sample> {
-        match topic {
-            Topic::Uptime => Some(Sample::Uptime(uptime::sample(
+    /// Reads `topic` now: `None` while there is nothing to show yet (a first CPU reading, which
+    /// only sets the baseline; a slow reading not answered yet), the platform's message when it
+    /// cannot be read (SPEC §14.2).
+    pub fn sample(&mut self, topic: &Topic) -> Result<Option<Sample>, String> {
+        Ok(Some(match topic {
+            Topic::Uptime => Sample::Uptime(uptime::sample(
                 self.platform.uptime(),
                 SystemTime::now(),
                 Instant::now(),
-            ))),
+            )),
             Topic::Cpu => {
                 let platform = &self.platform;
                 let cpu = self
                     .cpu
                     .get_or_insert_with(|| platform.cpu_reader().map(cpu::Cpu::new));
-                cpu.as_mut()?.sample().map(Sample::Cpu)
+                let Some(cpu) = cpu.as_mut() else {
+                    return Ok(None);
+                };
+                return Ok(cpu.sample()?.map(Sample::Cpu));
             }
-            Topic::Memory => self
-                .platform
-                .memory()
-                .map(|status| Sample::Memory(memory::sample(status))),
-            Topic::Swap => self
-                .platform
-                .page_files()
-                .map(|files| Sample::Swap(swap::sample(&files))),
+            Topic::Memory => Sample::Memory(memory::sample(self.platform.memory()?)),
+            Topic::Swap => Sample::Swap(swap::sample(&self.platform.page_files()?)),
             Topic::Disk(root) => {
                 let disks = self.disks.get_or_insert_with(|| {
                     let platform = Arc::clone(&self.platform);
@@ -146,7 +145,7 @@ impl Providers {
                         move || changes.report(Change::Answered(Slow::Disks)),
                     )
                 });
-                disks.sample(root).map(Sample::Disk)
+                return Ok(disks.sample(root).map(Sample::Disk));
             }
             Topic::Path(path) => {
                 let paths = self.paths.get_or_insert_with(|| {
@@ -160,7 +159,7 @@ impl Providers {
                         move || changes.report(Change::Answered(Slow::Paths)),
                     )
                 });
-                paths.sample(path).map(Sample::Path)
+                return Ok(paths.sample(path).map(Sample::Path));
             }
             // Listing may stall on a drive that does not answer.
             Topic::Volumes => {
@@ -173,7 +172,7 @@ impl Providers {
                         move || changes.report(Change::Answered(Slow::Volumes)),
                     )
                 });
-                volumes.sample("").map(Sample::Volumes)
+                return Ok(volumes.sample("").map(Sample::Volumes));
             }
             Topic::RecycleBin => {
                 let bin = self.recycle_bin.get_or_insert_with(|| {
@@ -185,7 +184,7 @@ impl Providers {
                         move || changes.report(Change::Answered(Slow::RecycleBin)),
                     )
                 });
-                bin.sample("").flatten().map(Sample::RecycleBin)
+                return Ok(bin.sample("").transpose()?.map(Sample::RecycleBin));
             }
             Topic::Battery(index) => {
                 let power = self.power.get_or_insert_with(|| {
@@ -197,8 +196,10 @@ impl Providers {
                         move || changes.report(Change::Answered(Slow::Batteries)),
                     )
                 });
-                let status = power.sample("").flatten()?;
-                Some(Sample::Battery(battery::sample(&status, *index)))
+                let Some(status) = power.sample("").transpose()? else {
+                    return Ok(None);
+                };
+                Sample::Battery(battery::sample(&status, *index))
             }
             Topic::Wifi => {
                 let (platform, changes) = (&self.platform, &self.changes);
@@ -206,12 +207,15 @@ impl Providers {
                     let changes = changes.clone();
                     platform.wifi_reader(Box::new(move || changes.report(Change::Wifi)))
                 });
-                wifi.as_mut()?.read().map(Sample::Wifi)
+                let Some(wifi) = wifi.as_mut() else {
+                    return Ok(None);
+                };
+                Sample::Wifi(wifi.read()?)
             }
             Topic::Net(id) => {
                 let interface = self.platform.net_interface(id.as_deref());
-                Some(Sample::Net(self.net.sample(id, interface, Instant::now())))
+                Sample::Net(self.net.sample(id, interface, Instant::now()))
             }
-        }
+        }))
     }
 }

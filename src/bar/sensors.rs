@@ -6,12 +6,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use super::layout::{self, Zones};
-use super::theme::Theme;
+use super::theme::{Inactive, Theme};
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::platform::{
     AccessibleItem, Brush, Canvas, Capabilities, Color, Platform, RectF, Shape, TextEngine,
 };
-use crate::sampler::{ChangeSink, Delivery, Topic, TopicRequest};
+use crate::sampler::{ChangeSink, Delivery, Sample, Topic, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction, Dropped};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
@@ -22,6 +22,9 @@ use crate::sensors::{
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
 const PRESSED_OPACITY: f32 = 0.6;
+/// A sensor whose data cannot be read is drawn this faint while the inactive style is a
+/// colour, which its text could not be read in (SPEC §8.5, §14.2): the default opacity.
+const FAILED_OPACITY: f32 = 0.78;
 /// The highlight behind a sensor whose popup is open (SPEC §7.2): the text colour this faint,
 /// reaching this far beyond the sensor, with these corners.
 const ACTIVE_ALPHA: f32 = 0.16;
@@ -40,6 +43,8 @@ struct Placed {
     topics: Vec<TopicRequest>,
     /// When it last took a sample of each topic.
     taken: Vec<(Topic, Instant)>,
+    /// The topics whose sample is an error, with the platform's message (SPEC §14.2).
+    errors: Vec<(Topic, String)>,
     /// Logical px, from the last measurement, and how narrow it can be (SPEC §5.4).
     measured: f32,
     min: f32,
@@ -60,6 +65,7 @@ impl Placed {
             topics: sensor.topics(),
             sensor,
             taken: Vec::new(),
+            errors: Vec::new(),
             measured: 0.0,
             min: 0.0,
             width: 0.0,
@@ -67,6 +73,28 @@ impl Placed {
             x: 0.0,
             dirty: true,
         }
+    }
+
+    /// What its hint and screen readers say while some of its data cannot be read (SPEC
+    /// §14.2): each message once.
+    fn error_text(&self) -> Option<String> {
+        let mut lines: Vec<String> = Vec::new();
+        for (_, message) in &self.errors {
+            let line = crate::i18n::t_args("sensor.error", &[("error", message)]);
+            if !lines.contains(&line) {
+                lines.push(line);
+            }
+        }
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+}
+
+/// How faint a sensor whose data cannot be read is drawn: as inactive (SPEC §8.5), all of it,
+/// since what it shows is out of date.
+fn failed_opacity(inactive: Inactive) -> f32 {
+    match inactive {
+        Inactive::Opacity(opacity) => opacity,
+        Inactive::Colorize(_) => FAILED_OPACITY,
     }
 }
 
@@ -270,7 +298,8 @@ impl BarSensors {
     }
 
     /// Draws every sensor in its place: left, right, then the centre on top (SPEC §5.4). A
-    /// pressed sensor is dimmed by 40 % (§6.1).
+    /// pressed sensor is dimmed by 40 % (§6.1), one whose data cannot be read is drawn
+    /// inactive (§14.2).
     pub fn draw(&self, canvas: &mut dyn Canvas, theme: &Theme, bar_height: f32) {
         for zone in [0, 2, 1] {
             for p in &self.zones[zone] {
@@ -301,12 +330,18 @@ impl BarSensors {
                         &Brush::Solid(theme.sensor_text.with_alpha(ACTIVE_ALPHA)),
                     );
                 }
-                let pressed = self.pressed.as_deref() == Some(p.entry.id.as_str());
-                if pressed {
-                    canvas.push_opacity(PRESSED_OPACITY);
+                let mut opacity = 1.0;
+                if self.pressed.as_deref() == Some(p.entry.id.as_str()) {
+                    opacity *= PRESSED_OPACITY;
+                }
+                if !p.errors.is_empty() {
+                    opacity *= failed_opacity(theme.inactive);
+                }
+                if opacity < 1.0 {
+                    canvas.push_opacity(opacity);
                 }
                 p.sensor.draw(canvas, &DrawCtx { theme, rect });
-                if pressed {
+                if opacity < 1.0 {
                     canvas.pop();
                 }
             }
@@ -447,7 +482,9 @@ impl BarSensors {
             .map(|p| AccessibleItem {
                 id: p.entry.id.clone(),
                 name: name(&p.entry.kind),
-                value: p.sensor.accessible_value(&env.ctx(&p.entry.id)),
+                value: p
+                    .error_text()
+                    .unwrap_or_else(|| p.sensor.accessible_value(&env.ctx(&p.entry.id))),
                 rect: RectF::new(p.x, 0.0, p.x + p.width, height),
                 popup: p
                     .sensor
@@ -472,14 +509,20 @@ impl BarSensors {
             .iter()
             .flatten()
             .find(|p| p.entry.id == id)
-            .map(|p| p.sensor.accessible_value(&env.ctx(id)))
+            .map(|p| {
+                p.error_text()
+                    .unwrap_or_else(|| p.sensor.accessible_value(&env.ctx(id)))
+            })
             .unwrap_or_default()
     }
 
-    /// Sensor `id`'s hint.
+    /// Sensor `id`'s hint; the error while its data cannot be read (SPEC §14.2).
     pub fn hint(&self, id: &str, env: &Env) -> Option<HintContent> {
         let p = self.zones.iter().flatten().find(|p| p.entry.id == id)?;
-        p.sensor.hint(&env.ctx(id))
+        match p.error_text() {
+            Some(error) => Some(HintContent::Text(error)),
+            None => p.sensor.hint(&env.ctx(id)),
+        }
     }
 
     /// Clicks sensor `id`.
@@ -597,6 +640,8 @@ impl BarSensors {
     /// changed what it shows. A topic is sampled at the shortest interval any subscriber asked
     /// for, so a broadcast reaches a sensor only once its own interval has passed since the
     /// last sample it took (a graph keeps its time scale); a catch-up always does (SPEC §4.4).
+    /// An error sample (§14.2) stays with the bar, which shows it, and goes with the next
+    /// sample of its topic; the sensor keeps what it had.
     pub fn deliver(&mut self, delivery: &Delivery, env: &Env, now: Instant) -> bool {
         let mut changed = false;
         for p in self.all_mut() {
@@ -604,10 +649,18 @@ impl BarSensors {
             let Some(request) = p.topics.iter().find(|r| r.topic == delivery.topic) else {
                 continue;
             };
+            let had = p.errors.iter().position(|(t, _)| *t == delivery.topic);
+            let error = match delivery.sample.as_ref() {
+                Sample::Error(message) => Some((delivery.topic.clone(), message.clone())),
+                _ => None,
+            };
             let last = p.taken.iter_mut().find(|(t, _)| *t == delivery.topic);
             let early = request.interval.mul_f32(0.25).min(EARLY);
+            // An error comes once, and so does the first sample after it.
             let on_time = delivery.to.is_some()
                 || delivery.pushed
+                || error.is_some()
+                || had.is_some()
                 || last.as_ref().is_none_or(|(_, at)| {
                     now.saturating_duration_since(*at) + early >= request.interval
                 });
@@ -618,8 +671,25 @@ impl BarSensors {
                 Some((_, at)) => *at = now,
                 None => p.taken.push((delivery.topic.clone(), now)),
             }
-            let cx = env.ctx(&p.entry.id);
-            let dirty = p.sensor.on_sample(&delivery.topic, &delivery.sample, &cx);
+            let dirty = if let Some(error) = error {
+                match had {
+                    Some(i) if p.errors[i] == error => false,
+                    Some(i) => {
+                        p.errors[i] = error;
+                        true
+                    }
+                    None => {
+                        p.errors.push(error);
+                        true
+                    }
+                }
+            } else {
+                if let Some(i) = had {
+                    p.errors.remove(i);
+                }
+                let cx = env.ctx(&p.entry.id);
+                p.sensor.on_sample(&delivery.topic, &delivery.sample, &cx) || had.is_some()
+            };
             p.dirty |= dirty;
             changed |= dirty;
         }
@@ -1051,6 +1121,14 @@ mod tests {
             self.minutes = minutes;
             changed
         }
+
+        fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
+            Some(HintContent::Text(format!("{} min", self.minutes)))
+        }
+
+        fn accessible_value(&self, _cx: &SensorCtx) -> String {
+            format!("{} min", self.minutes)
+        }
     }
 
     #[test]
@@ -1123,6 +1201,83 @@ mod tests {
             ..delivery(420, None)
         };
         assert!(sensors.deliver(&pushed, &env, nearly + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn an_error_sample_shows_in_the_hint_and_draws_the_sensor_inactive() {
+        let theme = theme();
+        let settings = Settings::default();
+        let platform = crate::platform::current();
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+            animate: true,
+            changes: &crate::sampler::ChangeSink::NONE,
+        };
+        let mut sensors = BarSensors::default();
+        sensors.zones[0].push(Placed::new(
+            entry("u", "uptime", json!({})),
+            Box::new(Uptime { minutes: 0 }),
+        ));
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+        let sample = |sample: Sample| Delivery {
+            topic: Topic::Uptime,
+            sample: std::sync::Arc::new(sample),
+            to: None,
+            pushed: false,
+        };
+        let uptime = |secs| {
+            sample(Sample::Uptime(crate::sampler::UptimeSample {
+                boot_unix_ms: 0,
+                uptime_secs: secs,
+                read_at: Instant::now(),
+            }))
+        };
+        let drawn = |sensors: &BarSensors, theme: &Theme| {
+            let mut canvas = RecordingCanvas::new(1.0);
+            sensors.draw(&mut canvas, theme, 28.0);
+            canvas.dump()
+        };
+        let t0 = Instant::now();
+        assert!(sensors.deliver(&uptime(120), &env, t0));
+        assert_eq!(
+            sensors.hint("u", &env),
+            Some(HintContent::Text("2 min".into()))
+        );
+        assert_eq!(drawn(&sensors, &theme), "");
+
+        // An error comes once, however soon after the last sample: it replaces the hint and
+        // the value, and the sensor keeps what it had, drawn inactive.
+        let denied = || sample(Sample::Error("Access is denied.".into()));
+        assert!(sensors.deliver(&denied(), &env, t0 + Duration::from_secs(1)));
+        let error = "Could not read the data: Access is denied.";
+        assert_eq!(
+            sensors.hint("u", &env),
+            Some(HintContent::Text(error.into()))
+        );
+        assert_eq!(sensors.value("u", &env), error);
+        assert_eq!(
+            sensors.accessible(&env, 28.0, None, |_| "Uptime".into())[0].value,
+            error
+        );
+        assert_eq!(drawn(&sensors, &theme), "opacity 0.78\npop\n");
+        assert!(!sensors.deliver(&denied(), &env, t0 + Duration::from_secs(2)));
+        let mut other = theme.clone();
+        other.inactive = Inactive::Opacity(0.5);
+        assert_eq!(drawn(&sensors, &other), "opacity 0.5\npop\n");
+        other.inactive = Inactive::Colorize(crate::platform::Color::rgba(0x55, 0x55, 0x55, 1.0));
+        assert_eq!(drawn(&sensors, &other), "opacity 0.78\npop\n");
+
+        // The next sample ends it, also before the sensor's interval is over.
+        assert!(sensors.deliver(&uptime(120), &env, t0 + Duration::from_secs(3)));
+        assert_eq!(
+            sensors.hint("u", &env),
+            Some(HintContent::Text("2 min".into()))
+        );
+        assert_eq!(sensors.value("u", &env), "2 min");
+        assert_eq!(drawn(&sensors, &theme), "");
     }
 
     #[test]

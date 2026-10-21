@@ -155,16 +155,17 @@ fn ticks(time: FILETIME) -> u64 {
 }
 
 impl CpuReader for WinCpu {
-    fn read(&mut self) -> Option<CpuReading> {
+    fn read(&mut self) -> Result<CpuReading, String> {
         let (mut idle, mut kernel, mut user) = Default::default();
         // SAFETY: three writable FILETIMEs.
-        unsafe { GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)) }.ok()?;
+        unsafe { GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)) }
+            .map_err(|e| e.message())?;
         if !self.query.is_invalid() {
             // SAFETY: collects the open query's counters.
             unsafe { PdhCollectQueryData(self.query) };
         }
         let logical = logical_processors();
-        Some(CpuReading {
+        Ok(CpuReading {
             times: CpuTimes {
                 idle: ticks(idle),
                 kernel: ticks(kernel),

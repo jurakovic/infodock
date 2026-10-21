@@ -125,8 +125,8 @@ pub struct CpuReading {
 /// Reads the processors. Owned by the sampler thread, so counters are opened once and reused
 /// (SPEC §14.1).
 pub trait CpuReader: Send {
-    /// `None` if nothing could be read.
-    fn read(&mut self) -> Option<CpuReading>;
+    /// Why not (the OS's message) if nothing could be read.
+    fn read(&mut self) -> Result<CpuReading, String>;
 }
 
 /// A page file's size and how much of it is in use, bytes (SPEC Appendix A, `swap`).
@@ -307,8 +307,8 @@ pub struct WifiStatus {
 /// Reads the Wi-Fi connection. Owned by the sampler thread, so the WLAN client stays open
 /// (and its notifications registered) while the `wifi` topic has subscribers.
 pub trait WifiReader: Send {
-    /// `None` if nothing could be read.
-    fn read(&mut self) -> Option<WifiStatus>;
+    /// Why not (the OS's message) if nothing could be read.
+    fn read(&mut self) -> Result<WifiStatus, String>;
 }
 
 /// What the Recycle Bin holds on all drives (SPEC §9.16, Appendix A `recycle-bin`).
@@ -488,6 +488,10 @@ pub enum AutostartChange<'a> {
     Remove,
 }
 
+/// Why a reading failed where the platform has no reader for it (SPEC §14.2); the bar runs
+/// only on Windows, so no user sees it.
+pub const UNSUPPORTED: &str = "not supported on this platform";
+
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// The capabilities if they are known already, without waiting for a probe still running:
@@ -513,14 +517,15 @@ pub trait Platform: Send + Sync {
     fn cpu_reader(&self) -> Option<Box<dyn CpuReader>> {
         None
     }
-    /// Physical memory now, for the `memory` topic; `None` where it cannot be read.
-    fn memory(&self) -> Option<MemoryStatus> {
-        None
+    /// Physical memory now, for the `memory` topic; why not (the OS's message) when it cannot
+    /// be read.
+    fn memory(&self) -> Result<MemoryStatus, String> {
+        Err(UNSUPPORTED.into())
     }
-    /// The page files now, for the `swap` topic: empty when there is none, `None` where they
+    /// The page files now, for the `swap` topic: empty when there is none; why not when they
     /// cannot be read.
-    fn page_files(&self) -> Option<Vec<PageFile>> {
-        None
+    fn page_files(&self) -> Result<Vec<PageFile>, String> {
+        Err(UNSUPPORTED.into())
     }
     /// The volumes with drive letters, in letter order.
     fn volumes(&self) -> Vec<Volume> {
@@ -653,10 +658,10 @@ pub trait Platform: Send + Sync {
         None
     }
     /// The batteries and whether the computer runs on AC power, for the `battery/<i>` topics
-    /// and Settings' battery lists; `None` where it cannot be read. Batteries can be slow to
-    /// answer, so it is read off the sampler thread.
-    fn power_status(&self) -> Option<PowerStatus> {
-        None
+    /// and Settings' battery lists; why not (the OS's message) when it cannot be read.
+    /// Batteries can be slow to answer, so it is read off the sampler thread.
+    fn power_status(&self) -> Result<PowerStatus, String> {
+        Err(UNSUPPORTED.into())
     }
     /// A reader of the Wi-Fi connection for the `wifi` topic; `changed` is called from another
     /// thread when Windows reports a connection, a disconnection or a radio change (SPEC
@@ -665,11 +670,11 @@ pub trait Platform: Send + Sync {
         let _ = changed;
         None
     }
-    /// What the Recycle Bin holds on all drives, for the `recycle-bin` topic; `None` where it
-    /// cannot be read. It may take a while with many items, so it is read off the sampler
-    /// thread.
-    fn recycle_bin(&self) -> Option<RecycleBin> {
-        None
+    /// What the Recycle Bin holds on all drives, for the `recycle-bin` topic; why not (the
+    /// shell's message) when it cannot be read. It may take a while with many items, so it is
+    /// read off the sampler thread.
+    fn recycle_bin(&self) -> Result<RecycleBin, String> {
+        Err(UNSUPPORTED.into())
     }
     /// Empties the Recycle Bin in the background, with the OS confirmation, progress and
     /// sound (SPEC §9.16), then calls `done`, whether it was emptied or not.

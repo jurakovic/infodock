@@ -5,7 +5,7 @@
 
 use std::ffi::c_void;
 
-use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, FreeLibrary, HANDLE, HMODULE};
+use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, FreeLibrary, HANDLE, HMODULE, WIN32_ERROR};
 use windows::Win32::NetworkManagement::WiFi::{
     DOT11_PHY_TYPE, DOT11_SSID, L2_NOTIFICATION_DATA, WLAN_BSS_LIST, WLAN_CONNECTION_ATTRIBUTES,
     WLAN_INTERFACE_INFO, WLAN_INTERFACE_INFO_LIST, WLAN_NOTIFICATION_SOURCE_ACM,
@@ -221,12 +221,16 @@ impl WinWifi {
     }
 
     /// The interfaces, connected ones first.
-    fn interfaces(&self) -> Option<Vec<WLAN_INTERFACE_INFO>> {
+    fn interfaces(&self) -> Result<Vec<WLAN_INTERFACE_INFO>, String> {
         let mut list: *mut u32 = std::ptr::null_mut();
         // SAFETY: the list is freed below; its items are copied out first.
         unsafe {
-            if (self.enumerate)(self.handle, std::ptr::null(), &mut list) != 0 || list.is_null() {
-                return None;
+            let code = (self.enumerate)(self.handle, std::ptr::null(), &mut list);
+            if code != 0 {
+                return Err(message(code));
+            }
+            if list.is_null() {
+                return Ok(Vec::new());
             }
             let info = list.cast::<WLAN_INTERFACE_INFO_LIST>();
             let count = (*info).dwNumberOfItems as usize;
@@ -234,7 +238,7 @@ impl WinWifi {
             let mut items: Vec<WLAN_INTERFACE_INFO> = (0..count).map(|i| *first.add(i)).collect();
             (self.free)(list.cast());
             items.sort_by_key(|i| i.isState != wlan_interface_state_connected);
-            Some(items)
+            Ok(items)
         }
     }
 
@@ -294,11 +298,16 @@ impl WinWifi {
     }
 }
 
+/// The system's message for a WLAN API error code (a Win32 error).
+fn message(code: u32) -> String {
+    windows::core::Error::from_hresult(WIN32_ERROR(code).to_hresult()).message()
+}
+
 impl WifiReader for WinWifi {
-    fn read(&mut self) -> Option<WifiStatus> {
+    fn read(&mut self) -> Result<WifiStatus, String> {
         let interfaces = self.interfaces()?;
         let Some(interface) = interfaces.first() else {
-            return Some(WifiStatus::default());
+            return Ok(WifiStatus::default());
         };
         let guid = interface.InterfaceGuid;
         let mut status = WifiStatus {
@@ -308,7 +317,7 @@ impl WifiReader for WinWifi {
             ..WifiStatus::default()
         };
         if !status.connected {
-            return Some(status);
+            return Ok(status);
         }
         // SAFETY: the data is a WLAN_CONNECTION_ATTRIBUTES (or a LONG for the RSSI), freed
         // after reading.
@@ -342,13 +351,10 @@ impl WifiReader for WinWifi {
                         status.quality = crate::sensors::wifi::quality_from_rssi(rssi);
                     }
                 }
-                Err(code) => {
-                    tracing::debug!("the Wi-Fi connection cannot be read: error {code}");
-                    return None;
-                }
+                Err(code) => return Err(message(code)),
             }
         }
-        Some(status)
+        Ok(status)
     }
 }
 
