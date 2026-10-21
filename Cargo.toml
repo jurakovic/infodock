@@ -32,37 +32,56 @@ sidebarImage = "icons/installer/sidebar.bmp"
 # * an installer section, before the template's own, that writes the sign-in entry
 #   (`autostart::RUN_VALUE`, SPEC §10.1) for the installed exe and clears Task Manager's mark for
 #   it when the command line has /AUTOSTART (silent deployments, §15.3); the app's first run
-#   takes the entry into its setting. A failed install removes it again while the exe is missing.
-# * an uninstaller section, which NSIS runs before the template's own: it removes the sign-in
-#   entry and Task Manager's mark for it, except when an upgrade runs the old uninstaller (with
-#   /P), and the AppUserModelID the app registers (§7.4).
+#   takes the entry into its setting.
+# * when the installer ends without the exe in place (a failed install, or one closed after the
+#   reinstall page removed the old version, which keeps the entry with /P), the entry for that
+#   exe is removed.
+# * once an uninstall has succeeded: the sign-in entry and Task Manager's mark when the entry
+#   names the installed exe, the install location the template keeps under the publisher's
+#   key, and the AppUserModelID the app registers (§7.4); an upgrade (the old uninstaller run
+#   with /P) keeps all but the last. NSIS runs `un.onUninstSuccess` only after a finished
+#   uninstall, so one cancelled at "Infodock is running" changes nothing.
 preinstallSection = '''
-Var AutostartWritten
 Section "-Autostart"
   ClearErrors
   ${GetOptions} $CMDLINE "/AUTOSTART" $R0
   ${IfNot} ${Errors}
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock" '"$INSTDIR\${MAINBINARYNAME}.exe"'
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Infodock"
-    StrCpy $AutostartWritten 1
   ${EndIf}
 SectionEnd
 
-Function .onInstFailed
-  ${If} $AutostartWritten == 1
+Function RemoveDeadAutostart
+  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
+  ${If} $R0 == '"$INSTDIR\${MAINBINARYNAME}.exe"'
   ${AndIfNot} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Infodock"
   ${EndIf}
 FunctionEnd
 
-Section "un.Autostart"
+Function .onInstFailed
+  Call RemoveDeadAutostart
+FunctionEnd
+
+Function .onGUIEnd
+  Call RemoveDeadAutostart
+FunctionEnd
+
+Function un.onUninstSuccess
   ClearErrors
   ${GetOptions} $CMDLINE "/P" $R0
-  IfErrors 0 +3
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Infodock"
+  ${If} ${Errors}
+    ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
+    ${If} $R0 == '"$INSTDIR\${MAINBINARYNAME}.exe"'
+      DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
+      DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Infodock"
+    ${EndIf}
+    DeleteRegKey HKCU "${MANUPRODUCTKEY}"
+    DeleteRegKey /ifempty HKCU "Software\${MANUFACTURER}"
+  ${EndIf}
   DeleteRegKey HKCU "Software\Classes\AppUserModelId\app.infodock.desktop"
-SectionEnd
+FunctionEnd
 '''
 
 [build-dependencies]

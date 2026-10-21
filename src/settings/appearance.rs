@@ -173,13 +173,35 @@ pub(super) struct Gallery {
     listed: bool,
     entries: Vec<SkinEntry>,
     previews: Previews,
+    /// The custom image's path as last checked, and its problem (empty when it can be used).
+    custom: Option<(String, String)>,
 }
 
 impl Gallery {
-    /// Lists the skins folder again, e.g. when the page is shown.
+    /// Lists the skins folder again, e.g. when the page is shown or a pack was installed.
+    /// Files may have changed in place (a pack installed again under its name, the custom image
+    /// fixed), so the previews are drawn and the custom image checked again too.
     pub(super) fn refresh(&mut self, app: &App) {
         self.packs = pack::list(&app.skins);
         self.listed = true;
+        self.previews = Previews::default();
+        self.custom = None;
+    }
+
+    /// The custom image's problem as a sentence, empty when it can be used; read only when the
+    /// path differs from the one last checked, not at every refresh of the page (each typed
+    /// character saves the path).
+    fn custom_problem(&mut self, path: &str) -> String {
+        match &self.custom {
+            Some((checked, problem)) if checked == path => problem.clone(),
+            _ => {
+                let problem = skins::read_custom(path)
+                    .err()
+                    .map_or_else(String::new, |e| e.message());
+                self.custom = Some((path.to_owned(), problem.clone()));
+                problem
+            }
+        }
     }
 }
 
@@ -254,11 +276,10 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     let classic = &settings.classic;
     state.set_custom_skin(classic.custom_skin.as_str().into());
     state.set_custom_skin_shown(classic.skin == CUSTOM);
+    // Checked only while the image is the skin, so a path kept from before costs nothing.
     let custom_error = match classic.custom_skin.as_str() {
-        "" => String::new(),
-        path => skins::read_custom(path)
-            .err()
-            .map_or_else(String::new, |e| e.message()),
+        path if !path.is_empty() && classic.skin == CUSTOM => open.gallery.custom_problem(path),
+        _ => String::new(),
     };
     state.set_custom_skin_error(custom_error.into());
     state.set_skin_preview_height(settings.bar_height() as f32);
@@ -427,7 +448,8 @@ fn remove(app: &Arc<App>, id: &str) {
 fn removed(app: &Arc<App>, id: &str) {
     if !app.skins.join(id).exists() {
         tracing::info!("removed the skin pack {id:?}");
-        if app.store.get().settings.classic.skin == id {
+        // Folder names ignore case on Windows: `ocean` in the config names `Ocean`.
+        if app.store.get().settings.classic.skin.to_lowercase() == id.to_lowercase() {
             save(
                 app,
                 model::patch("classic.skin", Value::from(skins::FALLBACK.id())),

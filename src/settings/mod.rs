@@ -116,6 +116,23 @@ pub fn open(app: &Arc<App>, route: &str) {
     focus(&window);
 }
 
+/// A second launch (SPEC §4.1): brings an open Settings window to the front on the page it shows,
+/// or opens Settings on General. Leaving the page would end a first run shown on the welcome
+/// page (§11.5). Main thread only.
+pub fn activate(app: &Arc<App>) {
+    let existing = WINDOW.with(|w| w.borrow().as_ref().map(|open| open.window.clone_strong()));
+    match existing {
+        Some(window) => {
+            if let Err(e) = window.show() {
+                tracing::warn!("could not show settings: {e}");
+                return;
+            }
+            focus(&window);
+        }
+        None => open(app, "general"),
+    }
+}
+
 /// The open Settings window's native handle, to make a dialog modal to it; `None` while
 /// Settings is closed. Main thread only.
 pub fn owner() -> Option<isize> {

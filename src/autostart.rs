@@ -1,6 +1,6 @@
 //! Starting with Windows (SPEC §10.1): while `settings.autostart` is on, the per-user `Run` key
 //! starts this exe at sign-in under the value [`RUN_VALUE`]. The entry follows the setting at
-//! start-up (also after the exe moved) and whenever it changes; until the first-run welcome is
+//! start-up (also after the exe it named moved away) and whenever it changes; until the first-run welcome is
 //! done, an existing entry is taken into the setting instead (SPEC §11.5), so an installer that
 //! writes one needs nothing else from the app.
 
@@ -42,7 +42,10 @@ pub fn init(store: &ConfigStore, platform: Arc<dyn Platform>) {
             Err(e) => tracing::warn!("could not take the sign-in entry into the settings: {e}"),
         }
     }
-    if let Some(change) = at_start(enabled, entry.as_deref(), &command) {
+    let named_exists = entry
+        .as_deref()
+        .is_some_and(|e| Path::new(program(e)).exists());
+    if let Some(change) = at_start(enabled, entry.as_deref(), &command, named_exists) {
         apply(platform.as_ref(), &change);
     }
     store.on_change(Box::new(move |old, new| {
@@ -93,20 +96,32 @@ pub fn taken(first_run_done: bool, enabled: bool, entry: bool) -> Option<bool> {
 }
 
 /// What start-up does to the entry so it follows the setting: write a missing one, point one at
-/// another exe to this one (keeping a "disabled" mark from Task Manager, which the user set),
-/// remove one while the setting is off.
+/// an exe that is gone (`named_exists` false: the app moved) to this one, keeping a "disabled"
+/// mark from Task Manager, which the user set; remove one while the setting is off. An entry
+/// for another copy that is still there stays: a copy started once (a portable exe tried, a
+/// build) does not take it.
 pub fn at_start<'a>(
     enabled: bool,
     entry: Option<&str>,
     command: &'a str,
+    named_exists: bool,
 ) -> Option<AutostartChange<'a>> {
     match entry {
         None if enabled => Some(AutostartChange::Enable(command)),
-        Some(entry) if enabled && !same_command(entry, command) => {
+        Some(entry) if enabled && !named_exists && !same_command(entry, command) => {
             Some(AutostartChange::Update(command))
         }
         Some(_) if !enabled => Some(AutostartChange::Remove),
         _ => None,
+    }
+}
+
+/// The program a command starts: the path in its leading quotes, or the whole command.
+fn program(command: &str) -> &str {
+    let command = command.trim();
+    match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        None => command,
     }
 }
 
@@ -152,24 +167,40 @@ mod tests {
     fn the_entry_follows_the_setting_at_start() {
         let this = r#""C:\Apps\Infodock\infodock.exe""#;
         assert_eq!(
-            at_start(true, None, this),
+            at_start(true, None, this, false),
             Some(AutostartChange::Enable(this))
         );
-        assert_eq!(at_start(true, Some(this), this), None);
+        assert_eq!(at_start(true, Some(this), this, true), None);
         // The same program written differently.
         let other_case = r"c:\apps\INFODOCK\infodock.exe";
-        assert_eq!(at_start(true, Some(other_case), this), None);
-        assert_eq!(at_start(true, Some(&format!(" {this} ")), this), None);
-        // The exe moved: the entry points to it again.
+        assert_eq!(at_start(true, Some(other_case), this, true), None);
+        assert_eq!(at_start(true, Some(&format!(" {this} ")), this, true), None);
+        // The exe it named moved away: the entry points to this one.
         let moved = r#""D:\Portable\infodock.exe""#;
         assert_eq!(
-            at_start(true, Some(moved), this),
+            at_start(true, Some(moved), this, false),
             Some(AutostartChange::Update(this))
         );
+        // Another copy that is still there keeps it (review M4).
+        assert_eq!(at_start(true, Some(moved), this, true), None);
         assert_eq!(
-            at_start(false, Some(this), this),
+            at_start(false, Some(this), this, true),
             Some(AutostartChange::Remove)
         );
-        assert_eq!(at_start(false, None, this), None);
+        assert_eq!(
+            at_start(false, Some(moved), this, true),
+            Some(AutostartChange::Remove)
+        );
+        assert_eq!(at_start(false, None, this, false), None);
+    }
+
+    #[test]
+    fn the_program_of_a_command() {
+        assert_eq!(
+            program(r#""C:\A b\infodock.exe" --x"#),
+            r"C:\A b\infodock.exe"
+        );
+        assert_eq!(program(r" C:\infodock.exe "), r"C:\infodock.exe");
+        assert_eq!(program(r#""C:\x.exe"#), r"C:\x.exe");
     }
 }

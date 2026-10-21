@@ -1,8 +1,9 @@
 # Checks the NSIS installer (SPEC §15.3, the M4 exit criterion): it asks for no elevation,
 # installs silently per user (no Program Files, no HKLM), with the Start Menu shortcut carrying
 # the AppUserModelID, and starts the app after installing (/R). The app's first run takes an
-# existing sign-in entry into its setting and points it at the installed exe (§10.1, §11.5).
-# The uninstaller removes the app, its shortcuts, its registration and the sign-in entry. A second
+# existing sign-in entry for a missing exe into its setting and points it at the installed exe
+# (§10.1, §11.5). The uninstaller removes the app, its shortcuts, its registration (the install
+# location under HKCU too), the sign-in entry and Task Manager's mark for it. A second
 # silent install with /AUTOSTART writes the sign-in entry for the installed exe and clears Task
 # Manager's mark for it, without starting the app; its uninstall removes the entry again.
 # Runs after the memory check: it removes that run's config, so the installed app runs first.
@@ -25,6 +26,8 @@ $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$prod
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $approvedKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
 $appIdKey = "HKCU:\Software\Classes\AppUserModelId\$identifier"
+# Where the template keeps the install location.
+$publisherKey = "HKCU:\Software\jurakovic\$product"
 $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $shortcut = Join-Path $programs "$product\$product.lnk"
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) "$product.lnk"
@@ -142,6 +145,13 @@ $config = Join-Path $configDir 'config.json'
 $autostart = (Test-Path $config) -and ((Get-Content $config -Raw | ConvertFrom-Json).settings.autostart -eq $true)
 Check $autostart 'the config has autostart on'
 
+# Task Manager's Disabled mark, which the uninstaller removes with the entry. -Force creates the
+# parent keys too; only for a key that is not there, since it would clear one.
+if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey -Force | Out-Null }
+$disabled = [byte[]](3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+New-ItemProperty -Path $approvedKey -Name $runValue -Value $disabled -PropertyType Binary -Force | Out-Null
+Check (Test-Path $publisherKey) "the install location is kept at $publisherKey"
+
 Write-Host '== Uninstalling'
 Uninstall-App
 Check (-not (Test-Path $installDir)) "$installDir is removed"
@@ -149,13 +159,12 @@ Check (-not (Test-Path $uninstallKey)) 'no longer in Apps & features'
 Check (-not (Test-Path $shortcut)) 'the Start Menu shortcut is removed'
 Check (-not (Test-Path $desktopShortcut)) 'the desktop shortcut is removed'
 Check ($null -eq (Get-RunEntry)) 'the sign-in entry is removed'
+Check ($null -eq (Get-ApprovedMark)) "Task Manager's mark is removed"
 Check (-not (Test-Path $appIdKey)) 'the AppUserModelID registration is removed'
+Check (-not (Test-Path $publisherKey)) "$publisherKey is removed"
 
 # A deployment's install: /AUTOSTART writes the entry and clears Task Manager's Disabled mark.
 Write-Host '== Installing with /AUTOSTART'
-# -Force creates the parent keys too; only for a key that is not there, since it would clear one.
-if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey -Force | Out-Null }
-$disabled = [byte[]](3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 New-ItemProperty -Path $approvedKey -Name $runValue -Value $disabled -PropertyType Binary -Force | Out-Null
 Install-App '/S', '/AUTOSTART'
 $entry = Get-RunEntry

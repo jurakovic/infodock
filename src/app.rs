@@ -294,7 +294,8 @@ impl BarHost for AppHost {
         if let Some(bar) = self.0.bar.get() {
             bar.set_visible(true);
         }
-        self.open_settings("general");
+        let app = Arc::clone(&self.0);
+        let _ = slint::invoke_from_event_loop(move || settings::activate(&app));
     }
 
     fn bar_visible(&self) -> bool {
