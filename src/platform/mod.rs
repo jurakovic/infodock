@@ -5,6 +5,7 @@
 //! The spec's `Shell`, `Icons`, `Power` and `Devices` services are methods of [`Platform`],
 //! added with the milestones that need them (M2–M3); the locale is plain data (`locale.rs`).
 
+pub mod accessible;
 pub mod bitmap;
 pub mod canvas;
 pub mod drag;
@@ -25,6 +26,7 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::config::model::{BarMode, DateLocale, Edge, FloatingRect, Material, Settings, ZOrder};
+pub use accessible::{AccessibleBar, AccessibleItem};
 pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
 pub use canvas::{Brush, Canvas, Color, GradientStop, PointF, RectF, Shape, SizeF};
 pub use drag::{DragEvent, DragItem, DropEffect, DropEffects};
@@ -1275,6 +1277,11 @@ pub trait BarHandler {
     /// asked after each frame.
     fn band(&self) -> Option<Band> {
         None
+    }
+    /// The bar as screen readers see it (SPEC §14.4), asked after each frame once a UI
+    /// Automation client asked for the bar.
+    fn accessible(&self) -> AccessibleBar {
+        AccessibleBar::default()
     }
 }
 

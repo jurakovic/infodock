@@ -577,3 +577,8 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Shift+F10 (or the Menu key) on a sensor opens its menu beside it, above the bar at the bottom and below it at the top; with the ring around the whole bar, the bar menu. *Remove sensor* from the keyboard: after the confirmation the ring is on the sensor that took its place.
 - [ ] Esc: the ring goes and Notepad has the focus again (typing reaches it). Press the hotkey, then click into Notepad: the ring goes. Alt+F4 on the focused bar does nothing. With *Hotkey action* on *Toggle visibility*, the hotkey that shows the bar focuses it and the one that hides it gives the focus back to Notepad.
 - [ ] Locked with *Clicks when locked* on *Alt only*: Enter still clicks the ringed sensor.
+
+**UI Automation: the tree** (since M5 S7)
+
+- [ ] With Accessibility Insights for Windows (or Inspect), hover the bar: the tree shows a tool bar "Infodock" (automation id `InfodockBar`) under the desktop, with one button per sensor in the order Tab follows, Spacers left out; each is named by its type ("CPU Graph", "Time"), its automation id is the sensor's id and its Value pattern reads what it shows ("37%", "12:34"), read-only. Selecting an element draws its highlight on the sensor, also at 150 % and on a second monitor.
+- [ ] Press the hotkey and Tab to a sensor: its element has *HasKeyboardFocus* true and the bar's *GetFocus* names it. Move a sensor in the Layout manager or remove one: the tree follows after the next frame (refresh the tree).

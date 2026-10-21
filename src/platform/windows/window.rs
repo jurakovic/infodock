@@ -35,6 +35,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Ole::OleInitialize;
 use windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
 use windows::Win32::System::Threading::{GetCurrentProcess, GetCurrentThreadId, GetProcessTimes};
+use windows::Win32::UI::Accessibility::UiaRootObjectId;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -49,12 +50,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MSG, MSGFLT_ALLOW, PBT_APMPOWERSTATUSCHANGE, PBT_APMRESUMEAUTOMATIC, PostMessageW,
     PostQuitMessage, RegisterClassExW, SC_KEYMENU, SWP_HIDEWINDOW, SetForegroundWindow, SetTimer,
     SetWindowLongPtrW, TranslateMessage, WINDOWPOS, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOMMAND,
-    WM_SYSKEYDOWN, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED, WNDCLASSEXW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_GETOBJECT,
+    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE,
+    WM_SYSCOMMAND, WM_SYSKEYDOWN, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -68,6 +69,7 @@ use super::menu;
 use super::popup::{self, PopupWindow};
 use super::render::Renderer;
 use super::tray::{Tray, WM_TRAY, taskbar_created};
+use super::uia::Uia;
 use crate::config::model::Material;
 use crate::i18n::t;
 use crate::platform::{
@@ -134,6 +136,8 @@ struct WindowState {
     popup: OnceCell<std::result::Result<PopupWindow, ()>>,
     /// The shadow band window; created when a band is first shown.
     band: OnceCell<std::result::Result<BandWindow, ()>>,
+    /// The UI Automation provider (SPEC §14.4); created when a client first asks for it.
+    uia: OnceCell<Uia>,
 }
 
 /// The window of another app that had the foreground before the bar took it for the keyboard
@@ -224,6 +228,20 @@ impl WindowState {
             }
             // Alt alone starts no menu mode in a window without a menu (Alt+F4 is the AppBar's).
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => return LRESULT(0),
+            // A UI Automation client asks for the bar (SPEC §14.4).
+            WM_GETOBJECT if lparam.0 as i32 == UiaRootObjectId => {
+                let uia = self.uia.get_or_init(|| Uia::new(hwnd));
+                // Described now when the bar logic is free, else after the next frame.
+                match self.handler.try_borrow() {
+                    Ok(slot) => {
+                        if let Some(handler) = slot.as_ref() {
+                            uia.update(handler.accessible());
+                        }
+                    }
+                    Err(_) => self.repaint.set(true),
+                }
+                return uia.answer(wparam, lparam);
+            }
             WM_SETFOCUS => self.dispatch(UiEvent::FocusGained),
             WM_KILLFOCUS => {
                 let to = HWND(wparam.0 as *mut c_void);
@@ -356,6 +374,9 @@ impl WindowState {
                 if let Some(tray) = self.tray.get() {
                     tray.hide();
                 }
+                if let Some(uia) = self.uia.get() {
+                    uia.release();
+                }
                 // SAFETY: detaches this state from the dying window; it is intentionally leaked.
                 unsafe {
                     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -481,6 +502,9 @@ impl WindowState {
                     }
                 }
                 self.show_band(handler.band());
+                if let Some(uia) = self.uia.get() {
+                    uia.update(handler.accessible());
+                }
             }
             Err(e) => {
                 self.report_render_error(&e);
@@ -941,6 +965,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         hint: OnceCell::new(),
         popup: OnceCell::new(),
         band: OnceCell::new(),
+        uia: OnceCell::new(),
     }));
     let title = HSTRING::from(t("app.name"));
     // SAFETY: creates our own window; `state` outlives it.

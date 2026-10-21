@@ -28,6 +28,7 @@ pub mod shell;
 pub mod text;
 pub mod toast;
 mod tray;
+mod uia;
 pub mod window;
 mod wlan;
 

@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use super::layout::{self, Zones};
 use super::theme::Theme;
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
-use crate::platform::{Brush, Canvas, Capabilities, Color, Platform, RectF, Shape, TextEngine};
+use crate::platform::{
+    AccessibleItem, Brush, Canvas, Capabilities, Color, Platform, RectF, Shape, TextEngine,
+};
 use crate::sampler::{ChangeSink, Delivery, Topic, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction, Dropped};
 use crate::sensors::format::Numbers;
@@ -425,6 +427,27 @@ impl BarSensors {
             .flatten()
             .filter(|p| p.sensor.focusable())
             .map(|p| p.entry.id.clone())
+            .collect()
+    }
+
+    /// The focusable sensors as screen readers see them (SPEC §14.4), in focus order, on a bar
+    /// `height` logical px high; `name` gives a sensor type's name.
+    pub fn accessible(
+        &self,
+        env: &Env,
+        height: f32,
+        name: impl Fn(&str) -> String,
+    ) -> Vec<AccessibleItem> {
+        self.zones
+            .iter()
+            .flatten()
+            .filter(|p| p.sensor.focusable())
+            .map(|p| AccessibleItem {
+                id: p.entry.id.clone(),
+                name: name(&p.entry.kind),
+                value: p.sensor.accessible_value(&env.ctx(&p.entry.id)),
+                rect: RectF::new(p.x, 0.0, p.x + p.width, height),
+            })
             .collect()
     }
 

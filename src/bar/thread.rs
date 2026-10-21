@@ -35,9 +35,9 @@ use crate::config::model::{
 use crate::i18n::{t, t_args};
 use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
-    Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas, DragEvent, DropEffect, Key, Modifiers,
-    OsAppearance, Platform, PointF, PointerButton, PopupCursor, PopupInput, Rect, RectF, Shape,
-    SizeF, TextEngine, TimerId, UiEvent, UiWaker,
+    AccessibleBar, Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas, DragEvent, DropEffect,
+    Key, Modifiers, OsAppearance, Platform, PointF, PointerButton, PopupCursor, PopupInput, Rect,
+    RectF, Shape, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction};
@@ -161,6 +161,8 @@ pub(super) struct BarLogic {
     hovered: Option<String>,
     /// The keyboard on the bar (SPEC §14.4); `None` unless the hotkey focused it.
     keys: Option<KeyFocus>,
+    /// The size of the last frame, logical px.
+    painted: SizeF,
     /// The hover highlight (SPEC §5.5), 0–1.
     highlight: Fade,
     /// How far the bar has risen into place, 0–1: its content's opacity, and how far it is
@@ -260,6 +262,7 @@ impl BarLogic {
             inside: false,
             hovered: None,
             keys: None,
+            painted: SizeF::new(0.0, 0.0),
             highlight: Fade::at(0.0, Instant::now()),
             // Hidden until it rises, if it does.
             shown: Fade::at(if animate { 0.0 } else { 1.0 }, Instant::now()),
@@ -1809,6 +1812,7 @@ impl BarHandler for BarLogic {
     }
 
     fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF) {
+        self.painted = size;
         let cx = LayoutCtx {
             theme: &self.theme,
             text: self.text.as_ref(),
@@ -1894,6 +1898,28 @@ impl BarHandler for BarLogic {
 
     fn band(&self) -> Option<Band> {
         self.band.clone()
+    }
+
+    fn accessible(&self) -> AccessibleBar {
+        let env = Env {
+            settings: &self.settings,
+            theme: &self.theme,
+            platform: self.platform.as_ref(),
+            alt: false,
+            animate: self.animate,
+            changes: &self.changes,
+        };
+        let items = self
+            .sensors
+            .accessible(&env, self.painted.height, |kind| registry().type_name(kind));
+        let focus = self
+            .focused_sensor()
+            .and_then(|id| items.iter().position(|i| i.id == id));
+        AccessibleBar {
+            items,
+            focused: self.keys.as_ref().is_some_and(|k| k.focused),
+            focus,
+        }
     }
 }
 
@@ -2992,6 +3018,49 @@ mod tests {
         window.no_focus.set(true);
         logic.focus_bar(&window);
         assert_eq!(ring(&mut logic), None);
+    }
+
+    #[test]
+    fn screen_readers_get_the_sensors_in_focus_order() {
+        let (mut logic, window, _, config) = bar(Settings::default());
+        let bar = logic.accessible();
+        let ids: Vec<&str> = bar.items.iter().map(|i| i.id.as_str()).collect();
+        let order = logic.sensors.focus_order();
+        assert_eq!(ids, order.iter().map(String::as_str).collect::<Vec<_>>());
+        let logo = &bar.items[3];
+        assert_eq!(logo.id, config.layout.center[0].id);
+        assert_eq!(logo.name, "Image");
+        assert!(logo.value.starts_with("Infodock "), "{}", logo.value);
+        let (x, width) = logic.sensors.place_of(&logo.id).expect("placed");
+        assert_eq!(logo.rect, RectF::new(x, 0.0, x + width, 28.0));
+        assert_eq!(bar.items[0].name, "CPU Graph");
+        assert_eq!((bar.focused, bar.focus), (false, None));
+        // The keyboard: the bar, then the first sensor.
+        logic.focus_bar(&window);
+        assert_eq!(
+            (logic.accessible().focused, logic.accessible().focus),
+            (true, None)
+        );
+        key(&mut logic, &window, Key::Tab, false);
+        assert_eq!(
+            logic.accessible().focused_item().map(|i| i.name.as_str()),
+            Some("CPU Graph")
+        );
+        // A Spacer is not listed.
+        let mut with_spacer = config.clone();
+        with_spacer.layout.left.insert(
+            0,
+            SensorInstance {
+                id: "s_spacer".into(),
+                kind: "spacer".into(),
+                props: crate::sensors::Props::new(),
+            },
+        );
+        logic.apply_config(&window, with_spacer);
+        logic.sync_sensors(&window);
+        logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+        assert_eq!(logic.accessible().items.len(), 6);
+        assert_eq!(logic.accessible().focus, Some(0), "still on the CPU Graph");
     }
 
     #[test]
