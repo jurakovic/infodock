@@ -624,5 +624,13 @@
   "skins.error.tooLarge": "“{file}” is larger than 1 MB.",
   "skins.error.format": "“{file}” is not a PNG or JPEG image.",
   "skins.error.dimensions": "“{file}” is larger than 512 × 512 px.",
-  "skins.error.tileHeight": "“{file}” is {actual} px tall; the skin's height and shadow band need {expected} px."
+  "skins.error.tileHeight": "“{file}” is {actual} px tall; the skin's height and shadow band need {expected} px.",
+  "import.skipped.notASensor": "not a sensor entry",
+  "import.skipped.notSupportedYet": "not supported yet",
+  "import.warning.invalidValue": "{sensor}: the value of “{key}” cannot be used, so its default is used instead.",
+  "import.warning.unknownType": "“{type}” is not a sensor type of this version of Infodock. It is kept and shown as a placeholder.",
+  "import.error.io": "The file could not be read: {error}",
+  "import.error.tooLarge": "The file is too large to be a layout.",
+  "import.error.notALayout": "The file does not hold an Infodock layout.",
+  "import.error.newer": "The file was saved by a newer version of Infodock. Update Infodock to import it."
 }

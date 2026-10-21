@@ -1267,8 +1267,9 @@ Pages:
 
 ### 11.3 Export / import (JSON)
 
-* **Export**: the whole config, or layout only (`{ schema, layout, state }`), as `.infodock.json`.
-* **Import**: *replace* the layout, or *merge* (append imported sensors to their zones). Sensor ids are regenerated. The result is an `ImportReport { added, skipped: [{ type, reason }], warnings }`, shown in a dialog.
+* **Export**: the whole config, or layout only (`{ schema, layout, state }`, with `legacy` while it holds unsupported legacy sensors), as `.infodock.json`.
+* **Import**: *replace* the layout, or *merge* (append imported sensors to their zones). Either kind of file gives only its layout, the state of its sensors and its unsupported legacy sensors: the settings of a whole-config file are not applied. *Replace* also replaces the sensor state and `legacy.unsupported`. Sensor ids are regenerated. The result is an `ImportReport { added, skipped: [{ type, reason }], warnings }`, shown in a dialog.
+* Implementation (`config/exchange.rs`, `sensors/import.rs`): the file is migrated to this schema (`migrate.rs`). A newer schema, a file that is not JSON or holds no `layout`, and a file over 16 MB are refused with a message. Layout entries that are not objects with a `type` (and, if any, object `props`) are skipped as "not a sensor entry". Each sensor is checked against its type by the §11.2 rules, as on load: a value of the wrong type gives way to its default with a warning, numbers are clamped, keys the schema does not know are kept, machine-derived props that are missing or invalid are filled from this machine, and only values that differ from the defaults are stored. A type this version does not know is kept as it is (a placeholder, §4.6) with a warning. The legacy XML import (§11.4) goes through the same steps.
 
 ### 11.4 Legacy XML layout import
 

@@ -1,5 +1,7 @@
-//! Configuration: typed model, persistence, migrations and settings patches (SPEC §10–11).
+//! Configuration: typed model, persistence, migrations, settings patches and exchange files
+//! (SPEC §10–11).
 
+pub mod exchange;
 pub mod migrate;
 pub mod model;
 pub mod patch;

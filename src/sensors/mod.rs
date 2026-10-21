@@ -20,6 +20,7 @@ pub mod eject_usb;
 pub mod folder_menu;
 pub mod format;
 pub mod image;
+pub mod import;
 pub mod memory;
 pub mod network;
 pub mod ops;
