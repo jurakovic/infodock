@@ -5,6 +5,7 @@
 use serde::Deserialize;
 
 use super::common::icon::{self, Icon};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Question, Sensor, SensorCtx,
@@ -71,6 +72,26 @@ fn name(action: PowerAction) -> String {
     t(&format!("sensor.power.mode.{}", action.id()))
 }
 
+/// SPEC §9.21: Infodock runs the power action itself, so the legacy `path` goes.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::options(
+        "mode",
+        "mode",
+        &[
+            ("0", Lit::Str("lock")),
+            ("1", Lit::Str("signOut")),
+            ("2", Lit::Str("switchUser")),
+            ("3", Lit::Str("sleep")),
+            ("4", Lit::Str("hibernate")),
+            ("5", Lit::Str("shutDown")),
+            ("6", Lit::Str("restart")),
+        ],
+    ),
+    LegacyKey::new("safety-dialog", "confirm"),
+    LegacyKey::new("opacity", "opacity"),
+    LegacyKey::dropped("path"),
+];
+
 pub struct PowerType;
 
 impl SensorType for PowerType {
@@ -92,6 +113,10 @@ impl SensorType for PowerType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockPower"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

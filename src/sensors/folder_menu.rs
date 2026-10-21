@@ -7,6 +7,7 @@ use serde_json::Value;
 use super::common::folder_browser::{FolderBrowser, Options};
 use super::common::icon::{self, Icon, ImageFile};
 use super::drop::{self, DragInfo, DropAction, Dropped};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::shortcut::file_name;
 use super::{
@@ -83,6 +84,17 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.19.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("folder", "folder"),
+    LegacyKey::new("text", "title"),
+    LegacyKey::new("image", "image"),
+    LegacyKey::new("colorize", "color"),
+    LegacyKey::new("opacity", "opacity"),
+    LegacyKey::new("popup-width", "popupWidth"),
+    LegacyKey::new("popup-height", "popupHeight"),
+];
+
 pub struct FolderMenuType;
 
 impl SensorType for FolderMenuType {
@@ -104,6 +116,10 @@ impl SensorType for FolderMenuType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["TurboFolder"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

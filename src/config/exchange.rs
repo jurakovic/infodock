@@ -125,6 +125,8 @@ pub enum Warning {
         key: String,
         value: String,
     },
+    /// A legacy property Infodock has no counterpart for; not imported (SPEC §11.4).
+    DroppedProperty { legacy: String, key: String },
     /// A legacy network adapter this computer does not have; Automatic is used instead
     /// (SPEC §9.13).
     UnknownAdapter { legacy: String, adapter: String },
@@ -147,6 +149,10 @@ impl Warning {
             Warning::InvalidProperty { legacy, key, value } => t_args(
                 "import.warning.invalidProperty",
                 &[("type", legacy), ("key", key), ("value", value)],
+            ),
+            Warning::DroppedProperty { legacy, key } => t_args(
+                "import.warning.droppedProperty",
+                &[("type", legacy), ("key", key)],
             ),
             Warning::UnknownAdapter { legacy, adapter } => t_args(
                 "import.warning.unknownAdapter",
@@ -473,6 +479,7 @@ mod tests {
             "import.warning.unknownProperty",
             "import.warning.invalidProperty",
             "import.warning.unknownAdapter",
+            "import.warning.droppedProperty",
             "import.error.noLegacyLayout",
             "import.error.xml",
             "import.warning.unknownType",

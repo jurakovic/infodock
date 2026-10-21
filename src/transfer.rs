@@ -208,7 +208,7 @@ mod tests {
     use super::*;
     use crate::config::ConfigStore;
     use crate::config::exchange::{SkipReason, Skipped, Warning};
-    use crate::config::model::Zone;
+    use crate::config::model::{LegacyUnsupported, Zone};
     use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
 
     /// Answers with a script and records what it was asked.
@@ -677,6 +677,154 @@ mod tests {
                 "DockNetwork: this computer has no network adapter “Realtek PCIe GbE Family \
                  Controller”, so Automatic is used instead."
             ]
+        );
+    }
+
+    /// SPEC Appendix B, the exit criterion of M4 (§17).
+    #[test]
+    fn imports_appendix_b_as_specified() {
+        use serde_json::json;
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(fixture("example.xml"));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Legacy).expect("imported");
+        assert_eq!(
+            sensors(&f, Zone::Left),
+            [
+                ("battery".into(), json!({})),
+                ("spacer".into(), json!({ "showDivider": true })),
+                (
+                    "disk-meter".into(),
+                    json!({ "title": "System", "drive": "C:\\", "interval": 10 })
+                ),
+                (
+                    "recycle-bin".into(),
+                    json!({
+                        "imageEmpty": "D:\\Icons\\Recycle-Empty.ico",
+                        "imageFull": "D:\\Icons\\Recycle.ico", "opacity": 77
+                    })
+                ),
+                (
+                    "shortcut".into(),
+                    json!({
+                        "target": "D:\\Documents", "title": "Documents",
+                        "image": "D:\\Icons\\Documents.ico"
+                    })
+                ),
+            ]
+        );
+        assert!(sensors(&f, Zone::Center).is_empty());
+        assert_eq!(
+            sensors(&f, Zone::Right),
+            [
+                (
+                    "memory-graph".into(),
+                    json!({
+                        "width": 70, "gridOpacity": 7,
+                        "graphColor": { "mode": "custom", "color": "#C0C0C0" },
+                        "graphOpacity": 54
+                    })
+                ),
+                (
+                    "cpu-graph-dual".into(),
+                    json!({
+                        "width": 70, "gridOpacity": 7,
+                        "topColor": { "mode": "custom", "color": "#666666" },
+                        "topOpacity": 88,
+                        "bottomColor": { "mode": "custom", "color": "#C0C0C0" },
+                        "bottomOpacity": 88
+                    })
+                ),
+                (
+                    "uptime".into(),
+                    json!({ "text": "", "font": "Arial", "fontSize": 11 })
+                ),
+                (
+                    "date".into(),
+                    json!({ "weekday": "none", "month": "number" })
+                ),
+            ]
+        );
+        let config = f.app.store.get();
+        assert_eq!(
+            config.legacy.unsupported,
+            [LegacyUnsupported {
+                kind: "DockRSSSensor".into(),
+                zone: Zone::Center,
+                props: [
+                    ("title".to_owned(), "News".to_owned()),
+                    ("url".to_owned(), "https://example.com/feed.xml".to_owned())
+                ]
+                .into(),
+            }]
+        );
+        assert!(config.state.is_empty(), "{:?}", config.state);
+        assert_eq!(report.added, 9);
+        assert_eq!(
+            report.skipped,
+            [Skipped {
+                kind: "DockRSSSensor".into(),
+                reason: SkipReason::NotSupportedYet
+            }]
+        );
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    }
+
+    #[test]
+    fn imports_the_legacy_launchers() {
+        use serde_json::json;
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(fixture("launchers.xml"));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Legacy).expect("imported");
+        assert_eq!(
+            sensors(&f, Zone::Left),
+            [
+                (
+                    "wifi".into(),
+                    json!({ "title": "Home", "interval": 5, "display": "dbm" })
+                ),
+                (
+                    "disk".into(),
+                    json!({
+                        "drive": "E:\\", "title": "Stick",
+                        "color": { "mode": "custom", "color": "#80C0FF" }
+                    })
+                ),
+            ]
+        );
+        assert_eq!(
+            sensors(&f, Zone::Center),
+            [
+                (
+                    "folder-menu".into(),
+                    json!({
+                        "folder": "C:\\Users\\Public\\Downloads", "title": "Downloads",
+                        "image": "D:\\Icons\\Folder.ico", "opacity": 90,
+                        "popupWidth": 300, "popupHeight": 450
+                    })
+                ),
+                ("start-menu".into(), json!({ "popupHeight": 500 })),
+            ]
+        );
+        assert_eq!(
+            sensors(&f, Zone::Right),
+            [
+                (
+                    "power".into(),
+                    json!({ "mode": "shutDown", "confirm": false })
+                ),
+                ("power".into(), json!({ "mode": "lock" })),
+                ("eject-usb".into(), json!({ "opacity": 70 })),
+            ]
+        );
+        assert_eq!(report.added, 7);
+        let warnings: Vec<String> = report.warnings.iter().map(|w| w.message()).collect();
+        assert_eq!(
+            warnings,
+            ["DockPower: Infodock has no use for the property “path”, so it was not imported."]
         );
     }
 

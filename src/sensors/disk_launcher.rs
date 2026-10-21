@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::common::eject;
 use super::common::icon::{self, Icon};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, IconSource, LayoutCtx,
@@ -69,6 +70,15 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.18.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("disk", "drive"),
+    LegacyKey::new("title", "title"),
+    LegacyKey::new("image", "image"),
+    LegacyKey::new("colorize", "color"),
+    LegacyKey::new("opacity", "opacity"),
+];
+
 pub struct DiskType;
 
 impl SensorType for DiskType {
@@ -90,6 +100,10 @@ impl SensorType for DiskType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockDisk"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

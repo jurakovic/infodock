@@ -11,6 +11,7 @@ use super::common::icon_label::IconLabel;
 use super::common::two_line::TwoLine;
 use super::drop::{self, DragInfo, DropAction, Dropped};
 use super::format;
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Capability, Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, MenuId,
@@ -79,6 +80,15 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.16.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("title", "title"),
+    LegacyKey::new("image-empty", "imageEmpty"),
+    LegacyKey::new("image-full", "imageFull"),
+    LegacyKey::new("opacity", "opacity"),
+    LegacyKey::new("colorize", "color"),
+];
+
 pub struct RecycleBinType;
 
 impl SensorType for RecycleBinType {
@@ -100,6 +110,10 @@ impl SensorType for RecycleBinType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockTrashMeter"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn requires(&self) -> &'static [Capability] {

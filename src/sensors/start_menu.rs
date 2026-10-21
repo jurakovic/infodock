@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::common::folder_browser::{FolderBrowser, Options};
 use super::common::icon::{self, Icon, ImageFile};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props,
@@ -68,6 +69,17 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.20: the Folder Menu's keys; the folders are this computer's Start Menu.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::ignored("folder"),
+    LegacyKey::new("text", "title"),
+    LegacyKey::new("image", "image"),
+    LegacyKey::new("colorize", "color"),
+    LegacyKey::new("opacity", "opacity"),
+    LegacyKey::new("popup-width", "popupWidth"),
+    LegacyKey::new("popup-height", "popupHeight"),
+];
+
 pub struct StartMenuType;
 
 impl SensorType for StartMenuType {
@@ -89,6 +101,10 @@ impl SensorType for StartMenuType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["TurboFolderStartMenu"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn requires(&self) -> &'static [Capability] {

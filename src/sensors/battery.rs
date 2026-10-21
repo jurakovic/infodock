@@ -12,6 +12,7 @@ use super::common::icon::{self, Icon};
 use super::common::icon_label::GAP;
 use super::common::two_line::{Align, TwoLine};
 use super::format;
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
     Capability, Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
@@ -155,6 +156,33 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.battery.field.alertAbove.help"),
 ];
 
+/// SPEC §9.14: `-1` is the OS's own value or never.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("battery", "battery"),
+    LegacyKey::options(
+        "when-in-use-display-percent",
+        "onBatteryShow",
+        &[("no", Lit::Str("time")), ("yes", Lit::Str("percent"))],
+    ),
+    LegacyKey::new("smooth-time-to-empty", "smoothTimeToEmpty"),
+    LegacyKey::options(
+        "when-charging-display-percent",
+        "chargingShow",
+        &[("no", Lit::Str("time")), ("yes", Lit::Str("percent"))],
+    ),
+    LegacyKey::options(
+        "calculate-time-to-full",
+        "timeToFullSource",
+        &[("no", Lit::Str("os")), ("yes", Lit::Str("calculated"))],
+    ),
+    LegacyKey::options(
+        "assume-charged",
+        "assumeChargedAt",
+        &[("-1", Lit::Str("os"))],
+    ),
+    LegacyKey::options("alert-level", "alertAbove", &[("-1", Lit::Str("never"))]),
+];
+
 pub struct BatteryType;
 
 impl SensorType for BatteryType {
@@ -176,6 +204,10 @@ impl SensorType for BatteryType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockBatteryLife"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn requires(&self) -> &'static [Capability] {

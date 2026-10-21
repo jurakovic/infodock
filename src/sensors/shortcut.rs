@@ -9,6 +9,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::common::icon::{self, Icon};
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
     Category, ClickResult, ColorChoice, DrawCtx, HintContent, IconSource, LayoutCtx, Props, Sensor,
@@ -113,6 +114,17 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.17.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("link", "target"),
+    LegacyKey::new("param", "args"),
+    LegacyKey::new("url", "url"),
+    LegacyKey::new("title", "title"),
+    LegacyKey::new("image", "image"),
+    LegacyKey::new("colorize", "color"),
+    LegacyKey::new("opacity", "opacity"),
+];
+
 pub struct ShortcutType;
 
 impl SensorType for ShortcutType {
@@ -134,6 +146,10 @@ impl SensorType for ShortcutType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockShortcut"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

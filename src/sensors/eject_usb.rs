@@ -9,6 +9,7 @@ use serde::Deserialize;
 use super::common::eject_list::{Drives, EjectList, ejectable};
 use super::common::icon::{self, Icon};
 use super::format::Numbers;
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType,
@@ -29,6 +30,9 @@ const SCHEMA: &[PropField] = &[PropField::new(
     "sensor.field.opacity",
     Lit::Int(100),
 )];
+
+/// SPEC §9.22.
+const LEGACY_KEYS: &[LegacyKey] = &[LegacyKey::new("opacity", "opacity")];
 
 pub struct EjectUsbType;
 
@@ -51,6 +55,10 @@ impl SensorType for EjectUsbType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockUSB"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn requires(&self) -> &'static [Capability] {

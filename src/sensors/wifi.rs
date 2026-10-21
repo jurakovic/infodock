@@ -10,6 +10,7 @@ use super::common::icon::{self, Icon};
 use super::common::icon_label::IconLabel;
 use super::common::two_line::TwoLine;
 use super::format;
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
     Capability, Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx,
@@ -76,6 +77,21 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.15.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("title", "title"),
+    LegacyKey::new("interval", "interval"),
+    LegacyKey::options(
+        "display-mode",
+        "display",
+        &[
+            ("0", Lit::Str("name")),
+            ("1", Lit::Str("percent")),
+            ("2", Lit::Str("dbm")),
+        ],
+    ),
+];
+
 pub struct WifiType;
 
 impl SensorType for WifiType {
@@ -97,6 +113,10 @@ impl SensorType for WifiType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockWiFi"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn requires(&self) -> &'static [Capability] {

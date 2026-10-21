@@ -1,0 +1,82 @@
+<?xml version="1.0" ?>
+<sensors>
+  <sensor side="left" type="DockBatteryLife">
+    <property name="battery">0</property>
+    <property name="when-in-use-display-percent">yes</property>
+    <property name="smooth-time-to-empty">no</property>
+    <property name="when-charging-display-percent">yes</property>
+    <property name="calculate-time-to-full">no</property>
+    <property name="assume-charged">-1</property>
+    <property name="alert-level">-1</property>
+  </sensor>
+  <sensor side="left" type="DockSpacer">
+    <property name="show">yes</property>
+    <property name="width">9</property>
+  </sensor>
+  <sensor side="left" type="DockDiskMeter">
+    <property name="title">System</property>
+    <property name="disk">C:\</property>
+    <property name="mode">0</property>
+    <property name="interval">10</property>
+    <property name="colorize">off:#000000</property>
+  </sensor>
+  <sensor side="left" type="DockTrashMeter">
+    <property name="title"></property>
+    <property name="image-empty">D:/Icons/Recycle-Empty.ico</property>
+    <property name="image-full">D:/Icons/Recycle.ico</property>
+    <property name="opacity">196</property>
+    <property name="colorize">off:#000000</property>
+  </sensor>
+  <sensor side="left" type="DockShortcut">
+    <property name="link">D:/Documents</property>
+    <property name="param"></property>
+    <property name="url"></property>
+    <property name="title">Documents</property>
+    <property name="image">D:/Icons/Documents.ico</property>
+    <property name="colorize">off:#000000</property>
+    <property name="opacity">255</property>
+  </sensor>
+  <sensor side="right" type="DockMemGraph">
+    <property name="display-mode">0</property>
+    <property name="interval">1</property>
+    <property name="width">70</property>
+    <property name="bk-color">off:#000000</property>
+    <property name="bk-opacity">0</property>
+    <property name="grid-color">off:#000000</property>
+    <property name="grid-opacity">18</property>
+    <property name="graph-color">col:#C0C0C0</property>
+    <property name="graph-opacity">137</property>
+  </sensor>
+  <sensor side="right" type="DockCPUGraphDual">
+    <property name="interval">1</property>
+    <property name="width">70</property>
+    <property name="bk-color">off:#000000</property>
+    <property name="bk-opacity">0</property>
+    <property name="grid-color">off:#000000</property>
+    <property name="grid-opacity">18</property>
+    <property name="graph-top-color">col:#666666</property>
+    <property name="graph-top-opacity">225</property>
+    <property name="graph-bottom-color">col:#C0C0C0</property>
+    <property name="graph-bottom-opacity">225</property>
+    <property name="graph-bottom-flip">yes</property>
+  </sensor>
+  <sensor side="right" type="DockUpTime">
+    <property name="text"></property>
+    <property name="font">Arial</property>
+    <property name="fontstyle">bold</property>
+    <property name="fontsize">11</property>
+    <property name="shadow">no</property>
+    <property name="max-uptime"></property>
+  </sensor>
+  <sensor side="right" type="DockDate">
+    <property name="dayname">0</property>
+    <property name="month-format">3</property>
+    <property name="year-format">4</property>
+    <property name="shadow">no</property>
+    <property name="show-calendar">1</property>
+  </sensor>
+  <sensor side="center" type="DockRSSSensor">
+    <property name="title">News</property>
+    <property name="url">https://example.com/feed.xml</property>
+  </sensor>
+</sensors>

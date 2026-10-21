@@ -1,0 +1,47 @@
+<?xml version="1.0" ?>
+<sensors>
+  <sensor side="left" type="DockWiFi">
+    <property name="title">Home</property>
+    <property name="interval">5</property>
+    <property name="display-mode">2</property>
+  </sensor>
+  <sensor side="left" type="DockDisk">
+    <property name="disk">e:/</property>
+    <property name="title">Stick</property>
+    <property name="image"></property>
+    <property name="colorize">col:#80c0ff</property>
+    <property name="opacity">255</property>
+  </sensor>
+  <sensor side="center" type="TurboFolder">
+    <property name="folder">C:/Users/Public/Downloads</property>
+    <property name="text">Downloads</property>
+    <property name="image">D:/Icons/Folder.ico</property>
+    <property name="colorize">off:#000000</property>
+    <property name="opacity">229</property>
+    <property name="popup-width">300.4</property>
+    <property name="popup-height">450</property>
+  </sensor>
+  <sensor side="center" type="TurboFolderStartMenu">
+    <property name="folder"></property>
+    <property name="text"></property>
+    <property name="image"></property>
+    <property name="colorize">off:#000000</property>
+    <property name="opacity">255</property>
+    <property name="popup-width">240</property>
+    <property name="popup-height">500</property>
+  </sensor>
+  <sensor side="right" type="DockPower">
+    <property name="mode">5</property>
+    <property name="safety-dialog">no</property>
+    <property name="opacity">255</property>
+    <property name="path">C:/Windows/System32/shutdown.exe</property>
+  </sensor>
+  <sensor side="right" type="DockPower">
+    <property name="mode">0</property>
+    <property name="safety-dialog">yes</property>
+    <property name="path"></property>
+  </sensor>
+  <sensor side="right" type="DockUSB">
+    <property name="opacity">178</property>
+  </sensor>
+</sensors>

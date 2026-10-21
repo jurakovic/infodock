@@ -1089,7 +1089,7 @@ Implementation (`sensors/folder_menu.rs`; the popup in `sensors/common/folder_br
 
 ### 9.20 `start-menu` — Start Menu  (Launchers; `TurboFolderStartMenu`; requires `start_menu`)
 
-Properties: title (default "Start Menu"), image (default: built-in Start Menu icon), color, opacity, popup size. No folder property.
+Properties: title (default "Start Menu"), image (default: built-in Start Menu icon), color, opacity, popup size. No folder property. XML keys as the Folder Menu's (`text`, `image`, `colorize`, `opacity`, `popup-width`, `popup-height`); a `folder` is read without a warning and not imported.
 * The root listing **merges** `FOLDERID_Programs` (per user) and `FOLDERID_CommonPrograms` (all users). Folders with the same name merge into one virtual folder containing the union of their children. Shortcuts with the same name appear once (per-user wins).
 * Otherwise identical to Folder Menu (popup, navigation, keyboard).
 * Menu: `Open folder` (per-user Programs), `Open (all users) folder`.
@@ -1336,7 +1336,7 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 | `DockShortcut` | `shortcut` | |
 | `TurboFolder` | `folder-menu` | |
 | `TurboFolderStartMenu` | `start-menu` | |
-| `DockPower` | `power` | property `path` is dropped (warning) |
+| `DockPower` | `power` | property `path` is dropped (a warning when it has a value) |
 | `DockUSB` | `eject-usb` | |
 | `DockRSSSensor`, `DockStandardMail`, `DockGMail`, `DockGMailForDomains`, `DockYMail`, `DockSpeedFan`, `DockRadio` | — | Stored in `legacy.unsupported` with their properties (any `password` property is **dropped**). Listed in the report as "not supported yet". Kept for future feed/mail/hardware/radio sensors |
 | anything else | — | Skipped; the report lists it as an unknown type |
@@ -1346,7 +1346,7 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 Implementation (`config/legacy.rs`, `sensors/legacy.rs`):
 * The file's text is UTF-8 (with or without a byte order mark), UTF-16 with a byte order mark, or else Windows-1252. The first `<sensors>…</sensors>` (or `<sensors/>`) is read with `quick-xml`: entities and character references are resolved, CDATA is taken as it is, values keep their spaces. Text without a `<sensors>` element and broken XML are refused with a message. A property given twice keeps its last value.
 * A sensor without a side, or with another side, is skipped ("no side"); a legacy type Infodock does not know is skipped ("not a sensor type Infodock knows"); the report lists both. Unsupported types drop every property whose name contains `password`.
-* Each type names its XML keys (`LegacyKey`): the prop each sets, read by the encoding of that prop's field; a select whose XML values differ from its own gets them as a table; a graph width; or a key Infodock has no use for, read without a warning. The default `convert_legacy` reads them: a value that cannot be read (e.g. `maybe` for a boolean, a select value not listed, a dynamic colour where the field has no dynamic mode) keeps the default with a warning, as does a property the type does not name. Booleans also accept `true`/`false` and `1`/`0`; a font style is `bold` and `italic` separated by a comma; a drive may be written `C:` or `C:/`. Types with more to do (a state, a dropped property, a matched adapter) override `convert_legacy`. Graphs share the XML keys of their interval, width, background and grid (`graph::legacy_keys!`, §9.8); the dual graphs' series keys are `graph-top-*`, `graph-bottom-*` and `graph-bottom-flip`.
+* Each type names its XML keys (`LegacyKey`): the prop each sets, read by the encoding of that prop's field; a select gets a table of the XML values that differ from its own (`-1` → `os` for the battery's *Assume charged at*; other values are its own ids or numbers); a graph width; a key Infodock has no use for, read without a warning; or a key it drops, with a warning when it has a value (the Power's `path`). Selects match ignoring case; a power mode is read by its id, a hidden field (the popup size) by its default's kind. The default `convert_legacy` reads them: a value that cannot be read (e.g. `maybe` for a boolean, a select value not listed, a dynamic colour where the field has no dynamic mode) keeps the default with a warning, as does a property the type does not name. Booleans also accept `true`/`false` and `1`/`0`; a font style is `bold` and `italic` separated by a comma; a drive may be written `C:` or `C:/`. Types with more to do (a state, a matched adapter) override `convert_legacy`. Graphs share the XML keys of their interval, width, background and grid (`graph::legacy_keys!`, §9.8); the dual graphs' series keys are `graph-top-*`, `graph-bottom-*` and `graph-bottom-flip`.
 * The props then go through the import of §11.3: values are clamped, only what differs from the defaults is stored, machine-derived props are filled.
 
 ### 11.5 First run

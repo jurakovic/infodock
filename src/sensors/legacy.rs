@@ -37,14 +37,19 @@ pub struct LegacyKey {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LegacyValue {
     /// By the prop's field type: bool, colour mode, opacity, interval, slider, text, file and
-    /// folder paths, font, font style, drive, colour, a select whose XML values are its own.
+    /// folder paths, font, font style, drive, colour, a select whose XML values are its own, a
+    /// power mode by its id, a hidden field by its default's kind.
     Field,
-    /// A select whose options the XML names by other values.
+    /// A select some of whose options the XML names by other values (ignoring case); other
+    /// values are read as [`LegacyValue::Field`].
     Options(&'static [(&'static str, Lit)]),
     /// A graph's width in px.
     GraphWidth,
     /// A property Infodock has no use for; read without a warning.
     Ignored,
+    /// A property Infodock has no counterpart for; not imported, with a warning unless it is
+    /// empty.
+    Dropped,
 }
 
 impl LegacyKey {
@@ -87,6 +92,15 @@ impl LegacyKey {
             value: LegacyValue::Ignored,
         }
     }
+
+    /// `xml` is known and not imported, which the report says when it has a value.
+    pub const fn dropped(xml: &'static str) -> Self {
+        Self {
+            xml,
+            prop: "",
+            value: LegacyValue::Dropped,
+        }
+    }
 }
 
 /// What converting one legacy sensor may use, and what it reports.
@@ -116,6 +130,14 @@ impl LegacyCtx<'_> {
             key: key.to_owned(),
         });
     }
+
+    /// Warns that property `key` is not imported.
+    pub fn dropped(&mut self, key: &str) {
+        self.warnings.push(Warning::DroppedProperty {
+            legacy: self.legacy_type.to_owned(),
+            key: key.to_owned(),
+        });
+    }
 }
 
 /// The props `raw` sets through `keys`, each value read by the encoding of its field in
@@ -133,8 +155,15 @@ pub fn convert(
             cx.unknown(xml);
             continue;
         };
-        if key.value == LegacyValue::Ignored {
-            continue;
+        match key.value {
+            LegacyValue::Ignored => continue,
+            LegacyValue::Dropped => {
+                if !value.trim().is_empty() {
+                    cx.dropped(xml);
+                }
+                continue;
+            }
+            _ => {}
         }
         let Some(field) = schema::field(schema, key.prop) else {
             tracing::error!("{}: {xml} names no field {}", cx.legacy_type, key.prop);
@@ -155,11 +184,12 @@ fn read_value(field: &PropField, how: LegacyValue, value: &str) -> Option<Value>
     let read = match how {
         LegacyValue::Options(options) => options
             .iter()
-            .find(|(xml, _)| *xml == value.trim())
-            .map(|(_, lit)| lit.to_value()),
+            .find(|(xml, _)| xml.eq_ignore_ascii_case(value.trim()))
+            .map(|(_, lit)| lit.to_value())
+            .or_else(|| by_field(field, value)),
         LegacyValue::GraphWidth => legacy::graph_width(value).map(Value::from),
         LegacyValue::Field => by_field(field, value),
-        LegacyValue::Ignored => None,
+        LegacyValue::Ignored | LegacyValue::Dropped => None,
     };
     read.and_then(|v| schema::check(field, &v))
 }
@@ -178,9 +208,12 @@ fn by_field(field: &PropField, value: &str) -> Option<Value> {
             Some(json!({ "mode": mode, "color": color }))
         }
         FieldKind::Opacity { .. } => legacy::opacity(value).map(Value::from),
-        FieldKind::Interval { .. } | FieldKind::Slider { .. } | FieldKind::Battery => {
+        FieldKind::Interval { .. } | FieldKind::Slider { .. } => {
             legacy::number(value).map(Value::from)
         }
+        FieldKind::Battery => legacy::number(value)
+            .filter(|n| *n >= 0.0 && n.fract() == 0.0)
+            .map(|n| Value::from(n as u64)),
         FieldKind::Text { .. } => Some(Value::from(value)),
         FieldKind::File { .. } | FieldKind::Folder => Some(Value::from(legacy::path(value))),
         FieldKind::Font => Some(Value::from(value.trim())),
@@ -191,14 +224,19 @@ fn by_field(field: &PropField, value: &str) -> Option<Value> {
             .iter()
             .map(|o| o.value)
             .find(|lit| match lit {
-                Lit::Str(s) => *s == value.trim(),
+                Lit::Str(s) => s.eq_ignore_ascii_case(value.trim()),
                 Lit::Int(i) => legacy::number(value) == Some(*i as f64),
                 _ => false,
             })
             .map(Lit::to_value),
-        FieldKind::NetAdapter | FieldKind::CpuSeries | FieldKind::PowerMode | FieldKind::Hidden => {
-            None
-        }
+        FieldKind::CpuSeries | FieldKind::PowerMode => Some(Value::from(value.trim())),
+        FieldKind::Hidden => match field.default {
+            Lit::Int(_) => legacy::number(value).map(|n| Value::from(n.round() as i64)),
+            Lit::Bool(_) => legacy::bool(value).map(Value::Bool),
+            Lit::Str(_) => Some(Value::from(value)),
+            _ => None,
+        },
+        FieldKind::NetAdapter => None,
     }
 }
 
@@ -354,6 +392,9 @@ mod tests {
             "x",
             Lit::Int(0),
         ),
+        PropField::new("size", FieldKind::Hidden, "x", Lit::Int(240)),
+        PropField::new("battery", FieldKind::Battery, "x", Lit::Int(0)),
+        PropField::new("power", FieldKind::PowerMode, "x", Lit::Str("sleep")),
     ];
 
     const KEYS: &[LegacyKey] = &[
@@ -372,7 +413,12 @@ mod tests {
             &[("0", Lit::Str("none")), ("2", Lit::Str("long"))],
         ),
         LegacyKey::new("chime", "chime"),
+        LegacyKey::options("alert", "chime", &[("-1", Lit::Int(0))]),
+        LegacyKey::new("popup-width", "size"),
+        LegacyKey::new("battery", "battery"),
+        LegacyKey::options("mode", "power", &[("0", Lit::Str("lock"))]),
         LegacyKey::ignored("legacy-only"),
+        LegacyKey::dropped("path"),
     ];
 
     fn raw(pairs: &[(&str, &str)]) -> LegacyProps {
@@ -427,6 +473,58 @@ mod tests {
             })
         );
         assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn select_tables_fall_back_to_the_fields_values() {
+        let read = |pairs: &[(&str, &str)]| convert_raw(pairs);
+        assert_eq!(read(&[("alert", "-1")]), (json!({ "chime": 0 }), vec![]));
+        assert_eq!(read(&[("alert", "30")]), (json!({ "chime": 30 }), vec![]));
+        assert_eq!(
+            read(&[("dayname", "LONG")]),
+            (json!({ "mode": "long" }), vec![])
+        );
+        assert_eq!(read(&[("mode", "0")]), (json!({ "power": "lock" }), vec![]));
+        assert_eq!(
+            read(&[("mode", "restart")]),
+            (json!({ "power": "restart" }), vec![])
+        );
+        let (props, warnings) = read(&[("alert", "45"), ("mode", "9")]);
+        assert_eq!(props, json!({}));
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+    }
+
+    #[test]
+    fn hidden_fields_are_read_by_their_defaults_kind() {
+        let (props, warnings) = convert_raw(&[("popup-width", "300.4")]);
+        assert_eq!(props, json!({ "size": 300 }));
+        assert!(warnings.is_empty());
+        let (props, warnings) = convert_raw(&[("popup-width", "wide")]);
+        assert_eq!(props, json!({}));
+        assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn battery_indices_are_whole_numbers() {
+        assert_eq!(
+            convert_raw(&[("battery", "1")]),
+            (json!({ "battery": 1 }), vec![])
+        );
+        for bad in ["1.5", "-1"] {
+            let (props, warnings) = convert_raw(&[("battery", bad)]);
+            assert_eq!((props, warnings.len()), (json!({}), 1), "{bad}");
+        }
+    }
+
+    #[test]
+    fn dropped_properties_are_reported_when_they_have_a_value() {
+        let (props, warnings) = convert_raw(&[("path", "C:/x.exe")]);
+        assert_eq!(props, json!({}));
+        assert_eq!(
+            warnings,
+            ["DockTest: Infodock has no use for the property “path”, so it was not imported."]
+        );
+        assert_eq!(convert_raw(&[("path", " ")]), (json!({}), vec![]));
     }
 
     #[test]
@@ -557,10 +655,22 @@ mod tests {
     }
 
     #[test]
+    fn every_type_with_legacy_types_names_its_keys() {
+        for ty in registry().types() {
+            assert_eq!(
+                ty.legacy_types().is_empty(),
+                ty.legacy_keys().is_empty(),
+                "{}",
+                ty.id()
+            );
+        }
+    }
+
+    #[test]
     fn every_legacy_key_names_a_field() {
         for ty in registry().types() {
             for key in ty.legacy_keys() {
-                if key.value != LegacyValue::Ignored {
+                if !matches!(key.value, LegacyValue::Ignored | LegacyValue::Dropped) {
                     assert!(
                         schema::field(ty.schema(), key.prop).is_some(),
                         "{}: {} → {}",
