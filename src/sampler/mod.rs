@@ -210,6 +210,49 @@ mod tests {
         sampler.shutdown();
         thread.join().expect("the thread ends");
     }
+    /// The sampler's cost per tick (SPEC §14.1, ≤ 2 ms): the topics the first-run layout's
+    /// sensors subscribe to, read on this machine's providers as a tick reads them, a tick
+    /// every 100 ms; the first, which opens the providers, is one of them. CI's budget check
+    /// reads the median.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "measures a budget; run with --ignored"]
+    fn budget_sampler_tick() {
+        use crate::test_util::{median, record_budget};
+
+        const TICKS: usize = 50;
+        let platform = crate::platform::current();
+        let caps = platform.capabilities();
+        let registry = crate::sensors::registry::registry();
+        let mut topics: Vec<Topic> = Vec::new();
+        for entry in crate::config::Config::first_run("1.0.0").layout.all() {
+            let sensor = registry.create(entry, &crate::sensors::State::new(), &caps);
+            for request in sensor.topics() {
+                if !topics.contains(&request.topic) {
+                    topics.push(request.topic);
+                }
+            }
+        }
+        assert!(topics.contains(&Topic::Cpu), "{topics:?}");
+        let mut providers = Providers::new(platform);
+        let mut times = Vec::with_capacity(TICKS);
+        for _ in 0..TICKS {
+            let began = Instant::now();
+            for topic in &topics {
+                let _ = providers.sample(topic);
+            }
+            times.push(began.elapsed());
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        record_budget(
+            "sampler",
+            "Sampler cost per tick",
+            median(&mut times),
+            Duration::from_millis(2),
+            TICKS,
+        );
+    }
+
     #[test]
     fn a_device_change_reads_the_drive_list_again_at_once() {
         let (sampler, pending) = Sampler::new();

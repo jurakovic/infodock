@@ -23,7 +23,7 @@ param(
     [switch] $Enforce
 )
 # The records the budget tests write, in the order of SPEC §14.1.
-$Recorded = @('redraw')
+$Recorded = @('redraw', 'sampler', 'hint', 'folder-menu')
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 

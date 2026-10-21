@@ -549,3 +549,8 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 - [ ] CI's job summary lists *Times* next to memory and idle CPU: the cold and the warm start to the bar visible (budgets 500 ms and 300 ms) and the full bar redraw (2 ms); the check fails when one is over its budget or missing.
 - [ ] On the test laptop, start Infodock after signing in (cold) and again after quitting it (warm): the log's `bar visible … ms after the process started` lines stay within 500 ms and 300 ms.
+
+**Sampler, hint and Folder Menu budgets** (since M5 S2)
+
+- [ ] CI's *Times* also list the sampler's cost per tick (2 ms), the hint after its delay (30 ms) and the Folder Menu's first paint for 500 items (200 ms); a test that did not record its time fails the check as well.
+- [ ] On the test laptop, a Folder Menu on a folder of about 500 items (a photo folder, say) opens with its list at once, the icons appearing after it; hovering a Date sensor shows its calendar without a visible pause after the delay.

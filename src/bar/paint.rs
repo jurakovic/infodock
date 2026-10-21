@@ -635,6 +635,215 @@ mod tests {
         );
     }
 
+    /// The hint shown after its delay (SPEC §14.1, ≤ 30 ms): as the bar shows one when its
+    /// delay is over, the first-run Date sensor's calendar is asked for, laid out, framed above
+    /// the sensor and drawn by Direct2D with a renderer kept across hints, as the hint window
+    /// keeps its own. CI's budget check reads the median.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "measures a budget; run with --ignored"]
+    fn budget_hint() {
+        use std::time::{Duration, Instant};
+
+        use crate::bar::hint::{self, HintBody, HintFrame};
+        use crate::bar::placement::Anchor;
+        use crate::bar::sensors::{BarSensors, Env};
+        use crate::platform::{FrameRenderer, RectF, text_engine};
+        use crate::sensors::{HintContent, LayoutCtx};
+        use crate::test_util::{median, record_budget};
+
+        const RUNS: usize = 100;
+        let settings = Settings::default();
+        let theme = Theme::resolve(&settings, OsAppearance::default());
+        let platform = crate::platform::current();
+        let text = text_engine();
+        let layout = crate::config::Config::first_run("1.0.0").layout;
+        let date = layout
+            .all()
+            .find(|s| s.kind == "date")
+            .expect("a Date sensor")
+            .id
+            .clone();
+        let mut sensors = BarSensors::default();
+        sensors.sync(
+            &layout,
+            &Default::default(),
+            &platform.capabilities(),
+            crate::sensors::registry::registry(),
+        );
+        let env = Env {
+            settings: &settings,
+            theme: &theme,
+            platform: platform.as_ref(),
+            alt: false,
+            animate: false,
+            changes: &crate::sampler::ChangeSink::NONE,
+        };
+        sensors.wake(Instant::now(), &env);
+        let cx = LayoutCtx {
+            theme: &theme,
+            text: text.as_ref(),
+            scale: 1.0,
+            numbers: platform.locale(settings.date_locale).numbers(),
+            icons: &crate::sensors::DirectIcons(platform.as_ref()),
+        };
+        sensors.update_layout(&cx, 1920.0);
+        let (x, width) = sensors.place_of(&date).expect("placed");
+        let bar = RectF::new(0.0, 1052.0, 1920.0, 1080.0);
+        let anchor = Anchor {
+            rect: RectF::new(x, bar.top, x + width, bar.bottom),
+            bar,
+            monitor: RectF::new(0.0, 0.0, 1920.0, 1080.0),
+            edge: Edge::Bottom,
+        };
+        let mut renderer = FrameRenderer::new().expect("a renderer");
+        let mut times = Vec::with_capacity(RUNS);
+        for _ in 0..RUNS {
+            let began = Instant::now();
+            let content = sensors.hint(&date, &env).expect("a hint");
+            assert!(matches!(content, HintContent::Rich(_)), "a calendar");
+            let body = HintBody::new(content, text.as_ref(), &theme).expect("not empty");
+            let frame = HintFrame::new(body.size(), &anchor, &theme);
+            let (w, h) = (
+                frame.window.width().round() as u32,
+                frame.window.height().round() as u32,
+            );
+            renderer
+                .draw(w, h, 1.0, &mut |canvas| {
+                    hint::paint(canvas, &frame, &body, &theme)
+                })
+                .expect("drawn");
+            times.push(began.elapsed());
+        }
+        record_budget(
+            "hint",
+            "Hint after its delay (calendar)",
+            median(&mut times),
+            Duration::from_millis(30),
+            RUNS,
+        );
+    }
+
+    /// The Folder Menu's first paint for a folder of 500 items (SPEC §14.1, ≤ 200 ms): from the
+    /// click's popup to its first frame showing the items, as the bar opens one: the folder is
+    /// listed and sorted on a worker while the first layout waits for it, then the popup is laid
+    /// out, placed above its sensor and drawn by Direct2D, its shell icons still loading. Each
+    /// run lists the folder anew. CI's budget check reads the median.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "measures a budget; run with --ignored"]
+    fn budget_folder_menu() {
+        use std::time::{Duration, Instant};
+
+        use crate::bar::placement::Anchor;
+        use crate::bar::popup::{self, Open};
+        use crate::platform::{FrameRenderer, RectF, UiWaker, text_engine};
+        use crate::sensors::common::folder_browser::{FolderBrowser, Options};
+        use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
+        use crate::sensors::{IconSource, ShellIcon};
+        use crate::test_util::{median, record_budget};
+
+        /// The bar's icon loader before it has any of them.
+        struct Loading;
+        impl IconSource for Loading {
+            fn shell_icon(&self, _path: &str, _px: u32) -> ShellIcon {
+                ShellIcon::Loading
+            }
+            fn forget(&self, _path: &str) {}
+        }
+
+        const RUNS: usize = 20;
+        // 50 folders and 450 files with numbered names, which sort naturally.
+        let dir = tempfile::tempdir().expect("temp dir");
+        for i in 0..50 {
+            std::fs::create_dir(dir.path().join(format!("Project {i}"))).expect("folder");
+        }
+        for i in 0..450 {
+            let name = match i % 3 {
+                0 => format!("Report {i}.docx"),
+                1 => format!("photo_{i:04}.jpg"),
+                _ => format!("Notes {i}.txt"),
+            };
+            std::fs::write(dir.path().join(name), b"x").expect("file");
+        }
+        let folder = dir.path().to_string_lossy().into_owned();
+
+        let settings = Settings::default();
+        let theme = Theme::resolve(&settings, OsAppearance::default());
+        let platform = crate::platform::current();
+        let text = text_engine();
+        let waker = UiWaker::new(|| {});
+        let bar = RectF::new(0.0, 1052.0, 1920.0, 1080.0);
+        let anchor = Anchor {
+            rect: RectF::new(300.0, bar.top, 321.0, bar.bottom),
+            bar,
+            monitor: RectF::new(0.0, 0.0, 1920.0, 1080.0),
+            edge: Edge::Bottom,
+        };
+        let room = popup::room(&anchor);
+        let mut renderer = FrameRenderer::new().expect("a renderer");
+        let mut times = Vec::with_capacity(RUNS);
+        for _ in 0..RUNS {
+            let cx = PopupCtx {
+                theme: &theme,
+                settings: &settings,
+                text: text.as_ref(),
+                scale: 1.0,
+                platform: &platform,
+                icons: &Loading,
+                waker: &waker,
+                room,
+                monitor_height: anchor.monitor.height(),
+                edge: Edge::Bottom,
+                free_left: false,
+                animate: false,
+                now: Instant::now(),
+            };
+            let began = Instant::now();
+            let mut browser = FolderBrowser::new(Options {
+                folders: vec![folder.clone()],
+                title: "Budget".into(),
+                show_hidden: false,
+                width: 240.0,
+                height: 320.0,
+            });
+            let mut size = browser.layout(&cx);
+            // A listing slower than the first layout's wait arrives later.
+            while !browser.listed() {
+                std::thread::sleep(Duration::from_millis(1));
+                if browser.poll(&cx) == PopupReply::Relayout {
+                    size = browser.layout(&cx);
+                }
+            }
+            let mut open = Open {
+                owner: "f".into(),
+                popup: Box::new(browser),
+                frame: None,
+                room,
+                monitor_height: anchor.monitor.height(),
+                free_left: false,
+                captured: false,
+            };
+            open.place(size, &anchor, &theme);
+            let frame = open.frame.expect("placed");
+            let (w, h) = (
+                frame.window.width().round() as u32,
+                frame.window.height().round() as u32,
+            );
+            renderer
+                .draw(w, h, 1.0, &mut |canvas| popup::paint(canvas, &open, &theme))
+                .expect("drawn");
+            times.push(began.elapsed());
+        }
+        record_budget(
+            "folder-menu",
+            "Folder Menu, 500 items, to first paint",
+            median(&mut times),
+            Duration::from_millis(200),
+            RUNS,
+        );
+    }
+
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
     /// them): plain bars per theme and every built-in skin, the canvas specimen, the first-run
     /// layout, the General sensors, every system sensor with made-up samples and the launchers,

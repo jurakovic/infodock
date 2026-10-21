@@ -397,6 +397,15 @@ impl FolderBrowser {
         }
     }
 
+    /// The current folder's listing has arrived, or failed: for the budget test.
+    #[cfg(all(test, windows))]
+    pub fn listed(&self) -> bool {
+        matches!(
+            self.level().listing,
+            Some(Listing::Ready(_) | Listing::Failed)
+        )
+    }
+
     fn level(&self) -> &Level {
         // Never empty: `back` keeps the first level.
         &self.levels[self.levels.len() - 1]
