@@ -1,0 +1,42 @@
+<?xml version="1.0" ?>
+<sensors>
+  <sensor side="left" type="DockText">
+    <property name="text">Hello &amp; welcome</property>
+    <property name="font">Tahoma</property>
+    <property name="fontstyle">bold, italic</property>
+    <property name="fontsize">30</property>
+    <property name="shadow">yes</property>
+  </sensor>
+  <sensor side="left" type="DockSpacer">
+    <property name="show">no</property>
+    <property name="width">20</property>
+  </sensor>
+  <sensor side="center" type="DockImage">
+    <property name="image">C:/Pictures/logo.png</property>
+    <property name="colorize">col:#3a6ea5</property>
+    <property name="opacity">128</property>
+    <property name="text">My logo</property>
+  </sensor>
+  <sensor side="right" type="DockImage">
+    <property name="image"></property>
+    <property name="colorize">off:#000000</property>
+    <property name="opacity">255</property>
+    <property name="text"></property>
+    <property name="blink">yes</property>
+  </sensor>
+  <sensor side="right" type="DockText">
+    <property name="text">Plain</property>
+    <property name="font"></property>
+    <property name="fontstyle"></property>
+    <property name="fontsize">13</property>
+    <property name="shadow">maybe</property>
+  </sensor>
+  <sensor side="center" type="DockStandardMail">
+    <property name="server">mail.example.com</property>
+    <property name="user">me</property>
+    <property name="password">secret</property>
+  </sensor>
+  <sensor side="right" type="DockWeather">
+    <property name="city">Zagreb</property>
+  </sensor>
+</sensors>

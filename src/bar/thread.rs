@@ -811,8 +811,9 @@ impl BarLogic {
             MenuCommand::LayoutManager => self.host.open_settings("layout"),
             MenuCommand::ImportLayout => self.host.import_layout(ImportFormat::Json),
             MenuCommand::ExportLayout => self.host.export_layout(),
-            // Greyed out until their items (M4 S9, M5).
-            MenuCommand::ImportLegacy | MenuCommand::Help => {}
+            MenuCommand::ImportLegacy => self.host.import_layout(ImportFormat::Legacy),
+            // Greyed out until M5.
+            MenuCommand::Help => {}
             MenuCommand::Settings => self.host.open_settings("general"),
             MenuCommand::ToggleLock => self
                 .host
@@ -2273,7 +2274,8 @@ mod tests {
         let empty = PointF::new(300.0, 14.0);
         right_click(&mut logic, &window, empty, MenuCommand::ImportLayout);
         right_click(&mut logic, &window, LOGO, MenuCommand::ExportLayout);
-        assert_eq!(host.calls(), ["import Json", "export"]);
+        right_click(&mut logic, &window, empty, MenuCommand::ImportLegacy);
+        assert_eq!(host.calls(), ["import Json", "export", "import Legacy"]);
     }
 
     #[test]

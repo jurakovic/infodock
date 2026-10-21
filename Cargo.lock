@@ -2195,6 +2195,7 @@ dependencies = [
  "global-hotkey",
  "imagesize",
  "png",
+ "quick-xml 0.42.0",
  "raw-window-handle",
  "resvg",
  "serde",

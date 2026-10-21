@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{Category, DrawCtx, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed};
 use crate::config::model::FontStyle;
@@ -44,6 +45,15 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.field.shadow.help"),
 ];
 
+/// SPEC §9.1.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("text", "text"),
+    LegacyKey::new("font", "font"),
+    LegacyKey::new("fontstyle", "fontStyle"),
+    LegacyKey::new("fontsize", "fontSize"),
+    LegacyKey::new("shadow", "shadow"),
+];
+
 pub struct TextType;
 
 impl SensorType for TextType {
@@ -65,6 +75,10 @@ impl SensorType for TextType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockText"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

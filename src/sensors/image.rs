@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::common::icon;
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, ColorChoice, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType,
@@ -51,6 +52,14 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.image.field.popupText.help"),
 ];
 
+/// SPEC §9.2.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("image", "image"),
+    LegacyKey::new("colorize", "color"),
+    LegacyKey::new("opacity", "opacity"),
+    LegacyKey::new("text", "popupText"),
+];
+
 pub struct ImageType;
 
 impl SensorType for ImageType {
@@ -72,6 +81,10 @@ impl SensorType for ImageType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockImage"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

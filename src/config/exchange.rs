@@ -27,6 +27,8 @@ const ZONES: [(Zone, &str); 3] = [
 pub enum ImportFormat {
     /// An exchange file, `.infodock.json`.
     Json,
+    /// A legacy XML layout (SPEC §11.4).
+    Legacy,
 }
 
 /// What an export holds.
@@ -90,6 +92,10 @@ pub enum SkipReason {
     NotASensor,
     /// A legacy type kept in `legacy.unsupported` for later versions (SPEC §11.4).
     NotSupportedYet,
+    /// A legacy type Infodock does not know.
+    UnknownType,
+    /// A legacy sensor without a side, or with one other than left, center or right.
+    NoSide,
 }
 
 impl SkipReason {
@@ -97,6 +103,8 @@ impl SkipReason {
         t(match self {
             SkipReason::NotASensor => "import.skipped.notASensor",
             SkipReason::NotSupportedYet => "import.skipped.notSupportedYet",
+            SkipReason::UnknownType => "import.skipped.unknownType",
+            SkipReason::NoSide => "import.skipped.noSide",
         })
     }
 }
@@ -109,6 +117,14 @@ pub enum Warning {
     InvalidValue { sensor: String, key: String },
     /// A type this version does not know; kept and shown as a placeholder (SPEC §11.2).
     UnknownType { kind: String },
+    /// A legacy property its type does not name; ignored (SPEC §11.4).
+    UnknownProperty { legacy: String, key: String },
+    /// A legacy property whose value cannot be read; the default is used instead.
+    InvalidProperty {
+        legacy: String,
+        key: String,
+        value: String,
+    },
 }
 
 impl Warning {
@@ -121,6 +137,14 @@ impl Warning {
             Warning::UnknownType { kind } => {
                 t_args("import.warning.unknownType", &[("type", kind)])
             }
+            Warning::UnknownProperty { legacy, key } => t_args(
+                "import.warning.unknownProperty",
+                &[("type", legacy), ("key", key)],
+            ),
+            Warning::InvalidProperty { legacy, key, value } => t_args(
+                "import.warning.invalidProperty",
+                &[("type", legacy), ("key", key), ("value", value)],
+            ),
         }
     }
 }
@@ -138,6 +162,10 @@ pub enum ImportError {
     NotALayout,
     #[error("written by a newer Infodock (schema {0})")]
     Newer(u64),
+    #[error("no <sensors> element")]
+    NoLegacyLayout,
+    #[error("XML: {0}")]
+    Xml(String),
 }
 
 impl ImportError {
@@ -148,6 +176,8 @@ impl ImportError {
             ImportError::TooLarge => t("import.error.tooLarge"),
             ImportError::Json(_) | ImportError::NotALayout => t("import.error.notALayout"),
             ImportError::Newer(_) => t("import.error.newer"),
+            ImportError::NoLegacyLayout => t("import.error.noLegacyLayout"),
+            ImportError::Xml(e) => t_args("import.error.xml", &[("error", e)]),
         }
     }
 }
@@ -180,16 +210,15 @@ pub fn export(config: &Config, scope: ExportScope) -> serde_json::Result<String>
 
 /// Reads an exchange file; see [`parse`].
 pub fn read(path: &Path) -> Result<Incoming, ImportError> {
-    parse(&read_text(path)?)
+    parse(&String::from_utf8_lossy(&read_bytes(path)?))
 }
 
-/// The text of a file to import, refusing large ones.
-pub fn read_text(path: &Path) -> Result<String, ImportError> {
+/// The bytes of a file to import, refusing large ones.
+pub fn read_bytes(path: &Path) -> Result<Vec<u8>, ImportError> {
     if std::fs::metadata(path)?.len() > MAX_FILE {
         return Err(ImportError::TooLarge);
     }
-    let bytes = std::fs::read(path)?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(std::fs::read(path)?)
 }
 
 /// What an exchange file brings: a whole config or a layout export, migrated to this schema.
@@ -431,7 +460,13 @@ mod tests {
         for key in [
             "import.skipped.notASensor",
             "import.skipped.notSupportedYet",
+            "import.skipped.unknownType",
+            "import.skipped.noSide",
             "import.warning.invalidValue",
+            "import.warning.unknownProperty",
+            "import.warning.invalidProperty",
+            "import.error.noLegacyLayout",
+            "import.error.xml",
             "import.warning.unknownType",
             "import.error.io",
             "import.error.tooLarge",

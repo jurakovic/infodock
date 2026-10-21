@@ -189,6 +189,8 @@ src/
     mod.rs                  SensorType and Sensor traits, SensorCtx (§8.1)
     schema.rs               property schema, validation, defaults and storage rules (§8.2, §11.2)
     registry.rs             all sensor types
+    ops.rs, import.rs       operations used by Settings (§4.5); imported sensors checked by their types (§11.3)
+    legacy.rs               legacy properties to props: XML keys, encodings by field type (§11.4)
     format.rs, color.rs     formatting (§8.6), colours and the dynamic gradient (§8.4)
     common/                 two_line.rs, meter.rs, graph.rs, dual_graph.rs, icon_label.rs, history.rs (§8.3)
     <type>.rs               one module per sensor type (text.rs, image.rs, cpu_graph.rs …)
@@ -544,7 +546,11 @@ pub trait SensorType: Send + Sync {
     fn schema(&self) -> &'static [PropField];             // ordered fields: drives the Settings form,
                                                           // validation and static defaults (§8.2)
     fn machine_defaults(&self, ctx: &DefaultsCtx) -> Props;  // ctx: locale, volumes, CPU count (§11.2)
-    fn from_legacy(&self, raw: &LegacyProps, legacy_type: &str, report: &mut ImportReport) -> Props;
+    fn legacy_keys(&self) -> &'static [LegacyKey];       // its XML keys and the props they set (§11.4)
+    fn convert_legacy(&self, raw: &LegacyProps, cx: &mut LegacyCtx) -> Props;
+                                                          // cx: the legacy type, warnings, state (e.g.
+                                                          // the uptime record); by default reads
+                                                          // legacy_keys by their fields' encodings
     fn create(&self, props: &Props, state: &State) -> serde_json::Result<Box<dyn Sensor>>;
                                                           // fails only if the typed props do not match
                                                           // the schema; the bar then shows a placeholder
@@ -1303,7 +1309,7 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 | Interval | seconds (may be fractional) | clamped to the field's range |
 | Select | numeric/string values as listed in §9 "Options (XML value)" | the matching option; unknown → default + warning |
 | Text | plain text | Empty means "use the default" for fields with `emptyIsDefault`. For `title` fields, empty means "automatic". For Uptime `text`, empty means "no prefix" |
-| File / folder paths | may use `/` | normalised to `\` on Windows; not checked for existence at import (missing files show up as inactive sensors) |
+| File / folder paths | may use `/` | normalised to `\`; not checked for existence at import (missing files show up as inactive sensors) |
 | Width (graphs) | pixels | rounded down to a multiple of 5, clamped to 50–150 |
 
 **Type mapping**
@@ -1333,9 +1339,15 @@ Infodock imports layouts saved in an older XML format (file extension `.xml`):
 | `DockPower` | `power` | property `path` is dropped (warning) |
 | `DockUSB` | `eject-usb` | |
 | `DockRSSSensor`, `DockStandardMail`, `DockGMail`, `DockGMailForDomains`, `DockYMail`, `DockSpeedFan`, `DockRadio` | — | Stored in `legacy.unsupported` with their properties (any `password` property is **dropped**). Listed in the report as "not supported yet". Kept for future feed/mail/hardware/radio sensors |
-| anything else | — | Skipped, with a warning |
+| anything else | — | Skipped; the report lists it as an unknown type |
 
-`config/legacy.rs` parses the XML and the shared value encodings; each sensor type converts its own properties in `from_legacy(raw, legacy_type, report)` (§8.1). An example file with its expected result is in Appendix B; it MUST be part of the importer's test suite.
+`config/legacy.rs` parses the XML and the shared value encodings; each sensor type converts its own properties in `convert_legacy(raw, cx)` (§8.1). An example file with its expected result is in Appendix B; it MUST be part of the importer's test suite.
+
+Implementation (`config/legacy.rs`, `sensors/legacy.rs`):
+* The file's text is UTF-8 (with or without a byte order mark), UTF-16 with a byte order mark, or else Windows-1252. The first `<sensors>…</sensors>` (or `<sensors/>`) is read with `quick-xml`: entities and character references are resolved, CDATA is taken as it is, values keep their spaces. Text without a `<sensors>` element and broken XML are refused with a message. A property given twice keeps its last value.
+* A sensor without a side, or with another side, is skipped ("no side"); a legacy type Infodock does not know is skipped ("not a sensor type Infodock knows"); the report lists both. Unsupported types drop every property whose name contains `password`.
+* Each type names its XML keys (`LegacyKey`): the prop each sets, read by the encoding of that prop's field; a select whose XML values differ from its own gets them as a table; a graph width; or a key Infodock has no use for, read without a warning. The default `convert_legacy` reads them: a value that cannot be read (e.g. `maybe` for a boolean, a select value not listed, a dynamic colour where the field has no dynamic mode) keeps the default with a warning, as does a property the type does not name. Booleans also accept `true`/`false` and `1`/`0`; a font style is `bold` and `italic` separated by a comma; a drive may be written `C:` or `C:/`. Types with more to do (a state, a dropped property, a matched adapter) override `convert_legacy`.
+* The props then go through the import of §11.3: values are clamped, only what differs from the defaults is stored, machine-derived props are filled.
 
 ### 11.5 First run
 
@@ -1513,7 +1525,7 @@ infodock/                     the Rust crate
 
 | Level | What | How |
 |---|---|---|
-| Rust unit | Zone layout (§5.4); move index math (§6.2); hint/popup placement (§7.3); formatters (bytes, rates, durations, plurals); dynamic gradient and tint; property schema validation, defaults and storage rules; each sensor's `hint()` against sample fixtures (snapshot); each sensor's drawing against a recording canvas with fixed text metrics (snapshot of draw calls); each sensor's `from_legacy`; Date/Time formats (all weekday/month/year combinations) against fixed locale data; CPU % from `GetSystemTimes` deltas; network rates (counter reset, first sample, resume); battery estimators (time-to-full smoothing, moving average); AppBar rect negotiation (pure geometry); config migrations; legacy XML import (Appendix B → expected JSON) | `cargo test` (Linux and Windows) |
+| Rust unit | Zone layout (§5.4); move index math (§6.2); hint/popup placement (§7.3); formatters (bytes, rates, durations, plurals); dynamic gradient and tint; property schema validation, defaults and storage rules; each sensor's `hint()` against sample fixtures (snapshot); each sensor's drawing against a recording canvas with fixed text metrics (snapshot of draw calls); each sensor's `convert_legacy`; Date/Time formats (all weekday/month/year combinations) against fixed locale data; CPU % from `GetSystemTimes` deltas; network rates (counter reset, first sample, resume); battery estimators (time-to-full smoothing, moving average); AppBar rect negotiation (pure geometry); config migrations; legacy XML import (Appendix B → expected JSON) | `cargo test` (Linux and Windows) |
 | Rust integration (Windows) | Providers return sane values on a real machine; locale data; `list_dir`, link resolution, shell icons, skin-pack validation; the Direct2D renderer draws the first-run layout and each sensor type to PNG (uploaded as a CI artifact for review) | `cargo test -- --ignored` on a Windows runner |
 | Memory | Start the release build, wait 10 s, sum the private working set of `infodock.exe` and its children; same after opening and closing Settings. Fails above the §14.1 budget | CI, Windows runner |
 | Settings | Settings mapping (pages, choices, patches, monitor list) and every sensor schema's form; `visibleIf`; validation messages; every key used in `.slint` exists in `en.json`; every Settings page rendered offscreen to PNG (uploaded by CI for review) | `cargo test` (the rendering with `--ignored`) |

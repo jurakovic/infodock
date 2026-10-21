@@ -5,7 +5,7 @@
 //!
 //! The [`Sensor`] trait grows with the slices that need it: topics and samples arrive with the
 //! sampler (M1 S10), clicks and menus with the interaction slices (M1 S5–S8, M3 S2), drops with
-//! M3, and `from_legacy` with the legacy import (M4).
+//! M3, and `convert_legacy` with the legacy import (M4 S9).
 
 pub mod battery;
 pub mod color;
@@ -21,6 +21,7 @@ pub mod folder_menu;
 pub mod format;
 pub mod image;
 pub mod import;
+pub mod legacy;
 pub mod memory;
 pub mod network;
 pub mod ops;
@@ -44,6 +45,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::bar::theme::Theme;
+use crate::config::legacy::LegacyProps;
 use crate::config::model::Settings;
 use crate::platform::{Bitmap, Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
 use crate::sampler::{ChangeSink, Sample, Topic, TopicRequest};
@@ -123,6 +125,16 @@ pub trait SensorType: Send + Sync {
     /// Legacy XML type ids this type imports (SPEC §11.4).
     fn legacy_types(&self) -> &'static [&'static str] {
         &[]
+    }
+    /// The XML keys of its legacy types and the props they set (SPEC §9 "XML key").
+    fn legacy_keys(&self) -> &'static [legacy::LegacyKey] {
+        &[]
+    }
+    /// The props of a legacy sensor of one of [`Self::legacy_types`] (`cx.legacy_type`): by
+    /// default each of [`Self::legacy_keys`] read by its field's encoding, with warnings for
+    /// values that cannot be read and properties it does not name (SPEC §11.4).
+    fn convert_legacy(&self, raw: &LegacyProps, cx: &mut legacy::LegacyCtx) -> Props {
+        legacy::convert(self.schema(), self.legacy_keys(), raw, cx)
     }
     fn requires(&self) -> &'static [Capability] {
         &[]

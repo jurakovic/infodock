@@ -48,6 +48,8 @@ flate2 = { version = "1.1", default-features = false, features = ["rust_backend"
 imagesize = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The legacy XML layout import (SPEC §3, §11.4): the reader only.
+quick-xml = "0.42"
 fastrand = "2"
 thiserror = "2"
 tracing = "0.1"

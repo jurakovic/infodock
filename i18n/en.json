@@ -656,5 +656,13 @@
   "export.pick.fileName": "Infodock layout",
   "export.types.layout": "Infodock layout",
   "export.types.config": "Infodock settings and layout",
-  "export.failed": "The layout could not be saved."
+  "export.failed": "The layout could not be saved.",
+  "import.skipped.unknownType": "not a sensor type Infodock knows",
+  "import.skipped.noSide": "no side: left, center or right",
+  "import.warning.unknownProperty": "{type}: the property “{key}” is not known, so it was ignored.",
+  "import.warning.invalidProperty": "{type}: “{value}” is not a valid value of “{key}”, so its default is used instead.",
+  "import.error.noLegacyLayout": "The file holds no legacy XML layout.",
+  "import.error.xml": "The legacy XML layout could not be read: {error}",
+  "import.pick.legacyTitle": "Import legacy XML layout",
+  "import.pick.legacyTypes": "XML layouts"
 }

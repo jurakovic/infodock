@@ -1,7 +1,8 @@
-//! Configuration: typed model, persistence, migrations, settings patches and exchange files
-//! (SPEC §10–11).
+//! Configuration: typed model, persistence, migrations, settings patches, exchange files and
+//! the legacy XML format (SPEC §10–11).
 
 pub mod exchange;
+pub mod legacy;
 pub mod migrate;
 pub mod model;
 pub mod patch;

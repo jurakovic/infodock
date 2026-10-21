@@ -465,7 +465,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 **Import and export** (since M4 S7–S8)
 
-- [ ] Right-click the bar ▸ *Tools*: *Import layout…* and *Export layout…* are enabled, *Import legacy XML layout…* and *Help* greyed out.
+- [ ] Right-click the bar ▸ *Tools*: *Import layout…* and *Export layout…* are enabled (and *Import legacy XML layout…* since S9), *Help* greyed out.
 - [ ] *Export layout…*: the save picker suggests `Infodock layout` with the type *Infodock layout*; save it to the desktop: `Infodock layout.infodock.json` holds `schema`, `layout` and `state`, no settings. Export again with the type *Infodock settings and layout*: the file holds the whole config. A name typed without an extension gets `.infodock.json`; an existing file asks before it is replaced.
 - [ ] While the picker is open, the bar's clock and graphs go on; a second *Export layout…* or *Import layout…* from the bar does nothing.
 - [ ] Move a sensor, then *Import layout…* the first export: the picker lists `.infodock.json` files; the question shows *Replace the layout* and *Add to the layout* with the number of sensors. *Replace*: the bar shows the exported layout again, and a toast says "Layout imported" with the count. *Add to the layout*: the sensors are added at the end of their zones (with an Uptime sensor: its longest uptime comes along).
@@ -473,3 +473,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Edit the file: give a sensor `"opacity": "x"` and add an entry `{ "type": "mail" }` and an entry `3`. Import it: no toast; a dialog says how many were added and lists the entry without a type and the invalid value; the `mail` sensor shows as a placeholder.
 - [ ] Import a text file renamed to `.infodock.json`, a file with `"schema": 99`, and `{ "layout": {} }`: a message says why (not a layout, a newer version, no sensors), and the layout is unchanged.
 - [ ] With Settings open, the dialogs are modal to it (Settings cannot be clicked until they close); with Settings closed they appear in front of other windows.
+
+**Legacy XML import** (since M4 S9; the system sensors and launchers follow in S10–S11)
+
+- [ ] *Tools ▸ Import legacy XML layout…* is enabled; its picker lists `.xml` files.
+- [ ] Import `tests/fixtures/legacy/general.xml` with *Replace the layout*: on the left "Hello & welcome" in bold italic Tahoma at 25 px with a shadow, then a 20 px spacer; in the centre `C:\Pictures\logo.png` (the logo while the file is missing) tinted blue at half opacity, with the hint "My logo"; on the right the logo and "Plain". The report dialog lists *DockStandardMail* (not supported yet), *DockWeather* (unknown), the unknown property `blink` and the invalid `shadow` value.
+- [ ] Export the layout afterwards: `legacy.unsupported` holds the mail sensor with its server and user, without its password.
+- [ ] Import `tests/fixtures/legacy/settings-dump.txt` (a settings dump in Windows-1252 with the layout inside) with *Add to the layout*: "Café – open" in the centre and a spacer with a divider on the right are added; a toast says 2 sensors were added.
+- [ ] A text file without `<sensors>`, and an XML file broken in the middle: a message says why, and the layout is unchanged.

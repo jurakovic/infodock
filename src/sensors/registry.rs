@@ -91,6 +91,14 @@ impl Registry {
         self.types.iter().copied().find(|ty| ty.id() == id)
     }
 
+    /// The type that imports the legacy type `legacy` (SPEC §11.4).
+    pub fn by_legacy_type(&self, legacy: &str) -> Option<&'static dyn SensorType> {
+        self.types
+            .iter()
+            .copied()
+            .find(|ty| ty.legacy_types().contains(&legacy))
+    }
+
     /// Whether `ty` can run with `caps`.
     pub fn available(ty: &dyn SensorType, caps: &Capabilities) -> bool {
         ty.requires().iter().all(|&c| caps.has(c))

@@ -1,0 +1,16 @@
+[General]
+version=2.4
+locked=yes
+
+[Layout]
+<sensors>
+  <sensor side="center" type="DockText">
+    <property name="text">Café – open</property>
+  </sensor>
+  <sensor side="right" type="DockSpacer">
+    <property name="show">yes</property>
+  </sensor>
+</sensors>
+
+[Window]
+x=10

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
+use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
     Category, Dirty, DrawCtx, LayoutCtx, Props, Sensor, SensorCtx, SensorType, State, typed,
@@ -31,6 +32,12 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
+/// SPEC §9.3.
+const LEGACY_KEYS: &[LegacyKey] = &[
+    LegacyKey::new("show", "showDivider"),
+    LegacyKey::new("width", "width"),
+];
+
 pub struct SpacerType;
 
 impl SensorType for SpacerType {
@@ -52,6 +59,10 @@ impl SensorType for SpacerType {
 
     fn legacy_types(&self) -> &'static [&'static str] {
         &["DockSpacer"]
+    }
+
+    fn legacy_keys(&self) -> &'static [LegacyKey] {
+        LEGACY_KEYS
     }
 
     fn schema(&self) -> &'static [PropField] {

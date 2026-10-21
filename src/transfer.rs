@@ -1,4 +1,4 @@
-//! Importing and exporting layouts as the user does it (SPEC §6.4, §11.3): the file pickers,
+//! Importing and exporting layouts as the user does it (SPEC §6.4, §11.3–11.4): the file pickers,
 //! the *Replace* / *Merge* question, the report and the errors. Runs on the main thread, as
 //! Settings' pickers do, so the bar goes on while a picker is open; the Tools menu starts it.
 //!
@@ -12,6 +12,7 @@ use crate::app::App;
 use crate::config::exchange::{
     self, EXTENSION, ExportScope, ImportFormat, ImportMode, ImportReport, Incoming,
 };
+use crate::config::legacy;
 use crate::i18n::{t, t_args, t_count};
 use crate::platform::{Choice, Dialogs, Message, MessageKind, PathRequest, SaveRequest};
 
@@ -44,7 +45,7 @@ impl Drop for Busy {
 pub fn import(app: &App, dialogs: &dyn Dialogs, format: ImportFormat) -> Option<ImportReport> {
     let _busy = Busy::take()?;
     let path = pick_file(dialogs, format)?;
-    let incoming = match read(&path, format) {
+    let incoming = match read(app, &path, format) {
         Ok(incoming) => incoming,
         Err(reason) => {
             failed(dialogs, "import.failed", &reason);
@@ -75,6 +76,11 @@ pub fn import(app: &App, dialogs: &dyn Dialogs, format: ImportFormat) -> Option<
 fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
     let (title, types_name, extension) = match format {
         ImportFormat::Json => (t("import.pick.title"), t("import.pick.types"), EXTENSION),
+        ImportFormat::Legacy => (
+            t("import.pick.legacyTitle"),
+            t("import.pick.legacyTypes"),
+            "xml",
+        ),
     };
     let all_files = t("settings.props.allFiles");
     dialogs
@@ -89,10 +95,12 @@ fn pick_file(dialogs: &dyn Dialogs, format: ImportFormat) -> Option<PathBuf> {
 }
 
 /// What the file brings, or why it cannot be imported.
-fn read(path: &Path, format: ImportFormat) -> Result<Incoming, String> {
+fn read(app: &App, path: &Path, format: ImportFormat) -> Result<Incoming, String> {
     match format {
-        ImportFormat::Json => exchange::read(path).map_err(|e| e.message()),
+        ImportFormat::Json => exchange::read(path),
+        ImportFormat::Legacy => legacy::read(path).map(|sensors| app.legacy_incoming(sensors)),
     }
+    .map_err(|e| e.message())
 }
 
 fn ask_mode(dialogs: &dyn Dialogs, sensors: usize) -> Option<ImportMode> {
@@ -458,6 +466,123 @@ mod tests {
                 .asked()
                 .last()
                 .is_some_and(|m| m.starts_with("Error: The layout could not be saved. | "))
+        );
+    }
+
+    fn fixture(name: &str) -> String {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/legacy");
+        path.join(name).to_string_lossy().into_owned()
+    }
+
+    fn sensors(f: &Fixture, zone: Zone) -> Vec<(String, serde_json::Value)> {
+        let layout = f.app.store.get().layout;
+        layout
+            .zone(zone)
+            .iter()
+            .map(|s| (s.kind.clone(), serde_json::Value::Object(s.props.clone())))
+            .collect()
+    }
+
+    #[test]
+    fn imports_a_legacy_layout() {
+        use serde_json::json;
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(fixture("general.xml"));
+        script.choices.borrow_mut().push_back(Some(0));
+        let report = import(&f.app, &script, ImportFormat::Legacy).expect("imported");
+        assert_eq!(
+            sensors(&f, Zone::Left),
+            [
+                (
+                    "text".into(),
+                    json!({
+                        "text": "Hello & welcome", "font": "Tahoma", "fontStyle": "boldItalic",
+                        "fontSize": 25, "shadow": true
+                    })
+                ),
+                ("spacer".into(), json!({ "width": 20 })),
+            ]
+        );
+        assert_eq!(
+            sensors(&f, Zone::Center),
+            [(
+                "image".into(),
+                json!({
+                    "image": "C:\\Pictures\\logo.png",
+                    "color": { "mode": "custom", "color": "#3A6EA5" },
+                    "opacity": 50,
+                    "popupText": "My logo"
+                })
+            )]
+        );
+        assert_eq!(
+            sensors(&f, Zone::Right),
+            [
+                ("image".into(), json!({})),
+                ("text".into(), json!({ "text": "Plain" }))
+            ]
+        );
+        let unsupported = f.app.store.get().legacy.unsupported;
+        assert_eq!(unsupported.len(), 1);
+        assert_eq!(unsupported[0].kind, "DockStandardMail");
+        assert_eq!(unsupported[0].zone, Zone::Center);
+        assert_eq!(
+            unsupported[0].props.keys().collect::<Vec<_>>(),
+            ["server", "user"]
+        );
+        assert_eq!(report.added, 5);
+        let asked = script.asked();
+        assert_eq!(
+            asked[0],
+            "open Import legacy XML layout (XML layouts: [\"xml\"])"
+        );
+        assert!(
+            asked[1].contains("The file holds 5 sensors."),
+            "{}",
+            asked[1]
+        );
+        assert_eq!(
+            asked[2],
+            "Warning: 5 sensors added. | \
+             Not imported: DockStandardMail (not supported yet)\n\
+             Not imported: DockWeather (not a sensor type Infodock knows)\n\
+             DockImage: the property “blink” is not known, so it was ignored.\n\
+             DockText: “maybe” is not a valid value of “shadow”, so its default is used instead."
+        );
+        assert!(f.toasts().is_empty());
+    }
+
+    #[test]
+    fn imports_a_layout_inside_a_settings_dump() {
+        use serde_json::json;
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(fixture("settings-dump.txt"));
+        script.choices.borrow_mut().push_back(Some(1));
+        let report = import(&f.app, &script, ImportFormat::Legacy).expect("imported");
+        assert_eq!(report.added, 2);
+        // Merged after the first-run layout.
+        assert_eq!(
+            sensors(&f, Zone::Center).last(),
+            Some(&("text".into(), json!({ "text": "Café – open" })))
+        );
+        assert_eq!(
+            sensors(&f, Zone::Right).last(),
+            Some(&("spacer".into(), json!({ "showDivider": true })))
+        );
+        assert_eq!(f.toasts(), ["Layout imported: 2 sensors added."]);
+    }
+
+    #[test]
+    fn says_why_a_legacy_file_cannot_be_imported() {
+        let f = Fixture::new();
+        let script = Script::default();
+        *script.open.borrow_mut() = Some(f.file("none.xml", "<layout/>"));
+        assert!(import(&f.app, &script, ImportFormat::Legacy).is_none());
+        assert_eq!(
+            script.asked().last().map(String::as_str),
+            Some("Error: The layout could not be imported. | The file holds no legacy XML layout.")
         );
     }
 

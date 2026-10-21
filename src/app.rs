@@ -9,6 +9,7 @@ use crate::bar::{BarController, BarHost};
 use crate::config::exchange::{
     self, ExportScope, ImportFormat, ImportMode, ImportReport, Incoming,
 };
+use crate::config::legacy::LegacySensor;
 use crate::config::model::{Settings, Zone};
 use crate::config::{ConfigError, ConfigStore};
 use crate::platform::{NativeDialogs, Platform};
@@ -17,7 +18,7 @@ use crate::sampler::{
     Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest, VOLUMES_EVERY,
 };
 use crate::sensors::registry::registry;
-use crate::sensors::{DefaultsCtx, Props, import, ops};
+use crate::sensors::{DefaultsCtx, Props, import, legacy, ops};
 use crate::{settings, transfer};
 
 /// How long a requested quit may take before the process ends anyway.
@@ -255,6 +256,11 @@ impl App {
     /// The config, or its layout, as the text of an exchange file.
     pub fn export(&self, scope: ExportScope) -> serde_json::Result<String> {
         exchange::export(&self.store.get(), scope)
+    }
+
+    /// What the sensors of a legacy layout bring, converted by their types (SPEC §11.4).
+    pub fn legacy_incoming(&self, sensors: Vec<LegacySensor>) -> Incoming {
+        legacy::incoming(registry(), &self.defaults(), sensors)
     }
 
     /// Adds what an exchange or legacy file brings to the layout; see [`import::import`].
