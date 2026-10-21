@@ -89,6 +89,12 @@ impl BarWindow for NoWindow {
         None
     }
 
+    fn resize_to(&self, _rect: Rect, _width: u32) -> Option<Rect> {
+        None
+    }
+
+    fn set_cursor(&self, _cursor: super::PopupCursor) {}
+
     fn slide(&self, _dy: i32) {}
 }
 

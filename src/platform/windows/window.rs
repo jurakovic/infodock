@@ -43,15 +43,15 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer,
+    GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, HTCLIENT, IDC_ARROW, KillTimer,
     LoadCursorW, MA_NOACTIVATE, MSG, MSGFLT_ALLOW, PBT_APMPOWERSTATUSCHANGE,
     PBT_APMRESUMEAUTOMATIC, PostMessageW, PostQuitMessage, RegisterClassExW, SWP_HIDEWINDOW,
     SetTimer, SetWindowLongPtrW, TranslateMessage, WINDOWPOS, WM_APP, WM_CAPTURECHANGED, WM_CLOSE,
     WM_DEVICECHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ERASEBKGND, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE,
-    WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED, WNDCLASSEXW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    WM_NCDESTROY, WM_PAINT, WM_POWERBROADCAST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
+    WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WM_TIMECHANGE, WM_TIMER, WM_WINDOWPOSCHANGED,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -62,7 +62,7 @@ use super::droptarget;
 use super::hint::HintWindow;
 use super::instance::activate_message;
 use super::menu;
-use super::popup::PopupWindow;
+use super::popup::{self, PopupWindow};
 use super::render::Renderer;
 use super::tray::{Tray, WM_TRAY, taskbar_created};
 use crate::config::model::Material;
@@ -123,6 +123,8 @@ struct WindowState {
     presented: Cell<bool>,
     /// `TrackMouseEvent` asked for `WM_MOUSELEAVE`.
     tracking_leave: Cell<bool>,
+    /// The pointer's shape over the bar.
+    cursor: Cell<crate::platform::PopupCursor>,
     /// Created on first use; `Err` once creating it failed.
     hint: OnceCell<std::result::Result<HintWindow, ()>>,
     /// The same for the popup window.
@@ -178,6 +180,11 @@ impl WindowState {
                 return LRESULT(0);
             }
             WM_ERASEBKGND => return LRESULT(1),
+            // Handled, so the class cursor does not replace a resize cursor (SPEC §5.1).
+            WM_SETCURSOR if (lparam.0 & 0xFFFF) as u32 == HTCLIENT => {
+                popup::set_cursor(self.cursor.get());
+                return LRESULT(1);
+            }
             // Clicks must not take focus from the user's window (SPEC §5.3).
             WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
             WM_WAKE => {
@@ -555,6 +562,17 @@ impl BarWindow for WindowState {
         self.appbar.get()?.move_by(dx, dy)
     }
 
+    fn resize_to(&self, rect: Rect, width: u32) -> Option<Rect> {
+        self.appbar.get()?.resize_to(rect, width)
+    }
+
+    fn set_cursor(&self, cursor: crate::platform::PopupCursor) {
+        // At once if the pointer is over the bar; later moves keep it (`WM_SETCURSOR`).
+        if self.cursor.replace(cursor) != cursor && self.tracking_leave.get() {
+            popup::set_cursor(cursor);
+        }
+    }
+
     fn slide(&self, dy: i32) {
         if let Some(appbar) = self.appbar.get() {
             appbar.slide(dy);
@@ -821,6 +839,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         render_failed: Cell::new(false),
         presented: Cell::new(false),
         tracking_leave: Cell::new(false),
+        cursor: Cell::new(crate::platform::PopupCursor::Arrow),
         hint: OnceCell::new(),
         popup: OnceCell::new(),
         band: OnceCell::new(),

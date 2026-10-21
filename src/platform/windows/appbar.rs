@@ -323,6 +323,31 @@ impl Shared {
         Some(rect)
     }
 
+    /// Puts a floating bar at `rect` while the user drags one of its ends (SPEC §5.1); `width`
+    /// is its width in logical px. As with [`Self::move_by`], the request follows and the
+    /// caller stores it when the drag ends.
+    pub(super) fn resize_to(&self, rect: Rect, width: u32) -> Option<Rect> {
+        let (req, _) = self.ui(|u| u.applied.clone())?;
+        if req.mode != BarMode::Floating {
+            return None;
+        }
+        if let Some(stored) = lock(&self.request).as_mut() {
+            stored.floating = Some(FloatingRect {
+                x: rect.left,
+                y: rect.top,
+                width,
+            });
+        }
+        self.ui(|u| {
+            if let Some((_, applied)) = &mut u.applied {
+                *applied = rect;
+            }
+        });
+        // The z-order stays as it is.
+        self.set_window_pos(HWND_TOP, rect, SWP_NOACTIVATE | SWP_NOZORDER);
+        Some(rect)
+    }
+
     /// `ABM_QUERYPOS` → adjust → `ABM_SETPOS`; returns the rect the shell granted.
     ///
     /// The proposal is the whole monitor: the shell trims it by the taskbar and other appbars on

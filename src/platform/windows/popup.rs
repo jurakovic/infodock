@@ -185,8 +185,8 @@ impl Shared {
     }
 }
 
-/// Shows `cursor` now.
-fn set_cursor(cursor: PopupCursor) {
+/// Shows `cursor` now; also for the bar window.
+pub(super) fn set_cursor(cursor: PopupCursor) {
     let id = match cursor {
         PopupCursor::Arrow => IDC_ARROW,
         PopupCursor::ResizeWidth => IDC_SIZEWE,

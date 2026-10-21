@@ -322,8 +322,8 @@ Sensor types declare `requires: &[Capability]`. The picker hides types whose cap
 * **Shadow band**: a skin MAY define a shadow band (§12.4); the bar's `shadow` (§5.5) is shown as one when the skin has none. It sits beside the bar on the side facing the screen center (above a bar at the bottom, below one at the top; for a floating bar, away from the nearer edge), outside the reserved work area, is transparent and MUST be click-through. Implementation: the bar logic hands the band, drawn with the skin, to the platform after each frame (`BarHandler::band`); the `band` window (§4.1) shows it, moves with the bar window (`WM_WINDOWPOSCHANGED`), and hides while the bar is hidden or off its place during the rise and slide (§5.5). The bar window itself stays as tall as the bar, so the AppBar, hints, popups, floating and the animations work from the bar alone.
 * **Modes**
   * **Docked** (default): attached to the chosen edge; optionally **reserves space** (§5.2).
-  * **Floating**: free position, draggable by the bar background while unlocked (drag threshold 4 px). Position and width are persisted. No space reservation.
-  * Implementation (`platform/geometry.rs` `floating_rect`, `appbar.rs`, `bar/thread.rs`): a floating bar is kept inside the work area of the monitor holding the largest share of it, at that monitor's scale (or the one nearest to its top-left corner); before it was ever moved or sized it starts 800 px wide, centred, 12 px from the work area's `edge` on the selected monitor. While it is dragged the window follows the pointer; the position is stored when the button is released (or the capture is lost). Its hints open away from the nearer screen edge.
+  * **Floating**: free position, draggable by the bar background while unlocked (drag threshold 4 px), and resizable by its ends: within 6 logical px of its left or right end the pointer shows the resize cursor, and dragging that end changes the width (200–3840 logical px, within the work area of its monitor) while the other end stays. Position and width are persisted. No space reservation.
+  * Implementation (`platform/geometry.rs` `floating_rect`, `appbar.rs`, `bar/thread.rs`): a floating bar is kept inside the work area of the monitor holding the largest share of it, at that monitor's scale (or the one nearest to its top-left corner); before it was ever moved or sized it starts 800 px wide, centred, 12 px from the work area's `edge` on the selected monitor. While it is dragged the window follows the pointer; the position is stored when the button is released (or the capture is lost). An end follows the pointer at once, without the drag threshold (`bar/resize.rs`, pure and tested: the ends' hit-test and the rect while one is dragged, from the screen x of the pointer, since the window moves with its left end; `BarWindow::resize_to` puts the window there); the width and position are stored on release as the position is, and the *Width* setting (§10.2) follows. Its hints open away from the nearer screen edge.
 
 ### 5.2 Work-area reservation (AppBar)
 
@@ -1182,7 +1182,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | zOrder | topmost / normal / bottom | topmost | |
 | hideOnFullscreen | bool | true | |
 | height | 22–40 | theme default (28 / 25) | |
-| floating | `{ x, y, width }` | null | `x`, `y`: the top-left corner in physical screen px (they name the monitor); `width`: logical px, 200–3840 in Settings |
+| floating | `{ x, y, width }` | null | `x`, `y`: the top-left corner in physical screen px (they name the monitor); `width`: logical px, 200–3840 in Settings and when dragging an end (§5.1) |
 | highlightOnHover | bool | false | |
 | shadow | bool | false | A soft shadow beside the bar (§5.5) |
 | animations | auto / on / off | auto | auto follows the OS |

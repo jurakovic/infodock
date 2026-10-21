@@ -18,6 +18,7 @@ use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
 use super::placement::Anchor;
 use super::popup::{self, Open, PopupHost};
+use super::resize::{self, Resize};
 use super::sensors::{BarSensors, Env};
 use super::shadow::ShadowCache;
 use super::skins::{self, SkinCache};
@@ -34,8 +35,8 @@ use crate::i18n::{t, t_args};
 use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
     Band, BarGeometry, BarHandler, BarWindow, Canvas, DragEvent, DropEffect, Key, Modifiers,
-    OsAppearance, Platform, PointF, PointerButton, PopupInput, Rect, RectF, SizeF, TextEngine,
-    TimerId, UiEvent, UiWaker,
+    OsAppearance, Platform, PointF, PointerButton, PopupCursor, PopupInput, Rect, RectF, SizeF,
+    TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction};
@@ -107,6 +108,10 @@ pub(super) struct BarLogic {
     external: Option<ExternalDrag>,
     /// The left button is down on the background of a floating bar, which moves it (§5.1).
     moving: Option<Moving>,
+    /// The left button is down on an end of a floating bar, which resizes it (§5.1).
+    resizing: Option<Resizing>,
+    /// The pointer's shape over the bar as last set.
+    cursor: PopupCursor,
     /// When the hover hint shows and hides.
     hover: Hover,
     /// The open interactive popup (SPEC §7.2).
@@ -169,6 +174,13 @@ struct Moving {
     rect: Option<Rect>,
 }
 
+/// A press on an end of a floating bar, which follows the pointer at once.
+struct Resizing {
+    drag: Resize,
+    /// The width after the last change, logical px; `None` until it changed.
+    width: Option<u32>,
+}
+
 /// The subscription changes from `old` to `new` (by sensor id): new or changed topic lists, the
 /// lists of sensors `created` anew (a re-created sensor keeps its id and topics but starts
 /// without data, and subscribing sends it the newest samples, SPEC §4.4), and an empty list for
@@ -214,6 +226,8 @@ impl BarLogic {
             drag: None,
             external: None,
             moving: None,
+            resizing: None,
+            cursor: PopupCursor::Arrow,
             hover: Hover::default(),
             popups: PopupHost::default(),
             waker: waker.clone(),
@@ -293,6 +307,15 @@ impl BarLogic {
         self.apply_hint(window, step);
         let had_popup = self.popups.owner().map(str::to_owned);
         self.close_popup(window);
+        if let (Some(end), Some(g)) = (self.resize_end(at), &self.geometry) {
+            let x = g.rect.left + (f64::from(at.x) * g.scale).round() as i32;
+            window.capture_pointer(true);
+            self.resizing = Some(Resizing {
+                drag: Resize::new(end, g.rect, x),
+                width: None,
+            });
+            return;
+        }
         let Some(hit) = self.sensors.hit(at.x) else {
             if self.settings.bar.mode == BarMode::Floating && !self.settings.locked {
                 window.capture_pointer(true);
@@ -317,10 +340,49 @@ impl BarLogic {
         });
     }
 
+    /// The end of a floating, unlocked bar under `at`, by which it is resized (SPEC §5.1).
+    fn resize_end(&self, at: PointF) -> Option<resize::End> {
+        if self.settings.bar.mode != BarMode::Floating || self.settings.locked {
+            return None;
+        }
+        let g = self.geometry.as_ref()?;
+        resize::end_at(at.x, (f64::from(g.rect.width()) / g.scale) as f32)
+    }
+
+    fn set_cursor(&mut self, window: &dyn BarWindow, cursor: PopupCursor) {
+        if self.cursor != cursor {
+            self.cursor = cursor;
+            window.set_cursor(cursor);
+        }
+    }
+
     fn pointer_moved(&mut self, window: &dyn BarWindow, at: PointF) {
         if !self.inside {
             self.inside = true;
             self.refresh_highlight(window);
+        }
+        let pressed = self.moving.is_some() || self.drag.is_some() || self.press.is_some();
+        let resizes = self.resizing.is_some() || (!pressed && self.resize_end(at).is_some());
+        let cursor = if resizes {
+            PopupCursor::ResizeWidth
+        } else {
+            PopupCursor::Arrow
+        };
+        self.set_cursor(window, cursor);
+        if let Some(resizing) = &mut self.resizing {
+            // The dragged end follows the pointer, in screen px since the window moves with
+            // the left end.
+            if let Some(g) = self.geometry.as_mut() {
+                let x = g.rect.left + (f64::from(at.x) * g.scale).round() as i32;
+                let (rect, width) = resizing.drag.rect(x, g.scale, g.monitor.work_area);
+                if rect != g.rect
+                    && let Some(rect) = window.resize_to(rect, width)
+                {
+                    g.rect = rect;
+                    resizing.width = Some(width);
+                }
+            }
+            return;
         }
         if let Some(moving) = &mut self.moving {
             moving.press.moved_to(at);
@@ -424,6 +486,9 @@ impl BarLogic {
     }
 
     fn pointer_left(&mut self, window: &dyn BarWindow) {
+        if self.resizing.is_none() {
+            self.set_cursor(window, PopupCursor::Arrow);
+        }
         let hide = Duration::from_millis(u64::from(self.settings.popups.hide_delay_ms));
         let step = self.hover.leave(hide);
         self.apply_hint(window, step);
@@ -696,7 +761,30 @@ impl BarLogic {
         }
     }
 
+    /// Stores the width and place of a resized floating bar (SPEC §5.1); the *Width* setting
+    /// follows.
+    fn end_resizing(&mut self, window: &dyn BarWindow) {
+        let Some(resizing) = self.resizing.take() else {
+            return;
+        };
+        window.capture_pointer(false);
+        if let (Some(width), Some(g)) = (resizing.width, &self.geometry) {
+            let rect = g.rect;
+            self.host.change_settings(Box::new(move |s| {
+                s.bar.floating = Some(FloatingRect {
+                    x: rect.left,
+                    y: rect.top,
+                    width,
+                });
+            }));
+        }
+    }
+
     fn pointer_up(&mut self, window: &dyn BarWindow, at: PointF, modifiers: Modifiers) {
+        if self.resizing.is_some() {
+            self.end_resizing(window);
+            return;
+        }
         if self.moving.is_some() {
             self.end_moving(window);
             return;
@@ -1468,6 +1556,7 @@ impl BarHandler for BarLogic {
             UiEvent::CaptureLost => {
                 self.cancel_drag(window);
                 self.end_moving(window);
+                self.end_resizing(window);
             }
             // Middle clicks are reserved (SPEC §6.1).
             UiEvent::PointerDown { .. } | UiEvent::PointerUp { .. } => {}
@@ -1617,6 +1706,7 @@ mod tests {
         popup_draws: Cell<u32>,
         popup_timer: Cell<Option<std::time::Duration>>,
         popup_cursor: Cell<crate::platform::PopupCursor>,
+        cursor: Cell<PopupCursor>,
         popup_captured: Cell<bool>,
     }
 
@@ -1664,6 +1754,14 @@ mod tests {
         }
         fn slide(&self, dy: i32) {
             self.slides.borrow_mut().push(dy);
+        }
+        fn resize_to(&self, rect: Rect, _width: u32) -> Option<Rect> {
+            self.position.get()?;
+            self.position.set(Some(rect));
+            Some(rect)
+        }
+        fn set_cursor(&self, cursor: PopupCursor) {
+            self.cursor.set(cursor);
         }
         fn move_by(&self, dx: i32, dy: i32) -> Option<Rect> {
             let mut rect = self.position.get()?;
@@ -2254,6 +2352,128 @@ mod tests {
         assert_eq!(window.position.get(), Some(start));
         let (mut logic, window, _, _) = bar(Settings::default());
         press(&mut logic, &window, empty, false);
+        assert!(!window.captured.get());
+    }
+
+    #[test]
+    fn a_floating_bar_resizes_by_its_ends_while_unlocked() {
+        let mut settings = Settings::default();
+        settings.bar.mode = BarMode::Floating;
+        let place = |logic: &mut BarLogic, window: &FakeWindow, rect: Rect| {
+            window.position.set(Some(rect));
+            logic.on_event(
+                window,
+                UiEvent::Placed(BarGeometry {
+                    rect,
+                    edge: crate::config::model::Edge::Bottom,
+                    monitor: crate::platform::MonitorInfo::new(
+                        r"\\.\DISPLAY1".into(),
+                        "Test".into(),
+                        Rect::new(0, 0, 1200, 1080),
+                        Rect::new(0, 0, 1200, 1052),
+                        1.0,
+                        true,
+                    ),
+                    scale: 1.0,
+                }),
+            );
+        };
+        let stored = |host: &FakeHost| {
+            host.settings
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .bar
+                .floating
+        };
+        let (mut logic, window, host, _) = bar(settings.clone());
+        place(&mut logic, &window, Rect::new(200, 1000, 1000, 1028));
+        // The resize cursor within 6 px of either end.
+        for (x, cursor) in [
+            (3.0, PopupCursor::ResizeWidth),
+            (400.0, PopupCursor::Arrow),
+            (797.0, PopupCursor::ResizeWidth),
+        ] {
+            hover(&mut logic, &window, PointF::new(x, 14.0));
+            assert_eq!(window.cursor.get(), cursor, "at {x}");
+        }
+        logic.on_event(&window, UiEvent::PointerLeave);
+        assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+
+        // The right end, pressed 3 px inside it, follows the pointer at once.
+        press(&mut logic, &window, PointF::new(797.0, 14.0), false);
+        assert!(window.captured.get());
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(897.0, 14.0)));
+        assert_eq!(
+            window.position.get(),
+            Some(Rect::new(200, 1000, 1100, 1028))
+        );
+        assert_eq!(window.cursor.get(), PopupCursor::ResizeWidth);
+        // Not past the work area.
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(2000.0, 14.0)));
+        assert_eq!(
+            window.position.get(),
+            Some(Rect::new(200, 1000, 1200, 1028))
+        );
+        release(&mut logic, &window, PointF::new(2000.0, 14.0));
+        assert!(!window.captured.get());
+        assert_eq!(
+            stored(&host),
+            Some(FloatingRect {
+                x: 200,
+                y: 1000,
+                width: 1000
+            })
+        );
+
+        // The left end: the window moves with it, so each move is read from where it is.
+        press(&mut logic, &window, PointF::new(2.0, 14.0), false);
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(-98.0, 14.0)));
+        assert_eq!(
+            window.position.get(),
+            Some(Rect::new(100, 1000, 1200, 1028))
+        );
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(-48.0, 14.0)));
+        assert_eq!(window.position.get(), Some(Rect::new(50, 1000, 1200, 1028)));
+        // Not narrower than 200 px.
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(1100.0, 14.0)));
+        assert_eq!(
+            window.position.get(),
+            Some(Rect::new(1000, 1000, 1200, 1028))
+        );
+        // A lost capture stores it too.
+        logic.on_event(&window, UiEvent::CaptureLost);
+        assert_eq!(
+            stored(&host),
+            Some(FloatingRect {
+                x: 1000,
+                y: 1000,
+                width: 200
+            })
+        );
+
+        // A press without a move stores nothing.
+        let (mut logic, window, host, _) = bar(settings.clone());
+        place(&mut logic, &window, Rect::new(200, 1000, 1000, 1028));
+        press(&mut logic, &window, PointF::new(797.0, 14.0), false);
+        release(&mut logic, &window, PointF::new(797.0, 14.0));
+        assert_eq!(stored(&host), None);
+
+        // Locked, or docked: the ends do nothing.
+        settings.locked = true;
+        let (mut logic, window, _, _) = bar(settings);
+        place(&mut logic, &window, Rect::new(200, 1000, 1000, 1028));
+        hover(&mut logic, &window, PointF::new(3.0, 14.0));
+        assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+        press(&mut logic, &window, PointF::new(3.0, 14.0), false);
+        logic.on_event(&window, UiEvent::PointerMove(PointF::new(-97.0, 14.0)));
+        assert_eq!(
+            window.position.get(),
+            Some(Rect::new(200, 1000, 1000, 1028))
+        );
+        let (mut logic, window, _, _) = bar(Settings::default());
+        hover(&mut logic, &window, PointF::new(3.0, 14.0));
+        assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+        press(&mut logic, &window, PointF::new(3.0, 14.0), false);
         assert!(!window.captured.get());
     }
 

@@ -11,6 +11,7 @@ mod menus;
 mod paint;
 mod placement;
 mod popup;
+mod resize;
 mod sensors;
 mod shadow;
 pub mod skins;

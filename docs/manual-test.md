@@ -559,3 +559,9 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 - [ ] Add a Text sensor with a long sentence to the centre zone, and Text sensors to the left and right zones. Make the bar floating and narrow it (or add sensors) until the zones meet: the centre text ends in "…", keeping a gap to the left and right zones, and its hint shows the whole sentence. Narrower still: once the centre text is down to a few characters, the left zone's text gives way, then the right's. Widen the bar again: the texts are whole and the hint is gone.
 - [ ] With the centre zone empty, the left zone's text gives way before the right's. Sensors other than Text (graphs, meters, icons) never change width; at 150 % the cut texts stay sharp.
+
+**Resizing a floating bar** (since M5 S4)
+
+- [ ] Floating and unlocked: the pointer at the bar's left or right end (within about 6 px) shows the left-right resize cursor; elsewhere the arrow. Drag the right end: the bar widens and narrows with the pointer and the left end stays; drag the left end: the right end stays. Not narrower than 200 px, nor past the screen's edge (with the taskbar, its work area); on a 4K monitor at 100 %, not wider than 3840 px.
+- [ ] Release: Settings ▸ Bar's *Width* (open meanwhile) shows the new width; quit and start again: the bar has its new width and place. At 150 %, *Width* shows logical px (1200 physical px are 800).
+- [ ] Locked, or docked: the ends show the arrow and dragging them does nothing (a docked bar's background does not move it either). While resizing, the shadow band (with *Shadow* on) follows the bar's new width.

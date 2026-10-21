@@ -1156,7 +1156,7 @@ pub enum PopupInput {
     CaptureLost,
 }
 
-/// The pointer's shape over the popup window.
+/// The pointer's shape over the popup window, or the bar's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PopupCursor {
     #[default]
@@ -1325,6 +1325,12 @@ pub trait BarWindow {
     /// Moves a floating bar by physical px (SPEC §5.1) and returns where it is now; `None` when
     /// the bar is docked or not shown.
     fn move_by(&self, dx: i32, dy: i32) -> Option<Rect>;
+    /// Puts a floating bar at `rect` (physical screen px) while one of its ends is dragged
+    /// (SPEC §5.1); `width` is its width in logical px. Returns where it is now; `None` when
+    /// the bar is docked or not shown.
+    fn resize_to(&self, rect: Rect, width: u32) -> Option<Rect>;
+    /// The pointer's shape over the bar window: the resize cursor over a floating bar's ends.
+    fn set_cursor(&self, cursor: PopupCursor);
     /// Shows the bar `dy` physical px below (positive) or above its place, for the rise
     /// animation (SPEC §5.5); 0 puts it back.
     fn slide(&self, dy: i32);
