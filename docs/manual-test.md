@@ -509,3 +509,11 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] *Import layout…*: the picker lists `.infodock.json` and `.xml` files together; an exported layout and `tests/fixtures/legacy/example.xml` both import as from the Tools menu.
 - [ ] The last tip names the configured hotkey.
 - [ ] Quit from the tray while the page is open and start again: the welcome page opens again. Then *Get started*: Settings closes; start again: no welcome page, and `config.json` holds `"firstRunDone": true`. Leaving the page by the navigation or closing the window ends the first run the same way.
+
+**Installer** (since M4 S15)
+
+- [ ] As a standard user (no admin rights), run `Infodock_<version>_x64-setup.exe` from CI's `infodock-windows-installer` artifact: no elevation prompt; the welcome and finish pages show the placeholder sidebar, the other pages the header; it installs to `%LOCALAPPDATA%\Infodock`.
+- [ ] The finish page's *Run Infodock* starts it: the bar and the welcome page appear. Start Menu ▸ *Infodock* starts it too, and its toasts and Settings window group under that Start Menu entry in the taskbar.
+- [ ] *Apps & features* lists Infodock (current user); nothing under `C:\Program Files` or `HKLM\Software`.
+- [ ] Turn *Start with Windows* on, then uninstall from *Apps & features*: Infodock is closed if running, the folder, the Start Menu and desktop shortcuts and the `Run` value are gone; `%APPDATA%\app.infodock.desktop` (config, skins) stays.
+- [ ] Upgrade: with *Start with Windows* on, install a newer build over it (choose *Uninstall before installing*): the `Run` value stays and still starts Infodock at sign-in.

@@ -18,10 +18,10 @@ src/                 Rust sources
   platform/          OS layer behind traits; Windows code in platform/windows, other OSes get a stub
 ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs) and its icons (`ui/icons`)
 i18n/                message catalogs (`en.json`)
-icons/               app icons
+icons/               app icons and the installer's images (`icons/installer`)
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
-.github/scripts/     CI helpers (memory check)
+.github/scripts/     CI helpers (memory check, installer check)
 docs/                plan.md, manual-test.md, review findings (`review-m1.md`)
 tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 ```
@@ -39,7 +39,7 @@ tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 | Run the app | `cargo run` (Windows; elsewhere only Settings opens) |
 | Build the installer (Windows) | `cargo build --release` then `cargo packager --release` |
 
-Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `infodock-screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, memory check) and by the manual checklist in `docs/manual-test.md`.
+Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `infodock-screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, memory check, a silent install and uninstall) and by the manual checklist in `docs/manual-test.md`.
 
 ## Gate before every commit
 

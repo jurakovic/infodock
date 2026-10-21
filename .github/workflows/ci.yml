@@ -79,9 +79,10 @@ jobs:
         run: cargo test -- --ignored
       - name: Build release
         run: cargo build --release
+      # Pinned: the installer's uninstaller section (Cargo.toml) relies on its NSIS template.
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-packager
+          tool: cargo-packager@0.11.8
       - name: Build installer
         run: cargo packager --release --formats nsis
       - uses: actions/upload-artifact@v6
@@ -112,5 +113,17 @@ jobs:
         with:
           name: infodock-memory-check
           path: ${{ runner.temp }}/memory-check
+          if-no-files-found: ignore
+          retention-days: 14
+      # The installer per user without admin rights (SPEC §15.3): installed silently, checked,
+      # started and uninstalled. After the memory check, whose config it removes.
+      - name: Installer check
+        shell: pwsh
+        run: .github/scripts/check-installer.ps1 -Setup (Get-Item target/release/*-setup.exe).FullName -OutDir "$env:RUNNER_TEMP/installer-check"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: infodock-installer-check
+          path: ${{ runner.temp }}/installer-check
           if-no-files-found: ignore
           retention-days: 14

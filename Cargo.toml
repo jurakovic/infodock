@@ -22,7 +22,26 @@ icons = ["icons/icon.ico"]
 formats = ["nsis"]
 
 [package.metadata.packager.nsis]
+# Per user, without admin rights: %LOCALAPPDATA%\Infodock, HKCU only (SPEC §15.3).
 installMode = "currentUser"
+installerIcon = "icons/icon.ico"
+# Placeholders until the final artwork (SPEC Appendix C).
+headerImage = "icons/installer/header.bmp"
+sidebarImage = "icons/installer/sidebar.bmp"
+# The template's Start Menu shortcut carries the identifier as its AppUserModelID. This adds an
+# uninstaller section, which NSIS runs before the template's own: it removes the sign-in entry
+# (`autostart::RUN_VALUE`, SPEC §10.1) and Task Manager's mark for it, except when an upgrade
+# runs the old uninstaller (with /P), and the AppUserModelID the app registers (§7.4).
+preinstallSection = '''
+Section "un.Autostart"
+  ClearErrors
+  ${GetOptions} $CMDLINE "/P" $R0
+  IfErrors 0 +3
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Infodock"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Infodock"
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\app.infodock.desktop"
+SectionEnd
+'''
 
 [build-dependencies]
 slint-build = "1.18"
