@@ -405,7 +405,7 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 
 ## M4 — Classic, import, packaging
 
-Exit criteria (SPEC §17): Appendix B imports exactly as specified; the installer works per user without admin rights.
+Exit criteria (SPEC §17): Appendix B imports exactly as specified (*Legacy XML import* below; CI's `imports_appendix_b_as_specified` checks layout, state and report); the installer works per user without admin rights (*Installer* below; CI's installer check installs, checks and uninstalls silently).
 
 The M0–M3 checks above still apply. CI renders the classic bar with every built-in skin (`bar-classic-*.png` in `infodock-screenshots`); the checks here cover real monitors and the live bar.
 
@@ -503,7 +503,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 - [ ] Settings ▸ General ▸ *Start with Windows* on: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holds `Infodock` with the exe's path in quotes (regedit), and Task Manager ▸ *Startup apps* lists Infodock as *Enabled*. Sign out and in: the bar starts. Off: the value is gone.
 - [ ] With it on, disable Infodock in Task Manager ▸ *Startup apps*, then turn the switch off and on again in Settings: Task Manager shows it *Enabled* again.
-- [ ] With it on, quit, copy `infodock.exe` elsewhere and start the copy: the `Run` value now names the copy (Task Manager's *Disabled*, if set, stays).
+- [ ] With it on, quit, copy `infodock.exe` elsewhere and start the copy: the `Run` value still names the original (since M4 S18e). Quit, rename the original and start the copy again: now the value names the copy (Task Manager's *Disabled*, if set, stays).
 - [ ] Turn it on, quit, delete `config.json`, start again (first run): the switch is on (the entry was taken into the setting). With the entry removed by hand before a first run, the switch is off.
 - [ ] Turn it off, then add the `Run` value by hand and restart Infodock (not a first run): the value is removed.
 - [ ] Settings ▸ *Applications*: type `outlookcal:` (or any program) in *Calendar*; a click on a Date sensor opens it. *Browse…* lists programs first; a picked shortcut gives its target. Clear the box: a click opens the date and time settings again.
@@ -524,3 +524,21 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Turn *Start with Windows* on, then uninstall from *Apps & features*: Infodock is closed if running, the folder, the Start Menu and desktop shortcuts and the `Run` value are gone; `%APPDATA%\app.infodock.desktop` (config, skins) stays.
 - [ ] Upgrade: with *Start with Windows* on, install a newer build over it (choose *Uninstall before installing*): the `Run` value stays and still starts Infodock at sign-in.
 - [ ] A deployment (since M4 S16a): uninstall, disable any *Infodock* left in Task Manager ▸ *Startup apps*, then as a standard user run `Infodock_<version>_x64-setup.exe /S /AUTOSTART` from a command prompt: nothing starts; the `Run` value `Infodock` names `%LOCALAPPDATA%\Infodock\infodock.exe` in quotes and Task Manager shows it *Enabled*. Sign out and in: the bar starts with the welcome page, whose *Start with Windows* is on. A silent install without `/AUTOSTART` (after uninstalling) writes no `Run` value.
+
+**Budgets** (M4 S18)
+
+- [ ] Task Manager ▸ Details with the classic theme, the test pack with its band, then the modern theme with *Shadow* on: *Memory* stays within 30 MB at idle, after opening Appearance with its gallery and after closing Settings; idle CPU as with M3. CI measured the first-run layout at 12.6 MB idle, 15.8 MB with Settings open, 14.3 MB after closing it, 0.013 % CPU (`674c6fc`).
+
+**Close-out fixes** (M4 S18)
+
+- [ ] Zip the test pack with 7-Zip together with a `readme.txt` compressed with LZMA (*Archive format* zip, *Compression method* LZMA): *Install from .zip…* installs it, and the pack's folder holds only `skin.json` and its tile. A zip whose `skin.json` names a tile over 1 MB: the message names the tile as too large.
+- [ ] A floating bar with *Shadow* on near the bottom of the screen: drag it to the top half; the shadow moves below the bar as it crosses the middle, before the button is released. Quit and start again with the floating bar: no shadow shows until the bar has faded in.
+- [ ] Switch from classic to modern and back several times: memory does not grow by a skin each time.
+- [ ] In Notepad, save a legacy layout with a Text sensor reading "Računalo" as *ANSI* on a computer whose system locale is Croatian (or Czech, Polish, Hungarian), or add `<?xml version="1.0" encoding="windows-1250"?>` at its top: *Import legacy XML layout…* shows "Računalo", not "Raèunalo". Saved as *UTF-16 LE* without the declaration: it imports too.
+- [ ] A legacy layout holding only an RSS sensor (and one without a side): the message says the file holds no sensors this version can show and lists both; nothing is asked and the bar is unchanged.
+- [ ] Edit an exported layout so an Image's file is `\\server\share\logo.png`: the *Replace* / *Add* question names that location and asks to import only a layout from a trusted place; *Cancel*: nothing connects (no SMB traffic) and the bar is unchanged.
+- [ ] With Infodock running and *Start with Windows* on, uninstall from *Apps & features* and choose *Cancel* at "Infodock is running": the `Run` value stays and Infodock still starts at sign-in. Uninstall again with *OK*: the value, Task Manager's entry and `HKCU\Software\jurakovic` are gone.
+- [ ] Run the installer over an installed Infodock with *Start with Windows* on, choose *Uninstall before installing*, then *Cancel* on the next page: no `Run` value is left naming the removed exe.
+- [ ] While the welcome page is open (first run), double-click the desktop shortcut or start Infodock from the Start Menu: Settings comes to the front still on the welcome page, and the next start shows it again until it is left.
+- [ ] Classic theme with a custom image on a network share: type its path character by character; the line under it says what is wrong until the path is complete, without pauses between characters on a local drive. Choose another skin: nothing is read for the path any more.
+- [ ] Install the test pack, then change its tile (same `skin.json`) and install it again: the gallery shows the new tile at once. Quit, write the pack's name in other case in the config's `classic.skin` (`TEST`), start again, then *Remove* the pack: the skin becomes Gloss.
