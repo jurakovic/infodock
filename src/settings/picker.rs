@@ -17,7 +17,7 @@ use crate::sensors::{Category, DefaultsCtx, Props};
 use crate::ui;
 
 /// The page index of the picker in the window.
-pub(super) const PAGE: i32 = 7;
+pub(super) const PAGE: i32 = 8;
 
 /// A type the picker offers.
 #[derive(Debug, Clone, PartialEq)]

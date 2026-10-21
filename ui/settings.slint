@@ -1,7 +1,8 @@
-// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors, Popups and Applications
-// pages, a sensor's properties, the sensor picker and the first run's welcome page (§11.5). Rust fills `SettingsState` from the config and handles its
-// callbacks; controls bind to it two-way, and every change is saved through a settings patch.
-import { Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
+// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors, Popups, Applications and
+// About pages, a sensor's properties, the sensor picker and the first run's welcome page (§11.5).
+// Rust fills `SettingsState` from the config and handles its callbacks; controls bind to it
+// two-way, and every change is saved through a settings patch.
+import { AboutSlint, Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
 
 // One field of a sensor's properties form (SPEC §6.7, §8.2); see `settings/form.rs`.
@@ -71,9 +72,19 @@ export struct SkinPackRow {
     problem: string,
 }
 
+// The pages' numbers past the plain settings pages (0 = General, 1 = Bar, 2 = Appearance,
+// 3 = Sensors, 4 = Popups, 5 = Applications): the rest of the navigation, then the pages it does
+// not list. Rust has the same numbers (`model::PAGES`, each module's `PAGE`; a test compares).
+export global Pages {
+    out property <int> about: 6;
+    // Pages the navigation does not list.
+    out property <int> properties: 7;
+    out property <int> picker: 8;
+    out property <int> welcome: 9;
+}
+
 export global SettingsState {
-    // 0 = General, 1 = Bar, 2 = Appearance, 3 = Sensors, 4 = Popups, 5 = Applications; 6 = a
-    // sensor's properties, 7 = the picker, 8 = the welcome page.
+    // A page by its number (see `Pages`).
     in-out property <int> page;
 
     // General (SPEC §10.1)
@@ -241,6 +252,14 @@ export global SettingsState {
     callback remove-skin(id: string);
     callback open-skins-folder();
     callback browse-calendar-app();
+
+    // About (SPEC §10.7)
+    in property <string> version;
+    // Infodock's licence, the text of `LICENSE`.
+    in property <string> licence;
+    // The crates of the Windows build: "name version: licence".
+    in property <[StandardListViewItem]> third-party;
+    callback open-logs-folder();
     // The welcome page's *Import layout…* (JSON or legacy XML) and *Get started*.
     callback welcome-import();
     callback welcome-done();
@@ -1527,6 +1546,72 @@ component ApplicationsPage inherits VerticalLayout {
     }
 }
 
+// Settings ▸ About (SPEC §10.7): the version, the licence, the crates Infodock is built with and
+// their licences, Slint's attribution, and the logs folder for reporting problems.
+component AboutPage inherits VerticalLayout {
+    alignment: start;
+    spacing: 16px;
+
+    VerticalLayout {
+        spacing: 8px;
+        Text {
+            text: I18n.tr-with("settings.about.version", "version", SettingsState.version);
+            font-size: 16px;
+            font-weight: 600;
+            color: Palette.foreground;
+        }
+
+        Text {
+            text: I18n.tr("settings.about.description");
+            wrap: word-wrap;
+            height: self.preferred-height;
+            color: Palette.foreground;
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            Button {
+                text: I18n.tr("settings.about.logs");
+                clicked => {
+                    SettingsState.open-logs-folder();
+                }
+            }
+        }
+    }
+
+    SectionHeading {
+        title: I18n.tr("settings.about.licence");
+    }
+
+    Text {
+        text: SettingsState.licence;
+        wrap: word-wrap;
+        height: self.preferred-height;
+        font-size: 12px;
+        color: Palette.foreground;
+    }
+
+    SectionHeading {
+        title: I18n.tr("settings.about.thirdParty");
+        help: I18n.tr("settings.about.thirdParty.help");
+    }
+
+    StandardListView {
+        height: 240px;
+        model: SettingsState.third-party;
+        accessible-label: I18n.tr("settings.about.thirdParty");
+    }
+
+    SectionHeading {
+        title: I18n.tr("settings.about.toolkit");
+    }
+
+    HorizontalLayout {
+        alignment: start;
+        AboutSlint { }
+    }
+}
+
 // The welcome page's theme choice (SPEC §11.5): a tile per theme with a preview of the bar, chosen
 // by a click or, once it has the focus, the arrow keys.
 component ThemeChoice inherits FocusScope {
@@ -2047,6 +2132,7 @@ export component SettingsWindow inherits Window {
                     { text: I18n.tr("settings.nav.sensors") },
                     { text: I18n.tr("settings.nav.popups") },
                     { text: I18n.tr("settings.nav.applications") },
+                    { text: I18n.tr("settings.nav.about") },
                 ];
                 current-item <=> SettingsState.page;
                 accessible-label: I18n.tr("settings.nav.label");
@@ -2073,15 +2159,16 @@ export component SettingsWindow inherits Window {
             spacing: 8px;
 
             Text {
-                text: SettingsState.page == 6 ? SettingsState.props-title
-                    : SettingsState.page == 7 ? I18n.tr("settings.picker.title")
-                    : SettingsState.page == 8 ? I18n.tr("welcome.title") : [
+                text: SettingsState.page == Pages.properties ? SettingsState.props-title
+                    : SettingsState.page == Pages.picker ? I18n.tr("settings.picker.title")
+                    : SettingsState.page == Pages.welcome ? I18n.tr("welcome.title") : [
                     I18n.tr("settings.nav.general"),
                     I18n.tr("settings.nav.bar"),
                     I18n.tr("settings.nav.appearance"),
                     I18n.tr("settings.nav.sensors"),
                     I18n.tr("settings.nav.popups"),
                     I18n.tr("settings.nav.applications"),
+                    I18n.tr("settings.nav.about"),
                 ][SettingsState.page];
                 font-size: 20px;
                 font-weight: 600;
@@ -2094,7 +2181,7 @@ export component SettingsWindow inherits Window {
                 color: #d13438;
             }
 
-            if SettingsState.page != 7: scroll := ScrollView {
+            if SettingsState.page != Pages.picker: scroll := ScrollView {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
@@ -2107,12 +2194,13 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == 3: SensorsPage { }
                     if SettingsState.page == 4: PopupsPage { }
                     if SettingsState.page == 5: ApplicationsPage { }
-                    if SettingsState.page == 6: PropertiesPage { }
-                    if SettingsState.page == 8: WelcomePage { }
+                    if SettingsState.page == Pages.about: AboutPage { }
+                    if SettingsState.page == Pages.properties: PropertiesPage { }
+                    if SettingsState.page == Pages.welcome: WelcomePage { }
                 }
             }
             // The picker scrolls only its list (SPEC §6.6).
-            if SettingsState.page == 7: PickerPage {
+            if SettingsState.page == Pages.picker: PickerPage {
                 vertical-stretch: 1;
             }
         }

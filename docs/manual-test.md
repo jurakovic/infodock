@@ -616,3 +616,7 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] Put a PNG on a network share, use it as an Image sensor's file and as a Shortcut's custom image, then make the share unreachable (pull the cable, or stop the server) and restart Infodock: the bar appears at once and stays responsive (hover hints, Tab, drag); the Shortcut's icon square stays empty and the Image sensor takes no room until the share answers or times out, then the image (or the logo, for a file that cannot be read) appears without anything else moving.
 - [ ] Change an Image sensor's file in Properties: the preview shows the new image within a moment; at 150 % (or after moving the bar to a monitor with another scale) the image is redrawn sharp at the new size without flashing away.
 - [ ] Custom images on a Disk, Folder Menu, Start Menu and both Recycle Bin images show as before; a missing file shows the built-in icon and one `cannot be shown` line in the log.
+
+**About page** (since M5 S13)
+
+- [ ] Settings ▸ About, last in the navigation: the version matches the installer's; *Open logs folder* opens `%LOCALAPPDATA%\app.infodock.desktop\logs` in Explorer; the licence reads as paragraphs; the crate list scrolls with the wheel and the arrow keys and Narrator reads its name and each row; the Slint badge shows below. With the dark colour scheme everything stays readable.

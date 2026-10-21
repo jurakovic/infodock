@@ -5,6 +5,7 @@
 //! through the config store; the store's change listener then refreshes the window, so changes
 //! made elsewhere (tray, hotkey) show up too.
 
+mod about;
 #[cfg(test)]
 mod accessibility;
 mod appearance;
@@ -245,6 +246,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     layout::connect(window, app);
     appearance::connect(window, app);
     applications::connect(window, app);
+    about::connect(window, app);
     welcome::connect(window, app);
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
@@ -754,6 +756,9 @@ mod screenshots {
             state.set_page(index as i32);
             render(&format!("settings-{page}"));
         }
+        // The whole About page: the licence, the crates and Slint's attribution.
+        state.set_page(super::model::PAGES.len() as i32 - 1);
+        render_sized("settings-about-full", 1500);
         // The whole Bar page.
         state.set_page(1);
         render_sized("settings-bar-full", 1000);

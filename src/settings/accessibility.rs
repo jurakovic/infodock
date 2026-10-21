@@ -224,6 +224,7 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
         "sensors".to_owned(),
         "popups".to_owned(),
         "applications".to_owned(),
+        "about".to_owned(),
         format!("sensor/{logo}"),
         "new?zone=left&index=0".to_owned(),
         "welcome".to_owned(),
@@ -252,6 +253,22 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
         // Tall enough that no page scrolls while Tab moves through it.
         window.window().set_size(LogicalSize::new(760.0, 3000.0));
         slint::platform::update_timers_and_animations();
+        // The window numbers its pages as Rust does.
+        let pages = window.global::<ui::Pages>();
+        assert_eq!(
+            [
+                pages.get_properties(),
+                pages.get_picker(),
+                pages.get_welcome()
+            ],
+            [
+                super::properties::PAGE,
+                super::picker::PAGE,
+                super::welcome::PAGE
+            ]
+        );
+        let about = super::model::PAGES.iter().position(|p| *p == "about");
+        assert_eq!(Some(pages.get_about() as usize), about);
         let (found, stops) = check_page(&window, route);
         problems.extend(found);
         assert!(stops.len() > 2, "{route}: Tab stops at {stops:?}");
