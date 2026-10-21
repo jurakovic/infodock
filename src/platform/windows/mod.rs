@@ -64,11 +64,13 @@ where
     }
 }
 
+/// What the system offers, probed once: it does not change while Infodock runs (a Wi-Fi adapter
+/// plugged in later is found at the next start).
+static CAPABILITIES: std::sync::OnceLock<Capabilities> = std::sync::OnceLock::new();
+
 impl Platform for WindowsPlatform {
-    /// Read once: what the system offers does not change while Infodock runs (a Wi-Fi adapter
-    /// plugged in later is found at the next start).
+    /// Probed once, when first asked (at start, on a thread of its own).
     fn capabilities(&self) -> Capabilities {
-        static CAPABILITIES: std::sync::OnceLock<Capabilities> = std::sync::OnceLock::new();
         CAPABILITIES
             .get_or_init(|| {
                 let started = std::time::Instant::now();
@@ -106,6 +108,10 @@ impl Platform for WindowsPlatform {
                 capabilities
             })
             .clone()
+    }
+
+    fn probed_capabilities(&self) -> Option<Capabilities> {
+        CAPABILITIES.get().cloned()
     }
 
     fn monitors(&self) -> Vec<MonitorInfo> {

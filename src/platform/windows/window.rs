@@ -91,6 +91,7 @@ const FRAME_TIMER: usize = 5;
 const RETRY_TIMER: usize = 6;
 const POPUP_TIMER: usize = 7;
 const POPUP_FADE_TIMER: usize = 8;
+const PROBE_TIMER: usize = 9;
 /// A failed frame (e.g. a lost render target) is drawn again after this long: soon, but not at
 /// once, so a failure that persists does not keep the bar thread busy.
 const RETRY_MS: u32 = 250;
@@ -102,6 +103,7 @@ fn timer_id(id: TimerId) -> usize {
         TimerId::Drag => DRAG_TIMER,
         TimerId::Frame => FRAME_TIMER,
         TimerId::Popup => POPUP_TIMER,
+        TimerId::Probe => PROBE_TIMER,
     }
 }
 
@@ -306,7 +308,7 @@ impl WindowState {
             WM_TIMER
                 if matches!(
                     wparam.0,
-                    WAKE_TIMER | HINT_TIMER | DRAG_TIMER | FRAME_TIMER | POPUP_TIMER
+                    WAKE_TIMER | HINT_TIMER | DRAG_TIMER | FRAME_TIMER | POPUP_TIMER | PROBE_TIMER
                 ) =>
             {
                 // One-shot: the handler sets the next one.
@@ -317,6 +319,7 @@ impl WindowState {
                     HINT_TIMER => TimerId::Hint,
                     DRAG_TIMER => TimerId::Drag,
                     POPUP_TIMER => TimerId::Popup,
+                    PROBE_TIMER => TimerId::Probe,
                     _ => TimerId::Frame,
                 };
                 self.dispatch(UiEvent::Timer(id));

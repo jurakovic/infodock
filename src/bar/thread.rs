@@ -53,6 +53,10 @@ const ESC_POLL: Duration = Duration::from_millis(50);
 const HIGHLIGHT: Duration = Duration::from_millis(300);
 /// The bar rises into place, or slides out, over this long (SPEC §5.5).
 const RISE: Duration = Duration::from_millis(300);
+/// How often the bar checks whether the capability probe has answered (SPEC §14.1), and how
+/// long it checks before waiting for it.
+const PROBE_POLL: Duration = Duration::from_millis(25);
+const PROBE_PATIENCE: Duration = Duration::from_secs(2);
 
 /// A reorder drag in progress.
 struct Drag {
@@ -163,6 +167,8 @@ pub(super) struct BarLogic {
     keys: Option<KeyFocus>,
     /// The size of the last frame, logical px.
     painted: SizeF,
+    /// Since when the sensors wait for the capability probe; `None` once it has answered.
+    probe_since: Option<Instant>,
     /// The hover highlight (SPEC §5.5), 0–1.
     highlight: Fade,
     /// How far the bar has risen into place, 0–1: its content's opacity, and how far it is
@@ -263,6 +269,7 @@ impl BarLogic {
             hovered: None,
             keys: None,
             painted: SizeF::new(0.0, 0.0),
+            probe_since: None,
             highlight: Fade::at(0.0, Instant::now()),
             // Hidden until it rises, if it does.
             shown: Fade::at(if animate { 0.0 } else { 1.0 }, Instant::now()),
@@ -1208,13 +1215,29 @@ impl BarLogic {
     }
 
     /// Creates sensors for new or changed layout entries, showing previews where there are.
+    /// Until the capability probe has answered, only the sensors whose type needs no
+    /// capability are shown, so the first frame does not wait for it and no sensor shows as
+    /// unavailable for a moment (SPEC §14.1); the others join once it has.
     fn sync_sensors(&mut self, window: &dyn BarWindow) {
-        let caps = self.platform.capabilities();
+        let probed = self.platform.probed_capabilities();
+        let waiting = probed.is_none();
+        let caps = probed.unwrap_or_default();
         let mut shown = self.layout.clone();
         for entry in shown.all_mut() {
             if let Some(preview) = self.previews.get(&entry.id) {
                 *entry = preview.clone();
             }
+        }
+        if waiting {
+            for zone in [Zone::Left, Zone::Center, Zone::Right] {
+                shown.zone_mut(zone).retain(|entry| {
+                    registry()
+                        .get(&entry.kind)
+                        .is_none_or(|ty| ty.requires().is_empty())
+                });
+            }
+            self.probe_since.get_or_insert_with(Instant::now);
+            window.set_timer(TimerId::Probe, Some(PROBE_POLL));
         }
         let order = self.sensors.focus_order();
         if self.sensors.sync(&shown, &self.state, &caps, registry()) {
@@ -1344,6 +1367,19 @@ impl BarLogic {
             }
             TimerId::Drag => {}
             TimerId::Frame => self.frame(window, Instant::now()),
+            TimerId::Probe => {
+                // A probe that never started is waited for after a while.
+                let patient = self
+                    .probe_since
+                    .is_some_and(|since| since.elapsed() < PROBE_PATIENCE);
+                if self.platform.probed_capabilities().is_some() || !patient {
+                    self.platform.capabilities();
+                    self.probe_since = None;
+                    self.sync_sensors(window);
+                } else {
+                    window.set_timer(TimerId::Probe, Some(PROBE_POLL));
+                }
+            }
             TimerId::Popup => {
                 if let Some(reply) = self.with_popup(|open, cx| open.popup.on_wake(cx)) {
                     self.popup_reply(window, reply);
@@ -2019,6 +2055,7 @@ mod tests {
         popup: RefCell<Option<(Rect, String)>>,
         popup_draws: Cell<u32>,
         popup_timer: Cell<Option<std::time::Duration>>,
+        probe_timer: Cell<Option<std::time::Duration>>,
         popup_cursor: Cell<crate::platform::PopupCursor>,
         cursor: Cell<PopupCursor>,
         popup_captured: Cell<bool>,
@@ -2045,6 +2082,7 @@ mod tests {
                 TimerId::Hint => self.hint_timer.set(delay),
                 TimerId::Frame => self.frames.set(self.frames.get() + 1),
                 TimerId::Popup => self.popup_timer.set(delay),
+                TimerId::Probe => self.probe_timer.set(delay),
                 _ => {}
             }
         }
@@ -3201,6 +3239,66 @@ mod tests {
             logic.accessible().focused_item().map(|i| i.id.clone()),
             Some(id)
         );
+    }
+
+    #[test]
+    fn sensors_needing_a_capability_wait_for_the_probe_and_the_others_do_not() {
+        /// A system whose capability probe answers once `ready` is set.
+        #[derive(Default)]
+        struct SlowProbe {
+            ready: std::sync::atomic::AtomicBool,
+        }
+        impl Platform for SlowProbe {
+            fn capabilities(&self) -> crate::platform::Capabilities {
+                crate::platform::Capabilities {
+                    battery: true,
+                    ..Default::default()
+                }
+            }
+            fn probed_capabilities(&self) -> Option<crate::platform::Capabilities> {
+                use std::sync::atomic::Ordering;
+                self.ready
+                    .load(Ordering::SeqCst)
+                    .then(|| self.capabilities())
+            }
+            fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
+                Vec::new()
+            }
+            fn appearance(&self) -> OsAppearance {
+                OsAppearance::default()
+            }
+            fn uptime(&self) -> Duration {
+                Duration::ZERO
+            }
+        }
+
+        let (mut logic, window, _, mut config) = bar(Settings::default());
+        let probe = Arc::new(SlowProbe::default());
+        logic.platform = Arc::clone(&probe) as Arc<dyn Platform>;
+        // A Battery in the logo's place: it needs the `battery` capability.
+        config.layout.center[0].kind = "battery".into();
+        let battery = config.layout.center[0].id.clone();
+        logic.apply_config(&window, config);
+        logic.sync_sensors(&window);
+        assert_eq!(
+            logic.sensors.find(&battery),
+            None,
+            "not shown while probing"
+        );
+        let cpu = logic.layout.left[0].id.clone();
+        assert!(logic.sensors.find(&cpu).is_some(), "the others are");
+        assert_eq!(window.probe_timer.get(), Some(PROBE_POLL));
+        // Still probing: it checks again.
+        window.probe_timer.set(None);
+        logic.on_event(&window, UiEvent::Timer(TimerId::Probe));
+        assert_eq!(window.probe_timer.get(), Some(PROBE_POLL));
+        assert_eq!(logic.sensors.find(&battery), None);
+        // Answered: the Battery joins, and no more checks.
+        probe.ready.store(true, std::sync::atomic::Ordering::SeqCst);
+        window.probe_timer.set(None);
+        logic.on_event(&window, UiEvent::Timer(TimerId::Probe));
+        assert_eq!(logic.sensors.find(&battery), Some((Zone::Center, 0)));
+        assert_eq!(window.probe_timer.get(), None);
     }
 
     #[test]

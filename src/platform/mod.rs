@@ -490,6 +490,11 @@ pub enum AutostartChange<'a> {
 
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
+    /// The capabilities if they are known already, without waiting for a probe still running:
+    /// the bar's first frame does not wait for it (SPEC §14.1).
+    fn probed_capabilities(&self) -> Option<Capabilities> {
+        Some(self.capabilities())
+    }
     /// All active monitors, physical pixels.
     fn monitors(&self) -> Vec<MonitorInfo>;
     fn appearance(&self) -> OsAppearance;
@@ -1196,6 +1201,9 @@ pub enum TimerId {
     Frame,
     /// The open popup's next wake-up: an animation frame, or work it waits for (SPEC §7.2).
     Popup,
+    /// Checks whether the capability probe has answered, so the sensors that need one join
+    /// (SPEC §14.1).
+    Probe,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
