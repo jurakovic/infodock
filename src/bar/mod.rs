@@ -1,5 +1,5 @@
 //! The bar (SPEC §4.1, §5): a native window on its own thread. [`BarController`] is the handle
-//! the rest of the app uses; the logic in `thread.rs` runs on the bar thread.
+//! the rest of the app uses; the logic in `thread/` runs on the bar thread.
 
 mod drop;
 mod focus;
@@ -27,7 +27,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::config::Config;
 use crate::config::ConfigStore;
 use crate::config::exchange::ImportFormat;
-use crate::config::model::{BarMode, SensorInstance, Settings, Zone};
+use crate::config::model::{SensorInstance, Settings, Zone};
+use crate::look::anim::slides_out;
 use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
 use crate::sampler::{Change, Delivery, TopicRequest};
 use thread::BarLogic;
@@ -156,9 +157,9 @@ impl BarController {
             };
             *c.settings.lock().unwrap_or_else(PoisonError::into_inner) = new.settings.clone();
             // A docked bar slides out before it changes edges; the bar thread redocks it then.
-            let (o, n) = (&old.settings.bar, &new.settings.bar);
-            let slides = o.edge != n.edge && o.mode == BarMode::Docked && n.mode == BarMode::Docked;
-            if !slides && dock_request(&old.settings, true) != dock_request(&new.settings, true) {
+            if !slides_out(&old.settings.bar, &new.settings.bar)
+                && dock_request(&old.settings, true) != dock_request(&new.settings, true)
+            {
                 c.apply(&new.settings);
             }
             c.send(Command::Config(Box::new(new.clone())));

@@ -9,10 +9,21 @@
 //! ```
 
 use crate::config::model::Edge;
-use crate::platform::{RectF, SizeF};
+use crate::platform::{Rect, RectF, SizeF};
 
 /// Distance kept from the monitor's sides.
 const MARGIN: f32 = 7.0;
+
+/// `rect` in logical screen px as physical px at `scale`, for the windows of hints and popups.
+pub fn physical_rect(rect: RectF, scale: f32) -> Rect {
+    let physical = |v: f32| (v * scale).round() as i32;
+    Rect::new(
+        physical(rect.left),
+        physical(rect.top),
+        physical(rect.right),
+        physical(rect.bottom),
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {

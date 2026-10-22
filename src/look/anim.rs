@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::config::model::Animations;
+use crate::config::model::{Animations, BarMode, BarSettings};
 
 /// The frame interval while something animates.
 pub const FRAME: Duration = Duration::from_millis(16);
@@ -15,6 +15,13 @@ pub fn enabled(setting: Animations, os: bool) -> bool {
         Animations::On => true,
         Animations::Off => false,
     }
+}
+
+/// Whether the bar slides out before it takes `new`'s place (SPEC §5.5): a docked bar that
+/// changes edges does. The controller then leaves the redocking to the bar thread, which
+/// redocks once the slide is done.
+pub fn slides_out(old: &BarSettings, new: &BarSettings) -> bool {
+    old.edge != new.edge && old.mode == BarMode::Docked && new.mode == BarMode::Docked
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -130,6 +137,25 @@ mod tests {
         let before = fade;
         fade.go(0.0, 300 * MS, Easing::In, at + 50 * MS);
         assert_eq!(fade, before);
+    }
+
+    #[test]
+    fn a_docked_bar_slides_out_before_changing_edges() {
+        use crate::config::model::Edge;
+        let bottom = BarSettings::default();
+        assert_eq!(bottom.edge, Edge::Bottom);
+        let top = BarSettings {
+            edge: Edge::Top,
+            ..bottom.clone()
+        };
+        assert!(slides_out(&bottom, &top));
+        assert!(!slides_out(&bottom, &bottom), "same edge");
+        let floating = |s: &BarSettings| BarSettings {
+            mode: BarMode::Floating,
+            ..s.clone()
+        };
+        assert!(!slides_out(&floating(&bottom), &top), "was floating");
+        assert!(!slides_out(&bottom, &floating(&top)), "becomes floating");
     }
 
     #[test]

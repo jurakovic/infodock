@@ -278,6 +278,18 @@ pub struct PopupSettings {
     pub hide_delay_ms: u32,
 }
 
+impl PopupSettings {
+    /// How long the pointer rests on a sensor before its hint shows (SPEC §7.1).
+    pub fn show_delay(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(u64::from(self.show_delay_ms))
+    }
+
+    /// How long a hint stays after the pointer left (SPEC §7.1).
+    pub fn hide_delay(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(u64::from(self.hide_delay_ms))
+    }
+}
+
 impl Default for PopupSettings {
     fn default() -> Self {
         Self {

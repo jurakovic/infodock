@@ -1,15 +1,17 @@
 //! The hover hint's content (SPEC §7.1): a rounded bubble with a pointer triangle towards the
 //! sensor and an optional soft shadow, around multi-line text whose tab-separated cells line
 //! up in columns ("label:\tvalue"). The hint window (platform) shows what this draws; timing
-//! lives in `thread.rs`, placement in `placement.rs`.
+//! lives in `thread/hover.rs`, placement in `placement.rs`.
 
 use std::time::Duration;
 
-use super::placement::{Anchor, Placement, place, place_left_edge, place_right_edge};
+use super::placement::{
+    Anchor, Placement, physical_rect, place, place_left_edge, place_right_edge,
+};
 use crate::config::model::Edge;
 use crate::look::theme::Theme;
 use crate::platform::{
-    Brush, Canvas, Color, PointF, RectF, Shape, SizeF, TextEngine, TextLayout, TextStyle,
+    Brush, Canvas, Color, PointF, Rect, RectF, Shape, SizeF, TextEngine, TextLayout, TextStyle,
 };
 use crate::sensors::popup::PopupAlign;
 use crate::sensors::{HintContent, RichHint};
@@ -225,16 +227,44 @@ pub fn spoken(text: &str) -> String {
         .join(", ")
 }
 
-/// Draws the hint into a cleared canvas the size of the frame's window.
-pub fn paint(canvas: &mut dyn Canvas, frame: &HintFrame, body: &HintBody, theme: &Theme) {
-    paint_bubble(canvas, frame, theme);
-    let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);
-    let free = frame.bubble.height() - 2.0 * PADDING - body.size().height;
-    body.draw(
-        canvas,
-        PointF::new(origin.x, origin.y + (free / 2.0).max(0.0)),
-        theme,
-    );
+/// A hint ready to show (SPEC §7.1, §7.3): its content laid out and framed beside its sensor.
+/// The bar shows it in the hint window; the screenshots and the hint budget draw it the same
+/// way.
+pub struct Prepared {
+    pub frame: HintFrame,
+    pub body: HintBody,
+}
+
+impl Prepared {
+    /// `content` beside `anchor`; `None` when it is empty.
+    pub fn new(
+        content: HintContent,
+        text: &dyn TextEngine,
+        anchor: &Anchor,
+        theme: &Theme,
+    ) -> Option<Self> {
+        let body = HintBody::new(content, text, theme)?;
+        let frame = HintFrame::new(body.size(), anchor, theme);
+        Some(Self { frame, body })
+    }
+
+    /// The hint window at `scale`, physical screen px.
+    pub fn rect(&self, scale: f32) -> Rect {
+        physical_rect(self.frame.window, scale)
+    }
+
+    /// Draws the hint into a cleared canvas the size of its window.
+    pub fn paint(&self, canvas: &mut dyn Canvas, theme: &Theme) {
+        let frame = &self.frame;
+        paint_bubble(canvas, frame, theme);
+        let origin = PointF::new(frame.bubble.left + PADDING, frame.bubble.top + PADDING);
+        let free = frame.bubble.height() - 2.0 * PADDING - self.body.size().height;
+        self.body.draw(
+            canvas,
+            PointF::new(origin.x, origin.y + (free / 2.0).max(0.0)),
+            theme,
+        );
+    }
 }
 
 /// Draws the bubble with its pointer and shadow, the frame of hints and popups, into a
@@ -454,10 +484,15 @@ mod tests {
     #[test]
     fn paints_bubble_pointer_and_text() {
         let theme = theme(false);
-        let text = HintText::new("Hi", &FixedMetrics, &theme);
-        let frame = HintFrame::new(text.size, &anchor(Edge::Bottom), &theme);
+        let content = HintContent::Text("Hi".into());
+        let hint = Prepared::new(content, &FixedMetrics, &anchor(Edge::Bottom), &theme)
+            .expect("not empty");
+        assert_eq!(
+            hint.rect(1.5).left,
+            (hint.frame.window.left * 1.5).round() as i32
+        );
         let mut canvas = RecordingCanvas::new(1.0);
-        paint(&mut canvas, &frame, &HintBody::Text(text), &theme);
+        hint.paint(&mut canvas, &theme);
         let dump = canvas.dump();
         let lines: Vec<&str> = dump.lines().collect();
         assert_eq!(lines.len(), 3);

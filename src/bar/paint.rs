@@ -645,7 +645,7 @@ mod tests {
     fn budget_hint() {
         use std::time::{Duration, Instant};
 
-        use crate::bar::hint::{self, HintBody, HintFrame};
+        use crate::bar::hint::Prepared;
         use crate::bar::placement::Anchor;
         use crate::bar::sensors::{BarSensors, Env};
         use crate::platform::{FrameRenderer, RectF, text_engine};
@@ -701,16 +701,14 @@ mod tests {
             let began = Instant::now();
             let content = sensors.hint(&date, &env).expect("a hint");
             assert!(matches!(content, HintContent::Rich(_)), "a calendar");
-            let body = HintBody::new(content, text.as_ref(), &theme).expect("not empty");
-            let frame = HintFrame::new(body.size(), &anchor, &theme);
+            let hint = Prepared::new(content, text.as_ref(), &anchor, &theme).expect("not empty");
+            let window = hint.frame.window;
             let (w, h) = (
-                frame.window.width().round() as u32,
-                frame.window.height().round() as u32,
+                window.width().round() as u32,
+                window.height().round() as u32,
             );
             renderer
-                .draw(w, h, 1.0, &mut |canvas| {
-                    hint::paint(canvas, &frame, &body, &theme)
-                })
+                .draw(w, h, 1.0, &mut |canvas| hint.paint(canvas, &theme))
                 .expect("drawn");
             times.push(began.elapsed());
         }
@@ -1341,7 +1339,7 @@ mod tests {
 
         // Hints (SPEC §7.1): a two-column hint above a bottom bar, one below a top bar, and
         // Date's calendar (a rich hint, §9.4).
-        use crate::bar::hint::{self, HintBody, HintFrame};
+        use crate::bar::hint::Prepared;
         use crate::bar::placement::Anchor;
         use crate::platform::time::Date;
         use crate::platform::{Locale, RectF};
@@ -1390,13 +1388,12 @@ mod tests {
                 let text = "Processor: 37%\nUser:\t25%\nKernel:\t12%\nCores:\t8 (16 threads)";
                 HintContent::Text(text.into())
             };
-            let body = HintBody::new(content, text.as_ref(), &theme).expect("not empty");
-            let frame = HintFrame::new(body.size(), &anchor, &theme);
+            let hint = Prepared::new(content, text.as_ref(), &anchor, &theme).expect("not empty");
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
-                let width = (frame.window.width() * scale).round() as u32;
-                let height = (frame.window.height() * scale).round() as u32;
+                let width = (hint.frame.window.width() * scale).round() as u32;
+                let height = (hint.frame.window.height() * scale).round() as u32;
                 let bitmap = render_offscreen(width, height, scale, &mut |canvas| {
-                    hint::paint(canvas, &frame, &body, &theme)
+                    hint.paint(canvas, &theme)
                 })
                 .expect("rendered");
                 save(&format!("{name}{suffix}"), &bitmap);

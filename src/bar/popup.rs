@@ -1,6 +1,6 @@
 //! The interactive popup host (SPEC §7.2): which sensor's popup is open, where its frame is,
 //! and the 500 ms during which a sensor whose popup has just closed ignores clicks. The bar
-//! logic (`thread.rs`) opens, feeds and closes it; the platform's popup window shows what
+//! logic (`thread/popups.rs`) opens, feeds and closes it; the platform's popup window shows what
 //! [`paint`] draws.
 
 use std::time::{Duration, Instant};
