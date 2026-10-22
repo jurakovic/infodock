@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    # The WinUI spike's branch too, so its Slint changes get a Windows build to try.
+    branches: [master, ccr-76dc6498-nmrijy]
     # Only changes that can affect the build, lints or tests; docs-only commits skip CI.
     paths:
       - "src/**"
