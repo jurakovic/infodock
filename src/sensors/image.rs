@@ -4,12 +4,12 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use super::common::icon;
+use super::common::icon::{self, IconSize, IconStyle};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ColorChoice, DrawCtx, Fetched, HintContent, IconSource, LayoutCtx, Props, Sensor,
-    SensorCtx, SensorType, State, typed,
+    Category, DrawCtx, Fetched, HintContent, IconSource, LayoutCtx, Props, Sensor, SensorCtx,
+    SensorType, State, typed,
 };
 use crate::i18n::t;
 use crate::look::theme::Theme;
@@ -28,19 +28,8 @@ const SCHEMA: &[PropField] = &[
         Lit::Str(""),
     )
     .describe("sensor.image.field.image.help"),
-    PropField::new(
-        "color",
-        FieldKind::ColorMode { dynamic: false },
-        "sensor.field.color",
-        Lit::ColorMode("standard", "#FFFFFF"),
-    )
-    .describe("sensor.image.field.color.help"),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::COLOR.describe("sensor.image.field.color.help"),
+    icon::OPACITY,
     PropField::new(
         "popupText",
         FieldKind::Text {
@@ -54,9 +43,9 @@ const SCHEMA: &[PropField] = &[
 
 /// SPEC §9.2.
 const LEGACY_KEYS: &[LegacyKey] = &[
-    LegacyKey::new("image", "image"),
-    LegacyKey::new("colorize", "color"),
-    LegacyKey::new("opacity", "opacity"),
+    icon::LEGACY_IMAGE,
+    icon::LEGACY_COLOR,
+    icon::LEGACY_OPACITY,
     LegacyKey::new("text", "popupText"),
 ];
 
@@ -116,12 +105,10 @@ impl SensorType for ImageType {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImageProps {
-    /// A file path; `""` is the logo.
-    image: String,
-    /// Custom tints the image (SPEC §8.4); standard leaves it unchanged.
-    color: ColorChoice,
-    /// Percent.
-    opacity: u32,
+    /// Its image empty: the logo. Custom tints the image (SPEC §8.4); standard leaves it
+    /// unchanged.
+    #[serde(flatten)]
+    look: IconStyle,
     /// `%v` is replaced by the app version.
     popup_text: String,
 }
@@ -139,7 +126,7 @@ impl Image {
     /// while the bar reads the file (SPEC §9.2). The logo is built in, so with Standard colour
     /// it takes the sensor text colour (§8.4).
     fn load(&self, height: u32, theme: &Theme, icons: &dyn IconSource) -> Option<Option<Bitmap>> {
-        let file = match self.props.image.as_str() {
+        let file = match self.props.look.image.as_str() {
             "" => None,
             path => match icons.image(path, height) {
                 Fetched::Loading => return None,
@@ -155,7 +142,7 @@ impl Image {
                 .ok(),
         };
         Some(bitmap.map(
-            |bitmap| match icon::tint(&self.props.color, built_in, theme) {
+            |bitmap| match icon::tint(&self.props.look.color, built_in, theme) {
                 Some(tint) => bitmap.tinted(tint),
                 None => bitmap,
             },
@@ -169,9 +156,8 @@ impl Image {
 
 impl Sensor for Image {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // The image is one px less than the bar tall, keeping its aspect ratio (SPEC §9.2).
-        let logical = cx.theme.bar_height.saturating_sub(1).max(1) as f32;
-        let height = (logical * cx.scale).round().max(1.0) as u32;
+        // The image keeps its aspect ratio (SPEC §9.2).
+        let height = IconSize::Picture.physical(cx.theme, cx.scale);
         // Loaded again for another size or text colour (the logo follows it).
         let key = (height, cx.theme.sensor_text);
         // While the file is read it keeps what it had (nothing when new); the bar measures
@@ -201,7 +187,11 @@ impl Sensor for Image {
             left + bitmap.width() as f32 / scale,
             top + bitmap.height() as f32 / scale,
         );
-        canvas.draw_bitmap(bitmap, dest, self.props.opacity.min(100) as f32 / 100.0);
+        canvas.draw_bitmap(
+            bitmap,
+            dest,
+            self.props.look.opacity.min(100) as f32 / 100.0,
+        );
     }
 
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {

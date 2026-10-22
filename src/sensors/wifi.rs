@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::common::icon::{self, Icon};
+use super::common::icon::{BarIcon, IconSize, Look};
 use super::common::icon_label::IconLabel;
 use super::common::two_line::TwoLine;
 use super::format;
@@ -29,8 +29,8 @@ const LEVELS: [&[u8]; 6] = [
     include_bytes!("../../assets/icons/wifi-4.svg"),
     include_bytes!("../../assets/icons/wifi-5.svg"),
 ];
-/// The icon is drawn at this opacity of the text colour (SPEC §9.15).
-const ICON_OPACITY: f32 = 0.75;
+/// The icon is drawn at this opacity of the text colour, percent (SPEC §9.15).
+const ICON_OPACITY: u32 = 75;
 /// What a click opens.
 const WIFI_SETTINGS: &str = "ms-settings:network-wifi";
 const LOCATION_SETTINGS: &str = "ms-settings:privacy-location";
@@ -305,18 +305,12 @@ impl Wifi {
 
 impl Sensor for Wifi {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let logical = cx.theme.bar_height.saturating_sub(8).max(12) as f32;
-        let px = icon::physical(logical, cx.scale);
         let level = self.status.as_ref().map_or(0, level);
-        let inactive = self.inactive().then_some(cx.theme.inactive);
-        // Built-in and monochrome: in the text colour, at 75 % (SPEC §9.15).
-        let icon = Icon::svg(LEVELS[level], px)
-            .map(|b| Icon::new(b, Some(cx.theme.sensor_text), ICON_OPACITY, inactive));
-        let icon_width = icon
-            .as_ref()
-            .map_or((px as f32 / cx.scale).ceil(), |i| i.width(cx.scale));
+        let look = Look::built_in(IconSize::Signal, LEVELS[level], ICON_OPACITY);
+        let mut icon = BarIcon::default();
+        icon.measure(look.inactive(self.inactive()), cx);
         let text = TwoLine::new(cx.text, cx.theme, &self.label(), &self.value());
-        let view = IconLabel::new(icon, icon_width, text);
+        let view = IconLabel::new(icon, text);
         let width = view.width();
         self.view = Some(view);
         width

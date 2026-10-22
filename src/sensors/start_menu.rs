@@ -5,20 +5,18 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::common::folder_browser::{FolderBrowser, Options};
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, IconStyle, Own};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, LayoutCtx, MenuId, MenuItem,
-    Props, Sensor, SensorCtx, SensorType, State, typed,
+    Category, ClickResult, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props, Sensor,
+    SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::t;
 use crate::platform::{Canvas, Capability, KnownFolder, Platform};
 
 /// The built-in Start Menu icon (Appendix C).
 const START_MENU: &[u8] = include_bytes!("../../assets/icons/start-menu.svg");
-/// The icon's height, logical px (as the Folder Menu's, SPEC §9.19).
-const ICON: f32 = 21.0;
 /// The menu items: the user's Programs folder, and all users'.
 const OPEN: MenuId = 0;
 const OPEN_ALL: MenuId = 1;
@@ -33,28 +31,9 @@ const SCHEMA: &[PropField] = &[
         Lit::Str(""),
     )
     .describe("sensor.startMenu.field.title.help"),
-    PropField::new(
-        "image",
-        FieldKind::File {
-            extensions: &["ico", "png", "gif", "jpg", "jpeg", "svg"],
-        },
-        "sensor.shortcut.field.image",
-        Lit::Str(""),
-    )
-    .describe("sensor.startMenu.field.image.help"),
-    PropField::new(
-        "color",
-        FieldKind::ColorMode { dynamic: false },
-        "sensor.field.color",
-        Lit::ColorMode("standard", "#FFFFFF"),
-    )
-    .describe("sensor.shortcut.field.color.help"),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::image("sensor.startMenu.field.image.help"),
+    icon::COLOR,
+    icon::OPACITY,
     PropField::new(
         "popupWidth",
         FieldKind::Hidden,
@@ -73,9 +52,9 @@ const SCHEMA: &[PropField] = &[
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::ignored("folder"),
     LegacyKey::new("text", "title"),
-    LegacyKey::new("image", "image"),
-    LegacyKey::new("colorize", "color"),
-    LegacyKey::new("opacity", "opacity"),
+    icon::LEGACY_IMAGE,
+    icon::LEGACY_COLOR,
+    icon::LEGACY_OPACITY,
     LegacyKey::new("popup-width", "popupWidth"),
     LegacyKey::new("popup-height", "popupHeight"),
 ];
@@ -118,7 +97,7 @@ impl SensorType for StartMenuType {
     fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
         Ok(Box::new(StartMenu {
             props: typed(props)?,
-            icon: None,
+            icon: BarIcon::default(),
         }))
     }
 
@@ -136,12 +115,9 @@ impl SensorType for StartMenuType {
 struct StartMenuProps {
     /// Empty: "Start Menu".
     title: String,
-    /// Empty: the built-in Start Menu icon.
-    image: String,
-    /// Custom tints the icon (SPEC §8.4).
-    color: ColorChoice,
-    /// Percent.
-    opacity: u32,
+    /// Its image empty: the built-in Start Menu icon.
+    #[serde(flatten)]
+    icon: IconStyle,
     /// The popup's size, logical px.
     popup_width: Value,
     popup_height: Value,
@@ -149,7 +125,7 @@ struct StartMenuProps {
 
 struct StartMenu {
     props: StartMenuProps,
-    icon: Option<Icon>,
+    icon: BarIcon,
 }
 
 impl StartMenu {
@@ -177,25 +153,12 @@ impl StartMenu {
 
 impl Sensor for StartMenu {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let px = icon::physical(ICON, cx.scale);
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        let bitmap = match icon::custom_image(&self.props.image, px, cx.icons) {
-            Fetched::Ready(image) => Some((image, false)),
-            // Its square stays free until it arrives.
-            Fetched::Loading => None,
-            Fetched::None => Icon::svg(START_MENU, px).map(|b| (b, true)),
-        };
-        self.icon = bitmap.map(|(bitmap, built_in)| {
-            let tint = icon::tint(&self.props.color, built_in, cx.theme);
-            Icon::new(bitmap, tint, opacity, None)
-        });
-        self.icon.as_ref().map_or(ICON, |i| i.width(cx.scale))
+        let look = self.props.icon.look(IconSize::Small, Own::Svg(START_MENU));
+        self.icon.measure(look, cx)
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        if let Some(icon) = &self.icon {
-            icon.draw(canvas, cx);
-        }
+        self.icon.draw(canvas, cx);
     }
 
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
@@ -260,7 +223,7 @@ mod tests {
         let props = resolved(SCHEMA, stored);
         StartMenu {
             props: typed(&props).expect("valid props"),
-            icon: None,
+            icon: BarIcon::default(),
         }
     }
 

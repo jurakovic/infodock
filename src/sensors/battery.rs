@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::common::icon::{self, Icon};
+use super::common::icon::{Icon, IconSize};
 use super::common::icon_label::GAP;
 use super::common::two_line::{Align, TwoLine};
 use super::format;
@@ -29,7 +29,7 @@ const FRONT: &[u8] = include_bytes!("../../assets/icons/battery-front.svg");
 const CHARGING: &[u8] = include_bytes!("../../assets/icons/battery-charging.svg");
 const CHARGED: &[u8] = include_bytes!("../../assets/icons/battery-charged.svg");
 const NONE: &[u8] = include_bytes!("../../assets/icons/battery-none.svg");
-/// The icon's size, logical px (SPEC §9.14), and the level's area inside it.
+/// The icon's drawn size, logical px (SPEC §9.14), and the level's area inside it.
 const ICON: (f32, f32) = (19.0, 23.0);
 const LEVEL: RectF = RectF {
     left: 4.3,
@@ -635,10 +635,7 @@ impl BatterySensor {
 impl Sensor for BatterySensor {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
         // 19×23, smaller only in a bar too low for it.
-        let height = ICON
-            .1
-            .min(cx.theme.bar_height.saturating_sub(2).max(1) as f32);
-        let px = icon::physical(height, cx.scale);
+        let px = IconSize::Battery.physical(cx.theme, cx.scale);
         let logical_h = px as f32 / cx.scale;
         let logical_w = (ICON.0 / ICON.1 * logical_h).ceil();
         let (tint, opacity) = match self.inactive().then_some(cx.theme.inactive) {

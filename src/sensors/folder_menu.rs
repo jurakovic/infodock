@@ -5,13 +5,13 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::common::folder_browser::{FolderBrowser, Options};
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, IconStyle, Own};
 use super::drop::{self, DragInfo, DropAction, Dropped};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, LayoutCtx, MenuId, MenuItem,
-    Props, Sensor, SensorCtx, SensorType, State, typed,
+    Category, ClickResult, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props, Sensor,
+    SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::t;
 use crate::platform::file_name;
@@ -19,8 +19,6 @@ use crate::platform::{Canvas, DropEffect, FileOp};
 
 /// The built-in folder icon (Appendix C).
 const FOLDER: &[u8] = include_bytes!("../../assets/icons/folder.svg");
-/// The icon's height, logical px (SPEC §9.19).
-const ICON: f32 = 21.0;
 /// The *Open folder* menu item.
 const OPEN: MenuId = 0;
 
@@ -42,28 +40,9 @@ const SCHEMA: &[PropField] = &[
         Lit::Str(""),
     )
     .describe("sensor.folderMenu.field.title.help"),
-    PropField::new(
-        "image",
-        FieldKind::File {
-            extensions: &["ico", "png", "gif", "jpg", "jpeg", "svg"],
-        },
-        "sensor.shortcut.field.image",
-        Lit::Str(""),
-    )
-    .describe("sensor.folderMenu.field.image.help"),
-    PropField::new(
-        "color",
-        FieldKind::ColorMode { dynamic: false },
-        "sensor.field.color",
-        Lit::ColorMode("standard", "#FFFFFF"),
-    )
-    .describe("sensor.shortcut.field.color.help"),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::image("sensor.folderMenu.field.image.help"),
+    icon::COLOR,
+    icon::OPACITY,
     PropField::new(
         "showHidden",
         FieldKind::Bool,
@@ -89,9 +68,9 @@ const SCHEMA: &[PropField] = &[
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("folder", "folder"),
     LegacyKey::new("text", "title"),
-    LegacyKey::new("image", "image"),
-    LegacyKey::new("colorize", "color"),
-    LegacyKey::new("opacity", "opacity"),
+    icon::LEGACY_IMAGE,
+    icon::LEGACY_COLOR,
+    icon::LEGACY_OPACITY,
     LegacyKey::new("popup-width", "popupWidth"),
     LegacyKey::new("popup-height", "popupHeight"),
 ];
@@ -130,7 +109,7 @@ impl SensorType for FolderMenuType {
     fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
         Ok(Box::new(FolderMenu {
             props: typed(props)?,
-            icon: None,
+            icon: BarIcon::default(),
         }))
     }
 
@@ -151,12 +130,9 @@ struct FolderProps {
     folder: String,
     /// Empty: the folder's name.
     title: String,
-    /// Empty: the built-in folder icon.
-    image: String,
-    /// Custom tints the icon (SPEC §8.4).
-    color: ColorChoice,
-    /// Percent.
-    opacity: u32,
+    /// Its image empty: the built-in folder icon.
+    #[serde(flatten)]
+    icon: IconStyle,
     show_hidden: bool,
     /// The popup's size, logical px.
     popup_width: Value,
@@ -165,7 +141,7 @@ struct FolderProps {
 
 struct FolderMenu {
     props: FolderProps,
-    icon: Option<Icon>,
+    icon: BarIcon,
 }
 
 /// What a drop into the folder does (SPEC §9.19).
@@ -239,25 +215,12 @@ impl FolderMenu {
 
 impl Sensor for FolderMenu {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let px = icon::physical(ICON, cx.scale);
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        let bitmap = match icon::custom_image(&self.props.image, px, cx.icons) {
-            Fetched::Ready(image) => Some((image, false)),
-            // Its square stays free until it arrives.
-            Fetched::Loading => None,
-            Fetched::None => Icon::svg(FOLDER, px).map(|b| (b, true)),
-        };
-        self.icon = bitmap.map(|(bitmap, built_in)| {
-            let tint = icon::tint(&self.props.color, built_in, cx.theme);
-            Icon::new(bitmap, tint, opacity, None)
-        });
-        self.icon.as_ref().map_or(ICON, |i| i.width(cx.scale))
+        let look = self.props.icon.look(IconSize::Small, Own::Svg(FOLDER));
+        self.icon.measure(look, cx)
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        if let Some(icon) = &self.icon {
-            icon.draw(canvas, cx);
-        }
+        self.icon.draw(canvas, cx);
     }
 
     /// The title (the bar shows no hints while the popup is open).
@@ -363,7 +326,7 @@ mod tests {
         let props = resolved(SCHEMA, stored);
         FolderMenu {
             props: typed(&props).expect("valid props"),
-            icon: None,
+            icon: BarIcon::default(),
         }
     }
 

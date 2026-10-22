@@ -1,7 +1,7 @@
 //! Icon + two-line (SPEC §8.3): Battery, Wi-Fi and Recycle Bin. An icon at the sensor's left,
 //! centred vertically, then a two-line block after a small gap.
 
-use super::icon::Icon;
+use super::icon::BarIcon;
 use super::two_line::{Align, TwoLine};
 use crate::platform::{Canvas, Color, RectF};
 use crate::sensors::DrawCtx;
@@ -11,32 +11,26 @@ pub const GAP: f32 = 3.0;
 
 /// An icon and two lines, laid out.
 pub struct IconLabel {
-    /// `None` while there is none to draw (it could not be decoded); its place stays.
-    icon: Option<Icon>,
-    /// The icon's width, logical px.
-    icon_width: f32,
+    /// Its place stays while there is nothing to draw.
+    icon: BarIcon,
     text: TwoLine,
 }
 
 impl IconLabel {
-    /// `icon` takes `icon_width` logical px (whole px), whether it is there or not.
-    pub fn new(icon: Option<Icon>, icon_width: f32, text: TwoLine) -> Self {
-        Self {
-            icon,
-            icon_width,
-            text,
-        }
+    /// `icon` as measured.
+    pub fn new(icon: BarIcon, text: TwoLine) -> Self {
+        Self { icon, text }
     }
 
     /// The icon as drawn, for tests.
     #[cfg(test)]
-    pub fn icon(&self) -> Option<&Icon> {
-        self.icon.as_ref()
+    pub fn icon(&self) -> Option<&super::icon::Icon> {
+        self.icon.icon()
     }
 
     /// Where the text starts, from the sensor's left edge.
     fn text_x(&self) -> f32 {
-        self.icon_width + GAP
+        self.icon.width() + GAP
     }
 
     /// The whole width, rounded up to whole logical px.
@@ -46,22 +40,20 @@ impl IconLabel {
 
     /// Draws the icon and both lines, left-aligned after it, in `color`.
     pub fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx, color: Color) {
-        if let Some(icon) = &self.icon {
-            let rect = cx.rect;
-            let icon_rect = RectF::new(
-                rect.left,
-                rect.top,
-                rect.left + self.icon_width,
-                rect.bottom,
-            );
-            icon.draw(
-                canvas,
-                &DrawCtx {
-                    theme: cx.theme,
-                    rect: icon_rect,
-                },
-            );
-        }
+        let rect = cx.rect;
+        let icon_rect = RectF::new(
+            rect.left,
+            rect.top,
+            rect.left + self.icon.width(),
+            rect.bottom,
+        );
+        self.icon.draw(
+            canvas,
+            &DrawCtx {
+                theme: cx.theme,
+                rect: icon_rect,
+            },
+        );
         let x = cx.rect.left + self.text_x();
         self.text.draw(
             canvas,
@@ -78,6 +70,7 @@ mod tests {
     use super::*;
     use crate::platform::Bitmap;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
+    use crate::sensors::common::icon::Icon;
     use crate::sensors::test_support::theme;
 
     #[test]
@@ -85,8 +78,7 @@ mod tests {
         let theme = theme();
         let bitmap = Bitmap::from_rgba(24, 24, vec![255; 24 * 24 * 4]).expect("a bitmap");
         let block = IconLabel::new(
-            Some(Icon::new(bitmap, None, 1.0, None)),
-            24.0,
+            BarIcon::laid_out(Some(Icon::new(bitmap, None, 1.0, None)), 24.0),
             TwoLine::new(&FixedMetrics, &theme, "Recycle Bin", "3 items"),
         );
         // 24 + 3 + 11 characters × 5 px.
@@ -116,7 +108,10 @@ mod tests {
     #[test]
     fn without_an_icon_its_place_stays() {
         let theme = theme();
-        let block = IconLabel::new(None, 19.0, TwoLine::new(&FixedMetrics, &theme, "A", "B"));
+        let block = IconLabel::new(
+            BarIcon::laid_out(None, 19.0),
+            TwoLine::new(&FixedMetrics, &theme, "A", "B"),
+        );
         assert_eq!(block.width(), 27.0);
     }
 }

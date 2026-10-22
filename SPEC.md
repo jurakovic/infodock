@@ -758,6 +758,8 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 * Colour and opacity per series (`topColor`/`topOpacity`, `bottomColor`/`bottomOpacity`).
 * Values are normalised to 0..1 per series by the owning sensor.
 
+**Icon** (`common/icon.rs`) — every icon a sensor shows on the bar: the user's own image (`image`: ICO, PNG, GIF, JPEG or SVG) if set and readable, otherwise the sensor's own (a shell icon, or a built-in SVG where the shell has none); tinted by `color` (§8.4), drawn at `opacity` (20–100 %) and as inactive (§8.5), at the sensor's left, centred vertically on whole physical px. Heights: bar height − 4 (Shortcut, Disk, Recycle Bin), 21 px (Folder Menu, Start Menu, Power, Eject USB), bar height − 1 (Image), bar height − 8 but at least 12 px (Wi-Fi), 23 px or bar height − 2 if less (Battery). Implementation: the fields and their legacy keys (`image`, `colorize`, `opacity`), the heights (`IconSize`) and the measuring and drawing (`BarIcon`: decoded at the physical height; while an image or shell icon is read its square stays free) are defined there once; Image draws its picture from the bar's top and Battery its layers itself.
+
 **Icon + two-line** (`common/icon_label.rs`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap. Implementation: a 3 px gap; the icon's place is kept when it cannot be drawn.
 
 **History** (`common/history.rs`): fixed-capacity ring buffer of `f32`. A sensor whose plot width changes is created anew, with an empty history.

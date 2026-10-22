@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, Look};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
@@ -13,9 +13,6 @@ use super::{
 };
 use crate::i18n::{t, t_args};
 use crate::platform::{Canvas, PowerAction};
-
-/// The icon height, logical px (SPEC §9.21).
-const ICON: f32 = 21.0;
 
 /// The modes that can close apps without asking (`force`).
 const FORCEABLE: &[Lit] = &[
@@ -46,12 +43,7 @@ const SCHEMA: &[PropField] = &[
     )
     .describe("sensor.power.field.force.help")
     .visible_if("mode", FORCEABLE),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::OPACITY,
 ];
 
 /// The built-in icon of `action` (Appendix C).
@@ -88,7 +80,7 @@ const LEGACY_KEYS: &[LegacyKey] = &[
         ],
     ),
     LegacyKey::new("safety-dialog", "confirm"),
-    LegacyKey::new("opacity", "opacity"),
+    icon::LEGACY_OPACITY,
     LegacyKey::dropped("path"),
 ];
 
@@ -128,7 +120,7 @@ impl SensorType for PowerType {
         Ok(Box::new(Power {
             action: PowerAction::from_id(&props.mode).unwrap_or(PowerAction::Sleep),
             props,
-            icon: None,
+            icon: BarIcon::default(),
         }))
     }
 
@@ -151,23 +143,17 @@ struct PowerProps {
 struct Power {
     props: PowerProps,
     action: PowerAction,
-    icon: Option<Icon>,
+    icon: BarIcon,
 }
 
 impl Sensor for Power {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let px = icon::physical(ICON, cx.scale);
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        // Built-in and monochrome: in the sensor text colour (SPEC §8.4).
-        let tint = Some(cx.theme.sensor_text);
-        self.icon = Icon::svg(svg(self.action), px).map(|b| Icon::new(b, tint, opacity, None));
-        self.icon.as_ref().map_or(ICON, |i| i.width(cx.scale))
+        let look = Look::built_in(IconSize::Small, svg(self.action), self.props.opacity);
+        self.icon.measure(look, cx)
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        if let Some(icon) = &self.icon {
-            icon.draw(canvas, cx);
-        }
+        self.icon.draw(canvas, cx);
     }
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
@@ -286,14 +272,14 @@ mod tests {
         let mut sensor = Power {
             props: crate::sensors::typed(&props).expect("valid props"),
             action: PowerAction::Sleep,
-            icon: None,
+            icon: BarIcon::default(),
         };
         let h = Harness::new();
         sensor.measure(&crate::sensors::LayoutCtx {
             theme: &light,
             ..h.layout()
         });
-        let bitmap = sensor.icon.as_ref().expect("an icon").bitmap();
+        let bitmap = sensor.icon.icon().expect("an icon").bitmap();
         // Every fully opaque pixel is the dark text colour, not white.
         let opaque: Vec<_> = bitmap
             .pixels()

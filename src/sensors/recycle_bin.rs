@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, Look, Own};
 use super::common::icon_label::IconLabel;
 use super::common::two_line::TwoLine;
 use super::drop::{self, DragInfo, DropAction, Dropped};
@@ -14,8 +14,8 @@ use super::format;
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Capability, Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, LayoutCtx,
-    MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
+    Capability, Category, ClickResult, ColorChoice, DrawCtx, HintContent, LayoutCtx, MenuId,
+    MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_count};
 use crate::platform::{Canvas, DropEffect, RecycleBin};
@@ -30,8 +30,6 @@ const FOLDER: &str = "shell:RecycleBinFolder";
 const OPEN: MenuId = 0;
 const EMPTY_BIN: MenuId = 1;
 
-const IMAGES: &[&str] = &["ico", "png", "gif", "jpg", "jpeg", "svg"];
-
 const SCHEMA: &[PropField] = &[
     PropField::new(
         "title",
@@ -44,31 +42,24 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.recycleBin.field.title.help"),
     PropField::new(
         "imageEmpty",
-        FieldKind::File { extensions: IMAGES },
+        FieldKind::File {
+            extensions: icon::IMAGES,
+        },
         "sensor.recycleBin.field.imageEmpty",
         Lit::Str(""),
     )
     .describe("sensor.recycleBin.field.image.help"),
     PropField::new(
         "imageFull",
-        FieldKind::File { extensions: IMAGES },
+        FieldKind::File {
+            extensions: icon::IMAGES,
+        },
         "sensor.recycleBin.field.imageFull",
         Lit::Str(""),
     )
     .describe("sensor.recycleBin.field.image.help"),
-    PropField::new(
-        "color",
-        FieldKind::ColorMode { dynamic: false },
-        "sensor.field.color",
-        Lit::ColorMode("standard", "#FFFFFF"),
-    )
-    .describe("sensor.shortcut.field.color.help"),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::COLOR,
+    icon::OPACITY,
     PropField::new(
         "interval",
         FieldKind::Interval {
@@ -85,8 +76,8 @@ const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("title", "title"),
     LegacyKey::new("image-empty", "imageEmpty"),
     LegacyKey::new("image-full", "imageFull"),
-    LegacyKey::new("opacity", "opacity"),
-    LegacyKey::new("colorize", "color"),
+    icon::LEGACY_COLOR,
+    icon::LEGACY_OPACITY,
 ];
 
 pub struct RecycleBinType;
@@ -186,34 +177,26 @@ impl Bin {
 
 impl Sensor for Bin {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // As the launchers' icons: bar height − 4, centred.
-        let logical = cx.theme.bar_height.saturating_sub(4).max(1) as f32;
-        let px = icon::physical(logical, cx.scale);
-        let (path, svg) = if self.full() {
+        // As the launchers' icons.
+        let (image, svg) = if self.full() {
             (&self.props.image_full, FULL)
         } else {
             (&self.props.image_empty, EMPTY)
         };
-        let bitmap = match icon::custom_image(path, px, cx.icons) {
-            Fetched::Ready(image) => Some((image, false)),
-            // Its square stays free until it arrives.
-            Fetched::Loading => None,
-            Fetched::None => Icon::svg(svg, px).map(|b| (b, true)),
-        };
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        let icon = bitmap.map(|(bitmap, built_in)| {
-            Icon::new(
-                bitmap,
-                icon::tint(&self.props.color, built_in, cx.theme),
-                opacity,
-                None,
-            )
-        });
-        let icon_width = icon
-            .as_ref()
-            .map_or((px as f32 / cx.scale).ceil(), |i| i.width(cx.scale));
+        let mut icon = BarIcon::default();
+        icon.measure(
+            Look {
+                size: IconSize::Launcher,
+                image,
+                own: Own::Svg(svg),
+                color: Some(&self.props.color),
+                opacity: self.props.opacity,
+                inactive: false,
+            },
+            cx,
+        );
         let text = TwoLine::new(cx.text, cx.theme, &self.title(), &self.value());
-        let view = IconLabel::new(icon, icon_width, text);
+        let view = IconLabel::new(icon, text);
         let width = view.width();
         self.view = Some(view);
         width

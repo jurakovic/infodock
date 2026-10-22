@@ -7,15 +7,15 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::common::eject;
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, IconStyle, Own};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
-    Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, Fetched, HintContent, IconSource,
-    LayoutCtx, MenuId, MenuItem, Props, Sensor, SensorCtx, SensorType, State, typed,
+    Category, ClickResult, DefaultsCtx, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props,
+    Sensor, SensorCtx, SensorType, State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, Canvas, Volume};
+use crate::platform::{Canvas, Volume};
 use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
 /// The icon when the shell has none, e.g. for an absent drive (Appendix C).
@@ -44,37 +44,18 @@ const SCHEMA: &[PropField] = &[
         Lit::Str(""),
     )
     .describe("sensor.diskLauncher.field.title.help"),
-    PropField::new(
-        "image",
-        FieldKind::File {
-            extensions: &["ico", "png", "gif", "jpg", "jpeg", "svg"],
-        },
-        "sensor.shortcut.field.image",
-        Lit::Str(""),
-    )
-    .describe("sensor.diskLauncher.field.image.help"),
-    PropField::new(
-        "color",
-        FieldKind::ColorMode { dynamic: false },
-        "sensor.field.color",
-        Lit::ColorMode("standard", "#FFFFFF"),
-    )
-    .describe("sensor.shortcut.field.color.help"),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::image("sensor.diskLauncher.field.image.help"),
+    icon::COLOR,
+    icon::OPACITY,
 ];
 
 /// SPEC §9.18.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("disk", "drive"),
     LegacyKey::new("title", "title"),
-    LegacyKey::new("image", "image"),
-    LegacyKey::new("colorize", "color"),
-    LegacyKey::new("opacity", "opacity"),
+    icon::LEGACY_IMAGE,
+    icon::LEGACY_COLOR,
+    icon::LEGACY_OPACITY,
 ];
 
 pub struct DiskType;
@@ -122,7 +103,7 @@ impl SensorType for DiskType {
             props: typed(props)?,
             volume: None,
             refresh_icon: false,
-            icon: None,
+            icon: BarIcon::default(),
         }))
     }
 
@@ -141,12 +122,9 @@ struct DiskProps {
     drive: String,
     /// Empty: the drive's name.
     title: String,
-    /// Empty: the drive's shell icon.
-    image: String,
-    /// Custom tints the icon (SPEC §8.4).
-    color: ColorChoice,
-    /// Percent.
-    opacity: u32,
+    /// Its image empty: the drive's shell icon.
+    #[serde(flatten)]
+    icon: IconStyle,
 }
 
 /// What the `volumes` topic says about the drive.
@@ -162,8 +140,7 @@ pub(crate) struct Disk {
     volume: Option<Seen>,
     /// The drive arrived, went, or got or lost a medium: its icon is read again.
     refresh_icon: bool,
-    /// What is drawn; `None` while the shell icon is being read.
-    icon: Option<Icon>,
+    icon: BarIcon,
 }
 
 impl Disk {
@@ -186,47 +163,23 @@ impl Disk {
         self.present()
             .map_or_else(|| self.props.drive.clone(), super::disk::volume_name)
     }
-
-    /// The icon `px` physical px tall: the custom image, or the drive's shell icon (the
-    /// built-in drive icon when it has none). `None` while loading.
-    /// The bitmap says whether it is one of Infodock's built-in icons.
-    fn bitmap(&mut self, px: u32, icons: &dyn IconSource) -> Option<(Bitmap, bool)> {
-        match icon::custom_image(&self.props.image, px, icons) {
-            Fetched::Ready(image) => return Some((image, false)),
-            Fetched::Loading => return None,
-            Fetched::None => {}
-        }
-        if std::mem::take(&mut self.refresh_icon) {
-            icons.forget(&self.props.drive);
-        }
-        match icons.shell_icon(&self.props.drive, px) {
-            Fetched::Ready(icon) => Some((icon, false)),
-            Fetched::Loading => None,
-            Fetched::None => Icon::svg(DRIVE, px).map(|b| (b, true)),
-        }
-    }
 }
 
 impl Sensor for Disk {
+    /// The custom image, or the drive's shell icon (the built-in drive icon when it has none).
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // As a Shortcut: bar height − 4, centred.
-        let logical = cx.theme.bar_height.saturating_sub(4).max(1) as f32;
-        let px = icon::physical(logical, cx.scale);
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        let inactive = self.inactive().then_some(cx.theme.inactive);
-        self.icon = self.bitmap(px, cx.icons).map(|(bitmap, built_in)| {
-            let tint = icon::tint(&self.props.color, built_in, cx.theme);
-            Icon::new(bitmap, tint, opacity, inactive)
-        });
-        self.icon
-            .as_ref()
-            .map_or((px as f32 / cx.scale).ceil(), |i| i.width(cx.scale))
+        let inactive = self.inactive();
+        let own = Own::Shell {
+            path: &self.props.drive,
+            refresh: &mut self.refresh_icon,
+            svg: DRIVE,
+        };
+        let look = self.props.icon.look(IconSize::Launcher, own);
+        self.icon.measure(look.inactive(inactive), cx)
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        if let Some(icon) = &self.icon {
-            icon.draw(canvas, cx);
-        }
+        self.icon.draw(canvas, cx);
     }
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
@@ -319,8 +272,9 @@ mod tests {
     use super::*;
     use crate::config::model::ClicksWhenLocked;
     use crate::platform::recording::RecordingCanvas;
-    use crate::platform::{DriveKind, RectF};
+    use crate::platform::{Bitmap, DriveKind, RectF};
     use crate::sensors::test_support::{Harness, resolved, theme};
+    use crate::sensors::{Fetched, IconSource};
     use crate::test_util::FakePlatform;
 
     fn create(stored: serde_json::Value) -> Disk {
@@ -329,7 +283,7 @@ mod tests {
             props: typed(&props).expect("valid props"),
             volume: None,
             refresh_icon: false,
-            icon: None,
+            icon: BarIcon::default(),
         }
     }
 

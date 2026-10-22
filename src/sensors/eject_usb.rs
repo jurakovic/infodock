@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 use serde::Deserialize;
 
 use super::common::eject_list::{Drives, EjectList, ejectable};
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, Look};
 use super::legacy::LegacyKey;
-use super::schema::{FieldKind, Lit, PropField};
+use super::schema::PropField;
 use super::{
     Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType,
     State, typed,
@@ -20,18 +20,11 @@ use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
 /// The built-in USB icon, 30×21 (Appendix C).
 const USB: &[u8] = include_bytes!("../../assets/icons/usb.svg");
-/// The icon's height, logical px (SPEC §9.22).
-const ICON: f32 = 21.0;
 
-const SCHEMA: &[PropField] = &[PropField::new(
-    "opacity",
-    FieldKind::Opacity { min: 20 },
-    "sensor.field.opacity",
-    Lit::Int(100),
-)];
+const SCHEMA: &[PropField] = &[icon::OPACITY];
 
 /// SPEC §9.22.
-const LEGACY_KEYS: &[LegacyKey] = &[LegacyKey::new("opacity", "opacity")];
+const LEGACY_KEYS: &[LegacyKey] = &[icon::LEGACY_OPACITY];
 
 pub struct EjectUsbType;
 
@@ -72,7 +65,7 @@ impl SensorType for EjectUsbType {
         Ok(Box::new(EjectUsb {
             props: typed(props)?,
             drives: Arc::default(),
-            icon: None,
+            icon: BarIcon::default(),
         }))
     }
 }
@@ -88,7 +81,7 @@ struct EjectUsb {
     props: EjectUsbProps,
     /// The drives that can be ejected, shared with an open list.
     drives: Arc<Mutex<Drives>>,
-    icon: Option<Icon>,
+    icon: BarIcon,
 }
 
 impl EjectUsb {
@@ -111,19 +104,12 @@ impl EjectUsb {
 
 impl Sensor for EjectUsb {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let px = icon::physical(ICON, cx.scale);
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        self.icon = Icon::svg(USB, px)
-            .map(|bitmap| Icon::new(bitmap, Some(cx.theme.sensor_text), opacity, None));
-        self.icon
-            .as_ref()
-            .map_or((ICON * 30.0 / 21.0).ceil(), |i| i.width(cx.scale))
+        let look = Look::built_in(IconSize::Small, USB, self.props.opacity);
+        self.icon.measure(look, cx)
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        if let Some(icon) = &self.icon {
-            icon.draw(canvas, cx);
-        }
+        self.icon.draw(canvas, cx);
     }
 
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
@@ -183,7 +169,7 @@ mod tests {
         EjectUsb {
             props: typed(&props).expect("valid props"),
             drives: Arc::default(),
-            icon: None,
+            icon: BarIcon::default(),
         }
     }
 

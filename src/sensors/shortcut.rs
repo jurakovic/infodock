@@ -7,15 +7,15 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::common::icon::{self, Icon};
+use super::common::icon::{self, BarIcon, IconSize, IconStyle, Own};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
 use super::{
-    Category, ClickResult, ColorChoice, DrawCtx, Fetched, HintContent, IconSource, LayoutCtx,
-    Props, Sensor, SensorCtx, SensorType, State, typed,
+    Category, ClickResult, DrawCtx, HintContent, LayoutCtx, Props, Sensor, SensorCtx, SensorType,
+    State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Bitmap, Canvas, Launch, PathKind, file_name};
+use crate::platform::{Canvas, Launch, PathKind, file_name};
 use crate::sampler::{Sample, Topic, TopicRequest};
 
 /// The icon for web addresses (Appendix C).
@@ -90,28 +90,9 @@ const SCHEMA: &[PropField] = &[
         Lit::Str(""),
     )
     .describe("sensor.shortcut.field.title.help"),
-    PropField::new(
-        "image",
-        FieldKind::File {
-            extensions: &["ico", "png", "gif", "jpg", "jpeg", "svg"],
-        },
-        "sensor.shortcut.field.image",
-        Lit::Str(""),
-    )
-    .describe("sensor.shortcut.field.image.help"),
-    PropField::new(
-        "color",
-        FieldKind::ColorMode { dynamic: false },
-        "sensor.field.color",
-        Lit::ColorMode("standard", "#FFFFFF"),
-    )
-    .describe("sensor.shortcut.field.color.help"),
-    PropField::new(
-        "opacity",
-        FieldKind::Opacity { min: 20 },
-        "sensor.field.opacity",
-        Lit::Int(100),
-    ),
+    icon::image("sensor.shortcut.field.image.help"),
+    icon::COLOR,
+    icon::OPACITY,
 ];
 
 /// SPEC §9.17.
@@ -120,9 +101,9 @@ const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("param", "args"),
     LegacyKey::new("url", "url"),
     LegacyKey::new("title", "title"),
-    LegacyKey::new("image", "image"),
-    LegacyKey::new("colorize", "color"),
-    LegacyKey::new("opacity", "opacity"),
+    icon::LEGACY_IMAGE,
+    icon::LEGACY_COLOR,
+    icon::LEGACY_OPACITY,
 ];
 
 pub struct ShortcutType;
@@ -161,7 +142,7 @@ impl SensorType for ShortcutType {
             props: typed(props)?,
             kind: None,
             refresh_icon: false,
-            icon: None,
+            icon: BarIcon::default(),
         }))
     }
 
@@ -196,12 +177,9 @@ struct ShortcutProps {
     run_as: RunAs,
     /// Empty: automatic.
     title: String,
-    /// Empty: the target's icon.
-    image: String,
-    /// Custom tints the icon (SPEC §8.4).
-    color: ColorChoice,
-    /// Percent.
-    opacity: u32,
+    /// Its image empty: the target's icon.
+    #[serde(flatten)]
+    icon: IconStyle,
 }
 
 /// `name` without its extension (`app.exe` → `app`); a leading dot is no extension.
@@ -266,8 +244,7 @@ struct Shortcut {
     kind: Option<PathKind>,
     /// The target changed what it is: its shell icon is read again at the next measure.
     refresh_icon: bool,
-    /// What is drawn; `None` while the shell icon is being read.
-    icon: Option<Icon>,
+    icon: BarIcon,
 }
 
 impl Shortcut {
@@ -292,54 +269,30 @@ impl Shortcut {
             self.props.title.clone()
         }
     }
-
-    /// The icon `px` physical px tall: the custom image, the globe for a web address, or the
-    /// target's shell icon (the generic app icon when it has none). `None` while loading.
-    /// The bitmap says whether it is one of Infodock's built-in icons.
-    fn bitmap(&mut self, px: u32, icons: &dyn IconSource) -> Option<(Bitmap, bool)> {
-        match icon::custom_image(&self.props.image, px, icons) {
-            Fetched::Ready(image) => return Some((image, false)),
-            Fetched::Loading => return None,
-            Fetched::None => {}
-        }
-        if self.has_url() {
-            return Icon::svg(GLOBE, px).map(|b| (b, true));
-        }
-        if self.props.target.is_empty() {
-            return Icon::svg(APP, px).map(|b| (b, true));
-        }
-        if std::mem::take(&mut self.refresh_icon) {
-            icons.forget(&self.props.target);
-        }
-        match icons.shell_icon(&self.props.target, px) {
-            Fetched::Ready(icon) => Some((icon, false)),
-            Fetched::Loading => None,
-            Fetched::None => Icon::svg(APP, px).map(|b| (b, true)),
-        }
-    }
 }
 
 impl Sensor for Shortcut {
+    /// The custom image, the globe for a web address, or the target's shell icon (the generic
+    /// app icon when it has none).
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // Bar height − 4, centred (SPEC §9.17).
-        let logical = cx.theme.bar_height.saturating_sub(4).max(1) as f32;
-        let px = icon::physical(logical, cx.scale);
-        let opacity = self.props.opacity.min(100) as f32 / 100.0;
-        let inactive = self.inactive().then_some(cx.theme.inactive);
-        self.icon = self.bitmap(px, cx.icons).map(|(bitmap, built_in)| {
-            let tint = icon::tint(&self.props.color, built_in, cx.theme);
-            Icon::new(bitmap, tint, opacity, inactive)
-        });
-        // While the shell icon loads, its square is kept free.
-        self.icon
-            .as_ref()
-            .map_or((px as f32 / cx.scale).ceil(), |i| i.width(cx.scale))
+        let inactive = self.inactive();
+        let own = if self.has_url() {
+            Own::Svg(GLOBE)
+        } else if self.props.target.is_empty() {
+            Own::Svg(APP)
+        } else {
+            Own::Shell {
+                path: &self.props.target,
+                refresh: &mut self.refresh_icon,
+                svg: APP,
+            }
+        };
+        let look = self.props.icon.look(IconSize::Launcher, own);
+        self.icon.measure(look.inactive(inactive), cx)
     }
 
     fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-        if let Some(icon) = &self.icon {
-            icon.draw(canvas, cx);
-        }
+        self.icon.draw(canvas, cx);
     }
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
@@ -415,11 +368,12 @@ mod tests {
 
     use super::*;
     use crate::config::model::ClicksWhenLocked;
-    use crate::platform::RectF;
     use crate::platform::recording::RecordingCanvas;
+    use crate::platform::{Bitmap, RectF};
     use crate::sampler::PathSample;
     use crate::sensors::schema::resolve;
     use crate::sensors::test_support::{Harness, resolved, theme};
+    use crate::sensors::{Fetched, IconSource};
 
     fn create(stored: serde_json::Value) -> Shortcut {
         let props = resolved(SCHEMA, stored);
@@ -427,7 +381,7 @@ mod tests {
             props: typed(&props).expect("valid props"),
             kind: None,
             refresh_icon: false,
-            icon: None,
+            icon: BarIcon::default(),
         }
     }
 
@@ -557,7 +511,7 @@ mod tests {
         assert_eq!(measure_with(&mut sensor, &icons, 1.0), 24.0);
         assert!(icons.log.borrow().is_empty(), "no shell icon for a URL");
         assert!(drawn(&sensor).ends_with("opacity 0.5\n"));
-        let bitmap = sensor.icon.as_ref().expect("an icon").bitmap();
+        let bitmap = sensor.icon.icon().expect("an icon").bitmap();
         assert!(
             bitmap
                 .pixels()
