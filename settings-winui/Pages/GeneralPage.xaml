@@ -1,0 +1,100 @@
+<Page
+    x:Class="InfodockSettings.Pages.GeneralPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:InfodockSettings"
+    xmlns:toolkit="using:CommunityToolkit.WinUI.Controls">
+    <ScrollViewer>
+        <Grid Padding="24,0,24,24">
+            <!-- At most 1000 px, on the left in line with the title, as in Windows 11 Settings. -->
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MaxWidth="1000" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Style="{StaticResource CardList}">
+                <toolkit:SettingsCard
+                    Header="{local:Tr Key=settings.general.autostart}"
+                    Description="{local:Tr Key=settings.general.autostart.help}">
+                    <ToggleSwitch x:Name="Autostart" AutomationProperties.Name="{local:Tr Key=settings.general.autostart}" />
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard
+                    Header="{local:Tr Key=settings.general.hotkey}"
+                    Description="{local:Tr Key=settings.general.hotkey.help}">
+                    <Button
+                        x:Name="Hotkey"
+                        Width="{StaticResource ControlWidth}"
+                        AutomationProperties.Name="{local:Tr Key=settings.general.hotkey}"
+                        Click="OnHotkeyClick"
+                        PreviewKeyDown="OnHotkeyKeyDown"
+                        LostFocus="OnHotkeyLostFocus" />
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard Header="{local:Tr Key=settings.general.hotkeyAction}">
+                    <ComboBox
+                        x:Name="HotkeyAction"
+                        Width="{StaticResource ControlWidth}"
+                        AutomationProperties.Name="{local:Tr Key=settings.general.hotkeyAction}">
+                        <ComboBoxItem Content="{local:Tr Key=settings.general.hotkeyAction.bringToFront}" />
+                        <ComboBoxItem Content="{local:Tr Key=settings.general.hotkeyAction.toggleVisibility}" />
+                    </ComboBox>
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard Header="{local:Tr Key=settings.general.showTrayIcon}">
+                    <ToggleSwitch x:Name="ShowTrayIcon" AutomationProperties.Name="{local:Tr Key=settings.general.showTrayIcon}" />
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard
+                    Header="{local:Tr Key=settings.general.locked}"
+                    Description="{local:Tr Key=settings.general.locked.help}">
+                    <ToggleSwitch x:Name="Locked" AutomationProperties.Name="{local:Tr Key=settings.general.locked}" />
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard Header="{local:Tr Key=settings.general.popupsEnabled}">
+                    <ToggleSwitch x:Name="PopupsEnabled" AutomationProperties.Name="{local:Tr Key=settings.general.popupsEnabled}" />
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard Header="{local:Tr Key=settings.general.clicksWhenLocked}">
+                    <ComboBox
+                        x:Name="ClicksWhenLocked"
+                        Width="{StaticResource ControlWidth}"
+                        AutomationProperties.Name="{local:Tr Key=settings.general.clicksWhenLocked}">
+                        <ComboBoxItem Content="{local:Tr Key=settings.general.clicksWhenLocked.always}" />
+                        <ComboBoxItem Content="{local:Tr Key=settings.general.clicksWhenLocked.altOnly}" />
+                    </ComboBox>
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard Header="{local:Tr Key=settings.general.sensorSpacing}">
+                    <!-- The value on the slider's left, as in the Slint window. -->
+                    <StackPanel Width="{StaticResource ControlWidth}" Orientation="Horizontal" Spacing="8">
+                        <TextBlock
+                            x:Name="SpacingValue"
+                            Width="64"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Slider
+                            x:Name="Spacing"
+                            Width="168"
+                            Minimum="1"
+                            Maximum="20"
+                            StepFrequency="1"
+                            AutomationProperties.Name="{local:Tr Key=settings.general.sensorSpacing}"
+                            ValueChanged="OnSpacingChanged" />
+                    </StackPanel>
+                </toolkit:SettingsCard>
+
+                <toolkit:SettingsCard
+                    Header="{local:Tr Key=settings.general.newSensorMenu}"
+                    Description="{local:Tr Key=settings.general.newSensorMenu.help}">
+                    <ComboBox
+                        x:Name="NewSensorMenu"
+                        Width="{StaticResource ControlWidth}"
+                        AutomationProperties.Name="{local:Tr Key=settings.general.newSensorMenu}">
+                        <ComboBoxItem Content="{local:Tr Key=settings.general.newSensorMenu.dialog}" />
+                        <ComboBoxItem Content="{local:Tr Key=settings.general.newSensorMenu.submenu}" />
+                    </ComboBox>
+                </toolkit:SettingsCard>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Page>

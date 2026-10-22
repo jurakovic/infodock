@@ -1,0 +1,51 @@
+name: WinUI spike
+
+# The Settings window in WinUI 3 (settings-winui/, plan D88), built and measured on Windows for
+# comparison with the Slint window. Runs only on the spike's branch.
+on:
+  push:
+    branches: [ccr-76dc6498-nmrijy]
+    paths:
+      - "settings-winui/**"
+      - "i18n/**"
+      - "icons/**"
+      - ".github/workflows/winui-spike.yml"
+      - ".github/scripts/measure-winui.ps1"
+  workflow_dispatch:
+
+concurrency:
+  group: winui-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  winui:
+    name: WinUI Settings (spike)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      # Native AOT and self-contained: the folder runs without .NET or the Windows App SDK
+      # runtime installed.
+      - name: Publish
+        run: dotnet publish settings-winui/InfodockSettings.csproj -c Release -o "${{ runner.temp }}/winui"
+      - name: Drop the debug symbols
+        shell: pwsh
+        run: Remove-Item "$env:RUNNER_TEMP/winui/*.pdb"
+      - name: Memory, start and screenshots
+        shell: pwsh
+        run: .github/scripts/measure-winui.ps1 -Dir "$env:RUNNER_TEMP/winui" -OutDir "$env:RUNNER_TEMP/winui-check"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: infodock-settings-winui
+          path: ${{ runner.temp }}/winui
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: infodock-winui-check
+          path: ${{ runner.temp }}/winui-check
+          if-no-files-found: ignore
+          retention-days: 14
