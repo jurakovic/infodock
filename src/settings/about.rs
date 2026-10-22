@@ -1,7 +1,8 @@
 //! Settings ▸ About (SPEC §10.7): the version, Infodock's licence, the crates of the Windows
-//! build with their licences, Slint's attribution (`AboutSlint`) and the logs folder. The crates
-//! come from `assets/third-party.tsv`, which `.github/scripts/third-party.py` writes from
-//! `cargo tree`; a test keeps it in step with `Cargo.lock`.
+//! build with their licences, the navigation's icons with theirs, Slint's attribution
+//! (`AboutSlint`) and the logs folder. The crates come from `assets/third-party.tsv`, which
+//! `.github/scripts/third-party.py` writes from `cargo tree`; a test keeps it in step with
+//! `Cargo.lock`.
 
 use std::sync::Arc;
 
@@ -15,6 +16,8 @@ use crate::ui;
 /// build does not link (a build, dev, proc-macro or other-platform dependency).
 const THIRD_PARTY: &str = include_str!("../../assets/third-party.tsv");
 const LICENCE: &str = include_str!("../../LICENSE");
+/// The navigation's icons are Fluent UI System Icons (`ui/icons/nav-*.svg`).
+const ICONS_LICENCE: &str = include_str!("../../ui/icons/LICENSE-fluentui-system-icons.txt");
 
 /// The packages `tsv` lists: name, version and licence, `None` for one not in the build.
 fn packages(tsv: &str) -> impl Iterator<Item = (&str, &str, Option<&str>)> {
@@ -58,6 +61,7 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let state = window.global::<ui::SettingsState>();
     state.set_version(crate::VERSION.into());
     state.set_licence(reflow(LICENCE).into());
+    state.set_icons_licence(reflow(ICONS_LICENCE).into());
     let rows: Vec<StandardListViewItem> = crate_lines()
         .into_iter()
         .map(|line| SharedString::from(line).into())
@@ -128,6 +132,7 @@ mod tests {
             "every crate names its licence"
         );
         assert!(LICENCE.starts_with("MIT License"));
+        assert!(ICONS_LICENCE.contains("Copyright (c) 2020 Microsoft Corporation"));
     }
 
     #[test]

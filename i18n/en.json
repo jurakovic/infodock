@@ -522,6 +522,8 @@
   "settings.about.thirdParty": "Third-party software",
   "settings.about.thirdParty.help": "Infodock is built with these Rust crates, each under its own licence.",
   "settings.about.crate": "{name} {version}: {licence}",
+  "settings.about.icons": "Icons",
+  "settings.about.icons.help": "The navigation's icons are Fluent UI System Icons by Microsoft, under this licence.",
   "settings.about.toolkit": "User interface toolkit",
   "settings.apps.calendar": "Calendar",
   "settings.apps.calendar.help": "What a click on a Date sensor opens: a program, a file or an address such as outlookcal:. When empty, the date and time settings open.",

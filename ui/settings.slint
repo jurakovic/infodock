@@ -109,6 +109,41 @@ export global LineKinds {
     out property <int> empty: 2;
 }
 
+// Windows 11's layers, which the Fluent palette has no names for: the window behind the
+// navigation and the pages, the cards on it, and the subtle fills of a list's items. Solid, as
+// WinUI's Mica fallback is: the software renderer draws every pixel opaque, so Mica could not
+// show through. Light or dark follows the palette, so the colour scheme too.
+global Look {
+    out property <bool> dark: Palette.background.to-hsv().value < 0.5;
+    // WinUI's SolidBackgroundFillColorBase.
+    out property <color> window: self.dark ? #202020 : #f3f3f3;
+    // A card, hovered and chosen, and its edge: WinUI's card fill and stroke as they come out
+    // on the base.
+    out property <color> card: self.dark ? #2b2b2b : #fbfbfb;
+    out property <color> card-hover: self.dark ? #323232 : #f6f6f6;
+    out property <color> card-selected: self.dark ? #383838 : #efefef;
+    out property <color> card-stroke: self.dark ? #1d1d1d : #e5e5e5;
+    // A navigation item hovered (WinUI's SubtleFillColorSecondary), and a little stronger, the
+    // page shown.
+    out property <color> subtle-hover: self.dark ? #ffffff0f : #0000000a;
+    out property <color> subtle-selected: self.dark ? #ffffff15 : #0000000f;
+    // TextFillColorSecondary: help text and details.
+    out property <color> secondary-text: self.dark ? #ffffffc8 : #0000009e;
+    out property <length> radius: 4px;
+    // The width of a setting's control (ComboBox, slider, hotkey), and of the wide ones that
+    // show font names or a form's text.
+    out property <length> control-width: 240px;
+    out property <length> wide-control-width: 280px;
+    // A path's box, which has *Browse…* beside it.
+    out property <length> path-width: 220px;
+}
+
+// A page of the navigation.
+struct NavItem {
+    text: string,
+    icon: image,
+}
+
 export global SettingsState {
     // A page by its number (see `Pages`).
     in-out property <int> page;
@@ -285,6 +320,8 @@ export global SettingsState {
     in property <string> licence;
     // The crates of the Windows build: "name version: licence".
     in property <[StandardListViewItem]> third-party;
+    // The licence of the navigation's icons (Fluent UI System Icons).
+    in property <string> icons-licence;
     callback open-logs-folder();
     // The welcome page's *Import layout…* (JSON or legacy XML) and *Get started*.
     callback welcome-import();
@@ -321,57 +358,65 @@ export global SettingsState {
     callback picker-cancel();
 }
 
-// One setting, laid out like Windows Settings: label, help text and error on the left (they
-// wrap), the control on the right.
+// One setting as a card, laid out like Windows 11 Settings: label, help text and error on the
+// left (they wrap), the control on the right.
 component Row inherits VerticalLayout {
     in property <string> label;
     in property <string> help;
     in property <string> error;
 
-    line := HorizontalLayout {
-        padding-top: 12px;
-        padding-bottom: 12px;
-        spacing: 24px;
-
-        VerticalLayout {
-            width: line.width - controls.preferred-width - line.spacing;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.label;
-                wrap: word-wrap;
-                // Wrapped text is measured at its own width (the layout would measure it at the
-                // row's width and leave too little height).
-                height: self.preferred-height;
-                color: Palette.foreground;
-            }
-
-            if root.help != "": Text {
-                text: root.help;
-                wrap: word-wrap;
-                height: self.preferred-height;
-                font-size: 12px;
-                color: Palette.foreground;
-                opacity: 0.7;
-            }
-            if root.error != "": Text {
-                text: root.error;
-                wrap: word-wrap;
-                height: self.preferred-height;
-                font-size: 12px;
-                color: #d13438;
-            }
-        }
-
-        controls := VerticalLayout {
-            alignment: center;
-            @children
-        }
-    }
-
+    // The gap to the next card.
+    padding-bottom: 4px;
     Rectangle {
-        height: 1px;
-        background: Palette.border;
+        // Windows 11's cards are 68 px, with an icon; without one 60 px balances better.
+        min-height: 60px;
+        border-radius: Look.radius;
+        border-width: 1px;
+        border-color: Look.card-stroke;
+        background: Look.card;
+
+        line := HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 24px;
+
+            VerticalLayout {
+                width: line.width - line.padding-left - line.padding-right
+                    - controls.preferred-width - line.spacing;
+                alignment: center;
+                spacing: 2px;
+                Text {
+                    text: root.label;
+                    wrap: word-wrap;
+                    // Wrapped text is measured at its own width (the layout would measure it at
+                    // the row's width and leave too little height).
+                    height: self.preferred-height;
+                    color: Palette.foreground;
+                }
+
+                if root.help != "": Text {
+                    text: root.help;
+                    wrap: word-wrap;
+                    height: self.preferred-height;
+                    font-size: 12px;
+                    color: Look.secondary-text;
+                }
+                if root.error != "": Text {
+                    text: root.error;
+                    wrap: word-wrap;
+                    height: self.preferred-height;
+                    font-size: 12px;
+                    color: #d13438;
+                }
+            }
+
+            controls := VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
     }
 }
 
@@ -391,9 +436,18 @@ component ValueSlider inherits HorizontalLayout {
         return Math.round(v / root.step) * root.step;
     }
 
-    spacing: 10px;
+    // As wide as the other controls, the value on its left as Windows 11 shows it.
+    width: Look.control-width;
+    spacing: 8px;
+    Text {
+        width: 64px;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        text: I18n.tr-with(root.unit, "value", root.stepped(root.value));
+        color: Look.secondary-text;
+    }
+
     Slider {
-        width: 180px;
         minimum: root.minimum;
         maximum: root.maximum;
         step: root.step;
@@ -403,14 +457,6 @@ component ValueSlider inherits HorizontalLayout {
             root.value = root.stepped(v);
             root.released(root.value);
         }
-    }
-
-    Text {
-        width: 64px;
-        vertical-alignment: center;
-        horizontal-alignment: right;
-        text: I18n.tr-with(root.unit, "value", root.stepped(root.value));
-        color: Palette.foreground;
     }
 }
 
@@ -495,7 +541,7 @@ component GeneralPage inherits VerticalLayout {
         help: I18n.tr("settings.general.hotkey.help");
         error: SettingsState.hotkey-error;
         Button {
-            width: 200px;
+            width: Look.control-width;
             text: SettingsState.recording-hotkey ? I18n.tr("settings.general.hotkey.recording") : SettingsState.hotkey;
             primary: SettingsState.recording-hotkey;
             accessible-label: I18n.tr("settings.general.hotkey");
@@ -508,7 +554,7 @@ component GeneralPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.general.hotkeyAction");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.general.hotkeyAction.bringToFront"),
                 I18n.tr("settings.general.hotkeyAction.toggleVisibility"),
@@ -558,7 +604,7 @@ component GeneralPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.general.clicksWhenLocked");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.general.clicksWhenLocked.always"),
                 I18n.tr("settings.general.clicksWhenLocked.altOnly"),
@@ -588,7 +634,7 @@ component GeneralPage inherits VerticalLayout {
         label: I18n.tr("settings.general.newSensorMenu");
         help: I18n.tr("settings.general.newSensorMenu.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.general.newSensorMenu.dialog"),
                 I18n.tr("settings.general.newSensorMenu.submenu"),
@@ -609,7 +655,7 @@ component BarPage inherits VerticalLayout {
         label: I18n.tr("settings.bar.mode");
         help: I18n.tr("settings.bar.mode.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [I18n.tr("settings.bar.mode.docked"), I18n.tr("settings.bar.mode.floating")];
             current-index <=> SettingsState.mode;
             accessible-label: I18n.tr("settings.bar.mode");
@@ -636,7 +682,7 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.edge");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [I18n.tr("settings.bar.edge.top"), I18n.tr("settings.bar.edge.bottom")];
             current-index <=> SettingsState.edge;
             accessible-label: I18n.tr("settings.bar.edge");
@@ -649,7 +695,7 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.monitor");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: SettingsState.monitors;
             current-index <=> SettingsState.monitor;
             accessible-label: I18n.tr("settings.bar.monitor");
@@ -675,7 +721,7 @@ component BarPage inherits VerticalLayout {
         label: I18n.tr("settings.bar.zOrder");
         help: I18n.tr("settings.bar.zOrder.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.bar.zOrder.topmost"),
                 I18n.tr("settings.bar.zOrder.normal"),
@@ -756,7 +802,7 @@ component BarPage inherits VerticalLayout {
         label: I18n.tr("settings.bar.animations");
         help: I18n.tr("settings.bar.animations.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.bar.animations.auto"),
                 I18n.tr("settings.bar.animations.on"),
@@ -771,14 +817,15 @@ component BarPage inherits VerticalLayout {
     }
 }
 
-// A heading for a group of settings on a page.
+// A heading for a group of settings on a page, above its cards (Windows 11's Body Strong).
 component SectionHeading inherits VerticalLayout {
     in property <string> title;
     in property <string> help;
     spacing: 2px;
+    padding-bottom: 4px;
     Text {
         text: root.title;
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 600;
         color: Palette.foreground;
         accessible-role: text;
@@ -788,8 +835,7 @@ component SectionHeading inherits VerticalLayout {
         text: root.help;
         wrap: word-wrap;
         font-size: 12px;
-        color: Palette.foreground;
-        opacity: 0.7;
+        color: Look.secondary-text;
     }
 }
 
@@ -844,20 +890,23 @@ component LayoutList inherits Rectangle {
         }
 
         if row.kind == LineKinds.empty: Text {
-            x: 8px;
+            x: 16px;
             text: row.name;
             vertical-alignment: center;
-            color: Palette.foreground;
-            opacity: 0.7;
+            color: Look.secondary-text;
         }
 
         if row.kind == LineKinds.sensor: line := Rectangle {
             // What screen readers call it, in its row's buttons too.
             property <string> named: row.detail == "" ? row.name : row.name + ", " + row.detail;
-            border-radius: 4px;
+            // A card, with the gap to the next one inside the line.
+            y: 2px;
+            height: parent.height - 4px;
+            border-radius: Look.radius;
+            border-width: 1px;
+            border-color: Look.card-stroke;
             // Dimmed while dragged, like on the bar (SPEC §6.2).
-            background: touch.has-hover || root.drag-id == row.id ? Palette.alternate-background
-                : transparent;
+            background: touch.has-hover || root.drag-id == row.id ? Look.card-hover : Look.card;
             opacity: root.drag-id == row.id ? 0.6 : 1;
             accessible-role: list-item;
             accessible-label: self.named;
@@ -888,7 +937,7 @@ component LayoutList inherits Rectangle {
             }
 
             HorizontalLayout {
-                padding-left: 8px;
+                padding-left: 16px;
                 padding-right: 4px;
                 spacing: 4px;
 
@@ -904,8 +953,7 @@ component LayoutList inherits Rectangle {
                         text: row.detail;
                         overflow: elide;
                         font-size: 12px;
-                        color: Palette.foreground;
-                        opacity: 0.7;
+                        color: Look.secondary-text;
                     }
                 }
 
@@ -939,8 +987,8 @@ component LayoutList inherits Rectangle {
                 if SettingsState.layout-confirm != row.id: HorizontalLayout {
                     spacing: 4px;
                     alignment: end;
-                    padding-top: 6px;
-                    padding-bottom: 6px;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
                     // The list is rebuilt after a move, so keyboard users find their button
                     // again on the moved sensor (the other one where the list ends).
                     init => {
@@ -1041,8 +1089,8 @@ component SkinGallery inherits FocusScope {
         border-radius: 6px;
         border-width: tile.selected ? 2px : 1px;
         border-color: tile.selected ? (root.has-focus ? Palette.foreground : Palette.accent-background)
-            : Palette.border;
-        background: touch.has-hover ? Palette.alternate-background : transparent;
+            : Look.card-stroke;
+        background: touch.has-hover ? Look.card-hover : Look.card;
         accessible-role: list-item;
         accessible-label: tile.name;
         accessible-item-selectable: true;
@@ -1092,7 +1140,7 @@ component AppearancePage inherits VerticalLayout {
         label: I18n.tr("settings.appearance.theme");
         help: I18n.tr("settings.appearance.theme.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.appearance.theme.modern"),
                 I18n.tr("settings.appearance.theme.classic"),
@@ -1109,7 +1157,7 @@ component AppearancePage inherits VerticalLayout {
         label: I18n.tr("settings.appearance.colorScheme");
         help: I18n.tr("settings.appearance.colorScheme.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.appearance.colorScheme.system"),
                 I18n.tr("settings.appearance.colorScheme.light"),
@@ -1127,7 +1175,7 @@ component AppearancePage inherits VerticalLayout {
         label: I18n.tr("settings.appearance.colorMode");
         help: SettingsState.theme == 1 ? I18n.tr("settings.appearance.colorMode.classicHelp") : "";
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.appearance.colorMode.standard"),
                 I18n.tr("settings.appearance.colorMode.custom"),
@@ -1186,7 +1234,7 @@ component AppearancePage inherits VerticalLayout {
         help: SettingsState.material-available ? I18n.tr("settings.appearance.material.help")
             : I18n.tr("settings.appearance.material.off");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: SettingsState.materials;
             current-index <=> SettingsState.material;
             enabled: SettingsState.material-available;
@@ -1223,7 +1271,7 @@ component AppearancePage inherits VerticalLayout {
             spacing: 8px;
             // Saved as it is typed: the navigation does not take the focus.
             LineEdit {
-                width: 220px;
+                width: Look.path-width;
                 text <=> SettingsState.custom-skin;
                 accessible-label: I18n.tr("settings.appearance.customSkin");
                 edited(text) => {
@@ -1280,8 +1328,7 @@ component AppearancePage inherits VerticalLayout {
     if SettingsState.theme == 1 && SettingsState.skin-packs.length == 0: Text {
         text: I18n.tr("settings.appearance.packs.none");
         wrap: word-wrap;
-        color: Palette.foreground;
-        opacity: 0.7;
+        color: Look.secondary-text;
     }
 
     if SettingsState.theme == 1: VerticalLayout {
@@ -1330,7 +1377,7 @@ component SensorsPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.font");
         ComboBox {
-            width: 280px;
+            width: Look.wide-control-width;
             model: SettingsState.fonts;
             current-index <=> SettingsState.sensor-font;
             accessible-label: I18n.tr("settings.font");
@@ -1343,7 +1390,7 @@ component SensorsPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.fontStyle");
         ComboBox {
-            width: 280px;
+            width: Look.wide-control-width;
             model: SettingsState.sensor-font-styles;
             current-index <=> SettingsState.sensor-font-style;
             accessible-label: I18n.tr("settings.fontStyle");
@@ -1357,7 +1404,7 @@ component SensorsPage inherits VerticalLayout {
         label: I18n.tr("settings.sensors.inactiveMode");
         help: I18n.tr("settings.sensors.inactiveMode.help");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [
                 I18n.tr("settings.sensors.inactiveMode.opacity"),
                 I18n.tr("settings.sensors.inactiveMode.colorize"),
@@ -1465,7 +1512,7 @@ component PopupsPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.font");
         ComboBox {
-            width: 280px;
+            width: Look.wide-control-width;
             model: SettingsState.fonts;
             current-index <=> SettingsState.popup-font;
             accessible-label: I18n.tr("settings.font");
@@ -1478,7 +1525,7 @@ component PopupsPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.fontStyle");
         ComboBox {
-            width: 280px;
+            width: Look.wide-control-width;
             model: SettingsState.popup-font-styles;
             current-index <=> SettingsState.popup-font-style;
             accessible-label: I18n.tr("settings.fontStyle");
@@ -1554,7 +1601,7 @@ component ApplicationsPage inherits VerticalLayout {
             spacing: 8px;
             // Saved as it is typed: the navigation does not take the focus.
             LineEdit {
-                width: 220px;
+                width: Look.path-width;
                 text <=> SettingsState.calendar-app;
                 placeholder-text: "ms-settings:dateandtime";
                 accessible-label: I18n.tr("settings.apps.calendar");
@@ -1629,6 +1676,19 @@ component AboutPage inherits VerticalLayout {
     }
 
     SectionHeading {
+        title: I18n.tr("settings.about.icons");
+        help: I18n.tr("settings.about.icons.help");
+    }
+
+    Text {
+        text: SettingsState.icons-licence;
+        wrap: word-wrap;
+        height: self.preferred-height;
+        font-size: 12px;
+        color: Palette.foreground;
+    }
+
+    SectionHeading {
         title: I18n.tr("settings.about.toolkit");
     }
 
@@ -1674,8 +1734,8 @@ component ThemeChoice inherits FocusScope {
             border-radius: 6px;
             border-width: tile.selected ? 2px : 1px;
             border-color: tile.selected ? (root.has-focus ? Palette.foreground : Palette.accent-background)
-                : Palette.border;
-            background: touch.has-hover ? Palette.alternate-background : transparent;
+                : Look.card-stroke;
+            background: touch.has-hover ? Look.card-hover : Look.card;
             accessible-role: list-item;
             accessible-label: tile.name;
             accessible-item-selectable: true;
@@ -1912,7 +1972,7 @@ component WelcomePage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.edge");
         ComboBox {
-            width: 240px;
+            width: Look.control-width;
             model: [I18n.tr("settings.bar.edge.top"), I18n.tr("settings.bar.edge.bottom")];
             current-index <=> SettingsState.edge;
             accessible-label: I18n.tr("settings.bar.edge");
@@ -2006,7 +2066,7 @@ component PropertiesPage inherits VerticalLayout {
             error: row.error;
 
             if row.kind == RowKinds.text: LineEdit {
-                width: 280px;
+                width: Look.wide-control-width;
                 text: row.text;
                 accessible-label: row.label;
                 edited(text) => {
@@ -2021,7 +2081,7 @@ component PropertiesPage inherits VerticalLayout {
                 }
             }
             if row.kind == RowKinds.choice: ComboBox {
-                width: 280px;
+                width: Look.wide-control-width;
                 model: row.options;
                 current-index: row.index;
                 accessible-label: row.label;
@@ -2051,7 +2111,7 @@ component PropertiesPage inherits VerticalLayout {
             if row.kind == RowKinds.color-mode: VerticalLayout {
                 spacing: 8px;
                 ComboBox {
-                    width: 280px;
+                    width: Look.wide-control-width;
                     model: row.options;
                     current-index: row.index;
                     accessible-label: row.label;
@@ -2074,7 +2134,7 @@ component PropertiesPage inherits VerticalLayout {
                 // Every edit counts, as in a text row: clicking Save does not take the focus, so
                 // the box cannot wait for focus-out.
                 LineEdit {
-                    width: 280px;
+                    width: Look.path-width;
                     text: row.text;
                     accessible-label: row.label;
                     edited(text) => {
@@ -2196,14 +2256,20 @@ component PickerPage inherits VerticalLayout {
         content-width: self.visible-width;
         content-height: lines.preferred-height;
         lines := VerticalLayout {
+            x: 0;
             width: list.visible-width - 16px;
             alignment: start;
-            for row in SettingsState.picker-rows: line := VerticalLayout {
-                if row.heading: Text {
-                    text: row.name;
-                    font-weight: 600;
-                    color: Palette.foreground;
-                    accessible-role: text;
+            spacing: 4px;
+            for row[i] in SettingsState.picker-rows: line := VerticalLayout {
+                // A category's heading, above its cards.
+                if row.heading: VerticalLayout {
+                    padding-top: i == 0 ? 0 : 12px;
+                    Text {
+                        text: row.name;
+                        font-weight: 600;
+                        color: Palette.foreground;
+                        accessible-role: text;
+                    }
                 }
                 if !row.heading: item := Rectangle {
                     property <bool> selected: SettingsState.picker-selected == row.entry;
@@ -2212,9 +2278,11 @@ component PickerPage inherits VerticalLayout {
                             root.reveal(line.y + self.y, self.height);
                         }
                     }
-                    border-radius: 4px;
-                    background: self.selected ? Palette.selection-background
-                        : touch.has-hover ? Palette.alternate-background : transparent;
+                    border-radius: Look.radius;
+                    border-width: 1px;
+                    border-color: Look.card-stroke;
+                    background: self.selected ? Look.card-selected
+                        : touch.has-hover ? Look.card-hover : Look.card;
                     accessible-role: list-item;
                     accessible-label: row.name;
                     accessible-description: row.description;
@@ -2234,20 +2302,31 @@ component PickerPage inherits VerticalLayout {
                         }
                     }
 
+                    if item.selected: Rectangle {
+                        x: 0;
+                        y: (parent.height - 16px) / 2;
+                        width: 3px;
+                        height: 16px;
+                        border-radius: 1.5px;
+                        background: Palette.accent-background;
+                    }
+
                     VerticalLayout {
-                        padding: 8px;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
                         spacing: 2px;
                         Text {
                             text: row.name;
-                            color: item.selected ? Palette.selection-foreground : Palette.foreground;
+                            color: Palette.foreground;
                         }
 
                         Text {
                             text: row.description;
                             wrap: word-wrap;
                             font-size: 12px;
-                            color: item.selected ? Palette.selection-foreground : Palette.foreground;
-                            opacity: 0.7;
+                            color: Look.secondary-text;
                         }
                     }
                 }
@@ -2277,6 +2356,106 @@ component PickerPage inherits VerticalLayout {
     }
 }
 
+// The pages as Windows 11's navigation shows them: an icon and a name, a subtle fill on the page
+// hovered and the one shown, and the accent pill on the latter. One Tab stop; Up, Down, Home and
+// End move to another page. A page it does not list (a sensor's properties, the picker, the
+// welcome page) selects none. A click does not take the focus, so a colour being typed is saved
+// first (SPEC §10.7).
+component Navigation inherits FocusScope {
+    in property <[NavItem]> items;
+    in-out property <int> current;
+    focus-on-click: false;
+    property <bool> listed: root.current >= 0 && root.current < root.items.length;
+
+    function go(page: int) {
+        if page != root.current {
+            root.current = page;
+        }
+    }
+
+    accessible-role: list;
+    key-pressed(event) => {
+        if event.text == Key.UpArrow {
+            root.go(root.listed ? max(0, root.current - 1) : root.items.length - 1);
+            return accept;
+        }
+        if event.text == Key.DownArrow {
+            root.go(root.listed ? min(root.items.length - 1, root.current + 1) : 0);
+            return accept;
+        }
+        if event.text == Key.Home {
+            root.go(0);
+            return accept;
+        }
+        if event.text == Key.End {
+            root.go(root.items.length - 1);
+            return accept;
+        }
+        reject
+    }
+
+    VerticalLayout {
+        alignment: start;
+        spacing: 4px;
+        for item[i] in root.items: Rectangle {
+            property <bool> shown: i == root.current;
+            height: 36px;
+            border-radius: Look.radius;
+            background: self.shown ? Look.subtle-selected
+                : touch.has-hover ? Look.subtle-hover : transparent;
+            // The focus ring, on the page shown.
+            border-width: root.has-focus && self.shown ? 2px : 0;
+            border-color: Palette.foreground;
+            accessible-role: list-item;
+            accessible-label: item.text;
+            accessible-item-selectable: true;
+            accessible-item-selected: self.shown;
+            accessible-item-index: i;
+            accessible-item-count: root.items.length;
+            accessible-action-default => {
+                root.go(i);
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.go(i);
+                }
+            }
+
+            if self.shown: Rectangle {
+                x: 0;
+                y: (parent.height - self.height) / 2;
+                width: 3px;
+                height: 16px;
+                border-radius: 1.5px;
+                background: Palette.accent-background;
+            }
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 8px;
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: item.icon;
+                        colorize: Palette.foreground;
+                    }
+                }
+
+                Text {
+                    text: item.text;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    color: Palette.foreground;
+                }
+            }
+        }
+    }
+}
+
 export component SettingsWindow inherits Window {
     title: I18n.tr("settings.title");
     icon: @image-url("../icons/32x32.png");
@@ -2284,8 +2463,8 @@ export component SettingsWindow inherits Window {
     preferred-height: 560px;
     min-width: 560px;
     min-height: 420px;
-    background: Palette.background;
-    // The page last shown, to go back to when the navigation is left without a selection.
+    background: Look.window;
+    // The page last shown, so that each change of page is reported once.
     property <int> shown-page: 0;
     // The Fluent palette in the colour scheme (SPEC §10.3); `unknown` follows the OS, live.
     property <int> color-scheme: SettingsState.color-scheme;
@@ -2305,40 +2484,33 @@ export component SettingsWindow inherits Window {
         VerticalLayout {
             width: 180px;
             padding: 8px;
-            StandardListView {
-                model: [
-                    { text: I18n.tr("settings.nav.general") },
-                    { text: I18n.tr("settings.nav.bar") },
-                    { text: I18n.tr("settings.nav.appearance") },
-                    { text: I18n.tr("settings.nav.sensors") },
-                    { text: I18n.tr("settings.nav.popups") },
-                    { text: I18n.tr("settings.nav.applications") },
-                    { text: I18n.tr("settings.nav.help") },
-                    { text: I18n.tr("settings.nav.about") },
+            padding-top: 12px;
+            Navigation {
+                items: [
+                    { text: I18n.tr("settings.nav.general"), icon: @image-url("icons/nav-general.svg") },
+                    { text: I18n.tr("settings.nav.bar"), icon: @image-url("icons/nav-bar.svg") },
+                    { text: I18n.tr("settings.nav.appearance"), icon: @image-url("icons/nav-appearance.svg") },
+                    { text: I18n.tr("settings.nav.sensors"), icon: @image-url("icons/nav-sensors.svg") },
+                    { text: I18n.tr("settings.nav.popups"), icon: @image-url("icons/nav-popups.svg") },
+                    { text: I18n.tr("settings.nav.applications"), icon: @image-url("icons/nav-applications.svg") },
+                    { text: I18n.tr("settings.nav.help"), icon: @image-url("icons/nav-help.svg") },
+                    { text: I18n.tr("settings.nav.about"), icon: @image-url("icons/nav-about.svg") },
                 ];
-                current-item <=> SettingsState.page;
+                current <=> SettingsState.page;
                 accessible-label: I18n.tr("settings.nav.label");
-                changed current-item => {
-                    // Ctrl+Space unselects the current item; the page stays.
-                    if self.current-item < 0 {
-                        self.current-item = root.shown-page;
-                    } else if self.current-item != root.shown-page {
-                        root.shown-page = self.current-item;
-                        SettingsState.page-changed(self.current-item);
+                changed current => {
+                    if self.current != root.shown-page {
+                        root.shown-page = self.current;
+                        SettingsState.page-changed(self.current);
                     }
                 }
             }
         }
 
-        Rectangle {
-            width: 1px;
-            background: Palette.border;
-        }
-
         VerticalLayout {
             padding-left: 24px;
             padding-top: 16px;
-            spacing: 8px;
+            spacing: 12px;
 
             Text {
                 text: SettingsState.page == Pages.properties ? SettingsState.props-title
@@ -2353,7 +2525,8 @@ export component SettingsWindow inherits Window {
                     I18n.tr("settings.nav.help"),
                     I18n.tr("settings.nav.about"),
                 ][SettingsState.page];
-                font-size: 20px;
+                // Windows 11's Title.
+                font-size: 28px;
                 font-weight: 600;
                 color: Palette.foreground;
             }
@@ -2368,8 +2541,12 @@ export component SettingsWindow inherits Window {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
+                // Beside the scrollbar, and no wider than Windows 11 Settings lets its cards be;
+                // on the left, in line with the title (an element narrower than its parent is
+                // centred otherwise).
                 content := VerticalLayout {
-                    width: scroll.visible-width - 20px;
+                    x: 0;
+                    width: min(scroll.visible-width - 20px, 1000px);
                     padding-bottom: 24px;
                     if SettingsState.page == Pages.general: GeneralPage { }
                     if SettingsState.page == Pages.bar: BarPage { }

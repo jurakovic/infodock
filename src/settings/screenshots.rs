@@ -5,6 +5,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
+use i_slint_backend_testing::{AccessibleRole, ElementHandle};
 use serde_json::json;
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
@@ -16,6 +17,7 @@ use super::window::{set as set_window, with_open, with_open_mut};
 use super::{Open, fill};
 use crate::app::App;
 use crate::config::ConfigStore;
+use crate::i18n::t;
 use crate::test_util::{screenshot_path, write_png};
 use crate::ui;
 
@@ -25,6 +27,31 @@ impl Platform for Offscreen {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         Ok(self.0.clone())
     }
+}
+
+/// Where the shown element with the accessible role `role` and the name `label` is in the
+/// window: its top left corner and size, logical px. Clicks find their control by it, so they
+/// follow the layout.
+fn bounds(ui: &ui::SettingsWindow, role: AccessibleRole, label: &str) -> (f32, f32, f32, f32) {
+    let element = ElementHandle::find_by_accessible_label(ui, label)
+        .find(|e| e.accessible_role() == Some(role) && e.size().width > 0.0)
+        .unwrap_or_else(|| panic!("a {role:?} named {label:?}"));
+    let (at, size) = (element.absolute_position(), element.size());
+    (at.x, at.y, size.width, size.height)
+}
+
+/// The centre of the element `bounds` finds.
+fn center(ui: &ui::SettingsWindow, role: AccessibleRole, label: &str) -> (f32, f32) {
+    let (x, y, width, height) = bounds(ui, role, label);
+    (x + width / 2.0, y + height / 2.0)
+}
+
+/// Where a click on the slider named `label` lands on its thumb, which sits at `fraction` of
+/// its range, so the click changes nothing.
+fn thumb(ui: &ui::SettingsWindow, label: &str, fraction: f32) -> (f32, f32) {
+    // The Fluent thumb is 20 px wide and travels the slider's width less its own.
+    let (x, y, width, height) = bounds(ui, AccessibleRole::Slider, label);
+    (x + 10.0 + (width - 20.0) * fraction, y + height / 2.0)
 }
 
 /// Renders each Settings page with the software renderer, for reviewing the layout without
@@ -167,21 +194,25 @@ fn render_settings_pages() {
     state.set_layout_confirm(logo.as_str().into());
     render_sized("settings-sensors-remove", 1000);
     state.set_layout_confirm(SharedString::new());
-    // Drag memory-meter (lines: # Left 89, cpu 133, memory 177, network 221, # Centre 265)
-    // onto the lower half of network-graph: it moves to the end of the left zone.
+    // Drag memory-meter onto the lower half of network-graph: it moves to the end of the left
+    // zone.
     let pointer = |event: fn(LogicalPosition) -> WindowEvent, x: f32, y: f32| {
         window.dispatch_event(event(LogicalPosition::new(x, y)));
     };
+    window.set_size(PhysicalSize::new(width, 1000));
+    let (x, from) = center(&ui, AccessibleRole::ListItem, "Memory Meter");
+    let (_, top, _, line) = bounds(&ui, AccessibleRole::ListItem, "Network Graph, Automatic");
+    let to = top + line * 0.75;
     pointer(
         |position| WindowEvent::PointerPressed {
             position,
             button: PointerEventButton::Left,
         },
-        300.0,
-        199.0,
+        x,
+        from,
     );
-    for y in [210.0, 235.0, 250.0] {
-        pointer(|position| WindowEvent::PointerMoved { position }, 300.0, y);
+    for y in [from + 11.0, (from + to) / 2.0, to] {
+        pointer(|position| WindowEvent::PointerMoved { position }, x, y);
     }
     render_sized("settings-sensors-drag", 1000);
     pointer(
@@ -189,8 +220,8 @@ fn render_settings_pages() {
             position,
             button: PointerEventButton::Left,
         },
-        300.0,
-        250.0,
+        x,
+        to,
     );
     let kinds: Vec<_> = app
         .store
@@ -225,7 +256,7 @@ fn render_settings_pages() {
             renderer.render(&mut pixels, size.width as usize);
         });
     };
-    let click = |x: f32, y: f32| {
+    let click_at = |(x, y): (f32, f32)| {
         let position = LogicalPosition::new(x, y);
         let button = PointerEventButton::Left;
         window.dispatch_event(WindowEvent::PointerPressed { position, button });
@@ -236,8 +267,9 @@ fn render_settings_pages() {
         window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
         window.dispatch_event(WindowEvent::KeyReleased { text });
     };
-    let retype = |x: f32, y: f32, text: &str| {
-        click(x, y);
+    let click = |role: AccessibleRole, label: &str| click_at(center(&ui, role, label));
+    let retype = |label: &str, text: &str| {
+        click(AccessibleRole::TextInput, label);
         key(Key::End.into());
         for _ in 0..16 {
             key(Key::Backspace.into());
@@ -245,19 +277,31 @@ fn render_settings_pages() {
         text.chars().for_each(|c| key(c.into()));
         settle();
     };
-    let (general, bar, appearance, sensors, popups, applications) =
-        (27.0, 67.0, 107.0, 147.0, 187.0, 227.0);
-    let nav = |y: f32| click(49.0, y);
+    let (general, bar, appearance, sensors, popups, applications) = (
+        "general",
+        "bar",
+        "appearance",
+        "sensors",
+        "popups",
+        "applications",
+    );
+    let nav = |page: &str| {
+        click(
+            AccessibleRole::ListItem,
+            &t(&format!("settings.nav.{page}")),
+        )
+    };
 
-    // Ctrl+Space in the navigation unselects its item; the page stays.
+    // The navigation takes the first Tab; the arrow keys, Home and End move between pages.
     key(Key::Tab.into());
-    window.dispatch_event(WindowEvent::KeyPressed {
-        text: Key::Control.into(),
-    });
-    key(' '.into());
-    window.dispatch_event(WindowEvent::KeyReleased {
-        text: Key::Control.into(),
-    });
+    key(Key::DownArrow.into());
+    settle();
+    assert_eq!(state.get_page(), 1);
+    key(Key::End.into());
+    settle();
+    assert_eq!(state.get_page(), 7);
+    key(Key::Home.into());
+    key(Key::UpArrow.into());
     settle();
     assert_eq!(state.get_page(), 0);
 
@@ -289,8 +333,7 @@ fn render_settings_pages() {
     state.invoke_set_choice("theme".into(), 1);
     window.set_size(PhysicalSize::new(width, 1000));
     refill();
-    // Carbon, the first tile of the second row.
-    click(301.0, 691.0);
+    click(AccessibleRole::ListItem, "Carbon");
     assert_eq!(skin(), "carbon");
     refill();
     key(Key::RightArrow.into());
@@ -317,29 +360,33 @@ fn render_settings_pages() {
     // what is saved.
     state.set_mode(1);
     settle();
+    let before = state.get_floating_width();
+    let (x, y, _, _) = bounds(&ui, AccessibleRole::Slider, &t("settings.bar.width"));
+    let (from, to) = (x + 15.0, x + 56.0);
     pointer(
         |position| WindowEvent::PointerPressed {
             position,
             button: PointerEventButton::Left,
         },
-        532.0,
-        143.0,
+        from,
+        y + 10.0,
     );
     pointer(
         |position| WindowEvent::PointerMoved { position },
-        573.0,
-        143.0,
+        to,
+        y + 10.0,
     );
     pointer(
         |position| WindowEvent::PointerReleased {
             position,
             button: PointerEventButton::Left,
         },
-        573.0,
-        143.0,
+        to,
+        y + 10.0,
     );
     settle();
     let width = state.get_floating_width();
+    assert_ne!(width, before, "the drag moved the slider");
     assert_eq!(width % 10.0, 0.0, "{width}");
     let floating = app.store.get().settings.bar.floating;
     assert_eq!(floating.map(|f| f.width as f32), Some(width));
@@ -347,7 +394,8 @@ fn render_settings_pages() {
 
     // A colour is saved as soon as it is valid; one left incomplete is not shown again.
     nav(popups);
-    retype(690.0, 76.0, "#20b7ff");
+    let popup_background = t("settings.popups.background");
+    retype(&popup_background, "#20b7ff");
     let background = || app.store.get().settings.popups.background;
     assert_eq!(background().as_deref(), Some("#20B7FF"));
     key("f".into());
@@ -360,9 +408,10 @@ fn render_settings_pages() {
     // defaults (SPEC §11.2).
     nav(general);
     nav(popups);
-    click(690.0, 76.0);
-    click(690.0, 258.0);
-    click(652.0, 168.0);
+    click(AccessibleRole::TextInput, &popup_background);
+    click(AccessibleRole::TextInput, &t("settings.popups.textColor"));
+    let opacity = state.get_popup_opacity() / 100.0;
+    click_at(thumb(&ui, &t("settings.popups.opacity"), opacity));
     let popups_settings = app.store.get().settings.popups;
     assert_eq!(popups_settings.background, None);
     assert_eq!(popups_settings.opacity, None);
@@ -370,13 +419,14 @@ fn render_settings_pages() {
     // Start with Windows is saved at once (nothing starts at sign-in on Linux).
     nav(general);
     let autostart = || app.store.get().settings.autostart;
-    click(729.0, 76.0);
+    let autostart_switch = t("settings.general.autostart");
+    click(AccessibleRole::Switch, &autostart_switch);
     assert!(autostart());
-    click(729.0, 76.0);
+    click(AccessibleRole::Switch, &autostart_switch);
     assert!(!autostart());
     // The calendar app is saved as it is typed (SPEC §10.6).
     nav(applications);
-    retype(554.0, 105.0, "outlookcal:");
+    retype(&t("settings.apps.calendar"), "outlookcal:");
     assert_eq!(app.store.get().settings.apps.calendar, "outlookcal:");
 
     // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
@@ -384,22 +434,31 @@ fn render_settings_pages() {
     render("settings-properties-image");
     state.invoke_prop_color_mode("color".into(), 1, "#20B7FF".into());
     render("settings-properties-image-custom");
+    // The form's boxes are named by their rows.
+    let row = |key: &str| -> String {
+        let rows = state.get_props();
+        let found = rows
+            .iter()
+            .find(|r| r.key == key)
+            .map(|r| r.label.to_string());
+        found.unwrap_or_else(|| panic!("a row {key:?}"))
+    };
     // An incomplete colour shows its error on the row and disables Save (SPEC §6.7).
-    retype(690.0, 203.0, "#12345");
+    retype(&row("color"), "#12345");
     assert!(!state.get_props_valid());
     render("settings-properties-invalid");
     // A typed path and colour are what Save stores.
-    retype(690.0, 203.0, "#123abc");
+    retype(&row("color"), "#123abc");
     assert!(state.get_props_valid());
-    retype(525.0, 92.0, r"C:\Pictures\logo.png");
+    retype(&row("image"), r"C:\Pictures\logo.png");
     // A path picked with Browse replaces the typed one, and typing goes on from it.
     super::properties::set_path(&app, "image", r"C:\Pictures\other.png".into());
     settle();
-    click(525.0, 92.0);
+    click(AccessibleRole::TextInput, &row("image"));
     key(Key::End.into());
     (0..3).for_each(|_| key(Key::Backspace.into()));
     "svg".chars().for_each(|c| key(c.into()));
-    click(723.0, 380.0);
+    click(AccessibleRole::Button, &t("settings.props.save"));
     assert_eq!(state.get_page(), super::model::SENSORS_PAGE as i32);
     let config = app.store.get();
     let props = &config
@@ -603,14 +662,20 @@ fn render_settings_pages() {
     render_sized("settings-welcome", 900);
     // A click on a theme's tile chooses it.
     window.set_size(PhysicalSize::new(760, 900));
-    click(600.0, 165.0);
+    click(
+        AccessibleRole::ListItem,
+        &t("settings.appearance.theme.classic"),
+    );
     assert_eq!(
         app.store.get().settings.theme,
         crate::config::model::ThemeId::Classic
     );
     refill();
     render_sized("settings-welcome-classic", 900);
-    click(340.0, 165.0);
+    click(
+        AccessibleRole::ListItem,
+        &t("settings.appearance.theme.modern"),
+    );
     assert_eq!(
         app.store.get().settings.theme,
         crate::config::model::ThemeId::Modern

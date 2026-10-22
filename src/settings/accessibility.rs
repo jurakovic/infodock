@@ -32,7 +32,7 @@ const CONTROLS: [AccessibleRole; 12] = [
 ];
 
 /// The navigation's right edge, logical px: focus stops left of it are the navigation's.
-const NAVIGATION: f32 = 181.0;
+const NAVIGATION: f32 = 180.0;
 
 /// An element as screen readers see it: its role, name and place in the window.
 #[derive(Debug, Clone, PartialEq)]
