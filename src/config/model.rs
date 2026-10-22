@@ -105,7 +105,7 @@ pub struct Settings {
     // §10.2
     pub bar: BarSettings,
     // §10.3
-    pub theme: Theme,
+    pub theme: ThemeId,
     pub color_scheme: ColorScheme,
     pub background: BackgroundSettings,
     pub classic: ClassicSettings,
@@ -132,7 +132,7 @@ impl Default for Settings {
             sensor_spacing: 10,
             new_sensor_menu: NewSensorMenu::Dialog,
             bar: BarSettings::default(),
-            theme: Theme::Modern,
+            theme: ThemeId::Modern,
             color_scheme: ColorScheme::System,
             background: BackgroundSettings::default(),
             classic: ClassicSettings::default(),
@@ -346,7 +346,10 @@ string_enum!(ZOrder {
     Bottom
 });
 string_enum!(Animations { Auto, On, Off });
-string_enum!(Theme { Modern, Classic });
+string_enum!(
+    /// The theme as configured; `look::theme::Theme` is it resolved.
+    ThemeId { Modern, Classic }
+);
 string_enum!(ColorScheme {
     System,
     Light,
@@ -394,9 +397,9 @@ pub struct ThemeDefaults {
 }
 
 impl ThemeDefaults {
-    pub fn of(theme: Theme) -> Self {
+    pub fn of(theme: ThemeId) -> Self {
         match theme {
-            Theme::Modern => Self {
+            ThemeId::Modern => Self {
                 bar_height: 28,
                 background_color: "#1C1C1F".into(),
                 background_opacity: 80,
@@ -408,7 +411,7 @@ impl ThemeDefaults {
                 popup_font: "Segoe UI Variable Text".into(),
                 popup_font_style: FontStyle::Normal,
             },
-            Theme::Classic => Self {
+            ThemeId::Classic => Self {
                 bar_height: 25,
                 background_color: "#2A2A2E".into(),
                 background_opacity: 90,
@@ -444,7 +447,7 @@ impl Settings {
     pub fn light_bar(&self, os_dark: bool) -> bool {
         let custom_background = self.background.color_mode == BackgroundColorMode::Custom
             && self.background.color.is_some();
-        self.theme == Theme::Modern
+        self.theme == ThemeId::Modern
             && !self.dark_scheme(os_dark)
             && !custom_background
             && self.sensors.text_color == SensorDefaults::default().text_color
@@ -684,7 +687,7 @@ mod tests {
     fn theme_defaults_follow_theme() {
         let mut s = Settings::default();
         assert_eq!(s.bar_height(), 28);
-        s.theme = Theme::Classic;
+        s.theme = ThemeId::Classic;
         assert_eq!(s.bar_height(), 25);
         s.bar.height = Some(33);
         assert_eq!(s.bar_height(), 33);

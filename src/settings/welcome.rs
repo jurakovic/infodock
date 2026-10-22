@@ -11,9 +11,8 @@ use super::Open;
 use super::appearance::{PreviewKey, Previews};
 use crate::app::App;
 use crate::config::exchange::ImportFormat;
-use crate::config::model::{ColorScheme, Settings, Theme as ThemeId};
+use crate::config::model::{ColorScheme, Settings, ThemeId};
 use crate::i18n::t;
-use crate::platform::NativeDialogs;
 use crate::ui;
 
 /// The page index of the welcome page in the window; it is not in the navigation.
@@ -106,10 +105,7 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_welcome_import(move || {
-        let dialogs = NativeDialogs {
-            owner: super::owner(),
-        };
-        crate::transfer::import(&a, &dialogs, ImportFormat::Any);
+        crate::transfer::import(&a, &super::dialogs(), ImportFormat::Any);
     });
     let a = Arc::clone(app);
     state.on_welcome_done(move || super::close(&a));

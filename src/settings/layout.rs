@@ -8,7 +8,7 @@ use std::sync::Arc;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 use super::picker::{self, Place};
-use super::{Open, WINDOW, properties};
+use super::{Open, properties, with_open};
 use crate::app::App;
 use crate::config::model::{Layout, Zone};
 use crate::i18n::t;
@@ -185,27 +185,19 @@ fn report(result: Result<(), crate::config::ConfigError>) {
         Ok(()) => SharedString::new(),
         Err(e) => e.to_string().into(),
     };
-    WINDOW.with(|w| {
-        if let Ok(w) = w.try_borrow()
-            && let Some(open) = w.as_ref()
-        {
-            open.window
-                .global::<ui::SettingsState>()
-                .set_save_error(error);
-        }
+    with_open(|open| {
+        open.window
+            .global::<ui::SettingsState>()
+            .set_save_error(error);
     });
 }
 
 /// Asks for the focus on sensor `id`'s Up (or Down) button once the list shows its move.
 fn refocus(id: &str, up: bool) {
-    WINDOW.with(|w| {
-        if let Ok(w) = w.try_borrow()
-            && let Some(open) = w.as_ref()
-        {
-            let state = open.window.global::<ui::SettingsState>();
-            state.set_layout_focus_id(id.into());
-            state.set_layout_focus_up(up);
-        }
+    with_open(|open| {
+        let state = open.window.global::<ui::SettingsState>();
+        state.set_layout_focus_id(id.into());
+        state.set_layout_focus_up(up);
     });
 }
 

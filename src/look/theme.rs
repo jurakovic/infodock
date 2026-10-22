@@ -4,7 +4,7 @@
 use super::skins::SkinSpec;
 use crate::config::model::{
     BackgroundColorMode, InactiveMode, LIGHT_BAR_BACKGROUND, LIGHT_SENSOR_TEXT, Material, Settings,
-    Theme as ThemeId, ThemeDefaults,
+    ThemeDefaults, ThemeId,
 };
 use crate::platform::{Color, Font, OsAppearance};
 

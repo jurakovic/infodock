@@ -237,20 +237,14 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
             // The skin gallery shows with the classic theme.
             app.store
                 .update(|c| {
-                    c.settings.theme = crate::config::model::Theme::Classic;
+                    c.settings.theme = crate::config::model::ThemeId::Classic;
                     Ok(())
                 })
                 .expect("saved");
-            super::WINDOW.with(|w| {
-                if let Some(open) = w.borrow_mut().as_mut() {
-                    super::fill(open, &app, &app.store.get().settings);
-                }
-            });
+            super::with_open_mut(|open| super::fill(open, &app, &app.store.get().settings));
         }
         super::open(&app, route.split(' ').next().unwrap_or_default());
-        let window = super::WINDOW
-            .with(|w| w.borrow().as_ref().map(|open| open.window.clone_strong()))
-            .expect("Settings is open");
+        let window = super::window::handle().expect("Settings is open");
         // Tall enough that no page scrolls while Tab moves through it.
         window.window().set_size(LogicalSize::new(760.0, 3000.0));
         slint::platform::update_timers_and_animations();

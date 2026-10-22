@@ -70,7 +70,7 @@ fn collect_unknown(patch: &Value, reference: &Value, prefix: &str, out: &mut Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{Edge, Theme};
+    use crate::config::model::{Edge, ThemeId};
     use serde_json::json;
 
     #[test]
@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(next.bar.height, Some(30));
         assert!(next.locked);
         assert_eq!(next.bar.reserve_space, s.bar.reserve_space);
-        assert_eq!(next.theme, Theme::Modern);
+        assert_eq!(next.theme, ThemeId::Modern);
     }
 
     #[test]

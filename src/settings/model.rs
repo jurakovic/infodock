@@ -457,7 +457,7 @@ mod tests {
         }
 
         let mut classic = Settings {
-            theme: crate::config::model::Theme::Classic,
+            theme: crate::config::model::ThemeId::Classic,
             ..Settings::default()
         };
         assert_eq!(

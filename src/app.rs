@@ -12,7 +12,7 @@ use crate::config::exchange::{
 use crate::config::legacy::LegacySensor;
 use crate::config::model::{Settings, Zone};
 use crate::config::{ConfigError, ConfigStore};
-use crate::platform::{NativeDialogs, Platform};
+use crate::platform::Platform;
 use crate::providers::Providers;
 use crate::sampler::{
     BATTERY_EVERY, Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest,
@@ -398,20 +398,14 @@ impl BarHost for AppHost {
     fn import_layout(&self, format: ImportFormat) {
         let app = Arc::clone(&self.0);
         let _ = slint::invoke_from_event_loop(move || {
-            let dialogs = NativeDialogs {
-                owner: settings::owner(),
-            };
-            transfer::import(&app, &dialogs, format);
+            transfer::import(&app, &settings::dialogs(), format);
         });
     }
 
     fn export_layout(&self) {
         let app = Arc::clone(&self.0);
         let _ = slint::invoke_from_event_loop(move || {
-            let dialogs = NativeDialogs {
-                owner: settings::owner(),
-            };
-            transfer::export(&app, &dialogs);
+            transfer::export(&app, &settings::dialogs());
         });
     }
 

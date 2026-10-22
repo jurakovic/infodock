@@ -75,7 +75,7 @@ impl TwoLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{Settings, Theme as ThemeId};
+    use crate::config::model::{Settings, ThemeId};
     use crate::platform::OsAppearance;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
 

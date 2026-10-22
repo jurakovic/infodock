@@ -15,7 +15,7 @@ fn a_skin_packs_band_goes_on_the_side_facing_the_screen_centre() {
         &[[10, 20].as_slice(), &[100; 25]].concat(),
     );
     let mut settings = Settings {
-        theme: crate::config::model::Theme::Classic,
+        theme: crate::config::model::ThemeId::Classic,
         ..Settings::default()
     };
     settings.classic.skin = "stripes".into();
@@ -47,7 +47,7 @@ fn a_pack_installed_later_is_drawn_once_the_bar_hears_of_it() {
     use crate::look::skins::tests::{decode_png, pack, rows_png};
     let skins = tempfile::tempdir().expect("temp dir");
     let mut settings = Settings {
-        theme: crate::config::model::Theme::Classic,
+        theme: crate::config::model::ThemeId::Classic,
         ..Settings::default()
     };
     settings.classic.skin = "stripes".into();
@@ -124,7 +124,7 @@ fn the_bars_shadow_goes_where_a_skins_band_would() {
         &[[10, 20].as_slice(), &[100; 25]].concat(),
     );
     let mut classic = config.clone();
-    classic.settings.theme = crate::config::model::Theme::Classic;
+    classic.settings.theme = crate::config::model::ThemeId::Classic;
     classic.settings.classic.skin = "stripes".into();
     logic.skin = SkinCache::with_decoder(skins.path().into(), decode_png);
     logic.apply_config(&window, classic.clone());

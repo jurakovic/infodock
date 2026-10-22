@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use super::{WINDOW, properties};
+use super::{properties, with_open, with_open_mut};
 use crate::app::App;
 use crate::config::model::{Layout, Zone};
 use crate::i18n::t;
@@ -180,13 +180,7 @@ fn rows(entries: &[Entry], query: &str) -> (Vec<ui::PickerRow>, Vec<i32>) {
 
 /// Opens the picker inserting at `place`.
 pub(super) fn open_picker(app: &App, place: Place) {
-    WINDOW.with(|w| {
-        let Ok(mut w) = w.try_borrow_mut() else {
-            return;
-        };
-        let Some(open) = w.as_mut() else {
-            return;
-        };
+    with_open_mut(|open| {
         properties::cancel(open, app);
         let state = open.window.global::<ui::SettingsState>();
         let entries = entries(crate::sensors::registry::registry(), app.platform.as_ref());
@@ -219,16 +213,15 @@ pub(super) fn open_picker(app: &App, place: Place) {
 
 /// Adds the selected type and opens its properties.
 fn add(app: &Arc<App>) {
-    let pending = WINDOW.with(|w| {
-        let w = w.try_borrow().ok()?;
-        let open = w.as_ref()?;
+    let pending = with_open(|open| {
         let picker = open.picker.as_ref()?;
         let state = open.window.global::<ui::SettingsState>();
         let entry = usize::try_from(state.get_picker_selected()).ok()?;
         let kind = picker.entries.get(entry)?.kind;
         let after = state.get_picker_after() == 1;
         Some((kind, picker.place.clone(), after))
-    });
+    })
+    .flatten();
     let Some((kind, place, after)) = pending else {
         return;
     };
@@ -238,23 +231,15 @@ fn add(app: &Arc<App>) {
         insertion(&layout, &place, after).unwrap_or((Zone::Left, layout.left.len()));
     match app.add_sensor(kind, zone, index, &Props::new()) {
         Ok(id) => {
-            WINDOW.with(|w| {
-                if let Ok(mut w) = w.try_borrow_mut()
-                    && let Some(open) = w.as_mut()
-                {
-                    open.picker = None;
-                }
-            });
+            with_open_mut(|open| open.picker = None);
             properties::open_form(app, &id, true);
         }
-        Err(e) => WINDOW.with(|w| {
-            if let Ok(w) = w.try_borrow()
-                && let Some(open) = w.as_ref()
-            {
+        Err(e) => {
+            with_open(|open| {
                 let state = open.window.global::<ui::SettingsState>();
                 state.set_save_error(e.to_string().into());
-            }
-        }),
+            });
+        }
     }
 }
 
@@ -262,13 +247,7 @@ fn add(app: &Arc<App>) {
 pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let state = window.global::<ui::SettingsState>();
     state.on_picker_searched(|query| {
-        WINDOW.with(|w| {
-            let Ok(mut w) = w.try_borrow_mut() else {
-                return;
-            };
-            let Some(open) = w.as_mut() else {
-                return;
-            };
+        with_open_mut(|open| {
             let Some(picker) = open.picker.as_mut() else {
                 return;
             };
@@ -280,11 +259,8 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
         });
     });
     state.on_picker_step(|up| {
-        WINDOW.with(|w| {
-            if let Ok(w) = w.try_borrow()
-                && let Some(open) = w.as_ref()
-                && let Some(picker) = open.picker.as_ref()
-            {
+        with_open(|open| {
+            if let Some(picker) = open.picker.as_ref() {
                 let state = open.window.global::<ui::SettingsState>();
                 state.set_picker_selected(stepped(&picker.lines, state.get_picker_selected(), up));
             }
@@ -293,15 +269,11 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let a = Arc::clone(app);
     state.on_picker_add(move || add(&a));
     state.on_picker_cancel(|| {
-        WINDOW.with(|w| {
-            if let Ok(mut w) = w.try_borrow_mut()
-                && let Some(open) = w.as_mut()
-            {
-                open.picker = None;
-                open.window
-                    .global::<ui::SettingsState>()
-                    .set_page(super::model::SENSORS_PAGE as i32);
-            }
+        with_open_mut(|open| {
+            open.picker = None;
+            open.window
+                .global::<ui::SettingsState>()
+                .set_page(super::model::SENSORS_PAGE as i32);
         });
     });
 }

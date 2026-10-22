@@ -10,10 +10,9 @@ use serde_json::Value;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 use super::form::{Form, FormRow, RowKind, extensions};
-use super::{Open, WINDOW};
+use super::{Open, pick, with_open, with_open_mut};
 use crate::app::App;
 use crate::i18n::{t, t_args};
-use crate::platform::PathRequest;
 use crate::sensors::registry::registry;
 use crate::ui;
 
@@ -60,13 +59,7 @@ fn prop_row(row: &FormRow) -> ui::PropRow {
 
 /// Opens sensor `id`'s properties; `new` when the picker has just added it.
 pub(super) fn open_form(app: &Arc<App>, id: &str, new: bool) {
-    WINDOW.with(|w| {
-        let Ok(mut w) = w.try_borrow_mut() else {
-            return;
-        };
-        let Some(open) = w.as_mut() else {
-            return;
-        };
+    with_open_mut(|open| {
         cancel(open, app);
         let state = open.window.global::<ui::SettingsState>();
         let config = app.store.get();
@@ -122,13 +115,7 @@ pub(super) fn cancel(open: &mut Open, app: &App) {
 /// Applies an edit to the open form, refreshes the rows it affects and schedules the preview.
 /// An invalid value shows an error on its row and disables Save (SPEC §6.7).
 fn edit(app: &Arc<App>, change: impl FnOnce(&mut Form, &[String]) -> bool) {
-    WINDOW.with(|w| {
-        let Ok(mut w) = w.try_borrow_mut() else {
-            return;
-        };
-        let Some(open) = w.as_mut() else {
-            return;
-        };
+    with_open_mut(|open| {
         let families = open.families.clone();
         let Some(state) = open.form.as_mut() else {
             return;
@@ -187,13 +174,7 @@ pub(super) fn batteries_changed(names: Vec<String>) {
 
 /// Lets `change` update the open form; its rows are shown again when it says so.
 fn with_form(change: impl FnOnce(&mut Form) -> bool) {
-    WINDOW.with(|w| {
-        let Ok(mut w) = w.try_borrow_mut() else {
-            return;
-        };
-        let Some(open) = w.as_mut() else {
-            return;
-        };
+    with_open_mut(|open| {
         let families = open.families.clone();
         let window = open.window.global::<ui::SettingsState>();
         if let Some(state) = open.form.as_mut()
@@ -206,11 +187,11 @@ fn with_form(change: impl FnOnce(&mut Form) -> bool) {
 
 /// Shows the form's edits on the bar.
 fn preview(app: &App) {
-    let pending = WINDOW.with(|w| {
-        let w = w.try_borrow().ok()?;
-        let state = w.as_ref()?.form.as_ref()?;
+    let pending = with_open(|open| {
+        let state = open.form.as_ref()?;
         Some((state.form.id.clone(), state.form.changes().clone()))
-    });
+    })
+    .flatten();
     if let Some((id, changes)) = pending
         && let Err(e) = app.preview_sensor(&id, &changes)
     {
@@ -220,24 +201,18 @@ fn preview(app: &App) {
 
 /// Saves the edits and returns to the Sensors page; on failure the form stays with the error.
 fn save(app: &App) {
-    let pending = WINDOW.with(|w| {
-        let w = w.try_borrow().ok()?;
-        let state = w.as_ref()?.form.as_ref()?;
+    let pending = with_open(|open| {
+        let state = open.form.as_ref()?;
         // Save is disabled while a value is invalid (SPEC §6.7).
         let valid = state.form.valid();
         valid.then(|| (state.form.id.clone(), state.form.changes().clone()))
-    });
+    })
+    .flatten();
     let Some((id, changes)) = pending else {
         return;
     };
     let result = app.update_sensor(&id, &changes);
-    WINDOW.with(|w| {
-        let Ok(mut w) = w.try_borrow_mut() else {
-            return;
-        };
-        let Some(open) = w.as_mut() else {
-            return;
-        };
+    with_open_mut(|open| {
         let window = open.window.global::<ui::SettingsState>();
         match result {
             Ok(()) => {
@@ -254,15 +229,13 @@ fn save(app: &App) {
 
 /// Lets the user pick the path of a file or folder field.
 fn browse(app: &Arc<App>, key: &str) {
-    let request = WINDOW.with(|w| {
-        let w = w.try_borrow().ok()?;
-        let open = w.as_ref()?;
+    let request = with_open(|open| {
         let state = open.form.as_ref()?;
         let row = state.rows.iter().find(|r| r.key == key)?;
-        let folder = row.kind == RowKind::Folder;
-        Some((folder, state.kind.clone(), owner(&open.window)))
-    });
-    let Some((folder, kind, owner)) = request else {
+        Some((row.kind == RowKind::Folder, state.kind.clone()))
+    })
+    .flatten();
+    let Some((folder, kind)) = request else {
         return;
     };
     let title = t(if folder {
@@ -270,20 +243,12 @@ fn browse(app: &Arc<App>, key: &str) {
     } else {
         "settings.props.pickFile"
     });
-    let (types_name, all_files) = (
-        t("settings.props.supportedFiles"),
-        t("settings.props.allFiles"),
-    );
-    // The picker runs its own modal loop; no window state is borrowed meanwhile.
-    let picked = crate::platform::pick_path(
-        owner,
-        &PathRequest {
-            title: &title,
-            folder,
-            extensions: extensions(registry(), &kind, key),
-            types_name: &types_name,
-            all_files: &all_files,
-        },
+    let extensions = extensions(registry(), &kind, key);
+    let picked = pick(
+        &title,
+        folder,
+        extensions,
+        &t("settings.props.supportedFiles"),
     );
     if let Some(path) = picked {
         set_path(app, key, path);
@@ -295,12 +260,8 @@ pub(super) fn set_path(app: &Arc<App>, key: &str, path: String) {
     edit(app, |form, _| form.set(key, Value::String(path)));
     // Typing into the box replaced its binding to the row, so updating the row would not show
     // the path: the row is replaced instead, which builds a new box.
-    WINDOW.with(|w| {
-        let Ok(w) = w.try_borrow() else {
-            return;
-        };
-        if let Some(open) = w.as_ref()
-            && let Some(state) = open.form.as_ref()
+    with_open(|open| {
+        if let Some(state) = open.form.as_ref()
             && let Some(i) = state.rows.iter().position(|r| r.key == key)
         {
             let model = open.window.global::<ui::SettingsState>().get_props();
@@ -310,25 +271,6 @@ pub(super) fn set_path(app: &Arc<App>, key: &str, path: String) {
             }
         }
     });
-}
-
-/// The window's native handle, to make the picker modal to it.
-#[cfg(windows)]
-pub(super) fn owner(window: &ui::SettingsWindow) -> Option<isize> {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    use slint::winit_030::WinitWindowAccessor;
-    window
-        .window()
-        .with_winit_window(|w| match w.window_handle().ok()?.as_raw() {
-            RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
-            _ => None,
-        })
-        .flatten()
-}
-
-#[cfg(not(windows))]
-pub(super) fn owner(_window: &ui::SettingsWindow) -> Option<isize> {
-    None
 }
 
 /// Handles the form's callbacks.
@@ -364,15 +306,11 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     state.on_props_save(move || save(&a));
     let a = Arc::clone(app);
     state.on_props_cancel(move || {
-        WINDOW.with(|w| {
-            if let Ok(mut w) = w.try_borrow_mut()
-                && let Some(open) = w.as_mut()
-            {
-                cancel(open, &a);
-                open.window
-                    .global::<ui::SettingsState>()
-                    .set_page(super::model::SENSORS_PAGE as i32);
-            }
+        with_open_mut(|open| {
+            cancel(open, &a);
+            open.window
+                .global::<ui::SettingsState>()
+                .set_page(super::model::SENSORS_PAGE as i32);
         });
     });
 }

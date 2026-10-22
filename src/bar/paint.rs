@@ -75,7 +75,7 @@ pub fn skin_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{Settings, Theme as ThemeId};
+    use crate::config::model::{Settings, ThemeId};
     use crate::platform::recording::RecordingCanvas;
     use crate::platform::{Color, OsAppearance};
 

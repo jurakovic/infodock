@@ -106,6 +106,8 @@ resvg = { version = "0.48", default-features = false }
 # rasters. The versions and features usvg already links, so they cost nothing.
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 imagesize = "0.15"
+# The Settings window's native handle, for dialogs modal to it; the version winit links.
+raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The legacy XML layout import (SPEC §3, §11.4): the reader only.
@@ -119,7 +121,6 @@ tracing-appender = "0.2"
 [target.'cfg(windows)'.dependencies]
 # Batteries for the `battery/<i>` topic (SPEC Appendix A): charge, state, times, names.
 starship-battery = "0.12"
-raw-window-handle = "0.6"
 window-vibrancy = "0.8"
 # Points and matrices of the Direct2D API; the version the `windows` crate uses.
 windows-numerics = "0.3"

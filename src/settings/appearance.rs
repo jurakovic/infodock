@@ -10,10 +10,10 @@ use std::sync::Arc;
 use serde_json::Value;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use super::{Open, WINDOW, model, pick, save};
+use super::{Open, model, pick, save, with_open, with_open_mut};
 use crate::app::App;
 use crate::config::model::{
-    BackgroundSettings, ClassicSettings, ColorScheme, Settings, Theme as ThemeId, ThemeDefaults,
+    BackgroundSettings, ClassicSettings, ColorScheme, Settings, ThemeDefaults, ThemeId,
 };
 use crate::i18n::{t, t_args};
 use crate::look::skins::pack::{self, PackEntry};
@@ -368,12 +368,10 @@ fn browse(app: &Arc<App>) {
 /// The skins folder changed: the bar draws its skin again, the page lists the folder again.
 pub(super) fn packs_changed(app: &App) {
     app.skins_changed();
-    WINDOW.with(|w| {
-        if let Some(open) = w.borrow_mut().as_mut() {
-            open.gallery.refresh(app);
-            let settings = app.store.get().settings;
-            super::fill(open, app, &settings);
-        }
+    with_open_mut(|open| {
+        open.gallery.refresh(app);
+        let settings = app.store.get().settings;
+        super::fill(open, app, &settings);
     });
 }
 
@@ -411,24 +409,18 @@ fn install(app: &Arc<App>, folder: bool) {
             (message, true)
         }
     };
-    WINDOW.with(|w| {
-        if let Some(open) = w.borrow().as_ref() {
-            let state = open.window.global::<ui::SettingsState>();
-            state.set_skin_install_message(message.into());
-            state.set_skin_install_failed(failed);
-        }
+    with_open(|open| {
+        let state = open.window.global::<ui::SettingsState>();
+        state.set_skin_install_message(message.into());
+        state.set_skin_install_failed(failed);
     });
     packs_changed(app);
 }
 
 /// Moves the pack `id`, one the page lists, to the Recycle Bin (SPEC §12.4).
 fn remove(app: &Arc<App>, id: &str) {
-    let listed = WINDOW.with(|w| {
-        w.borrow()
-            .as_ref()
-            .is_some_and(|open| open.gallery.packs.iter().any(|p| p.id == id))
-    });
-    if !listed {
+    let listed = with_open(|open| open.gallery.packs.iter().any(|p| p.id == id));
+    if listed != Some(true) {
         return;
     }
     let path = app.skins.join(id).display().to_string();
@@ -478,12 +470,11 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     });
     let a = Arc::clone(app);
     state.on_set_skin(move |index| {
-        let id = WINDOW.with(|w| {
-            let w = w.borrow();
-            let open = w.as_ref()?;
+        let id = with_open(|open| {
             let index = usize::try_from(index).ok()?;
             open.gallery.entries.get(index).map(|e| e.id.clone())
-        });
+        })
+        .flatten();
         if let Some(id) = id {
             save(&a, model::patch("classic.skin", Value::String(id)));
         }

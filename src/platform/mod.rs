@@ -873,6 +873,31 @@ fn decode_raster(
     }
 }
 
+/// A native window that dialogs are modal to: the Settings window's `HWND` on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnerWindow(isize);
+
+impl OwnerWindow {
+    /// The native window behind `window`; `None` where dialogs have no owner (other OSes).
+    pub fn of(window: &dyn raw_window_handle::HasWindowHandle) -> Option<Self> {
+        #[cfg(windows)]
+        return match window.window_handle().ok()?.as_raw() {
+            raw_window_handle::RawWindowHandle::Win32(handle) => Some(Self(handle.hwnd.get())),
+            _ => None,
+        };
+        #[cfg(not(windows))]
+        {
+            let _ = window;
+            None
+        }
+    }
+
+    #[cfg(windows)]
+    fn hwnd(self) -> ::windows::Win32::Foundation::HWND {
+        ::windows::Win32::Foundation::HWND(self.0 as *mut std::ffi::c_void)
+    }
+}
+
 /// What a file or folder picker asks for (SPEC §4.6 `IFileOpenDialog`).
 pub struct PathRequest<'a> {
     pub title: &'a str,
@@ -887,7 +912,7 @@ pub struct PathRequest<'a> {
 
 /// Shows the OS file or folder picker, modal to the native window `owner`, on the calling
 /// thread. `None` if the user cancelled, or where there is no picker.
-pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> {
+pub fn pick_path(owner: Option<OwnerWindow>, request: &PathRequest) -> Option<String> {
     #[cfg(windows)]
     return windows::shell::pick_path(owner, request);
     #[cfg(not(windows))]
@@ -910,7 +935,7 @@ pub struct SaveRequest<'a> {
 /// Shows the OS save picker, modal to the native window `owner`, on the calling thread: the
 /// chosen path and the index of the chosen file type. `None` if the user cancelled, or where
 /// there is no picker.
-pub fn save_path(owner: Option<isize>, request: &SaveRequest) -> Option<(String, usize)> {
+pub fn save_path(owner: Option<OwnerWindow>, request: &SaveRequest) -> Option<(String, usize)> {
     #[cfg(windows)]
     return windows::shell::save_path(owner, request);
     #[cfg(not(windows))]
@@ -960,7 +985,7 @@ pub trait Dialogs {
 /// the calling thread, each running its own modal loop. Without them (other OSes), nothing is
 /// asked and every question is cancelled.
 pub struct NativeDialogs {
-    pub owner: Option<isize>,
+    pub owner: Option<OwnerWindow>,
 }
 
 impl Dialogs for NativeDialogs {
@@ -975,7 +1000,7 @@ impl Dialogs for NativeDialogs {
     fn choose(&self, choice: &Choice) -> Option<usize> {
         #[cfg(windows)]
         return windows::dialog::choose(
-            owner_hwnd(self.owner),
+            self.owner.map(OwnerWindow::hwnd),
             &crate::i18n::t("app.name"),
             choice,
         );
@@ -988,15 +1013,14 @@ impl Dialogs for NativeDialogs {
 
     fn show_message(&self, message: &Message) {
         #[cfg(windows)]
-        windows::dialog::message(owner_hwnd(self.owner), &crate::i18n::t("app.name"), message);
+        windows::dialog::message(
+            self.owner.map(OwnerWindow::hwnd),
+            &crate::i18n::t("app.name"),
+            message,
+        );
         #[cfg(not(windows))]
         tracing::info!("message: {} {}", message.text, message.detail);
     }
-}
-
-#[cfg(windows)]
-fn owner_hwnd(owner: Option<isize>) -> Option<::windows::Win32::Foundation::HWND> {
-    owner.map(|h| ::windows::Win32::Foundation::HWND(h as *mut std::ffi::c_void))
 }
 
 /// Renders `width`×`height` physical px at `scale` with the bar's renderer, e.g. for previews

@@ -2,7 +2,7 @@
 //! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), the Recycle Bin
 //! (§9.16), and the file and folder pickers (`IFileOpenDialog`, `IFileSaveDialog`).
 
-use windows::Win32::Foundation::{ERROR_CANCELLED, HWND};
+use windows::Win32::Foundation::ERROR_CANCELLED;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoCreateInstance,
     CoInitializeEx, CoTaskMemFree, CoUninitialize,
@@ -18,7 +18,7 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result, w};
 
-use crate::platform::{Launch, PathRequest, RecycleBin, SaveRequest};
+use crate::platform::{Launch, OwnerWindow, PathRequest, RecycleBin, SaveRequest};
 
 /// Starts `launch` as Explorer would, on a short-lived thread: the shell can take a moment (and
 /// show its own message when the target is missing, or ask for elevation), and the bar thread
@@ -155,12 +155,12 @@ pub fn reveal(path: &str) {
 }
 
 /// Shows the picker modal to `owner`; `None` if the user cancelled or it failed (logged).
-pub fn pick_path(owner: Option<isize>, request: &PathRequest) -> Option<String> {
+pub fn pick_path(owner: Option<OwnerWindow>, request: &PathRequest) -> Option<String> {
     with_com(|| show(owner, request))
 }
 
 /// The save picker; see `platform::save_path`.
-pub fn save_path(owner: Option<isize>, request: &SaveRequest) -> Option<(String, usize)> {
+pub fn save_path(owner: Option<OwnerWindow>, request: &SaveRequest) -> Option<(String, usize)> {
     with_com(|| show_save(owner, request))
 }
 
@@ -185,10 +185,6 @@ fn with_com<T>(show: impl FnOnce() -> Result<Option<T>>) -> Option<T> {
     }
 }
 
-fn owner_hwnd(owner: Option<isize>) -> Option<HWND> {
-    owner.map(|h| HWND(h as *mut std::ffi::c_void))
-}
-
 /// The file system path of a picked item.
 ///
 /// # Safety
@@ -203,7 +199,7 @@ unsafe fn item_path(item: &IShellItem) -> Result<Option<String>> {
     }
 }
 
-fn show(owner: Option<isize>, request: &PathRequest) -> Result<Option<String>> {
+fn show(owner: Option<OwnerWindow>, request: &PathRequest) -> Result<Option<String>> {
     // Kept alive until the dialog has closed: the filter specs point into them.
     let types_name = HSTRING::from(request.types_name);
     let types_spec = HSTRING::from(
@@ -240,7 +236,7 @@ fn show(owner: Option<isize>, request: &PathRequest) -> Result<Option<String>> {
             dialog.SetFileTypes(&specs)?;
             dialog.SetOptions(dialog.GetOptions()? | FOS_FORCEFILESYSTEM)?;
         }
-        if dialog.Show(owner_hwnd(owner)).is_err() {
+        if dialog.Show(owner.map(OwnerWindow::hwnd)).is_err() {
             // Cancelled (or closed): nothing chosen.
             return Ok(None);
         }
@@ -248,7 +244,7 @@ fn show(owner: Option<isize>, request: &PathRequest) -> Result<Option<String>> {
     }
 }
 
-fn show_save(owner: Option<isize>, request: &SaveRequest) -> Result<Option<(String, usize)>> {
+fn show_save(owner: Option<OwnerWindow>, request: &SaveRequest) -> Result<Option<(String, usize)>> {
     // Kept alive until the dialog has closed: the filter specs point into them.
     let names: Vec<HSTRING> = request
         .types
@@ -286,7 +282,7 @@ fn show_save(owner: Option<isize>, request: &SaveRequest) -> Result<Option<(Stri
         }
         dialog.SetFileName(&file_name)?;
         dialog.SetOptions(dialog.GetOptions()? | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT)?;
-        if dialog.Show(owner_hwnd(owner)).is_err() {
+        if dialog.Show(owner.map(OwnerWindow::hwnd)).is_err() {
             // Cancelled (or closed): nothing chosen.
             return Ok(None);
         }
