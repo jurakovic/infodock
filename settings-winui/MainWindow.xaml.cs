@@ -65,13 +65,14 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// As large as the Slint window, which opens at 760 × 560 logical px below a 32 px system
-    /// title bar; here the title bar is part of the client area. Centred on the work area.
+    /// As large as the Slint window, which opens at 760 × 560 logical px below the system title
+    /// bar. ResizeClient adds the system title bar's height although the content extends into
+    /// it, so the window is as tall as the Slint one. Centred on the work area.
     /// </summary>
     void Place()
     {
         var scale = GetDpiForWindow(Win32Interop.GetWindowFromWindowId(AppWindow.Id)) / 96.0;
-        AppWindow.ResizeClient(new SizeInt32((int)(760 * scale), (int)((560 + 32) * scale)));
+        AppWindow.ResizeClient(new SizeInt32((int)(760 * scale), (int)(560 * scale)));
         var size = AppWindow.Size;
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         AppWindow.Move(new PointInt32(area.X + (area.Width - size.Width) / 2, area.Y + (area.Height - size.Height) / 2));
