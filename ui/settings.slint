@@ -2495,9 +2495,11 @@ export component SettingsWindow inherits Window {
     min-width: 560px;
     min-height: 420px;
     background: Look.window;
-    // Windows 11's UI font, as WinUI uses it; where it is missing (Windows 10) Slint falls back
-    // to Segoe UI.
+    // Windows 11's UI font at WinUI's Body size, 14 px (Slint would take the system's message
+    // font, 12 px); help text stays at Caption, 12 px. Where the font is missing (Windows 10)
+    // Slint falls back to Segoe UI.
     default-font-family: "Segoe UI Variable Text";
+    default-font-size: 14px;
     // The page fades in when shown, as WinUI's pages enter. The fade first jumps back to
     // transparent (no animation while `page-restart`), then animates.
     property <int> page: SettingsState.page;
