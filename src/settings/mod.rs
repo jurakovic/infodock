@@ -459,8 +459,8 @@ fn save(app: &Arc<App>, patch: Value) {
             Ok(_) => state.set_save_error(SharedString::new()),
             Err(SaveError::Hotkey(e)) => state.set_hotkey_error(e.as_str().into()),
             Err(SaveError::Config(e)) => {
-                tracing::warn!("could not save a settings change: {e}");
-                state.set_save_error(e.to_string().into());
+                tracing::warn!(code = e.code(), "could not save a settings change: {e}");
+                state.set_save_error(e.message().into());
             }
         }
         if matches!(result, Err(SaveError::Config(_))) {

@@ -1,7 +1,8 @@
 //! Sensor operations used by Settings and the bar (SPEC §4.5): add, update, move and remove
 //! sensors, and the props a live preview shows. Each is a function on a [`Config`]; the app
 //! runs it inside a config-store update, which saves the result and notifies the bar and
-//! Settings.
+//! Settings. What the machine says for machine-derived props is asked before, with
+//! [`machine_props`], so the store is never locked while the machine is asked.
 
 use super::registry::Registry;
 use super::schema::{self, PropField};
@@ -9,21 +10,54 @@ use super::{DefaultsCtx, Props};
 use crate::config::ConfigError;
 use crate::config::model::{Config, IdGen, Layout, SensorInstance, Zone};
 
-fn invalid(message: String) -> ConfigError {
-    ConfigError::Invalid(message)
+fn not_found(id: &str) -> ConfigError {
+    ConfigError::NotFound(id.to_owned())
 }
 
-fn not_found(id: &str) -> ConfigError {
-    invalid(format!("no sensor {id}"))
+/// What the machine says for the machine-derived props a sensor of type `kind` with `props`
+/// lacks once `changes` are applied, for [`add`], [`update`] and [`preview`]; empty, without
+/// asking the machine, when it lacks none (SPEC §11.2). Fields `changes` sets are not asked
+/// of the machine, so a dropped drive lists no drives.
+pub fn machine_props(
+    registry: &Registry,
+    ctx: &DefaultsCtx,
+    kind: &str,
+    props: &Props,
+    changes: &Props,
+) -> Props {
+    let probe = SensorInstance {
+        id: String::new(),
+        kind: kind.to_owned(),
+        props: props.clone(),
+    };
+    registry
+        .machine_props(&with_changes(&probe, changes), ctx)
+        .unwrap_or_default()
+}
+
+/// [`machine_props`] for sensor `id` of `config`; empty if there is no such sensor.
+pub fn machine_props_of(
+    config: &Config,
+    registry: &Registry,
+    ctx: &DefaultsCtx,
+    id: &str,
+    changes: &Props,
+) -> Props {
+    config
+        .layout
+        .all()
+        .find(|s| s.id == id)
+        .map(|s| machine_props(registry, ctx, &s.kind, &s.props, changes))
+        .unwrap_or_default()
 }
 
 /// Adds a sensor of type `kind` at `index` of `zone` (clamped to the zone) with `props` (only
-/// the values that differ from the defaults; validated) and machine-derived props filled in.
-/// Returns the new id.
+/// the values that differ from the defaults; validated) and machine-derived props filled in
+/// from `machine` ([`machine_props`]). Returns the new id.
 pub fn add(
     config: &mut Config,
     registry: &Registry,
-    ctx: &DefaultsCtx,
+    machine: &Props,
     kind: &str,
     zone: Zone,
     index: usize,
@@ -34,7 +68,7 @@ pub fn add(
         kind: kind.to_owned(),
         props: Props::new(),
     };
-    instance.props = with_machine_props(registry, ctx, &instance, props)?;
+    instance.props = with_machine_props(registry, machine, &instance, props)?;
     let id = instance.id.clone();
     let list = config.layout.zone_mut(zone);
     list.insert(index.min(list.len()), instance);
@@ -52,7 +86,7 @@ fn updated_props(
 ) -> Result<Props, ConfigError> {
     let ty = registry
         .get(&instance.kind)
-        .ok_or_else(|| invalid(format!("unknown sensor type {}", instance.kind)))?;
+        .ok_or_else(|| ConfigError::UnknownType(instance.kind.clone()))?;
     let fields: &[PropField] = ty.schema();
     let (mut props, _) = schema::resolve(fields, &instance.props, &Props::new());
     let mut rejected = Vec::new();
@@ -63,38 +97,41 @@ fn updated_props(
             Some(value) => {
                 props.insert(key.clone(), value);
             }
-            None => rejected.push(key.as_str()),
+            None => rejected.push(key.clone()),
         }
     }
     if !rejected.is_empty() {
-        return Err(invalid(format!(
-            "invalid props for {}: {}",
-            instance.kind,
-            rejected.join(", ")
-        )));
+        return Err(ConfigError::InvalidProps {
+            kind: instance.kind.clone(),
+            keys: rejected,
+        });
     }
     Ok(schema::to_stored(fields, &props, &instance.props))
 }
 
-/// [`updated_props`] for `instance` with the machine-derived props it lacks filled in first:
-/// stored machine fields are kept as they are, so their static defaults must not stand in for
-/// the machine's values (SPEC §11.2). Fields `changes` sets are not asked of the machine, so a
-/// dropped drive lists no drives.
-fn with_machine_props(
-    registry: &Registry,
-    ctx: &DefaultsCtx,
-    instance: &SensorInstance,
-    changes: &Props,
-) -> Result<Props, ConfigError> {
+/// `instance` with the keys of `changes` it lacks, as they are (validated later).
+fn with_changes(instance: &SensorInstance, changes: &Props) -> SensorInstance {
     let mut instance = instance.clone();
     for (key, value) in changes {
-        // Validated with the other changes below.
         instance
             .props
             .entry(key.clone())
             .or_insert_with(|| value.clone());
     }
-    registry.fill_machine_props(&mut instance, ctx);
+    instance
+}
+
+/// [`updated_props`] for `instance` with the machine-derived props it lacks filled in first,
+/// from `machine`: stored machine fields are kept as they are, so their static defaults must
+/// not stand in for the machine's values (SPEC §11.2).
+fn with_machine_props(
+    registry: &Registry,
+    machine: &Props,
+    instance: &SensorInstance,
+    changes: &Props,
+) -> Result<Props, ConfigError> {
+    let mut instance = with_changes(instance, changes);
+    registry.fill_machine_props(&mut instance, machine);
     updated_props(registry, &instance, changes)
 }
 
@@ -103,16 +140,16 @@ fn instance_mut<'a>(layout: &'a mut Layout, id: &str) -> Option<&'a mut SensorIn
 }
 
 /// Applies `changes` to sensor `id` (see [`updated_props`]); machine-derived props it lacks
-/// are filled in.
+/// are filled in from `machine` ([`machine_props_of`]).
 pub fn update(
     config: &mut Config,
     registry: &Registry,
-    ctx: &DefaultsCtx,
+    machine: &Props,
     id: &str,
     changes: &Props,
 ) -> Result<(), ConfigError> {
     let instance = instance_mut(&mut config.layout, id).ok_or_else(|| not_found(id))?;
-    instance.props = with_machine_props(registry, ctx, instance, changes)?;
+    instance.props = with_machine_props(registry, machine, instance, changes)?;
     Ok(())
 }
 
@@ -121,7 +158,7 @@ pub fn update(
 pub fn preview(
     config: &Config,
     registry: &Registry,
-    ctx: &DefaultsCtx,
+    machine: &Props,
     id: &str,
     changes: &Props,
 ) -> Result<SensorInstance, ConfigError> {
@@ -131,7 +168,7 @@ pub fn preview(
         .find(|s| s.id == id)
         .ok_or_else(|| not_found(id))?;
     Ok(SensorInstance {
-        props: with_machine_props(registry, ctx, instance, changes)?,
+        props: with_machine_props(registry, machine, instance, changes)?,
         ..instance.clone()
     })
 }
@@ -199,7 +236,7 @@ mod tests {
         let id = add(
             &mut c,
             registry(),
-            &CTX,
+            &Props::new(),
             "text",
             Zone::Right,
             0,
@@ -216,7 +253,7 @@ mod tests {
         let end = add(
             &mut c,
             registry(),
-            &CTX,
+            &Props::new(),
             "spacer",
             Zone::Left,
             99,
@@ -230,7 +267,7 @@ mod tests {
             add(
                 &mut c,
                 registry(),
-                &CTX,
+                &Props::new(),
                 "mail",
                 Zone::Left,
                 0,
@@ -242,7 +279,7 @@ mod tests {
             add(
                 &mut c,
                 registry(),
-                &CTX,
+                &Props::new(),
                 "text",
                 Zone::Left,
                 0,
@@ -260,7 +297,7 @@ mod tests {
         update(
             &mut c,
             registry(),
-            &CTX,
+            &Props::new(),
             &logo,
             &props(json!({ "opacity": 5, "color": { "mode": "custom", "color": "#abcdef" } })),
         )
@@ -277,7 +314,7 @@ mod tests {
         update(
             &mut c,
             registry(),
-            &CTX,
+            &Props::new(),
             &logo,
             &props(json!({ "opacity": 100 })),
         )
@@ -287,13 +324,16 @@ mod tests {
         let err = update(
             &mut c,
             registry(),
-            &CTX,
+            &Props::new(),
             &logo,
             &props(json!({ "opacity": "full", "size": 3 })),
         )
         .expect_err("invalid");
         assert_eq!(err.to_string(), "invalid props for image: opacity, size");
-        assert!(update(&mut c, registry(), &CTX, "s_nope", &Props::new()).is_err());
+        assert_eq!(err.code(), "invalid");
+        let none = Props::new();
+        let gone = update(&mut c, registry(), &none, "s_nope", &none).expect_err("no sensor");
+        assert_eq!(gone.code(), "notFound");
         // Placeholders (unknown types) cannot be edited.
         let mail = SensorInstance {
             id: "s_mail".into(),
@@ -301,7 +341,8 @@ mod tests {
             props: Props::new(),
         };
         c.layout.left.push(mail);
-        assert!(update(&mut c, registry(), &CTX, "s_mail", &Props::new()).is_err());
+        let unknown = update(&mut c, registry(), &none, "s_mail", &none).expect_err("unknown");
+        assert_eq!(unknown.code(), "unknownType");
     }
 
     #[test]
@@ -311,7 +352,7 @@ mod tests {
         let shown = preview(
             &c,
             registry(),
-            &CTX,
+            &Props::new(),
             &logo,
             &props(json!({ "opacity": 50 })),
         )
@@ -361,25 +402,25 @@ mod tests {
         // Clock's `use24h` defaults to true; the machine says false.
         let registry = Registry::new(vec![&Clock]);
         let mut c = Config::default();
-        let id = add(
-            &mut c,
-            &registry,
-            &CTX,
-            "clock",
-            Zone::Left,
-            0,
-            &Props::new(),
-        )
-        .expect("added");
+        let none = Props::new();
+        let machine = machine_props(&registry, &CTX, "clock", &none, &none);
+        assert_eq!(machine["use24h"], false);
+        let id = add(&mut c, &registry, &machine, "clock", Zone::Left, 0, &none).expect("added");
         assert_eq!(c.layout.left[0].props["use24h"], false);
         // An instance stored before the field existed gets the machine's value too.
         c.layout.left[0].props.remove("use24h");
         let shown = props(json!({ "showSeconds": true }));
-        let previewed = preview(&c, &registry, &CTX, &id, &shown).expect("preview");
+        let machine = machine_props_of(&c, &registry, &CTX, &id, &shown);
+        let previewed = preview(&c, &registry, &machine, &id, &shown).expect("preview");
         assert_eq!(previewed.props["use24h"], false);
-        update(&mut c, &registry, &CTX, &id, &shown).expect("updated");
+        update(&mut c, &registry, &machine, &id, &shown).expect("updated");
         assert_eq!(c.layout.left[0].props["use24h"], false);
         assert_eq!(c.layout.left[0].props["showSeconds"], true);
+        // Now that it is stored, the machine is not asked again.
+        let before = crate::sensors::test_support::machine_reads();
+        assert!(machine_props_of(&c, &registry, &CTX, &id, &shown).is_empty());
+        assert!(machine_props_of(&c, &registry, &CTX, "s_nope", &shown).is_empty());
+        assert_eq!(crate::sensors::test_support::machine_reads(), before);
     }
 
     #[test]
@@ -387,16 +428,10 @@ mod tests {
         let registry = Registry::new(vec![&Clock]);
         let mut c = Config::default();
         let before = crate::sensors::test_support::machine_reads();
-        add(
-            &mut c,
-            &registry,
-            &CTX,
-            "clock",
-            Zone::Left,
-            0,
-            &props(json!({ "use24h": true })),
-        )
-        .expect("added");
+        let given = props(json!({ "use24h": true }));
+        let machine = machine_props(&registry, &CTX, "clock", &Props::new(), &given);
+        assert!(machine.is_empty());
+        add(&mut c, &registry, &machine, "clock", Zone::Left, 0, &given).expect("added");
         assert_eq!(crate::sensors::test_support::machine_reads(), before);
         assert_eq!(c.layout.left[0].props["use24h"], true);
     }

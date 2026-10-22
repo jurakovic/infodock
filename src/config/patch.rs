@@ -34,10 +34,7 @@ pub fn apply_settings_patch(current: &Settings, patch: &Value) -> Result<Setting
     let mut unknown = Vec::new();
     collect_unknown(patch, &reference, "", &mut unknown);
     if !unknown.is_empty() {
-        return Err(ConfigError::Invalid(format!(
-            "unknown settings: {}",
-            unknown.join(", ")
-        )));
+        return Err(ConfigError::UnknownSettings(unknown));
     }
     let mut merged = reference;
     merge(&mut merged, patch);

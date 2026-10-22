@@ -13,14 +13,15 @@ use std::time::{Duration, Instant};
 use scheduler::Scheduler;
 pub use topics::{
     BATTERY_EVERY, BatterySample, Change, CpuSample, Delivery, DiskSample, MemorySample, NetSample,
-    PathSample, Sample, Slow, SwapSample, Topic, TopicRequest, UptimeSample, VOLUMES_EVERY,
+    PathSample, Sample, Slow, Subscriber, SwapSample, Topic, TopicRequest, UptimeSample,
+    VOLUMES_EVERY,
 };
 
 use crate::providers::Providers;
 
 enum Message {
     Subscribe {
-        subscriber: String,
+        subscriber: Subscriber,
         requests: Vec<TopicRequest>,
     },
     /// The system resumed from sleep.
@@ -67,9 +68,9 @@ impl Sampler {
     }
 
     /// Replaces `subscriber`'s topics; an empty list unsubscribes it.
-    pub fn subscribe(&self, subscriber: &str, requests: Vec<TopicRequest>) {
+    pub fn subscribe(&self, subscriber: Subscriber, requests: Vec<TopicRequest>) {
         let _ = self.messages.send(Message::Subscribe {
-            subscriber: subscriber.to_owned(),
+            subscriber,
             requests,
         });
     }
@@ -106,7 +107,7 @@ impl Pending {
 }
 
 fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Delivery)) {
-    let mut scheduler: Scheduler<Topic, Arc<Sample>> = Scheduler::default();
+    let mut scheduler: Scheduler<Topic, Arc<Sample>, Subscriber> = Scheduler::default();
     // What changed since the last readings: the topics they concern are read now, pushed.
     let mut changes: Vec<Change> = Vec::new();
     loop {
@@ -123,7 +124,8 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                     .into_iter()
                     .map(|r| (r.topic, r.interval))
                     .collect();
-                for (topic, sample) in scheduler.subscribe(&subscriber, &requests, Instant::now()) {
+                let caught_up = scheduler.subscribe(subscriber.clone(), &requests, Instant::now());
+                for (topic, sample) in caught_up {
                     deliver(Delivery {
                         topic,
                         sample,
@@ -194,7 +196,7 @@ mod tests {
             interval: Duration::from_millis(100),
         };
         // Queued before the thread starts.
-        sampler.subscribe("s_1", vec![request.clone()]);
+        sampler.subscribe(Subscriber::Sensor("s_1".into()), vec![request.clone()]);
         let (tx, rx) = mpsc::channel();
         let thread = pending
             .start(
@@ -213,17 +215,17 @@ mod tests {
         assert!(matches!(*first.sample, Sample::Uptime(_)));
 
         // A second subscriber gets the newest sample at once, addressed to it.
-        sampler.subscribe("s_2", vec![request]);
+        sampler.subscribe(Subscriber::Sensor("s_2".into()), vec![request]);
         let catch_up = loop {
             let d = rx.recv_timeout(wait).expect("a delivery");
             if d.to.is_some() {
                 break d;
             }
         };
-        assert_eq!(catch_up.to.as_deref(), Some("s_2"));
+        assert_eq!(catch_up.to, Some(Subscriber::Sensor("s_2".into())));
 
-        sampler.subscribe("s_1", Vec::new());
-        sampler.subscribe("s_2", Vec::new());
+        sampler.subscribe(Subscriber::Sensor("s_1".into()), Vec::new());
+        sampler.subscribe(Subscriber::Sensor("s_2".into()), Vec::new());
         sampler.shutdown();
         thread.join().expect("the thread ends");
     }
@@ -274,7 +276,7 @@ mod tests {
     fn a_device_change_reads_the_drive_list_again_at_once() {
         let (sampler, pending) = Sampler::new();
         sampler.subscribe(
-            "d",
+            Subscriber::Settings,
             vec![TopicRequest {
                 topic: Topic::Volumes,
                 interval: VOLUMES_EVERY,

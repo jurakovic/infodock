@@ -15,8 +15,8 @@ use crate::config::{ConfigError, ConfigStore};
 use crate::platform::Platform;
 use crate::providers::Providers;
 use crate::sampler::{
-    BATTERY_EVERY, Change, ChangeSink, Delivery, Pending, Sample, Sampler, Topic, TopicRequest,
-    VOLUMES_EVERY,
+    BATTERY_EVERY, Change, ChangeSink, Delivery, Pending, Sample, Sampler, Subscriber, Topic,
+    TopicRequest, VOLUMES_EVERY,
 };
 use crate::sensors::registry::registry;
 use crate::sensors::{DefaultsCtx, Props, import, legacy, ops};
@@ -24,8 +24,6 @@ use crate::{settings, transfer};
 
 /// How long a requested quit may take before the process ends anyway.
 const QUIT_TIMEOUT: Duration = Duration::from_secs(5);
-/// The sampler subscriber id of the Settings window.
-const SETTINGS: &str = "settings";
 
 pub struct App {
     pub store: ConfigStore,
@@ -71,7 +69,10 @@ impl App {
         };
         let bar = Arc::downgrade(bar);
         let deliver = Box::new(move |delivery: Delivery| {
-            let for_settings = delivery.to.as_deref().is_none_or(|to| to == SETTINGS);
+            let for_settings = delivery
+                .to
+                .as_ref()
+                .is_none_or(|to| *to == Subscriber::Settings);
             if for_settings {
                 match delivery.sample.as_ref() {
                     Sample::Volumes(volumes) => settings::volumes_changed(volumes.clone()),
@@ -109,7 +110,7 @@ impl App {
                 interval: BATTERY_EVERY,
             });
         }
-        self.sampler.subscribe(SETTINGS, topics);
+        self.sampler.subscribe(Subscriber::Settings, topics);
     }
 
     pub fn bar_visible(&self) -> bool {
@@ -173,7 +174,8 @@ impl App {
 }
 
 /// Sensor operations (SPEC §4.5). Each saves through the config store, which updates the bar
-/// and Settings.
+/// and Settings. What the machine says for machine-derived props is asked first, outside the
+/// store's lock, since it may list the drives.
 impl App {
     /// Adds a sensor; see [`ops::add`]. Returns its id.
     pub fn add_sensor(
@@ -183,9 +185,11 @@ impl App {
         index: usize,
         props: &Props,
     ) -> Result<String, ConfigError> {
+        let none = Props::new();
+        let machine = ops::machine_props(registry(), &self.defaults(), kind, &none, props);
         let (id, _) = self
             .store
-            .update(|c| ops::add(c, registry(), &self.defaults(), kind, zone, index, props))?;
+            .update(|c| ops::add(c, registry(), &machine, kind, zone, index, props))?;
         Ok(id)
     }
 
@@ -197,20 +201,20 @@ impl App {
         index: usize,
         sensors: &[(&str, Props)],
     ) -> Result<Vec<String>, ConfigError> {
+        let none = Props::new();
+        let machine: Vec<Props> = sensors
+            .iter()
+            .map(|(kind, props)| {
+                ops::machine_props(registry(), &self.defaults(), kind, &none, props)
+            })
+            .collect();
         let (ids, _) = self.store.update(|c| {
             sensors
                 .iter()
+                .zip(&machine)
                 .enumerate()
-                .map(|(i, (kind, props))| {
-                    ops::add(
-                        c,
-                        registry(),
-                        &self.defaults(),
-                        kind,
-                        zone,
-                        index + i,
-                        props,
-                    )
+                .map(|(i, ((kind, props), machine))| {
+                    ops::add(c, registry(), machine, kind, zone, index + i, props)
                 })
                 .collect::<Result<Vec<_>, _>>()
         })?;
@@ -226,16 +230,25 @@ impl App {
 
     /// Saves `changes` to sensor `id` and ends its preview.
     pub fn update_sensor(&self, id: &str, changes: &Props) -> Result<(), ConfigError> {
-        let result = self
-            .store
-            .update(|c| ops::update(c, registry(), &self.defaults(), id, changes));
+        let result = self.save_sensor(id, changes);
         self.end_preview(id);
-        result.map(|_| ())
+        result
+    }
+
+    /// Saves `changes` to sensor `id`; see [`ops::update`].
+    fn save_sensor(&self, id: &str, changes: &Props) -> Result<(), ConfigError> {
+        let config = self.store.get();
+        let machine = ops::machine_props_of(&config, registry(), &self.defaults(), id, changes);
+        self.store
+            .update(|c| ops::update(c, registry(), &machine, id, changes))
+            .map(|_| ())
     }
 
     /// Shows sensor `id` with `changes` on the bar without saving (SPEC §6.7).
     pub fn preview_sensor(&self, id: &str, changes: &Props) -> Result<(), ConfigError> {
-        let shown = ops::preview(&self.store.get(), registry(), &self.defaults(), id, changes)?;
+        let config = self.store.get();
+        let machine = ops::machine_props_of(&config, registry(), &self.defaults(), id, changes);
+        let shown = ops::preview(&config, registry(), &machine, id, changes)?;
         if let Some(bar) = self.bar.get() {
             bar.preview(shown);
         }
@@ -289,15 +302,11 @@ impl App {
         incoming: Incoming,
         mode: ImportMode,
     ) -> Result<ImportReport, ConfigError> {
-        let (report, _) = self.store.update(|c| {
-            Ok(import::import(
-                c,
-                registry(),
-                &self.defaults(),
-                incoming,
-                mode,
-            ))
-        })?;
+        // Checked before the store is locked: the machine may be asked for props (SPEC §4.5).
+        let prepared = import::prepare(registry(), &self.defaults(), incoming);
+        let (report, _) = self
+            .store
+            .update(|c| Ok(import::import(c, prepared, mode)))?;
         Ok(report)
     }
 }
@@ -367,7 +376,9 @@ impl BarHost for AppHost {
     }
 
     fn subscribe(&self, id: &str, topics: Vec<TopicRequest>) {
-        self.0.sampler.subscribe(id, topics);
+        self.0
+            .sampler
+            .subscribe(Subscriber::Sensor(id.to_owned()), topics);
     }
 
     fn redock(&self) {
@@ -386,11 +397,7 @@ impl BarHost for AppHost {
 
     /// Saved without ending a preview, which goes on showing what Settings edits.
     fn update_sensor(&self, id: &str, changes: Props) {
-        let app = &self.0;
-        let result = app
-            .store
-            .update(|c| ops::update(c, registry(), &app.defaults(), id, &changes));
-        if let Err(e) = result {
+        if let Err(e) = self.0.save_sensor(id, &changes) {
             tracing::warn!("sensor {id} could not save {changes:?}: {e}");
         }
     }

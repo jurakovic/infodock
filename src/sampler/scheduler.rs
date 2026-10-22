@@ -19,9 +19,9 @@ const FAILURES_BEFORE_ERROR: u32 = 3;
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
-struct Entry<S> {
+struct Entry<S, U> {
     /// Each subscriber's interval.
-    subscribers: HashMap<String, Duration>,
+    subscribers: HashMap<U, Duration>,
     next: Instant,
     last: Option<Instant>,
     latest: Option<S>,
@@ -29,7 +29,7 @@ struct Entry<S> {
     failures: u32,
 }
 
-impl<S> Entry<S> {
+impl<S, U> Entry<S, U> {
     fn interval(&self) -> Duration {
         self.subscribers
             .values()
@@ -39,15 +39,16 @@ impl<S> Entry<S> {
     }
 }
 
-pub struct Scheduler<K, S> {
-    topics: HashMap<K, Entry<S>>,
+/// Topics `K` with samples `S` for subscribers `U`.
+pub struct Scheduler<K, S, U> {
+    topics: HashMap<K, Entry<S, U>>,
     /// The first sample; every cadence is counted from it.
     epoch: Option<Instant>,
     /// Topics whose last subscriber left, for [`Scheduler::take_removed`].
     removed: Vec<K>,
 }
 
-impl<K, S> Default for Scheduler<K, S> {
+impl<K, S, U> Default for Scheduler<K, S, U> {
     fn default() -> Self {
         Self {
             topics: HashMap::new(),
@@ -75,19 +76,22 @@ fn backoff(failures: u32) -> Duration {
     }
 }
 
-impl<K: Clone + Eq + Hash, S: Clone + PartialEq> Scheduler<K, S> {
+impl<K: Clone + Eq + Hash, S: Clone + PartialEq, U: Eq + Hash> Scheduler<K, S, U> {
     /// Replaces `subscriber`'s requests (an empty list unsubscribes it). Returns the newest
     /// sample of each requested topic, if there is one yet, since the subscriber may be new
     /// (or a re-created sensor with the same id); a new topic is due at once.
     pub fn subscribe(
         &mut self,
-        subscriber: &str,
+        subscriber: U,
         requests: &[(K, Duration)],
         now: Instant,
-    ) -> Vec<(K, S)> {
+    ) -> Vec<(K, S)>
+    where
+        U: Clone,
+    {
         // It leaves every topic, then joins the requested ones again.
         for entry in self.topics.values_mut() {
-            entry.subscribers.remove(subscriber);
+            entry.subscribers.remove(&subscriber);
         }
         let mut catch_up = Vec::new();
         for (topic, interval) in requests {
@@ -101,7 +105,7 @@ impl<K: Clone + Eq + Hash, S: Clone + PartialEq> Scheduler<K, S> {
             });
             entry
                 .subscribers
-                .entry(subscriber.to_owned())
+                .entry(subscriber.clone())
                 .and_modify(|d| *d = (*d).min(interval))
                 .or_insert(interval);
             // A shorter interval applies from the last sample on.
@@ -222,7 +226,7 @@ mod tests {
     #[test]
     fn samples_each_topic_at_its_shortest_interval() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         assert_eq!(s.next_due(), None);
         assert!(s.subscribe("a", &requests(&[("cpu", 2000)]), t0).is_empty());
         assert!(s.subscribe("b", &requests(&[("cpu", 1000)]), t0).is_empty());
@@ -249,9 +253,26 @@ mod tests {
     }
 
     #[test]
+    fn settings_and_a_sensor_called_settings_are_two_subscribers() {
+        use crate::sampler::Subscriber;
+        let t0 = Instant::now();
+        let mut s: Scheduler<&str, u32, Subscriber> = Scheduler::default();
+        let sensor = Subscriber::Sensor("settings".into());
+        s.subscribe(sensor.clone(), &requests(&[("volumes", 60_000)]), t0);
+        s.subscribe(Subscriber::Settings, &requests(&[("volumes", 1000)]), t0);
+        assert_eq!(s.interval(&"volumes"), Some(SEC));
+        // Settings leaves; the sensor still reads the topic at its own interval.
+        s.subscribe(Subscriber::Settings, &[], t0);
+        assert!(s.take_removed().is_empty());
+        assert_eq!(s.interval(&"volumes"), Some(60 * SEC));
+        s.subscribe(sensor, &[], t0);
+        assert_eq!(s.take_removed(), ["volumes"]);
+    }
+
+    #[test]
     fn refreshed_topics_are_due_at_once() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("volumes", 60_000), ("cpu", 1000)]), t0);
         for topic in s.due(t0) {
             s.sampled(&topic, t0, Some(1));
@@ -270,7 +291,7 @@ mod tests {
     #[test]
     fn topics_keep_to_one_grid() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("cpu", 1000)]), t0);
         s.sampled(&"cpu", t0, Some(1));
         // Memory joins 300 ms later (opening the CPU counters took that long): read at once,
@@ -293,7 +314,7 @@ mod tests {
     #[test]
     fn resuming_makes_every_topic_due() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("uptime", 60_000), ("cpu", 1000)]), t0);
         for topic in s.due(t0) {
             s.sampled(&topic, t0, Some(1));
@@ -308,7 +329,7 @@ mod tests {
     #[test]
     fn a_late_subscriber_gets_the_newest_sample() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("uptime", 60_000)]), t0);
         s.sampled(&"uptime", t0, Some(7));
         let joined = s.subscribe("b", &requests(&[("uptime", 60_000)]), t0 + SEC);
@@ -325,7 +346,7 @@ mod tests {
     #[test]
     fn keeps_the_cadence_and_restarts_after_a_long_delay() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("cpu", 1000)]), t0);
         s.sampled(&"cpu", t0, Some(1));
         // A little late: the next one stays on the grid.
@@ -340,7 +361,7 @@ mod tests {
     #[test]
     fn intervals_have_a_floor_and_empty_reads_keep_the_old_sample() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("cpu", 0)]), t0);
         assert_eq!(s.interval(&"cpu"), Some(MIN_INTERVAL));
         s.sampled(&"cpu", t0, Some(1));
@@ -352,7 +373,7 @@ mod tests {
     fn the_third_failure_in_a_row_is_an_error_and_retries_back_off() {
         const ERROR: u32 = 99;
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("memory", 1000)]), t0);
         s.sampled(&"memory", t0, Some(1));
         // Two failures: the old sample stays and the next tries come at the next ticks.
@@ -399,7 +420,7 @@ mod tests {
     #[test]
     fn a_slow_topic_is_not_retried_sooner_than_its_interval() {
         let t0 = Instant::now();
-        let mut s: Scheduler<&str, u32> = Scheduler::default();
+        let mut s: Scheduler<&str, u32, &str> = Scheduler::default();
         s.subscribe("a", &requests(&[("volumes", 60_000)]), t0);
         for n in 0..4 {
             let at = t0 + 60 * n * SEC;

@@ -3,7 +3,8 @@
 //! invalid values give way to their defaults (with a warning), numbers are clamped, keys its
 //! type does not know are kept, machine-derived props are filled from this machine, and only
 //! what differs from the defaults is stored. A type this version does not know is kept as it
-//! is and shown as a placeholder.
+//! is and shown as a placeholder. The checks run before the config store is locked
+//! ([`prepare`]), since the machine may be asked for props; [`import`] only adds the result.
 
 use super::registry::Registry;
 use super::schema;
@@ -11,22 +12,35 @@ use super::{DefaultsCtx, Props};
 use crate::config::exchange::{ImportMode, ImportReport, Incoming, IncomingSensor, Warning};
 use crate::config::model::{Config, IdGen, Layout, SensorInstance};
 
-/// Adds what `incoming` brings to `config`, replacing its layout, sensor state and unsupported
+/// What a file brings, its sensors checked against their types by [`prepare`].
+pub struct Prepared(Incoming);
+
+/// Checks each sensor `incoming` brings against its type: invalid values give way to their
+/// defaults (with a warning), machine-derived props are asked of the machine (SPEC §11.2), and
+/// the props are brought into their stored form. Runs before the config store is locked.
+pub fn prepare(registry: &Registry, ctx: &DefaultsCtx, mut incoming: Incoming) -> Prepared {
+    for sensor in &mut incoming.sensors {
+        check(
+            registry,
+            ctx,
+            &sensor.kind,
+            &mut sensor.props,
+            &mut incoming.warnings,
+        );
+    }
+    Prepared(incoming)
+}
+
+/// Adds what `prepared` brings to `config`, replacing its layout, sensor state and unsupported
 /// legacy sensors first with [`ImportMode::Replace`], or appending to its zones with
 /// [`ImportMode::Merge`].
-pub fn import(
-    config: &mut Config,
-    registry: &Registry,
-    ctx: &DefaultsCtx,
-    incoming: Incoming,
-    mode: ImportMode,
-) -> ImportReport {
+pub fn import(config: &mut Config, prepared: Prepared, mode: ImportMode) -> ImportReport {
     let Incoming {
         sensors,
         unsupported,
         skipped,
-        mut warnings,
-    } = incoming;
+        warnings,
+    } = prepared.0;
     if mode == ImportMode::Replace {
         config.layout = Layout::default();
         config.state.clear();
@@ -41,12 +55,11 @@ pub fn import(
         state,
     } in sensors
     {
-        let mut instance = SensorInstance {
+        let instance = SensorInstance {
             id: ids.fresh(),
             kind,
             props,
         };
-        check(registry, ctx, &mut instance, &mut warnings);
         if !state.is_empty() {
             config.state.insert(instance.id.clone(), state);
         }
@@ -60,18 +73,24 @@ pub fn import(
     }
 }
 
-/// Brings the props of `instance` into their stored form for its type.
+/// Brings `props` of a sensor of type `kind` into their stored form for its type.
 fn check(
     registry: &Registry,
     ctx: &DefaultsCtx,
-    instance: &mut SensorInstance,
+    kind: &str,
+    props: &mut Props,
     warnings: &mut Vec<Warning>,
 ) {
-    let Some(ty) = registry.get(&instance.kind) else {
+    let Some(ty) = registry.get(kind) else {
         warnings.push(Warning::UnknownType {
-            kind: instance.kind.clone(),
+            kind: kind.to_owned(),
         });
         return;
+    };
+    let mut instance = SensorInstance {
+        id: String::new(),
+        kind: kind.to_owned(),
+        props: std::mem::take(props),
     };
     let fields = ty.schema();
     // Invalid values go first, so an invalid machine-derived one is asked of the machine.
@@ -86,9 +105,11 @@ fn check(
             });
         }
     }
-    registry.fill_machine_props(instance, ctx);
-    let (props, _) = schema::resolve(fields, &instance.props, &Props::new());
-    instance.props = schema::to_stored(fields, &props, &instance.props);
+    if let Some(machine) = registry.machine_props(&instance, ctx) {
+        registry.fill_machine_props(&mut instance, &machine);
+    }
+    let (resolved, _) = schema::resolve(fields, &instance.props, &Props::new());
+    *props = schema::to_stored(fields, &resolved, &instance.props);
 }
 
 #[cfg(test)]
@@ -153,7 +174,11 @@ mod tests {
             }],
             warnings: Vec::new(),
         };
-        let report = import(&mut c, registry(), &CTX, incoming, ImportMode::Replace);
+        let report = import(
+            &mut c,
+            prepare(registry(), &CTX, incoming),
+            ImportMode::Replace,
+        );
         assert_eq!(report.added, 2);
         assert_eq!(report.skipped.len(), 1);
         assert!(report.warnings.is_empty());
@@ -176,7 +201,7 @@ mod tests {
                 .expect("exported"),
         )
         .expect("parsed");
-        let report = import(&mut c, registry(), &CTX, again, ImportMode::Merge);
+        let report = import(&mut c, prepare(registry(), &CTX, again), ImportMode::Merge);
         assert_eq!(report.added, 6);
         assert_eq!(
             kinds(&c, Zone::Left),
@@ -213,7 +238,11 @@ mod tests {
             )],
             ..Incoming::default()
         };
-        let report = import(&mut c, registry(), &CTX, incoming, ImportMode::Merge);
+        let report = import(
+            &mut c,
+            prepare(registry(), &CTX, incoming),
+            ImportMode::Merge,
+        );
         assert_eq!(
             Value::Object(c.layout.left[0].props.clone()),
             json!({
@@ -243,7 +272,11 @@ mod tests {
             sensors: vec![mail.clone()],
             ..Incoming::default()
         };
-        let report = import(&mut c, registry(), &CTX, incoming, ImportMode::Merge);
+        let report = import(
+            &mut c,
+            prepare(registry(), &CTX, incoming),
+            ImportMode::Merge,
+        );
         assert_eq!(c.layout.center[0].kind, "mail");
         assert_eq!(c.layout.center[0].props, mail.props);
         assert_eq!(
@@ -267,7 +300,11 @@ mod tests {
             ],
             ..Incoming::default()
         };
-        let report = import(&mut c, &registry, &CTX, incoming, ImportMode::Merge);
+        let report = import(
+            &mut c,
+            prepare(&registry, &CTX, incoming),
+            ImportMode::Merge,
+        );
         let use24h: Vec<&Value> = c.layout.left.iter().map(|s| &s.props["use24h"]).collect();
         assert_eq!(use24h, [&json!(false), &json!(true), &json!(false)]);
         assert_eq!(report.warnings.len(), 1);

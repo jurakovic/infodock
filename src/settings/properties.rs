@@ -222,7 +222,10 @@ fn save(app: &App) {
                 }
                 window.set_page(super::model::SENSORS_PAGE as i32);
             }
-            Err(e) => window.set_props_error(e.to_string().into()),
+            Err(e) => {
+                tracing::warn!(code = e.code(), "could not save sensor {id}: {e}");
+                window.set_props_error(e.message().into());
+            }
         }
     });
 }

@@ -211,6 +211,21 @@ pub struct UptimeSample {
     pub read_at: Instant,
 }
 
+/// Who subscribes to topics: a sensor on the bar, by its id, or the Settings window (its drive
+/// and battery lists). Sensor ids and Settings never share a name, whatever a config holds.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Subscriber {
+    Sensor(String),
+    Settings,
+}
+
+impl Subscriber {
+    /// Whether this is the sensor `id`.
+    pub fn is_sensor(&self, id: &str) -> bool {
+        matches!(self, Self::Sensor(s) if s == id)
+    }
+}
+
 /// A sample on its way to the bar thread.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Delivery {
@@ -218,7 +233,7 @@ pub struct Delivery {
     pub sample: Arc<Sample>,
     /// Only this subscriber, which has just subscribed and gets the newest sample; `None` for
     /// every subscriber of the topic.
-    pub to: Option<String>,
+    pub to: Option<Subscriber>,
     /// Read at once because something changed (a [`Change`]), out of the topic's cadence:
     /// news for every subscriber, however recently it took a sample.
     pub pushed: bool,

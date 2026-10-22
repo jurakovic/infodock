@@ -1,6 +1,7 @@
 //! All sensor types (SPEC §8.1), and the operations that need them: creating the sensor for a
 //! layout entry, and filling machine-derived props (§11.2).
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use super::placeholder::Placeholder;
@@ -138,19 +139,49 @@ impl Registry {
         sensor.reconfigure(&props)
     }
 
+    /// What the machine says for the machine-derived props of each sensor in `layout` that
+    /// lacks some, by sensor id; for [`fill_machine_defaults`](Self::fill_machine_defaults).
+    pub fn machine_defaults(&self, layout: &Layout, ctx: &DefaultsCtx) -> HashMap<String, Props> {
+        layout
+            .all()
+            .filter_map(|instance| {
+                let machine = self.machine_props(instance, ctx)?;
+                Some((instance.id.clone(), machine))
+            })
+            .collect()
+    }
+
     /// Stores the machine-derived props that entries of known types lack (SPEC §11.2), so a
-    /// sensor keeps its meaning when drives, the locale or the hardware change. Returns whether
-    /// anything was added.
-    pub fn fill_machine_defaults(&self, layout: &mut Layout, ctx: &DefaultsCtx) -> bool {
+    /// sensor keeps its meaning when drives, the locale or the hardware change, from what
+    /// [`machine_defaults`](Self::machine_defaults) said. Returns whether anything was added.
+    pub fn fill_machine_defaults(
+        &self,
+        layout: &mut Layout,
+        machine: &HashMap<String, Props>,
+    ) -> bool {
         let mut changed = false;
         for instance in layout.all_mut() {
-            changed |= self.fill_machine_props(instance, ctx);
+            if let Some(machine) = machine.get(&instance.id) {
+                changed |= self.fill_machine_props(instance, machine);
+            }
         }
         changed
     }
 
-    /// Stores the machine-derived props `instance` lacks; returns whether it added any.
-    pub fn fill_machine_props(&self, instance: &mut SensorInstance, ctx: &DefaultsCtx) -> bool {
+    /// What the machine says for the machine-derived props `instance` lacks; `None`, without
+    /// asking it, when it lacks none or its type is unknown. Asked before the config store is
+    /// locked (SPEC §4.5): some types list the drives, which may wait for one that does not
+    /// answer, while every thread's `get` waits for the lock.
+    pub fn machine_props(&self, instance: &SensorInstance, ctx: &DefaultsCtx) -> Option<Props> {
+        let ty = self.get(&instance.kind)?;
+        let missing = schema::missing_machine_fields(ty.schema(), &instance.props);
+        (!missing.is_empty()).then(|| ty.machine_defaults(ctx))
+    }
+
+    /// Stores the machine-derived props `instance` lacks from `machine`, what
+    /// [`machine_props`](Self::machine_props) said (a field it has no valid value for takes its
+    /// static default); returns whether it added any.
+    pub fn fill_machine_props(&self, instance: &mut SensorInstance, machine: &Props) -> bool {
         let Some(ty) = self.get(&instance.kind) else {
             return false;
         };
@@ -158,7 +189,6 @@ impl Registry {
         if missing.is_empty() {
             return false;
         }
-        let machine = ty.machine_defaults(ctx);
         for field in missing {
             let value = machine
                 .get(field.key)
@@ -284,14 +314,17 @@ mod tests {
         let ctx = DefaultsCtx {
             platform: &NO_PLATFORM,
         };
-        assert!(r.fill_machine_defaults(&mut layout, &ctx));
+        let machine = r.machine_defaults(&layout, &ctx);
+        assert_eq!(machine.len(), 1, "only the sensor that lacks some asks");
+        assert!(r.fill_machine_defaults(&mut layout, &machine));
         assert_eq!(layout.left[0].props["use24h"], false);
         assert_eq!(layout.right[0].props["use24h"], true, "stored values stay");
         assert_eq!(
             Value::Object(layout.center[0].props.clone()),
             json!({ "a": 1 })
         );
-        assert!(!r.fill_machine_defaults(&mut layout, &ctx));
+        assert!(r.machine_defaults(&layout, &ctx).is_empty());
+        assert!(!r.fill_machine_defaults(&mut layout, &machine));
     }
 
     #[test]

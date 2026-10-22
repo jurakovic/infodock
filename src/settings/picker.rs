@@ -235,9 +235,10 @@ fn add(app: &Arc<App>) {
             properties::open_form(app, &id, true);
         }
         Err(e) => {
+            tracing::warn!(code = e.code(), "could not add a {kind} sensor: {e}");
             with_open(|open| {
                 let state = open.window.global::<ui::SettingsState>();
-                state.set_save_error(e.to_string().into());
+                state.set_save_error(e.message().into());
             });
         }
     }

@@ -643,7 +643,10 @@ impl BarSensors {
     pub fn deliver(&mut self, delivery: &Delivery, env: &Env, now: Instant) -> bool {
         let mut changed = false;
         for p in self.all_mut() {
-            let addressed = delivery.to.as_ref().is_none_or(|to| *to == p.entry.id);
+            let addressed = delivery
+                .to
+                .as_ref()
+                .is_none_or(|to| to.is_sensor(&p.entry.id));
             let Some(request) = p.topics.iter().find(|r| r.topic == delivery.topic) else {
                 continue;
             };
@@ -1172,7 +1175,7 @@ mod tests {
                 uptime_secs: secs,
                 read_at: Instant::now(),
             })),
-            to: to.map(str::to_owned),
+            to: to.map(|id: &str| crate::sampler::Subscriber::Sensor(id.to_owned())),
             pushed: false,
         };
         // A catch-up reaches only its subscriber.

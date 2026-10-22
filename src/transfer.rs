@@ -69,7 +69,8 @@ pub fn import(app: &App, dialogs: &dyn Dialogs, format: ImportFormat) -> Option<
             Some(report)
         }
         Err(e) => {
-            failed(dialogs, "import.failed", &e.to_string());
+            tracing::warn!(code = e.code(), "could not import a layout: {e}");
+            failed(dialogs, "import.failed", &e.message());
             None
         }
     }

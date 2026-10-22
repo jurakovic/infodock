@@ -143,12 +143,16 @@ pub fn run() {
 }
 
 /// Stores the machine-derived props that sensors lack, e.g. after first run or an import
-/// (SPEC §11.2).
+/// (SPEC §11.2); the machine is asked before the store is locked.
 fn fill_machine_defaults(store: &ConfigStore, platform: &dyn platform::Platform) {
     let ctx = sensors::DefaultsCtx { platform };
-    let result = store.update(|config| {
-        Ok(sensors::registry::registry().fill_machine_defaults(&mut config.layout, &ctx))
-    });
+    let registry = sensors::registry::registry();
+    let machine = registry.machine_defaults(&store.get().layout, &ctx);
+    if machine.is_empty() {
+        return;
+    }
+    let result =
+        store.update(|config| Ok(registry.fill_machine_defaults(&mut config.layout, &machine)));
     if let Ok((true, _)) = result {
         tracing::info!("stored machine-derived sensor props");
     }

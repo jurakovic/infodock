@@ -590,13 +590,8 @@ mod tests {
     fn imported(sensors: Vec<LegacySensor>) -> (Config, ImportReport) {
         let mut config = Config::default();
         let incoming = incoming(registry(), &CTX, sensors);
-        let report = crate::sensors::import::import(
-            &mut config,
-            registry(),
-            &CTX,
-            incoming,
-            ImportMode::Replace,
-        );
+        let prepared = crate::sensors::import::prepare(registry(), &CTX, incoming);
+        let report = crate::sensors::import::import(&mut config, prepared, ImportMode::Replace);
         (config, report)
     }
 

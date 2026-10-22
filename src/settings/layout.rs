@@ -183,7 +183,10 @@ pub(super) fn fill(open: &Open, app: &App, layout: &Layout) {
 fn report(result: Result<(), crate::config::ConfigError>) {
     let error: SharedString = match result {
         Ok(()) => SharedString::new(),
-        Err(e) => e.to_string().into(),
+        Err(e) => {
+            tracing::warn!(code = e.code(), "could not change the layout: {e}");
+            e.message().into()
+        }
     };
     with_open(|open| {
         open.window
