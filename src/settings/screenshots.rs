@@ -91,8 +91,11 @@ fn render_settings_pages() {
 
     let render_sized = |name: &str, height: u32| {
         window.set_size(PhysicalSize::new(width, height));
-        // Let state animations (e.g. a button becoming disabled) finish.
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // Start what the change animates (the page's fade, the navigation's pill: change
+        // handlers run here) and let it finish, with the state animations (e.g. a button
+        // becoming disabled).
+        slint::platform::update_timers_and_animations();
+        std::thread::sleep(std::time::Duration::from_millis(300));
         slint::platform::update_timers_and_animations();
         window.request_redraw();
         let mut pixels = vec![PremultipliedRgbaColor::default(); (width * height) as usize];

@@ -17,6 +17,8 @@
   "tray.quit": "Quit Infodock",
   "settings.title": "Infodock Settings",
   "common.px": "{value} px",
+  "common.on": "On",
+  "common.off": "Off",
   "settings.nav.label": "Settings pages",
   "settings.nav.general": "General",
   "settings.nav.bar": "Bar",

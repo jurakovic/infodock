@@ -368,8 +368,8 @@ component Row inherits VerticalLayout {
     // The gap to the next card.
     padding-bottom: 4px;
     Rectangle {
-        // Windows 11's cards are 68 px, with an icon; without one 60 px balances better.
-        min-height: 60px;
+        // Windows 11's cards, as WinUI's SettingsCard draws them.
+        min-height: 68px;
         border-radius: Look.radius;
         border-width: 1px;
         border-color: Look.card-stroke;
@@ -460,6 +460,31 @@ component ValueSlider inherits HorizontalLayout {
     }
 }
 
+// A switch with its state written on its left, "On" or "Off", as Windows 11 Settings shows it.
+// `label` is the switch's accessible name; the text is only shown, the switch reports its state.
+component OnOffSwitch inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <bool> checked;
+    callback toggled;
+
+    spacing: 12px;
+    Text {
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        text: root.checked ? I18n.tr("common.on") : I18n.tr("common.off");
+        color: Palette.foreground;
+        accessible-role: none;
+    }
+
+    Switch {
+        checked <=> root.checked;
+        accessible-label: root.label;
+        toggled => {
+            root.toggled();
+        }
+    }
+}
+
 // A colour as #RRGGBB with a swatch. It is accepted as soon as the typed text is a colour, so
 // a click that does not take the focus (Save, the navigation) finds it saved; on Enter or when
 // the field loses focus it is accepted whatever it is, and an invalid one shows an error. With
@@ -527,9 +552,9 @@ component GeneralPage inherits VerticalLayout {
         label: I18n.tr("settings.general.autostart");
         help: I18n.tr("settings.general.autostart.help");
         error: SettingsState.autostart-error;
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.autostart;
-            accessible-label: I18n.tr("settings.general.autostart");
+            label: I18n.tr("settings.general.autostart");
             toggled => {
                 SettingsState.set-flag("autostart", self.checked);
             }
@@ -569,9 +594,9 @@ component GeneralPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.general.showTrayIcon");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.show-tray-icon;
-            accessible-label: I18n.tr("settings.general.showTrayIcon");
+            label: I18n.tr("settings.general.showTrayIcon");
             toggled => {
                 SettingsState.set-flag("showTrayIcon", self.checked);
             }
@@ -581,9 +606,9 @@ component GeneralPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.general.locked");
         help: I18n.tr("settings.general.locked.help");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.locked;
-            accessible-label: I18n.tr("settings.general.locked");
+            label: I18n.tr("settings.general.locked");
             toggled => {
                 SettingsState.set-flag("locked", self.checked);
             }
@@ -592,9 +617,9 @@ component GeneralPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.general.popupsEnabled");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.popups-enabled;
-            accessible-label: I18n.tr("settings.general.popupsEnabled");
+            label: I18n.tr("settings.general.popupsEnabled");
             toggled => {
                 SettingsState.set-flag("popupsEnabled", self.checked);
             }
@@ -708,9 +733,9 @@ component BarPage inherits VerticalLayout {
     if SettingsState.mode == 0: Row {
         label: I18n.tr("settings.bar.reserveSpace");
         help: I18n.tr("settings.bar.reserveSpace.help");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.reserve-space;
-            accessible-label: I18n.tr("settings.bar.reserveSpace");
+            label: I18n.tr("settings.bar.reserveSpace");
             toggled => {
                 SettingsState.set-flag("bar.reserveSpace", self.checked);
             }
@@ -737,9 +762,9 @@ component BarPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.bar.hideOnFullscreen");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.hide-on-fullscreen;
-            accessible-label: I18n.tr("settings.bar.hideOnFullscreen");
+            label: I18n.tr("settings.bar.hideOnFullscreen");
             toggled => {
                 SettingsState.set-flag("bar.hideOnFullscreen", self.checked);
             }
@@ -777,9 +802,9 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.highlightOnHover");
         help: I18n.tr("settings.bar.highlightOnHover.help");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.highlight-on-hover;
-            accessible-label: I18n.tr("settings.bar.highlightOnHover");
+            label: I18n.tr("settings.bar.highlightOnHover");
             toggled => {
                 SettingsState.set-flag("bar.highlightOnHover", self.checked);
             }
@@ -789,9 +814,9 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.shadow");
         help: I18n.tr("settings.bar.shadow.help");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.shadow;
-            accessible-label: I18n.tr("settings.bar.shadow");
+            label: I18n.tr("settings.bar.shadow");
             toggled => {
                 SettingsState.set-flag("bar.shadow", self.checked);
             }
@@ -1550,9 +1575,9 @@ component PopupsPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.popups.shadow");
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.popup-shadow;
-            accessible-label: I18n.tr("settings.popups.shadow");
+            label: I18n.tr("settings.popups.shadow");
             toggled => {
                 SettingsState.set-flag("popups.shadow", self.checked);
             }
@@ -1986,9 +2011,9 @@ component WelcomePage inherits VerticalLayout {
         label: I18n.tr("settings.general.autostart");
         help: I18n.tr("settings.general.autostart.help");
         error: SettingsState.autostart-error;
-        Switch {
+        OnOffSwitch {
             checked <=> SettingsState.autostart;
-            accessible-label: I18n.tr("settings.general.autostart");
+            label: I18n.tr("settings.general.autostart");
             toggled => {
                 SettingsState.set-flag("autostart", self.checked);
             }
@@ -2073,9 +2098,9 @@ component PropertiesPage inherits VerticalLayout {
                     SettingsState.prop-text(row.key, text);
                 }
             }
-            if row.kind == RowKinds.flag: Switch {
+            if row.kind == RowKinds.flag: OnOffSwitch {
                 checked: row.checked;
-                accessible-label: row.label;
+                label: row.label;
                 toggled => {
                     SettingsState.prop-flag(row.key, self.checked);
                 }
@@ -2366,6 +2391,8 @@ component Navigation inherits FocusScope {
     in-out property <int> current;
     focus-on-click: false;
     property <bool> listed: root.current >= 0 && root.current < root.items.length;
+    property <length> item-height: 36px;
+    property <length> item-spacing: 4px;
 
     function go(page: int) {
         if page != root.current {
@@ -2396,13 +2423,15 @@ component Navigation inherits FocusScope {
 
     VerticalLayout {
         alignment: start;
-        spacing: 4px;
+        spacing: root.item-spacing;
         for item[i] in root.items: Rectangle {
             property <bool> shown: i == root.current;
-            height: 36px;
+            height: root.item-height;
             border-radius: Look.radius;
             background: self.shown ? Look.subtle-selected
                 : touch.has-hover ? Look.subtle-hover : transparent;
+            // WinUI's fast fade on hover.
+            animate background { duration: 83ms; }
             // The focus ring, on the page shown.
             border-width: root.has-focus && self.shown ? 2px : 0;
             border-color: Palette.foreground;
@@ -2420,15 +2449,6 @@ component Navigation inherits FocusScope {
                 clicked => {
                     root.go(i);
                 }
-            }
-
-            if self.shown: Rectangle {
-                x: 0;
-                y: (parent.height - self.height) / 2;
-                width: 3px;
-                height: 16px;
-                border-radius: 1.5px;
-                background: Palette.accent-background;
             }
 
             HorizontalLayout {
@@ -2454,6 +2474,17 @@ component Navigation inherits FocusScope {
             }
         }
     }
+
+    // The accent pill on the page shown; it slides to the next one, as WinUI's does.
+    if root.listed: Rectangle {
+        x: 0;
+        y: root.current * (root.item-height + root.item-spacing) + (root.item-height - self.height) / 2;
+        width: 3px;
+        height: 16px;
+        border-radius: 1.5px;
+        background: Palette.accent-background;
+        animate y { duration: 250ms; easing: ease-out; }
+    }
 }
 
 export component SettingsWindow inherits Window {
@@ -2464,6 +2495,24 @@ export component SettingsWindow inherits Window {
     min-width: 560px;
     min-height: 420px;
     background: Look.window;
+    // Windows 11's UI font, as WinUI uses it; where it is missing (Windows 10) Slint falls back
+    // to Segoe UI.
+    default-font-family: "Segoe UI Variable Text";
+    // The page fades in when shown, as WinUI's pages enter. The fade first jumps back to
+    // transparent (no animation while `page-restart`), then animates.
+    property <int> page: SettingsState.page;
+    property <float> page-opacity: 1;
+    property <bool> page-restart;
+    animate page-opacity {
+        duration: root.page-restart ? 0ms : 167ms;
+        easing: ease-out;
+    }
+    changed page => {
+        root.page-restart = true;
+        root.page-opacity = 0;
+        root.page-restart = false;
+        root.page-opacity = 1;
+    }
     // The page last shown, so that each change of page is reported once.
     property <int> shown-page: 0;
     // The Fluent palette in the colour scheme (SPEC §10.3); `unknown` follows the OS, live.
@@ -2525,7 +2574,8 @@ export component SettingsWindow inherits Window {
                     I18n.tr("settings.nav.help"),
                     I18n.tr("settings.nav.about"),
                 ][SettingsState.page];
-                // Windows 11's Title.
+                // Windows 11's Title, in the font's cut for large text.
+                font-family: "Segoe UI Variable Display";
                 font-size: 28px;
                 font-weight: 600;
                 color: Palette.foreground;
@@ -2538,6 +2588,7 @@ export component SettingsWindow inherits Window {
             }
 
             if SettingsState.page != Pages.picker: scroll := ScrollView {
+                opacity: root.page-opacity;
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
@@ -2562,6 +2613,7 @@ export component SettingsWindow inherits Window {
             }
             // The picker scrolls only its list (SPEC §6.6).
             if SettingsState.page == Pages.picker: PickerPage {
+                opacity: root.page-opacity;
                 vertical-stretch: 1;
             }
         }
