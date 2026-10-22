@@ -64,18 +64,17 @@ public sealed partial class MainWindow : Window
         titleBar.ButtonPressedBackgroundColor = dark ? ColorHelper.FromArgb(0x0A, 0xFF, 0xFF, 0xFF) : ColorHelper.FromArgb(0x06, 0, 0, 0);
     }
 
-    /// <summary>760 × 560 logical px, as the Slint window opens, centred on the work area.</summary>
+    /// <summary>
+    /// As large as the Slint window, which opens at 760 × 560 logical px below a 32 px system
+    /// title bar; here the title bar is part of the client area. Centred on the work area.
+    /// </summary>
     void Place()
     {
         var scale = GetDpiForWindow(Win32Interop.GetWindowFromWindowId(AppWindow.Id)) / 96.0;
-        var width = (int)(760 * scale);
-        var height = (int)(560 * scale);
+        AppWindow.ResizeClient(new SizeInt32((int)(760 * scale), (int)((560 + 32) * scale)));
+        var size = AppWindow.Size;
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        AppWindow.MoveAndResize(new RectInt32(
-            area.X + (area.Width - width) / 2,
-            area.Y + (area.Height - height) / 2,
-            width,
-            height));
+        AppWindow.Move(new PointInt32(area.X + (area.Width - size.Width) / 2, area.Y + (area.Height - size.Height) / 2));
     }
 
     void OnSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)

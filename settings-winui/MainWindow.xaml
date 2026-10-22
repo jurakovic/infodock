@@ -24,7 +24,8 @@
             </StackPanel>
         </Grid>
 
-        <!-- Expanded at any width, as the Slint window's navigation is. -->
+        <!-- Expanded at any width, as the Slint window's navigation is; narrow enough that the
+             cards keep their controls beside the text (the toolkit wraps them below 476 px). -->
         <NavigationView
             x:Name="Nav"
             Grid.Row="1"
@@ -33,7 +34,7 @@
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
             IsTitleBarAutoPaddingEnabled="False"
-            OpenPaneLength="220"
+            OpenPaneLength="200"
             AutomationProperties.Name="{local:Tr Key=settings.nav.label}"
             SelectionChanged="OnSelectionChanged">
             <NavigationView.Resources>

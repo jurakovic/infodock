@@ -18,7 +18,7 @@ and is not part of the app.
 - It reads your settings from `%APPDATA%\app.infodock.desktop\config.json`, read-only, and
   saves nothing. It does not talk to a running Infodock. Controls move, the colour scheme
   switches the window live, the hotkey button records a key, the colour opens WinUI's picker.
-- The window opens at 760 × 560, as the Slint window does.
+- The window opens as large as the Slint window (760 × 560 below its title bar).
 
 ## Running it
 
