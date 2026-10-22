@@ -593,11 +593,15 @@ mod tests {
             &platform.capabilities(),
             crate::sensors::registry::registry(),
         );
+        let locale = platform.locale(settings.date_locale);
+        let numbers = crate::sensors::format::Numbers::from(&locale);
         let env = Env {
             settings: &settings,
             platform: platform.as_ref(),
             alt: false,
             animate: false,
+            locale: &locale,
+            numbers,
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let start = Instant::now();
@@ -608,7 +612,8 @@ mod tests {
             theme: &theme,
             text: text.as_ref(),
             scale: 1.0,
-            numbers: crate::sensors::format::Numbers::from(&platform.locale(settings.date_locale)),
+            locale: &locale,
+            numbers,
             icons: &crate::sensors::DirectIcons(platform.as_ref()),
         };
         let size = SizeF::new(WIDTH as f32, theme.bar_height as f32);
@@ -671,11 +676,15 @@ mod tests {
             &platform.capabilities(),
             crate::sensors::registry::registry(),
         );
+        let locale = platform.locale(settings.date_locale);
+        let numbers = crate::sensors::format::Numbers::from(&locale);
         let env = Env {
             settings: &settings,
             platform: platform.as_ref(),
             alt: false,
             animate: false,
+            locale: &locale,
+            numbers,
             changes: &crate::sampler::ChangeSink::NONE,
         };
         sensors.wake(Instant::now(), &env);
@@ -683,7 +692,8 @@ mod tests {
             theme: &theme,
             text: text.as_ref(),
             scale: 1.0,
-            numbers: crate::sensors::format::Numbers::from(&platform.locale(settings.date_locale)),
+            locale: &locale,
+            numbers,
             icons: &crate::sensors::DirectIcons(platform.as_ref()),
         };
         sensors.update_layout(&cx, 1920.0);
@@ -793,6 +803,7 @@ mod tests {
                 edge: Edge::Bottom,
                 free_left: false,
                 animate: false,
+                numbers: Default::default(),
                 now: Instant::now(),
             };
             let began = Instant::now();
@@ -1306,11 +1317,15 @@ mod tests {
                     &caps,
                     crate::sensors::registry::registry(),
                 );
+                let locale = platform.locale(settings.date_locale);
+                let numbers = crate::sensors::format::Numbers::from(&locale);
                 let env = crate::bar::sensors::Env {
                     settings: &settings,
                     platform: platform.as_ref(),
                     alt: false,
                     animate: false,
+                    locale: &locale,
+                    numbers,
                     changes: &crate::sampler::ChangeSink::NONE,
                 };
                 // The clocks read the time at their first wake-up; the others get samples.
@@ -1320,9 +1335,8 @@ mod tests {
                     theme: &theme,
                     text: text.as_ref(),
                     scale,
-                    numbers: crate::sensors::format::Numbers::from(
-                        &platform.locale(settings.date_locale),
-                    ),
+                    locale: &locale,
+                    numbers,
                     icons: &crate::sensors::DirectIcons(platform.as_ref()),
                 };
                 sensors.update_layout(&cx, size.width);
@@ -1440,8 +1454,7 @@ mod tests {
                 volumes,
                 generation: 1,
             }));
-            let mut list =
-                EjectList::new(drives, Default::default(), crate::sampler::ChangeSink::NONE);
+            let mut list = EjectList::new(drives, crate::sampler::ChangeSink::NONE);
             list.preset_sizes(&[
                 ("E:\\", 15_931_539_456),
                 ("F:\\", 2_000_381_014_016),
@@ -1503,6 +1516,7 @@ mod tests {
                     edge: Edge::Bottom,
                     free_left: false,
                     animate: false,
+                    numbers: Default::default(),
                     now: std::time::Instant::now(),
                 };
                 open.popup.layout(&cx);

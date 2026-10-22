@@ -356,34 +356,20 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::Platform;
-    use crate::sampler::ChangeSink;
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure};
+    use crate::sensors::test_support::{Harness, draw, measure, resolved};
+    use crate::test_util::FakePlatform;
 
     fn create(stored: serde_json::Value) -> FolderMenu {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
+        let props = resolved(SCHEMA, stored);
         FolderMenu {
             props: typed(&props).expect("valid props"),
             icon: None,
         }
     }
 
-    fn with_ctx<R>(f: impl FnOnce(&SensorCtx, &FakeClock) -> R) -> R {
-        let platform = FakeClock::default();
-        let settings = Settings::default();
-        let cx = SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate: false,
-            platform: &platform as &dyn Platform,
-            changes: &ChangeSink::NONE,
-        };
-        f(&cx, &platform)
+    fn with_ctx<R>(f: impl FnOnce(&SensorCtx, &FakePlatform) -> R) -> R {
+        let h = Harness::new();
+        f(&h.ctx(), &h.platform)
     }
 
     #[test]

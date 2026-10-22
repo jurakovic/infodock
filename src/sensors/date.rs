@@ -169,7 +169,6 @@ impl SensorType for DateType {
         Ok(Box::new(DateSensor {
             props: typed(props)?,
             today: None,
-            locale: None,
             next: None,
             layouts: None,
         }))
@@ -230,7 +229,6 @@ struct DateSensor {
     props: DateProps,
     /// `None` until the first wake-up reads the clock (at once).
     today: Option<Date>,
-    locale: Option<Locale>,
     next: Option<Instant>,
     layouts: Option<Layouts>,
 }
@@ -295,9 +293,6 @@ impl DateSensor {
 
     fn read(&mut self, at: Instant, cx: &SensorCtx) -> bool {
         let now = cx.platform.local_time();
-        if self.locale.is_none() {
-            self.locale = Some(cx.platform.locale(cx.settings.date_locale));
-        }
         // Every minute: midnight is noticed within a moment, and a missed timer at most a
         // minute late (SPEC §9.4: midnight timer plus a 60 s safety tick).
         self.next = Some(at + now.until_next_minute());
@@ -328,10 +323,11 @@ fn big_style(theme: &Theme) -> TextStyle {
 
 impl Sensor for DateSensor {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        let (Some(today), Some(locale)) = (self.today, self.locale.as_ref()) else {
+        let Some(today) = self.today else {
             self.layouts = None;
             return 0.0;
         };
+        let locale = cx.locale;
         let small_style = TextStyle::new(&cx.theme.sensor_font, cx.theme.medium_size);
         let layouts = if self.props.year == Year::None {
             Layouts {
@@ -397,14 +393,14 @@ impl Sensor for DateSensor {
         }
     }
 
-    fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
+    fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let today = self.today?;
         let first_day = match self.props.calendar {
             Calendar::None => return Some(HintContent::Text(Self::footer(today))),
             Calendar::Monday => 0,
             Calendar::Sunday => 6,
         };
-        let names = self.locale.as_ref()?.weekdays_short.clone();
+        let names = cx.locale.weekdays_short.clone();
         Some(HintContent::Rich(Box::new(MonthCalendar::new(
             today, first_day, names,
         ))))
@@ -421,11 +417,10 @@ impl Sensor for DateSensor {
         ClickResult::Handled
     }
 
-    fn accessible_value(&self, _cx: &SensorCtx) -> String {
-        match (self.today, self.locale.as_ref()) {
-            (Some(today), Some(locale)) => format_date(&locale.long_date, today, locale),
-            _ => String::new(),
-        }
+    fn accessible_value(&self, cx: &SensorCtx) -> String {
+        self.today.map_or_else(String::new, |today| {
+            format_date(&cx.locale.long_date, today, cx.locale)
+        })
     }
 
     fn wake_at(&self, now: Instant) -> Option<Instant> {
@@ -437,7 +432,6 @@ impl Sensor for DateSensor {
     }
 
     fn on_clock_change(&mut self, now: Instant, cx: &SensorCtx) -> bool {
-        self.locale = None;
         self.read(now, cx)
     }
 }
@@ -585,98 +579,71 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::sensors::test_support::{Harness, created};
 
     fn sensor(stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        DateType.create(&props, &State::new()).expect("valid props")
+        created(&DateType, stored)
     }
 
-    struct Harness {
-        clock: FakeClock,
-        settings: Settings,
-        theme: Theme,
+    /// The clock at 9:05 on Tuesday, 13 October 2026.
+    fn harness() -> Harness {
+        let h = Harness::new();
+        h.platform.set_time(9, 5, 0);
+        h
     }
 
-    impl Harness {
-        fn new() -> Self {
-            let clock = FakeClock::default();
-            clock.set(9, 5, 0);
-            Self {
-                clock,
-                settings: Settings::default(),
-                theme: theme(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: false,
-                alt: false,
-                animate: true,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.clock,
-            }
-        }
-
-        /// The texts the sensor draws after reading the (fake) clock.
-        fn texts(&self, stored: serde_json::Value) -> Vec<String> {
-            let mut sensor = sensor(stored);
-            sensor.on_wake(Instant::now(), &self.ctx());
-            let width = sensor.measure(&LayoutCtx {
-                theme: &self.theme,
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            });
-            let mut canvas = RecordingCanvas::new(1.0);
-            let rect = RectF::new(0.0, 0.0, width, 28.0);
-            sensor.draw(
-                &mut canvas,
-                &DrawCtx {
-                    theme: &self.theme,
-                    rect,
-                },
-            );
-            canvas
-                .dump()
-                .lines()
-                .filter_map(|l| l.split('"').nth(1).map(str::to_owned))
-                .collect()
-        }
+    /// The texts the sensor draws after reading the (fake) clock.
+    fn texts(h: &Harness, stored: serde_json::Value) -> Vec<String> {
+        let mut sensor = sensor(stored);
+        sensor.on_wake(Instant::now(), &h.ctx());
+        let width = sensor.measure(&h.layout());
+        let mut canvas = RecordingCanvas::new(1.0);
+        let rect = RectF::new(0.0, 0.0, width, 28.0);
+        sensor.draw(
+            &mut canvas,
+            &DrawCtx {
+                theme: &h.theme,
+                rect,
+            },
+        );
+        canvas
+            .dump()
+            .lines()
+            .filter_map(|l| l.split('"').nth(1).map(str::to_owned))
+            .collect()
     }
 
     #[test]
     fn day_with_month_and_year_beside_it() {
-        let h = Harness::new();
+        let h = harness();
         // 2026-10-13 is a Tuesday.
-        assert_eq!(h.texts(json!({})), ["Tuesday, 13", "2026", "october"]);
+        assert_eq!(texts(&h, json!({})), ["Tuesday, 13", "2026", "october"]);
         assert_eq!(
-            h.texts(json!({ "weekday": "short", "month": "short", "year": "bottom" })),
+            texts(
+                &h,
+                json!({ "weekday": "short", "month": "short", "year": "bottom" })
+            ),
             ["Tue, 13", "oct", "2026"]
         );
         assert_eq!(
-            h.texts(json!({ "weekday": "none", "month": "none" })),
+            texts(&h, json!({ "weekday": "none", "month": "none" })),
             ["13", "2026"]
         );
         assert_eq!(
-            h.texts(json!({ "month": "number" })),
+            texts(&h, json!({ "month": "number" })),
             ["Tuesday, 13", "2026", "10"]
         );
     }
 
     #[test]
     fn one_line_without_a_year_follows_the_locale() {
-        let h = Harness::new();
+        let h = harness();
         let line = |weekday: &str, month: &str| {
-            h.texts(json!({ "weekday": weekday, "month": month, "year": "none" }))
+            texts(
+                &h,
+                json!({ "weekday": weekday, "month": month, "year": "none" }),
+            )
         };
         assert_eq!(line("long", "long"), ["Tuesday, October 13"]);
         assert_eq!(line("short", "short"), ["Tue, Oct 13"]);
@@ -689,7 +656,7 @@ mod tests {
 
     #[test]
     fn reads_the_date_at_once_and_every_minute() {
-        let h = Harness::new();
+        let h = harness();
         let mut date = sensor(json!({}));
         let start = Instant::now();
         assert_eq!(date.wake_at(start), Some(start));
@@ -703,7 +670,7 @@ mod tests {
 
     #[test]
     fn calendar_hint() {
-        let h = Harness::new();
+        let h = harness();
         let mut date = sensor(json!({}));
         date.on_wake(Instant::now(), &h.ctx());
         let Some(HintContent::Rich(mut calendar)) = date.hint(&h.ctx()) else {
@@ -756,13 +723,13 @@ mod tests {
 
     #[test]
     fn click_opens_the_calendar_app_or_the_date_settings() {
-        let mut h = Harness::new();
+        let mut h = harness();
         let mut date = sensor(json!({}));
         date.click(&h.ctx());
         h.settings.apps.calendar = "outlookcal:".into();
         date.click(&h.ctx());
         assert_eq!(
-            h.clock.log(),
+            h.platform.log(),
             ["open ms-settings:dateandtime", "open outlookcal:"]
         );
     }

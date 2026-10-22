@@ -7,7 +7,8 @@ use std::sync::mpsc;
 use super::*;
 use crate::config::model::ClicksWhenLocked;
 use crate::platform::recording::RecordingCanvas;
-use crate::platform::{MenuEntry, PointerButton};
+use crate::platform::{Capabilities, MenuEntry, PointerButton};
+use crate::test_util::FakePlatform;
 
 mod external_drop;
 mod frame;
@@ -337,37 +338,13 @@ fn right_click(logic: &mut BarLogic, window: &FakeWindow, at: PointF, choose: Me
     );
 }
 
-/// Records power actions instead of taking them: the tests run on Windows too.
-#[derive(Default)]
-struct NoPower(Mutex<Vec<String>>);
-
-impl Platform for NoPower {
-    fn capabilities(&self) -> crate::platform::Capabilities {
-        crate::platform::Capabilities {
-            power_modes: vec!["shutDown".into()],
-            ..Default::default()
-        }
-    }
-    fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-        Vec::new()
-    }
-    fn appearance(&self) -> OsAppearance {
-        OsAppearance::default()
-    }
-    fn uptime(&self) -> Duration {
-        Duration::ZERO
-    }
-    fn power(&self, action: crate::platform::PowerAction, _force: bool) {
-        self.0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(format!("{action:?}"));
-    }
-}
-
 /// Puts a Power sensor, whose click asks first, in the logo's place.
-fn with_power_sensor(logic: &mut BarLogic, window: &FakeWindow) -> Arc<NoPower> {
-    let power = Arc::new(NoPower::default());
+fn with_power_sensor(logic: &mut BarLogic, window: &FakeWindow) -> Arc<FakePlatform> {
+    // Records power actions instead of taking them: the tests run on Windows too.
+    let power = Arc::new(FakePlatform::default().with_capabilities(Capabilities {
+        power_modes: vec!["shutDown".into()],
+        ..Default::default()
+    }));
     logic.platform = Arc::clone(&power) as Arc<dyn Platform>;
     let mut config = Config {
         settings: logic.settings.clone(),

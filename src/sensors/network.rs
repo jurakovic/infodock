@@ -305,7 +305,7 @@ impl Sensor for NetworkGraph {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let s = self.sample.as_ref()?;
-        let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
+        let numbers = cx.numbers;
         let name = if !s.present {
             adapter_name(self.props.adapter.clone())
         } else if s.description.is_empty() || s.description == s.alias {
@@ -353,7 +353,7 @@ impl Sensor for NetworkGraph {
         if self.sample.is_none() {
             return String::new();
         }
-        let (rx, tx) = self.rates(Numbers::from(&cx.platform.locale(cx.settings.date_locale)));
+        let (rx, tx) = self.rates(cx.numbers);
         t_args("sensor.network.accessible", &[("rx", &rx), ("tx", &tx)])
     }
 
@@ -383,22 +383,16 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::RectF;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::sensors::test_support::{Harness, created};
+    use crate::test_util::FakePlatform;
 
     const KB: f64 = 1024.0;
+
     const MB: f64 = 1024.0 * KB;
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        NetworkGraphType
-            .create(&props, &State::new())
-            .expect("valid props")
+        created(&NetworkGraphType, stored)
     }
 
     fn net(rx: f64, tx: f64) -> Sample {
@@ -415,53 +409,6 @@ mod tests {
     }
 
     const AUTO: Topic = Topic::Net(None);
-
-    struct Harness {
-        clock: FakeClock,
-        settings: Settings,
-        theme: crate::look::theme::Theme,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                clock: FakeClock::default(),
-                settings: Settings::default(),
-                theme: theme(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: false,
-                alt: false,
-                animate: true,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.clock,
-            }
-        }
-
-        fn drawn(&self, sensor: &mut dyn Sensor) -> (f32, String) {
-            let width = sensor.measure(&LayoutCtx {
-                theme: &self.theme,
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            });
-            let mut canvas = RecordingCanvas::new(1.0);
-            let rect = RectF::new(0.0, 0.0, width, 28.0);
-            sensor.draw(
-                &mut canvas,
-                &DrawCtx {
-                    theme: &self.theme,
-                    rect,
-                },
-            );
-            (width, canvas.dump())
-        }
-    }
 
     #[test]
     fn plots_receive_up_and_send_down_scaled_to_the_view() {
@@ -524,7 +471,7 @@ mod tests {
             "Receive 1.24 MB/s, send 86.0 KB/s"
         );
         assert_eq!(graph.click(&h.ctx()), ClickResult::Handled);
-        assert_eq!(h.clock.log(), ["open ncpa.cpl"]);
+        assert_eq!(h.platform.log(), ["open ncpa.cpl"]);
     }
 
     #[test]
@@ -549,27 +496,6 @@ mod tests {
         );
     }
 
-    /// A computer with these connections, for the legacy adapter.
-    struct Connections(Vec<NetInterface>);
-
-    impl crate::platform::Platform for Connections {
-        fn capabilities(&self) -> crate::platform::Capabilities {
-            Default::default()
-        }
-        fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> crate::platform::OsAppearance {
-            Default::default()
-        }
-        fn uptime(&self) -> Duration {
-            Duration::ZERO
-        }
-        fn net_interfaces(&self) -> Vec<NetInterface> {
-            self.0.clone()
-        }
-    }
-
     fn connection(id: &str, alias: &str, description: &str) -> NetInterface {
         NetInterface {
             id: id.into(),
@@ -583,17 +509,18 @@ mod tests {
         }
     }
 
-    fn connections() -> Connections {
-        Connections(vec![
+    /// A computer's connections, for the legacy adapter.
+    fn connections() -> Vec<NetInterface> {
+        vec![
             connection("{E1}", "Ethernet", "Realtek PCIe GbE Family Controller"),
             connection("{W1}", "Wi-Fi", "Intel(R) Wi-Fi 6E AX211"),
             connection("{V1}", "Intel(R) Wi-Fi 6E AX211", "WireGuard Tunnel"),
-        ])
+        ]
     }
 
     #[test]
     fn the_legacy_adapter_is_matched_by_description_then_name() {
-        let c = connections().0;
+        let c = connections();
         let id = |adapter| legacy_adapter(&c, adapter).map(|i| i.id.as_str());
         assert_eq!(id("realtek pcie gbe family controller "), Some("{E1}"));
         // A description wins over a connection named the same.
@@ -607,7 +534,7 @@ mod tests {
         let convert = |pairs: &[(&str, &str)]| {
             let (props, _, warnings) = crate::sensors::test_support::convert_legacy(
                 &NetworkGraphType,
-                &connections(),
+                &FakePlatform::default().with_connections(connections()),
                 "DockNetwork",
                 pairs,
             );

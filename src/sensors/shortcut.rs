@@ -414,17 +414,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::{ClicksWhenLocked, Settings};
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::platform::{Platform, RectF};
+    use crate::config::model::ClicksWhenLocked;
+    use crate::platform::RectF;
+    use crate::platform::recording::RecordingCanvas;
     use crate::sampler::PathSample;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::sensors::test_support::{Harness, resolved, theme};
 
     fn create(stored: serde_json::Value) -> Shortcut {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
+        let props = resolved(SCHEMA, stored);
         Shortcut {
             props: typed(&props).expect("valid props"),
             kind: None,
@@ -460,12 +458,11 @@ mod tests {
     }
 
     fn measure_with(sensor: &mut Shortcut, icons: &Icons, scale: f32) -> f32 {
+        let h = Harness::new();
         sensor.measure(&LayoutCtx {
-            theme: &theme(),
-            text: &FixedMetrics,
             scale,
-            numbers: Default::default(),
             icons,
+            ..h.layout()
         })
     }
 
@@ -485,35 +482,10 @@ mod tests {
         Sample::Path(PathSample { kind })
     }
 
-    struct Harness {
-        platform: FakeClock,
-        settings: Settings,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                platform: FakeClock::default(),
-                settings: Settings::default(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: self.settings.locked,
-                alt: false,
-                animate: false,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.platform as &dyn Platform,
-            }
-        }
-
-        fn hint(&self, sensor: &Shortcut) -> String {
-            match sensor.hint(&self.ctx()) {
-                Some(HintContent::Text(text)) => text,
-                other => panic!("{other:?}"),
-            }
+    fn hint(h: &Harness, sensor: &Shortcut) -> String {
+        match sensor.hint(&h.ctx()) {
+            Some(HintContent::Text(text)) => text,
+            other => panic!("{other:?}"),
         }
     }
 
@@ -655,17 +627,17 @@ mod tests {
     fn hints() {
         let mut h = Harness::new();
         let mut sensor = create(json!({ "target": "C:\\Tools\\app.exe" }));
-        assert_eq!(h.hint(&sensor), "Open 'app'");
+        assert_eq!(hint(&h, &sensor), "Open 'app'");
         let topic = Topic::Path("C:\\Tools\\app.exe".into());
         sensor.on_sample(&topic, &path(PathKind::File), &h.ctx());
         assert_eq!(sensor.accessible_value(&h.ctx()), "app");
         // A set title is the whole hint.
-        assert_eq!(h.hint(&create(json!({ "title": "My tool" }))), "My tool");
-        assert_eq!(h.hint(&create(json!({}))), "No target set");
+        assert_eq!(hint(&h, &create(json!({ "title": "My tool" }))), "My tool");
+        assert_eq!(hint(&h, &create(json!({}))), "No target set");
         // Clicks need Alt: only the title.
         h.settings.locked = true;
         h.settings.clicks_when_locked = ClicksWhenLocked::AltOnly;
-        assert_eq!(h.hint(&sensor), "app");
+        assert_eq!(hint(&h, &sensor), "app");
     }
 
     #[test]

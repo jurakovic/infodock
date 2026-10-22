@@ -310,37 +310,20 @@ pub(super) fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
 mod tests {
     use super::*;
     use crate::config::model::Config;
-    use crate::platform::{Capabilities, MonitorInfo, OsAppearance};
+    use crate::platform::Capabilities;
     use crate::sensors::registry::registry;
-    use crate::sensors::test_support::NoPlatform;
-
-    /// A single-processor computer with per-processor counters.
-    struct OneProcessor;
-
-    impl Platform for OneProcessor {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities {
-                per_core_cpu: true,
-                ..Capabilities::default()
-            }
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> std::time::Duration {
-            std::time::Duration::ZERO
-        }
-        fn logical_processors(&self) -> u32 {
-            1
-        }
-    }
+    use crate::test_util::{FakePlatform, NO_PLATFORM};
 
     #[test]
     fn notes_one_processor_for_the_dual_graph() {
-        let entries = entries(registry(), &OneProcessor);
+        // A single-processor computer with per-processor counters.
+        let one = FakePlatform::default()
+            .with_capabilities(Capabilities {
+                per_core_cpu: true,
+                ..Capabilities::default()
+            })
+            .with_processors(1);
+        let entries = entries(registry(), &one);
         let dual = entries
             .iter()
             .find(|e| e.kind == "cpu-graph-dual")
@@ -355,7 +338,7 @@ mod tests {
 
     #[test]
     fn lists_types_by_category_and_name() {
-        let entries = entries(registry(), &NoPlatform);
+        let entries = entries(registry(), &NO_PLATFORM);
         let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(
             names,
@@ -412,7 +395,7 @@ mod tests {
 
     #[test]
     fn search_matches_names_and_descriptions() {
-        let entries = entries(registry(), &NoPlatform);
+        let entries = entries(registry(), &NO_PLATFORM);
         assert_eq!(
             lines(&entries, "TEXT"),
             [Line::Heading("General".into()), Line::Entry(2)]

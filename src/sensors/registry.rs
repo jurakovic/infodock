@@ -175,14 +175,13 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::look::theme::Theme;
     use crate::platform::Capability;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::platform::{OsAppearance, RectF};
+    use crate::platform::RectF;
+    use crate::platform::recording::RecordingCanvas;
     use crate::sensors::Category;
-    use crate::sensors::test_support::{Clock, Echo, NoPlatform};
-    use crate::sensors::{DrawCtx, LayoutCtx};
+    use crate::sensors::DrawCtx;
+    use crate::sensors::test_support::{Clock, Echo, Harness};
+    use crate::test_util::NO_PLATFORM;
 
     struct Battery;
 
@@ -224,19 +223,13 @@ mod tests {
 
     /// What `sensor` draws, after measuring.
     fn drawn(mut sensor: Box<dyn Sensor>) -> String {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
-        sensor.measure(&LayoutCtx {
-            theme: &theme,
-            text: &FixedMetrics,
-            scale: 1.0,
-            numbers: Default::default(),
-            icons: &crate::sensors::NoIcons,
-        });
+        let h = Harness::new();
+        sensor.measure(&h.layout());
         let mut canvas = RecordingCanvas::new(1.0);
         sensor.draw(
             &mut canvas,
             &DrawCtx {
-                theme: &theme,
+                theme: &h.theme,
                 rect: RectF::new(0.0, 0.0, 50.0, 28.0),
             },
         );
@@ -289,7 +282,7 @@ mod tests {
             right: vec![instance("clock", json!({ "use24h": true }))],
         };
         let ctx = DefaultsCtx {
-            platform: &NoPlatform,
+            platform: &NO_PLATFORM,
         };
         assert!(r.fill_machine_defaults(&mut layout, &ctx));
         assert_eq!(layout.left[0].props["use24h"], false);

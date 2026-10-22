@@ -237,13 +237,13 @@ fn export_path(path: String) -> PathBuf {
 mod tests {
     use std::cell::RefCell;
     use std::collections::VecDeque;
-    use std::sync::{Arc, Mutex, PoisonError};
+    use std::sync::Arc;
 
     use super::*;
     use crate::config::ConfigStore;
     use crate::config::exchange::{MAX_SENSORS, SkipReason, Skipped, Warning};
     use crate::config::model::{LegacyUnsupported, Zone};
-    use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
+    use crate::test_util::FakePlatform;
 
     /// Answers with a script and records what it was asked.
     #[derive(Default)]
@@ -297,34 +297,9 @@ mod tests {
         }
     }
 
-    /// Records toasts.
-    #[derive(Default)]
-    struct Toasts(Mutex<Vec<String>>);
-
-    impl Platform for Toasts {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> std::time::Duration {
-            std::time::Duration::ZERO
-        }
-        fn notify(&self, title: &str, body: &str) {
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(format!("{title}: {body}"));
-        }
-    }
-
     struct Fixture {
         app: App,
-        toasts: Arc<Toasts>,
+        toasts: Arc<FakePlatform>,
         dir: tempfile::TempDir,
     }
 
@@ -332,7 +307,7 @@ mod tests {
         fn new() -> Self {
             let dir = tempfile::tempdir().expect("temp dir");
             let (store, _) = ConfigStore::open(dir.path().join("config"), "test");
-            let toasts = Arc::new(Toasts::default());
+            let toasts = Arc::new(FakePlatform::default());
             let app = App::new(store, toasts.clone(), dir.path().join("skins"));
             Self { app, toasts, dir }
         }
@@ -343,12 +318,13 @@ mod tests {
             path.to_string_lossy().into_owned()
         }
 
+        /// The notifications shown, as "title: body".
         fn toasts(&self) -> Vec<String> {
             self.toasts
-                .0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
+                .log()
+                .iter()
+                .filter_map(|entry| entry.strip_prefix("notify ").map(str::to_owned))
+                .collect()
         }
 
         fn kinds(&self, zone: Zone) -> Vec<String> {

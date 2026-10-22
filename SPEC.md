@@ -685,6 +685,7 @@ pub trait Sensor {
 /// asked for its hint, menu or accessible value; built by the bar thread for each call.
 pub struct SensorCtx<'a> {
     pub settings: &'a Settings, pub locked: bool, pub alt: bool, pub animate: bool,
+    pub locale: &'a Locale, pub numbers: Numbers,        // kept by the bar (§8.6)
     pub platform: &'a dyn Platform,
     pub changes: &'a ChangeSink,                          // what its actions changed (§4.4)
 }
@@ -692,7 +693,7 @@ pub struct SensorCtx<'a> {
 /// Measuring may lay out text and decode images; drawing happens in the sensor's place on the bar.
 pub struct LayoutCtx<'a> {
     pub theme: &'a Theme, pub text: &'a dyn TextEngine, pub scale: f32,
-    pub numbers: Numbers,                                 // how the locale writes numbers (§8.6)
+    pub locale: &'a Locale, pub numbers: Numbers,        // the locale and how it writes numbers (§8.6)
     pub icons: &'a dyn IconSource,                        // shell icons and image files, read on a worker
 }
 pub struct DrawCtx<'a> { pub theme: &'a Theme, pub rect: RectF }   // logical px, bar coordinates
@@ -788,7 +789,7 @@ Labels stay readable; only the icon/graphic dims. v1 uses it for: Disk and Disk 
 * **Rates** (`formatRate`): same scaling, units `TB/s … KB/s, B/s`.
 * **Durations**: compact `3d 04h 12m` (uptime; the leading unit unpadded and units above it left out: `4h 05m`, `12m`); long `3 days, 4 hours, 12 minutes` with plural rules, leaving out parts that are zero (`1 day`; under a minute `0 minutes`); battery `h:mm`.
 * Implementation (`platform/locale.rs`, `sensors/dates.rs`): `Platform::locale(dateLocale)` returns the locale as plain data (weekday and month names, the month names as declined next to a day number, the long, short and month-day date patterns in the Windows picture format, the hour cycle, am/pm, the first day of the week, the decimal separator), read with `GetLocaleInfoEx` (`ui` reads `en-US`, the only UI language in v1) and English (United States) elsewhere. Rust formats dates with those patterns and computes weekdays, days of the year and ISO weeks itself, so all of it is tested against fixed locales. Month names decline as `GetDateFormatEx` declines them: in languages with genitive names (`LOCALE_SMONTHNAME*` and `LOCALE_SABBREVMONTHNAME*` with `LOCALE_RETURN_GENITIVE_NAMES`; Croatian `21. listopada`, Polish `21 października`, Russian, Czech), a pattern's `MMMM` or `MMM` takes the genitive when the nearest day before it is a day number (`d`, `dd`), or else the nearest day after it is; a weekday name (`ddd`, `dddd`) is not a day number. Elsewhere (`MMMM yyyy`, a month alone, the Date sensor's month line) the name stays as it is named. A Windows test compares the patterns of several such locales with `GetDateFormatEx`.
-* Implementation: the bar keeps the `Numbers` of `settings.dateLocale` and hands them to sensors as they measure (`LayoutCtx::numbers`), so text on the bar uses the locale's decimal separator as hints do; they are read again, and the clocks re-read the locale, when the setting or the OS regional format (`WM_SETTINGCHANGE` "intl") changes.
+* Implementation: the bar keeps the `Locale` of `settings.dateLocale` and its `Numbers`, and hands both to sensors on every context (`LayoutCtx`, `SensorCtx`; popups get the numbers on `PopupCtx`), so text on the bar, hints and accessible values use the same locale and no sensor reads it from the platform (Windows reads it with about 70 `GetLocaleInfoEx` calls). It is read again when the setting or the OS regional format (`WM_SETTINGCHANGE` "intl") changes, and every sensor then measures again; a clock change (`on_clock_change`) only means the wall clock jumped.
 * Implementation (`sensors/format.rs`): a value that would round to 1024 moves to the next unit (`1.00 MB`, not `1024 KB`), and the automatic digits are chosen after rounding (`10.0 KB`, not `10.00 KB`); units and words are catalog entries (`format.*`, plural forms through `i18n::t_count`).
 * **Percent**: integer, `37%` (locale-specific spacing allowed). Decimal separator from the locale.
 * **Dates**: weekday and month names, date patterns and the hour cycle from the platform `Locale` (Windows NLS: `GetLocaleInfoEx`, `GetDateFormatEx`, `GetTimeFormatEx`) for `settings.dateLocale`; ISO 8601 week numbers computed in Rust.
@@ -1649,6 +1650,8 @@ infodock/                     the Rust crate
 | Settings | Settings mapping (pages, choices, patches, monitor list) and every sensor schema's form; `visibleIf`; validation messages; every key used in `.slint` exists in `en.json`; every Settings page rendered offscreen to PNG (uploaded by CI for review) | `cargo test` (the rendering with `--ignored`) |
 | E2E smoke | App starts, bar visible, add/remove/move a sensor, settings survive a restart | Optional, Windows |
 | Manual | Top/bottom; reserve space on/off; two monitors with different DPI; Explorer restart (`taskkill /f /im explorer.exe`); sleep/resume; full-screen video; Wi-Fi with location access off/on; laptop on and off AC; USB stick eject; drag & drop from Explorer and browsers; legacy import of real files; Narrator on the bar | `docs/manual-test.md`, on Windows 10 and 11 test hardware |
+
+Test support: one fake platform for every test (`test_util::FakePlatform`: what a test sets, such as capabilities, volumes, connections, shell icons, the clock and the locale, it answers with; what it is asked to do, such as opening, launching, file operations, ejecting, notifying, it records instead of doing, so the tests run the same on Windows). The sensor types' tests share a `Harness` (`sensors/test_support.rs`: the fake platform, default settings and theme, fixed text metrics; `ctx()`, `layout()`, `drawn()`) and `resolved`/`created` for props from a schema. The bar logic's tests drive it end to end with a fake window and host (`bar/thread/tests/`).
 
 ---
 

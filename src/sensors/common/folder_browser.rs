@@ -1034,7 +1034,8 @@ pub(crate) mod tests {
     use crate::platform::Modifiers;
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::sensors::NoIcons;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::sensors::test_support::theme;
+    use crate::test_util::FakePlatform;
 
     fn entry(name: &str, folder: bool, hidden: bool) -> DirItem {
         DirItem {
@@ -1090,7 +1091,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) struct Harness {
-        pub platform: Arc<FakeClock>,
+        pub platform: Arc<FakePlatform>,
         shared: Arc<dyn Platform>,
         theme: Theme,
         waker: UiWaker,
@@ -1103,7 +1104,7 @@ pub(crate) mod tests {
 
     impl Harness {
         pub fn new() -> Self {
-            let platform = Arc::new(FakeClock::default());
+            let platform = Arc::new(FakePlatform::default());
             Self {
                 shared: Arc::clone(&platform) as Arc<dyn Platform>,
                 platform,
@@ -1130,6 +1131,7 @@ pub(crate) mod tests {
                 edge: self.edge,
                 free_left: self.free_left,
                 animate: self.animate,
+                numbers: Default::default(),
                 now: self.now.get(),
             }
         }

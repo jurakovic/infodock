@@ -75,37 +75,16 @@ fn a_resume_reaches_the_sampler() {
 
 #[test]
 fn sensors_needing_a_capability_wait_for_the_probe_and_the_others_do_not() {
-    /// A system whose capability probe answers once `ready` is set.
-    #[derive(Default)]
-    struct SlowProbe {
-        ready: std::sync::atomic::AtomicBool,
-    }
-    impl Platform for SlowProbe {
-        fn capabilities(&self) -> crate::platform::Capabilities {
-            crate::platform::Capabilities {
+    let (mut logic, window, _, mut config) = bar(Settings::default());
+    // A system whose capability probe answers only when told to.
+    let probe = Arc::new(
+        FakePlatform::default()
+            .with_capabilities(Capabilities {
                 battery: true,
                 ..Default::default()
-            }
-        }
-        fn probed_capabilities(&self) -> Option<crate::platform::Capabilities> {
-            use std::sync::atomic::Ordering;
-            self.ready
-                .load(Ordering::SeqCst)
-                .then(|| self.capabilities())
-        }
-        fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> Duration {
-            Duration::ZERO
-        }
-    }
-
-    let (mut logic, window, _, mut config) = bar(Settings::default());
-    let probe = Arc::new(SlowProbe::default());
+            })
+            .with_slow_probe(),
+    );
     logic.platform = Arc::clone(&probe) as Arc<dyn Platform>;
     // A Battery in the logo's place: it needs the `battery` capability.
     config.layout.center[0].kind = "battery".into();
@@ -126,9 +105,34 @@ fn sensors_needing_a_capability_wait_for_the_probe_and_the_others_do_not() {
     assert_eq!(window.probe_timer.get(), Some(PROBE_POLL));
     assert_eq!(logic.sensors.find(&battery), None);
     // Answered: the Battery joins, and no more checks.
-    probe.ready.store(true, std::sync::atomic::Ordering::SeqCst);
+    probe.answer_probe();
     window.probe_timer.set(None);
     logic.on_event(&window, UiEvent::Timer(TimerId::Probe));
     assert_eq!(logic.sensors.find(&battery), Some((Zone::Center, 0)));
     assert_eq!(window.probe_timer.get(), None);
+}
+
+#[test]
+fn a_new_locale_reaches_every_sensor_on_its_context() {
+    let (mut logic, window, _host, _) = bar(Settings::default());
+    let platform = Arc::new(FakePlatform::default());
+    platform.set_time(9, 5, 0);
+    logic.platform = Arc::clone(&platform) as Arc<dyn Platform>;
+    // The clocks read the time; the Date shows the month in lower case beside the day.
+    logic.on_event(&window, UiEvent::TimeChanged);
+    let drawn = |logic: &mut BarLogic| {
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        canvas.dump()
+    };
+    assert!(drawn(&mut logic).contains("\"october\""));
+    // The OS regional format changes: the bar reads the locale once and measures again, and
+    // the Date draws the new month name without reading the locale itself.
+    let mut locale = crate::platform::Locale::en_us();
+    locale.months[9] = "Oktober".into();
+    platform.set_locale(locale);
+    logic.on_event(&window, UiEvent::LocaleChanged);
+    let after = drawn(&mut logic);
+    assert!(after.contains("\"oktober\""), "{after}");
+    assert!(!after.contains("\"october\""));
 }

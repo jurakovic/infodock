@@ -86,7 +86,7 @@ impl BarLogic {
             // The hint is placed by its sensor, which may have moved: place the sensors now
             // rather than at the next paint.
             self.sensors
-                .refresh_layout(&self.theme, self.text.as_ref(), &self.icons);
+                .refresh_layout(&layout_ctx!(self, self.sensors.scale()));
             if !self.show_hint(window, &id) {
                 self.hover.nothing_shown();
                 window.hide_hint();
@@ -104,7 +104,7 @@ impl BarLogic {
         let changed = self.sensors.is_dirty(&id);
         let before = self.sensors.place_of(&id);
         self.sensors
-            .refresh_layout(&self.theme, self.text.as_ref(), &self.icons);
+            .refresh_layout(&layout_ctx!(self, self.sensors.scale()));
         if changed || self.sensors.place_of(&id) != before {
             self.refresh_hint(window);
         }

@@ -279,7 +279,7 @@ impl Sensor for DiskMeter {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let s = self.sample?;
-        let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
+        let numbers = cx.numbers;
         let mut text = t_args("sensor.disk.hint.title", &[("drive", &self.props.drive)]);
         if !s.present {
             text.push('\n');
@@ -311,7 +311,7 @@ impl Sensor for DiskMeter {
     }
 
     fn accessible_value(&self, cx: &SensorCtx) -> String {
-        self.value(Numbers::from(&cx.platform.locale(cx.settings.date_locale)))
+        self.value(cx.numbers)
     }
 
     fn topics(&self) -> Vec<TopicRequest> {
@@ -338,21 +338,14 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::RectF;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, NoPlatform, theme};
+    use crate::sensors::test_support::{Harness, created};
+    use crate::test_util::NO_PLATFORM;
 
     const GB: u64 = 1 << 30;
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        DiskMeterType
-            .create(&props, &State::new())
-            .expect("valid props")
+        created(&DiskMeterType, stored)
     }
 
     fn disk(total: u64, free: u64) -> Sample {
@@ -365,53 +358,6 @@ mod tests {
 
     fn c() -> Topic {
         Topic::Disk("C:\\".into())
-    }
-
-    struct Harness {
-        clock: FakeClock,
-        settings: Settings,
-        theme: crate::look::theme::Theme,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                clock: FakeClock::default(),
-                settings: Settings::default(),
-                theme: theme(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: false,
-                alt: false,
-                animate: true,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.clock,
-            }
-        }
-
-        fn drawn(&self, sensor: &mut dyn Sensor) -> (f32, String) {
-            let width = sensor.measure(&LayoutCtx {
-                theme: &self.theme,
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            });
-            let mut canvas = RecordingCanvas::new(1.0);
-            let rect = RectF::new(0.0, 0.0, width, 28.0);
-            sensor.draw(
-                &mut canvas,
-                &DrawCtx {
-                    theme: &self.theme,
-                    rect,
-                },
-            );
-            (width, canvas.dump())
-        }
     }
 
     #[test]
@@ -502,7 +448,7 @@ mod tests {
             ))
         );
         assert_eq!(meter.click(&h.ctx()), ClickResult::Handled);
-        assert_eq!(h.clock.log(), ["open C:\\"]);
+        assert_eq!(h.platform.log(), ["open C:\\"]);
     }
 
     #[test]
@@ -516,7 +462,7 @@ mod tests {
         assert_eq!(first_fixed(&volumes), Some("D:\\"));
         assert_eq!(first_fixed(&volumes[..1]), None);
         let ctx = DefaultsCtx {
-            platform: &NoPlatform,
+            platform: &NO_PLATFORM,
         };
         assert_eq!(DiskMeterType.machine_defaults(&ctx)["drive"], "C:\\");
         let (props, _) = resolve(SCHEMA, &Props::new(), &Props::new());

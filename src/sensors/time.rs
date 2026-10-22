@@ -17,7 +17,7 @@ use super::{
 use crate::config::model::DateLocale;
 use crate::look::theme::Theme;
 use crate::platform::time::LocalTime;
-use crate::platform::{Canvas, Font, PointF, TextEngine, TextLayout, TextStyle};
+use crate::platform::{Canvas, Font, Locale, PointF, TextEngine, TextLayout, TextStyle};
 
 /// The bundled chime (a placeholder until the artwork, SPEC Appendix C).
 static CHIME: &[u8] = include_bytes!("../../assets/sounds/chime.wav");
@@ -129,7 +129,6 @@ impl SensorType for TimeType {
             now: None,
             next: None,
             quiet_until: None,
-            am_pm: None,
             layouts: None,
         }))
     }
@@ -162,8 +161,6 @@ struct Time {
     /// When to read the time again: just after the next minute or second.
     next: Option<Instant>,
     quiet_until: Option<Instant>,
-    /// The locale's am and pm, in lower case (SPEC §9.5), read with the time.
-    am_pm: Option<(String, String)>,
     layouts: Option<Layouts>,
 }
 
@@ -178,10 +175,6 @@ impl Time {
     /// clock shows changed.
     fn read(&mut self, at: Instant, cx: &SensorCtx) -> bool {
         let t = cx.platform.local_time();
-        if self.am_pm.is_none() {
-            let locale = cx.platform.locale(cx.settings.date_locale);
-            self.am_pm = Some((locale.am.to_lowercase(), locale.pm.to_lowercase()));
-        }
         let quiet_until = *self.quiet_until.get_or_insert(at + QUIET);
         let new_minute = self
             .now
@@ -201,7 +194,7 @@ impl Time {
         changed
     }
 
-    fn texts(&self, t: LocalTime) -> (String, String, Option<String>) {
+    fn texts(&self, t: LocalTime, locale: &Locale) -> (String, String, Option<String>) {
         let hour = if self.props.use24h {
             t.hour
         } else {
@@ -216,7 +209,7 @@ impl Time {
             (hour.to_string(), format!("{:02}", t.minute))
         };
         let am_pm = (!self.props.use24h).then(|| {
-            let (am, pm) = self.am_pm.clone().unwrap_or_default();
+            let (am, pm) = am_pm(locale);
             if t.hour < 12 { am } else { pm }
         });
         (big, small, am_pm)
@@ -236,6 +229,11 @@ fn styles(theme: &Theme) -> (TextStyle, TextStyle, TextStyle) {
     )
 }
 
+/// The locale's am and pm, in lower case (SPEC §9.5).
+fn am_pm(locale: &Locale) -> (String, String) {
+    (locale.am.to_lowercase(), locale.pm.to_lowercase())
+}
+
 fn column_width(engine: &dyn TextEngine, theme: &Theme, am_pm: Option<&(String, String)>) -> f32 {
     let (_, small, tiny) = styles(theme);
     let mut width = engine.layout("00", &small).width();
@@ -253,14 +251,14 @@ impl Sensor for Time {
             self.layouts = None;
             return 0.0;
         };
-        let (big, small, am_pm) = self.texts(t);
+        let (big, small, am_pm_text) = self.texts(t, cx.locale);
         let (big_style, small_style, tiny) = styles(cx.theme);
-        let am_pms = (!self.props.use24h).then_some(()).and(self.am_pm.as_ref());
+        let am_pms = (!self.props.use24h).then(|| am_pm(cx.locale));
         let layouts = Layouts {
             big: cx.text.layout(&big, &big_style),
             small: cx.text.layout(&small, &small_style),
-            am_pm: am_pm.map(|text| cx.text.layout(&text, &tiny)),
-            column: column_width(cx.text, cx.theme, am_pms),
+            am_pm: am_pm_text.map(|text| cx.text.layout(&text, &tiny)),
+            column: column_width(cx.text, cx.theme, am_pms.as_ref()),
         };
         let shadow = if self.props.shadow { 1.0 } else { 0.0 };
         let width = layouts.big.width() + GAP + layouts.column + shadow;
@@ -298,11 +296,10 @@ impl Sensor for Time {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let date = self.now?.date;
-        let locale = cx.platform.locale(cx.settings.date_locale);
         Some(HintContent::Text(format_date(
-            &locale.long_date,
+            &cx.locale.long_date,
             date,
-            &locale,
+            cx.locale,
         )))
     }
 
@@ -311,11 +308,11 @@ impl Sensor for Time {
         ClickResult::Handled
     }
 
-    fn accessible_value(&self, _cx: &SensorCtx) -> String {
+    fn accessible_value(&self, cx: &SensorCtx) -> String {
         let Some(t) = self.now else {
             return String::new();
         };
-        let (big, small, am_pm) = self.texts(t);
+        let (big, small, am_pm) = self.texts(t, cx.locale);
         let time = format!("{big}:{small}");
         match am_pm {
             Some(am_pm) => format!("{time} {am_pm}"),
@@ -333,7 +330,6 @@ impl Sensor for Time {
 
     fn on_clock_change(&mut self, now: Instant, cx: &SensorCtx) -> bool {
         self.quiet_until = Some(now + QUIET);
-        self.am_pm = None;
         self.read(now, cx)
     }
 }
@@ -349,71 +345,16 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::RectF;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::sensors::test_support::{Harness, created};
 
     fn time(stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty());
-        TimeType.create(&props, &State::new()).expect("valid props")
-    }
-
-    struct Harness {
-        clock: FakeClock,
-        settings: Settings,
-        theme: Theme,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                clock: FakeClock::default(),
-                settings: Settings::default(),
-                theme: theme(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: false,
-                alt: false,
-                animate: true,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.clock,
-            }
-        }
-
-        /// Measures and draws `sensor`; returns its width and draw calls.
-        fn drawn(&self, sensor: &mut dyn Sensor) -> (f32, String) {
-            let width = sensor.measure(&LayoutCtx {
-                theme: &self.theme,
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            });
-            let mut canvas = RecordingCanvas::new(1.0);
-            let rect = RectF::new(0.0, 0.0, width, 28.0);
-            sensor.draw(
-                &mut canvas,
-                &DrawCtx {
-                    theme: &self.theme,
-                    rect,
-                },
-            );
-            (width, canvas.dump())
-        }
+        created(&TimeType, stored)
     }
 
     #[test]
     fn reads_the_time_at_once_then_at_each_minute() {
         let h = Harness::new();
-        h.clock.set(9, 5, 30);
+        h.platform.set_time(9, 5, 30);
         let mut sensor = time(json!({}));
         let start = Instant::now();
         assert_eq!(sensor.wake_at(start), Some(start), "due at once");
@@ -439,16 +380,16 @@ mod tests {
             "{dump}"
         );
         // Reading again within the minute changes nothing.
-        h.clock.set(9, 5, 40);
+        h.platform.set_time(9, 5, 40);
         assert!(!sensor.on_wake(next, &h.ctx()));
-        h.clock.set(9, 6, 0);
+        h.platform.set_time(9, 6, 0);
         assert!(sensor.on_wake(next, &h.ctx()));
     }
 
     #[test]
     fn twelve_hour_clock_with_seconds() {
         let h = Harness::new();
-        h.clock.set(21, 5, 7);
+        h.platform.set_time(21, 5, 7);
         let mut sensor = time(json!({ "use24h": false, "showSeconds": true }));
         let start = Instant::now();
         sensor.on_wake(start, &h.ctx());
@@ -460,7 +401,7 @@ mod tests {
         let texts: Vec<&str> = dump.lines().filter_map(|l| l.split('"').nth(1)).collect();
         assert_eq!(texts, ["9:05", "07", "pm"]);
         assert_eq!(sensor.accessible_value(&h.ctx()), "9:05:07 pm");
-        h.clock.set(0, 0, 0);
+        h.platform.set_time(0, 0, 0);
         sensor.on_wake(start, &h.ctx());
         assert_eq!(sensor.accessible_value(&h.ctx()), "12:00:00 am");
     }
@@ -470,28 +411,28 @@ mod tests {
         let h = Harness::new();
         let mut sensor = time(json!({ "chime": 15 }));
         let start = Instant::now();
-        h.clock.set(10, 14, 59);
+        h.platform.set_time(10, 14, 59);
         sensor.on_wake(start, &h.ctx());
-        h.clock.set(10, 15, 0);
+        h.platform.set_time(10, 15, 0);
         // Within 2 s of the start: quiet.
         sensor.on_wake(start + Duration::from_secs(1), &h.ctx());
-        assert!(h.clock.log().is_empty());
-        h.clock.set(10, 16, 0);
+        assert!(h.platform.log().is_empty());
+        h.platform.set_time(10, 16, 0);
         sensor.on_wake(start + Duration::from_secs(61), &h.ctx());
-        assert!(h.clock.log().is_empty(), "16 is no quarter");
-        h.clock.set(10, 30, 0);
+        assert!(h.platform.log().is_empty(), "16 is no quarter");
+        h.platform.set_time(10, 30, 0);
         sensor.on_wake(start + Duration::from_secs(900), &h.ctx());
-        assert_eq!(h.clock.log(), [format!("play {}", chime().len())]);
+        assert_eq!(h.platform.log(), [format!("play {}", chime().len())]);
         // A clock change is quiet too.
-        h.clock.set(10, 45, 0);
+        h.platform.set_time(10, 45, 0);
         sensor.on_clock_change(start + Duration::from_secs(1000), &h.ctx());
-        assert_eq!(h.clock.log().len(), 1);
+        assert_eq!(h.platform.log().len(), 1);
     }
 
     #[test]
     fn hint_click_and_machine_default() {
         let h = Harness::new();
-        h.clock.set(9, 5, 0);
+        h.platform.set_time(9, 5, 0);
         let mut sensor = time(json!({}));
         assert!(sensor.hint(&h.ctx()).is_none(), "no time read yet");
         sensor.on_wake(Instant::now(), &h.ctx());
@@ -502,9 +443,11 @@ mod tests {
             hint.is_some()
         );
         assert_eq!(sensor.click(&h.ctx()), ClickResult::Handled);
-        assert_eq!(h.clock.log(), ["open ms-settings:dateandtime"]);
+        assert_eq!(h.platform.log(), ["open ms-settings:dateandtime"]);
         // en-US uses a 12-hour clock.
-        let defaults = TimeType.machine_defaults(&DefaultsCtx { platform: &h.clock });
+        let defaults = TimeType.machine_defaults(&DefaultsCtx {
+            platform: &h.platform,
+        });
         assert_eq!(defaults["use24h"], json!(false));
     }
 

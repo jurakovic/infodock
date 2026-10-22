@@ -261,29 +261,11 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::platform::{Capabilities, MonitorInfo, OsAppearance};
+    use crate::test_util::FakePlatform;
 
-    /// Has a 2 px icon for `app.exe` only.
-    struct Shell;
-
-    impl Platform for Shell {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> Duration {
-            Duration::ZERO
-        }
-        fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
-            (path == "app.exe").then(|| {
-                Bitmap::from_rgba(px, px, vec![255; (px * px * 4) as usize]).expect("a bitmap")
-            })
-        }
+    /// Has an icon for `app.exe` only.
+    fn shell() -> FakePlatform {
+        FakePlatform::default().with_shell_icon("app.exe")
     }
 
     #[test]
@@ -292,7 +274,7 @@ mod tests {
         let waker = UiWaker::new(move || {
             let _ = woken.send(());
         });
-        let icons = IconLoader::new(Arc::new(Shell), waker);
+        let icons = IconLoader::new(Arc::new(shell()), waker);
         assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
         assert_eq!(icons.shell_icon("missing.exe", 2), Fetched::Loading);
         // Asked again while being read: still loading, not asked twice.
@@ -333,7 +315,7 @@ mod tests {
         let path = path.to_string_lossy().into_owned();
         let (woken, wakes) = mpsc::channel();
         let icons = IconLoader::new(
-            Arc::new(Shell),
+            Arc::new(shell()),
             UiWaker::new(move || {
                 let _ = woken.send(());
             }),
@@ -367,7 +349,7 @@ mod tests {
 
     #[test]
     fn popup_icons_are_transient_and_bounded() {
-        let icons = IconLoader::new(Arc::new(Shell), UiWaker::new(|| {}));
+        let icons = IconLoader::new(Arc::new(shell()), UiWaker::new(|| {}));
         assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
         let rows = icons.transient();
         // Scrolling through many rows: only the newest wait to be read.

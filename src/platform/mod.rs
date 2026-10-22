@@ -411,7 +411,7 @@ pub fn file_name(path: &str) -> &str {
 }
 
 /// The root of `path` by its form: `C:\` for `C:\Data`, `\\server\share\` for a UNC path.
-fn path_root(path: &str) -> Option<String> {
+pub fn path_root(path: &str) -> Option<String> {
     let bytes = path.as_bytes();
     if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
         return Some(format!("{}:\\", path[..1].to_ascii_uppercase()));

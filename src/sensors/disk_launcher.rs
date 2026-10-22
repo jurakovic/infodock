@@ -314,21 +314,17 @@ impl Sensor for Disk {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::{ClicksWhenLocked, Settings};
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::platform::{DriveKind, Platform, RectF};
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::config::model::ClicksWhenLocked;
+    use crate::platform::recording::RecordingCanvas;
+    use crate::platform::{DriveKind, RectF};
+    use crate::sensors::test_support::{Harness, resolved, theme};
+    use crate::test_util::FakePlatform;
 
     fn create(stored: serde_json::Value) -> Disk {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
+        let props = resolved(SCHEMA, stored);
         Disk {
             props: typed(&props).expect("valid props"),
             volume: None,
@@ -358,12 +354,10 @@ mod tests {
     }
 
     fn measure_with(sensor: &mut Disk, icons: &Icons) -> f32 {
+        let h = Harness::new();
         sensor.measure(&LayoutCtx {
-            theme: &theme(),
-            text: &FixedMetrics,
-            scale: 1.0,
-            numbers: Default::default(),
             icons,
+            ..h.layout()
         })
     }
 
@@ -383,35 +377,10 @@ mod tests {
         Sample::Volumes(list)
     }
 
-    struct Harness {
-        platform: FakeClock,
-        settings: Settings,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                platform: FakeClock::default(),
-                settings: Settings::default(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: self.settings.locked,
-                alt: false,
-                animate: false,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.platform as &dyn Platform,
-            }
-        }
-
-        fn hint(&self, sensor: &Disk) -> String {
-            match sensor.hint(&self.ctx()) {
-                Some(HintContent::Text(text)) => text,
-                other => panic!("{other:?}"),
-            }
+    fn hint(h: &Harness, sensor: &Disk) -> String {
+        match sensor.hint(&h.ctx()) {
+            Some(HintContent::Text(text)) => text,
+            other => panic!("{other:?}"),
         }
     }
 
@@ -423,14 +392,14 @@ mod tests {
         assert_eq!(measure_with(&mut sensor, &icons), 24.0);
         assert_eq!(drawn(&sensor), "bitmap 24×24 into 7,2 24×24 opacity 1\n");
         assert_eq!(
-            h.hint(&sensor),
+            hint(&h, &sensor),
             "Open 'C:\\'",
             "the drive until the list arrives"
         );
         let c = Volume::new("C:\\", DriveKind::Fixed, "System");
         assert!(sensor.on_sample(&Topic::Volumes, &volumes(vec![c.clone()]), &h.ctx()));
         assert!(!sensor.on_sample(&Topic::Volumes, &volumes(vec![c]), &h.ctx()));
-        assert_eq!(h.hint(&sensor), "Open 'System (C:)'");
+        assert_eq!(hint(&h, &sensor), "Open 'System (C:)'");
         assert_eq!(
             create(json!({ "drive": "C:\\", "title": "Work" })).name(),
             "Work"
@@ -445,7 +414,7 @@ mod tests {
         let c = Volume::new("C:\\", DriveKind::Fixed, "");
         sensor.on_sample(&Topic::Volumes, &volumes(vec![c.clone()]), &h.ctx());
         assert!(sensor.inactive());
-        assert_eq!(h.hint(&sensor), "E:\\ is not connected");
+        assert_eq!(hint(&h, &sensor), "E:\\ is not connected");
         assert_eq!(sensor.click(&h.ctx()), ClickResult::None);
         measure_with(&mut sensor, &icons);
         // The built-in drive icon, faded.
@@ -471,14 +440,14 @@ mod tests {
         };
         sensor.on_sample(&Topic::Volumes, &volumes(vec![empty]), &h.ctx());
         assert!(!sensor.inactive());
-        assert_eq!(h.hint(&sensor), "CD Drive (D:) — no media");
+        assert_eq!(hint(&h, &sensor), "CD Drive (D:) — no media");
         // Clicks need Alt: just the name.
         let disc = Volume::new("D:\\", DriveKind::Optical, "MOVIE");
         sensor.on_sample(&Topic::Volumes, &volumes(vec![disc]), &h.ctx());
         assert!(sensor.refresh_icon, "a disc has its own icon");
         h.settings.locked = true;
         h.settings.clicks_when_locked = ClicksWhenLocked::AltOnly;
-        assert_eq!(h.hint(&sensor), "MOVIE (D:)");
+        assert_eq!(hint(&h, &sensor), "MOVIE (D:)");
     }
 
     #[test]
@@ -504,28 +473,15 @@ mod tests {
 
     #[test]
     fn machine_default_is_the_first_drive() {
-        struct Drives;
-        impl Platform for Drives {
-            fn capabilities(&self) -> crate::platform::Capabilities {
-                Default::default()
-            }
-            fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-                Vec::new()
-            }
-            fn appearance(&self) -> crate::platform::OsAppearance {
-                Default::default()
-            }
-            fn uptime(&self) -> Duration {
-                Duration::ZERO
-            }
-            fn volumes(&self) -> Vec<Volume> {
-                vec![Volume::new("A:\\", DriveKind::Removable, "")]
-            }
-        }
-        let props = DiskType.machine_defaults(&DefaultsCtx { platform: &Drives });
+        let drives = FakePlatform::default().with_volumes(vec![Volume::new(
+            "A:\\",
+            DriveKind::Removable,
+            "",
+        )]);
+        let props = DiskType.machine_defaults(&DefaultsCtx { platform: &drives });
         assert_eq!(props["drive"], json!("A:\\"));
         let none = DiskType.machine_defaults(&DefaultsCtx {
-            platform: &crate::sensors::test_support::NoPlatform,
+            platform: &crate::test_util::NO_PLATFORM,
         });
         assert_eq!(none["drive"], json!("C:\\"));
     }

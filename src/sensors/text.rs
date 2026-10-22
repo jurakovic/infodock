@@ -210,13 +210,10 @@ mod tests {
 
     use super::*;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, fit, measure};
+    use crate::sensors::test_support::{Harness, created, draw, fit, measure};
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty());
-        TextType.create(&props, &State::new()).expect("valid props")
+        created(&TextType, stored)
     }
 
     #[test]
@@ -256,16 +253,8 @@ mod tests {
 
     #[test]
     fn a_narrower_width_cuts_the_text_and_its_hint_shows_it_all() {
-        let settings = crate::config::model::Settings::default();
-        let platform = crate::platform::current();
-        let cx = SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate: true,
-            changes: &crate::sampler::ChangeSink::NONE,
-            platform: platform.as_ref(),
-        };
+        let h = Harness::new();
+        let cx = h.ctx();
         let mut sensor = create(json!({ "text": "Overlapping" }));
         // 11 × 6.5 px; two ems of 13 px at least.
         assert_eq!(measure(sensor.as_mut()), 72.0);

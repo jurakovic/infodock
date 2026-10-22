@@ -228,7 +228,7 @@ impl Sensor for Bin {
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         let mut text = self.title();
         if let Some(bin) = self.bin {
-            let numbers = format::Numbers::from(&cx.platform.locale(cx.settings.date_locale));
+            let numbers = cx.numbers;
             let size = format::bytes(bin.bytes, None, numbers);
             for (label, value) in [
                 ("sensor.recycleBin.hint.items", bin.items.to_string()),
@@ -328,21 +328,14 @@ impl Sensor for Bin {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::{ClicksWhenLocked, Settings};
-    use crate::platform::Platform;
-    use crate::sampler::ChangeSink;
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure};
+    use crate::config::model::ClicksWhenLocked;
+    use crate::sensors::test_support::{Harness, draw, measure, resolved};
 
     fn create(stored: serde_json::Value) -> Bin {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
+        let props = resolved(SCHEMA, stored);
         Bin {
             props: typed(&props).expect("valid props"),
             bin: None,
@@ -350,73 +343,10 @@ mod tests {
         }
     }
 
-    /// A platform that records what it opens and empties the bin at once.
-    #[derive(Default)]
-    struct Shell {
-        clock: FakeClock,
-        emptied: Mutex<u32>,
-    }
-
-    impl Platform for Shell {
-        fn capabilities(&self) -> crate::platform::Capabilities {
-            Default::default()
-        }
-        fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> crate::platform::OsAppearance {
-            Default::default()
-        }
-        fn uptime(&self) -> Duration {
-            Duration::ZERO
-        }
-        fn open(&self, target: &str) {
-            self.clock.open(target);
-        }
-        fn empty_recycle_bin(&self, done: Box<dyn FnOnce() + Send>) {
-            *self.emptied.lock().expect("lock") += 1;
-            done();
-        }
-        fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
-            self.clock.recycle(paths, done);
-        }
-    }
-
-    struct Harness {
-        platform: Shell,
-        settings: Settings,
-        changes: ChangeSink,
-        reported: Arc<Mutex<Vec<Change>>>,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            let reported = Arc::new(Mutex::new(Vec::new()));
-            let sink = Arc::clone(&reported);
-            Self {
-                platform: Shell::default(),
-                settings: Settings::default(),
-                changes: ChangeSink::new(move |c| sink.lock().expect("lock").push(c)),
-                reported,
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: self.settings.locked,
-                alt: false,
-                animate: false,
-                platform: &self.platform as &dyn Platform,
-                changes: &self.changes,
-            }
-        }
-
-        fn hint(&self, sensor: &Bin) -> String {
-            match sensor.hint(&self.ctx()) {
-                Some(HintContent::Text(text)) => text,
-                other => panic!("{other:?}"),
-            }
+    fn hint(h: &Harness, sensor: &Bin) -> String {
+        match sensor.hint(&h.ctx()) {
+            Some(HintContent::Text(text)) => text,
+            other => panic!("{other:?}"),
         }
     }
 
@@ -478,15 +408,18 @@ mod tests {
     fn hint_lists_items_and_size() {
         let mut h = Harness::new();
         let mut bin = create(json!({}));
-        assert_eq!(h.hint(&bin), "Recycle Bin\nClick to open the Recycle Bin");
+        assert_eq!(hint(&h, &bin), "Recycle Bin\nClick to open the Recycle Bin");
         bin.on_sample(&Topic::RecycleBin, &sample(12, 431 << 20), &h.ctx());
         assert_eq!(
-            h.hint(&bin),
+            hint(&h, &bin),
             "Recycle Bin\nItems:\t12\nSpace used:\t431 MB\nClick to open the Recycle Bin"
         );
         h.settings.locked = true;
         h.settings.clicks_when_locked = ClicksWhenLocked::AltOnly;
-        assert_eq!(h.hint(&bin), "Recycle Bin\nItems:\t12\nSpace used:\t431 MB");
+        assert_eq!(
+            hint(&h, &bin),
+            "Recycle Bin\nItems:\t12\nSpace used:\t431 MB"
+        );
     }
 
     #[test]
@@ -504,12 +437,12 @@ mod tests {
         );
         assert!(!bin.on_menu(OPEN, &h.ctx()));
         assert_eq!(
-            h.platform.clock.log(),
+            h.platform.log(),
             ["open shell:RecycleBinFolder", "open shell:RecycleBinFolder"]
         );
         assert!(!bin.on_menu(EMPTY_BIN, &h.ctx()));
-        assert_eq!(*h.platform.emptied.lock().expect("lock"), 1);
-        assert_eq!(*h.reported.lock().expect("lock"), [Change::RecycleBin]);
+        assert_eq!(h.platform.log()[2], "empty recycle bin");
+        assert_eq!(h.reported(), [Change::RecycleBin]);
         // Known to be empty: nothing to empty.
         bin.on_sample(&Topic::RecycleBin, &sample(0, 0), &h.ctx());
         assert!(!bin.menu(&h.ctx())[1].enabled);
@@ -552,8 +485,8 @@ mod tests {
         }];
         assert_eq!(bin.drop_action(&link, all, &h.ctx()), None, "a new sensor");
         bin.drop_items(&files, all, &h.ctx());
-        assert_eq!(h.platform.clock.log(), ["recycle C:\\a.txt, C:\\Old"]);
-        assert_eq!(*h.reported.lock().expect("lock"), [Change::RecycleBin]);
+        assert_eq!(h.platform.log(), ["recycle C:\\a.txt, C:\\Old"]);
+        assert_eq!(h.reported(), [Change::RecycleBin]);
     }
 
     #[test]

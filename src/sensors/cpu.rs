@@ -168,7 +168,7 @@ fn cpu(sample: &Sample) -> Option<&CpuSample> {
 }
 
 fn shared_hint(sample: Option<&CpuSample>, cx: &SensorCtx) -> Option<HintContent> {
-    let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
+    let numbers = cx.numbers;
     let text = hint(sample?, numbers);
     Some(HintContent::Text(
         cx.with_click_line(text, "sensor.cpu.hint.click"),
@@ -540,18 +540,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::RectF;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
-
-    fn create(ty: &dyn SensorType, stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(ty.schema(), &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        ty.create(&props, &State::new()).expect("valid props")
-    }
+    use crate::sensors::test_support::{Harness, created};
 
     fn cpu(total: f32) -> Sample {
         Sample::Cpu(CpuSample {
@@ -564,57 +553,10 @@ mod tests {
         })
     }
 
-    struct Harness {
-        clock: FakeClock,
-        settings: Settings,
-        theme: crate::look::theme::Theme,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                clock: FakeClock::default(),
-                settings: Settings::default(),
-                theme: theme(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: self.settings.locked,
-                alt: false,
-                animate: true,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.clock,
-            }
-        }
-
-        fn drawn(&self, sensor: &mut dyn Sensor) -> (f32, String) {
-            let width = sensor.measure(&LayoutCtx {
-                theme: &self.theme,
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            });
-            let mut canvas = RecordingCanvas::new(1.0);
-            let rect = RectF::new(0.0, 0.0, width, 28.0);
-            sensor.draw(
-                &mut canvas,
-                &DrawCtx {
-                    theme: &self.theme,
-                    rect,
-                },
-            );
-            (width, canvas.dump())
-        }
-    }
-
     #[test]
     fn meter_shows_the_total() {
         let h = Harness::new();
-        let mut meter = create(&CpuMeterType, json!({ "interval": 2 }));
+        let mut meter = created(&CpuMeterType, json!({ "interval": 2 }));
         assert_eq!(meter.topics()[0].interval, Duration::from_secs(2));
         assert!(meter.on_sample(&Topic::Cpu, &cpu(37.4), &h.ctx()));
         let (width, dump) = h.drawn(meter.as_mut());
@@ -628,7 +570,7 @@ mod tests {
     #[test]
     fn graph_plots_the_history() {
         let h = Harness::new();
-        let mut graph = create(&CpuGraphType, json!({ "width": 57 }));
+        let mut graph = created(&CpuGraphType, json!({ "width": 57 }));
         for total in [100.0, 50.0] {
             graph.on_sample(&Topic::Cpu, &cpu(total), &h.ctx());
         }
@@ -646,7 +588,7 @@ mod tests {
     #[test]
     fn dynamic_graph_colour_and_backdrop() {
         let h = Harness::new();
-        let mut graph = create(
+        let mut graph = created(
             &CpuGraphType,
             json!({
                 "graphColor": { "mode": "dynamic", "color": "#00FF00" },
@@ -667,7 +609,7 @@ mod tests {
     #[test]
     fn dual_graph_shows_two_series() {
         let h = Harness::new();
-        let mut dual = create(&CpuDualType, json!({ "bottomSeries": "core7" }));
+        let mut dual = created(&CpuDualType, json!({ "bottomSeries": "core7" }));
         let sample = Sample::Cpu(CpuSample {
             total: 30.0,
             cores: vec![100.0, 50.0],
@@ -701,7 +643,7 @@ mod tests {
     #[test]
     fn hint_and_click() {
         let h = Harness::new();
-        let mut meter = create(&CpuMeterType, json!({}));
+        let mut meter = created(&CpuMeterType, json!({}));
         assert!(meter.hint(&h.ctx()).is_none(), "nothing read yet");
         meter.on_sample(&Topic::Cpu, &cpu(37.0), &h.ctx());
         assert_eq!(
@@ -713,7 +655,7 @@ mod tests {
             ))
         );
         assert_eq!(meter.click(&h.ctx()), ClickResult::Handled);
-        assert_eq!(h.clock.log(), ["open taskmgr.exe"]);
+        assert_eq!(h.platform.log(), ["open taskmgr.exe"]);
         let one = CpuSample {
             logical: 1,
             user: 80.0,

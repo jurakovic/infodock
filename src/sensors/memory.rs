@@ -182,7 +182,7 @@ fn topics(kind: Kind, interval: u64) -> Vec<TopicRequest> {
 }
 
 fn hint(kind: Kind, reading: Option<&Reading>, cx: &SensorCtx) -> Option<HintContent> {
-    let numbers = Numbers::from(&cx.platform.locale(cx.settings.date_locale));
+    let numbers = cx.numbers;
     let reading = reading?;
     let text = kind.hint(reading, numbers);
     Some(HintContent::Text(
@@ -474,7 +474,7 @@ impl Sensor for UsageGraph {
     }
 
     fn accessible_value(&self, cx: &SensorCtx) -> String {
-        self.value(Numbers::from(&cx.platform.locale(cx.settings.date_locale)))
+        self.value(cx.numbers)
     }
 
     fn inactive(&self) -> bool {
@@ -500,21 +500,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
     use crate::platform::RectF;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
+    use crate::platform::recording::RecordingCanvas;
     use crate::sampler::{MemorySample, SwapSample};
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, theme};
+    use crate::sensors::test_support::{Harness, created};
 
     const GB: u64 = 1 << 30;
-
-    fn create(ty: &dyn SensorType, stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(ty.schema(), &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        ty.create(&props, &State::new()).expect("valid props")
-    }
 
     fn memory(used: u64, load: f32) -> Sample {
         let total = 32 * GB;
@@ -526,57 +517,10 @@ mod tests {
         })
     }
 
-    struct Harness {
-        clock: FakeClock,
-        settings: Settings,
-        theme: crate::look::theme::Theme,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                clock: FakeClock::default(),
-                settings: Settings::default(),
-                theme: theme(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: false,
-                alt: false,
-                animate: true,
-                changes: &crate::sampler::ChangeSink::NONE,
-                platform: &self.clock,
-            }
-        }
-
-        fn drawn(&self, sensor: &mut dyn Sensor) -> (f32, String) {
-            let width = sensor.measure(&LayoutCtx {
-                theme: &self.theme,
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            });
-            let mut canvas = RecordingCanvas::new(1.0);
-            let rect = RectF::new(0.0, 0.0, width, 28.0);
-            sensor.draw(
-                &mut canvas,
-                &DrawCtx {
-                    theme: &self.theme,
-                    rect,
-                },
-            );
-            (width, canvas.dump())
-        }
-    }
-
     #[test]
     fn meter_shows_the_load() {
         let h = Harness::new();
-        let mut meter = create(&MEMORY_METER, json!({}));
+        let mut meter = created(&MEMORY_METER, json!({}));
         assert_eq!(meter.topics()[0].topic, Topic::Memory);
         assert_eq!(meter.topics()[0].interval, Duration::from_secs(2));
         assert!(meter.on_sample(&Topic::Memory, &memory(14 * GB, 50.0), &h.ctx()));
@@ -597,7 +541,7 @@ mod tests {
     #[test]
     fn graph_shows_used_bytes_or_the_load() {
         let h = Harness::new();
-        let mut graph = create(&MEMORY_GRAPH, json!({}));
+        let mut graph = created(&MEMORY_GRAPH, json!({}));
         assert_eq!(graph.topics()[0].interval, Duration::from_secs(1));
         graph.on_sample(&Topic::Memory, &memory(5 * GB + GB / 5, 16.3), &h.ctx());
         let (width, dump) = h.drawn(graph.as_mut());
@@ -609,7 +553,7 @@ mod tests {
         assert!(lines[1].starts_with("text \"RAM\""), "{dump}");
         assert!(lines[2].starts_with("text \"5.20 GB\""), "{dump}");
 
-        let mut graph = create(&MEMORY_GRAPH, json!({ "display": "percent" }));
+        let mut graph = created(&MEMORY_GRAPH, json!({ "display": "percent" }));
         graph.on_sample(&Topic::Memory, &memory(5 * GB, 16.3), &h.ctx());
         let (width, dump) = h.drawn(graph.as_mut());
         assert_eq!(width, 75.0, "a column for 100%");
@@ -619,14 +563,11 @@ mod tests {
     #[test]
     fn bar_text_follows_the_locale() {
         let h = Harness::new();
-        let mut graph = create(&MEMORY_GRAPH, json!({}));
+        let mut graph = created(&MEMORY_GRAPH, json!({}));
         graph.on_sample(&Topic::Memory, &memory(5 * GB + GB / 5, 16.3), &h.ctx());
         graph.measure(&LayoutCtx {
-            theme: &h.theme,
-            text: &FixedMetrics,
-            scale: 1.0,
             numbers: Numbers { decimal: ',' },
-            icons: &crate::sensors::NoIcons,
+            ..h.layout()
         });
         let mut canvas = RecordingCanvas::new(1.0);
         let rect = RectF::new(0.0, 0.0, 90.0, 28.0);
@@ -647,7 +588,7 @@ mod tests {
     #[test]
     fn nothing_before_the_first_sample() {
         let h = Harness::new();
-        let mut graph = create(&MEMORY_GRAPH, json!({}));
+        let mut graph = created(&MEMORY_GRAPH, json!({}));
         let (_, dump) = h.drawn(graph.as_mut());
         assert!(dump.contains("text \"\""), "an empty value: {dump}");
         assert!(graph.hint(&h.ctx()).is_none());
@@ -660,7 +601,7 @@ mod tests {
     #[test]
     fn hint_and_click() {
         let h = Harness::new();
-        let mut meter = create(&MEMORY_METER, json!({}));
+        let mut meter = created(&MEMORY_METER, json!({}));
         let total = 31 * GB + 7 * GB / 10;
         let sample = Sample::Memory(MemorySample {
             total,
@@ -678,13 +619,13 @@ mod tests {
             ))
         );
         assert_eq!(meter.click(&h.ctx()), ClickResult::Handled);
-        assert_eq!(h.clock.log(), ["open taskmgr.exe"]);
+        assert_eq!(h.platform.log(), ["open taskmgr.exe"]);
     }
 
     #[test]
     fn swap_shares_the_view() {
         let h = Harness::new();
-        let mut meter = create(&SWAP_METER, json!({}));
+        let mut meter = created(&SWAP_METER, json!({}));
         assert_eq!(meter.topics()[0].topic, Topic::Swap);
         let swap = Sample::Swap(SwapSample {
             total: 8 * GB,
@@ -704,7 +645,7 @@ mod tests {
                     .into()
             ))
         );
-        let mut graph = create(&SWAP_GRAPH, json!({}));
+        let mut graph = created(&SWAP_GRAPH, json!({}));
         graph.on_sample(&Topic::Swap, &swap, &h.ctx());
         let (_, dump) = h.drawn(graph.as_mut());
         assert!(dump.contains("text \"614 MB\""), "{dump}");
@@ -714,7 +655,7 @@ mod tests {
     fn swap_without_a_page_file_is_inactive() {
         let h = Harness::new();
         let none = Sample::Swap(SwapSample::default());
-        let mut meter = create(&SWAP_METER, json!({}));
+        let mut meter = created(&SWAP_METER, json!({}));
         meter.on_sample(&Topic::Swap, &none, &h.ctx());
         assert!(meter.inactive());
         let (_, dump) = h.drawn(meter.as_mut());
@@ -726,7 +667,7 @@ mod tests {
             meter.hint(&h.ctx()),
             Some(HintContent::Text("No page file configured".into()))
         );
-        let mut graph = create(&SWAP_GRAPH, json!({ "bkOpacity": 100 }));
+        let mut graph = created(&SWAP_GRAPH, json!({ "bkOpacity": 100 }));
         graph.on_sample(&Topic::Swap, &none, &h.ctx());
         assert!(graph.inactive());
         let (_, dump) = h.drawn(graph.as_mut());

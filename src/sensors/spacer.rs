@@ -189,16 +189,8 @@ mod tests {
 
     #[test]
     fn hidden_divider_fades_in_on_hover() {
-        let settings = crate::config::model::Settings::default();
-        let platform = crate::platform::current();
-        let cx = |animate| SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate,
-            changes: &crate::sampler::ChangeSink::NONE,
-            platform: platform.as_ref(),
-        };
+        let h = crate::sensors::test_support::Harness::new();
+        let cx = |animate| SensorCtx { animate, ..h.ctx() };
         let mut sensor = create(json!({}));
         measure(sensor.as_mut());
         let t0 = Instant::now();

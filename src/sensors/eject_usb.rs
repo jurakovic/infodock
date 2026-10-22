@@ -8,7 +8,6 @@ use serde::Deserialize;
 
 use super::common::eject_list::{Drives, EjectList, ejectable};
 use super::common::icon::{self, Icon};
-use super::format::Numbers;
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField};
 use super::{
@@ -73,7 +72,6 @@ impl SensorType for EjectUsbType {
         Ok(Box::new(EjectUsb {
             props: typed(props)?,
             drives: Arc::default(),
-            numbers: Numbers::default(),
             icon: None,
         }))
     }
@@ -90,8 +88,6 @@ struct EjectUsb {
     props: EjectUsbProps,
     /// The drives that can be ejected, shared with an open list.
     drives: Arc<Mutex<Drives>>,
-    /// How the locale writes numbers, for the sizes in the list.
-    numbers: Numbers,
     icon: Option<Icon>,
 }
 
@@ -115,7 +111,6 @@ impl EjectUsb {
 
 impl Sensor for EjectUsb {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        self.numbers = cx.numbers;
         let px = icon::physical(ICON, cx.scale);
         let opacity = self.props.opacity.min(100) as f32 / 100.0;
         self.icon = Icon::svg(USB, px)
@@ -139,7 +134,6 @@ impl Sensor for EjectUsb {
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         ClickResult::Popup(Box::new(EjectList::new(
             Arc::clone(&self.drives),
-            self.numbers,
             cx.changes.clone(),
         )))
     }
@@ -181,36 +175,20 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::{DriveKind, Platform, Volume};
-    use crate::sampler::ChangeSink;
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure};
+    use crate::platform::{DriveKind, Volume};
+    use crate::sensors::test_support::{Harness, draw, measure, resolved};
 
     fn create(stored: serde_json::Value) -> EjectUsb {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
+        let props = resolved(SCHEMA, stored);
         EjectUsb {
             props: typed(&props).expect("valid props"),
             drives: Arc::default(),
-            numbers: Numbers::default(),
             icon: None,
         }
     }
 
     fn with_ctx<R>(f: impl FnOnce(&SensorCtx) -> R) -> R {
-        let platform = FakeClock::default();
-        let settings = Settings::default();
-        let cx = SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate: false,
-            platform: &platform as &dyn Platform,
-            changes: &ChangeSink::NONE,
-        };
-        f(&cx)
+        f(&Harness::new().ctx())
     }
 
     #[test]

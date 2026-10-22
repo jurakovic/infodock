@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::format::Numbers;
 use super::{IconSource, Props};
 use crate::config::model::Edge;
 use crate::look::theme::Theme;
@@ -62,6 +63,8 @@ pub struct PopupCtx<'a> {
     pub free_left: bool,
     /// Transitions animate (SPEC §5.5); otherwise they jump.
     pub animate: bool,
+    /// How the locale of `settings.dateLocale` writes numbers (SPEC §8.6), e.g. for sizes.
+    pub numbers: Numbers,
     pub now: Instant,
 }
 

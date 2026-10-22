@@ -306,10 +306,10 @@ mod tests {
     use crate::config::model::{Config, Zone};
     use crate::sensors::registry::registry;
     use crate::sensors::schema::SelectOption;
-    use crate::sensors::test_support::NoPlatform;
+    use crate::test_util::NO_PLATFORM;
 
-    const CTX: DefaultsCtx = DefaultsCtx {
-        platform: &NoPlatform,
+    static CTX: DefaultsCtx = DefaultsCtx {
+        platform: &NO_PLATFORM,
     };
 
     const MODES: &[SelectOption] = &[

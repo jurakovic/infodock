@@ -85,14 +85,8 @@ impl BarLogic {
     /// sensors, the placer and the focus ring, faded while the bar rises (SPEC §5.5).
     pub(super) fn paint_frame(&mut self, canvas: &mut dyn Canvas, size: SizeF) {
         self.painted = size;
-        let cx = LayoutCtx {
-            theme: &self.theme,
-            text: self.text.as_ref(),
-            scale: canvas.scale(),
-            numbers: self.numbers,
-            icons: &self.icons,
-        };
-        self.sensors.update_layout(&cx, size.width);
+        self.sensors
+            .update_layout(&layout_ctx!(self, canvas.scale()), size.width);
         let now = Instant::now();
         // The content fades in while the bar rises (SPEC §5.5).
         let opacity = self.shown.value(now);

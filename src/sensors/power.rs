@@ -222,68 +222,35 @@ impl Power {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use serde_json::json;
 
     use super::*;
     use crate::config::model::Settings;
-    use crate::platform::{Capabilities, MonitorInfo, OsAppearance, Platform};
+    use crate::platform::Capabilities;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, measure};
+    use crate::sensors::test_support::{Harness, created, draw, measure};
+    use crate::test_util::FakePlatform;
 
     fn create(stored: serde_json::Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        PowerType
-            .create(&props, &State::new())
-            .expect("valid props")
+        created(&PowerType, stored)
     }
 
-    /// Records the power actions it is asked for.
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<String>>);
-
-    impl Platform for Recorder {
-        /// Every mode but hibernate.
-        fn capabilities(&self) -> Capabilities {
-            Capabilities {
+    /// Every mode but hibernate; records the power actions it is asked for.
+    fn recorder() -> Harness {
+        Harness::with_platform(
+            FakePlatform::default().with_capabilities(Capabilities {
                 power_modes: PowerAction::ALL
                     .into_iter()
                     .filter(|a| *a != PowerAction::Hibernate)
                     .map(|a| a.id().to_owned())
                     .collect(),
                 ..Capabilities::default()
-            }
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> std::time::Duration {
-            std::time::Duration::ZERO
-        }
-        fn power(&self, action: PowerAction, force: bool) {
-            self.0
-                .lock()
-                .expect("lock")
-                .push(format!("{action:?} force={force}"));
-        }
+            }),
+        )
     }
 
-    fn with_ctx(platform: &Recorder, f: impl FnOnce(&SensorCtx)) {
-        let settings = Settings::default();
-        f(&SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate: false,
-            changes: &crate::sampler::ChangeSink::NONE,
-            platform,
-        });
+    fn with_ctx(h: &Harness, f: impl FnOnce(&SensorCtx)) {
+        f(&h.ctx());
     }
 
     #[test]
@@ -295,8 +262,7 @@ mod tests {
             "bitmap 21×21 into 7,4 21×21 opacity 0.6\n",
             "centred on the 28 px bar"
         );
-        let mut hint = None;
-        with_ctx(&Recorder::default(), |cx| hint = sensor.hint(cx));
+        let hint = sensor.hint(&recorder().ctx());
         assert_eq!(hint, Some(HintContent::Text("Shut down".into())));
         // Every mode has an icon and a name.
         for action in PowerAction::ALL {
@@ -322,12 +288,10 @@ mod tests {
             action: PowerAction::Sleep,
             icon: None,
         };
+        let h = Harness::new();
         sensor.measure(&crate::sensors::LayoutCtx {
             theme: &light,
-            text: &crate::platform::recording::FixedMetrics,
-            scale: 1.0,
-            numbers: Default::default(),
-            icons: &crate::sensors::NoIcons,
+            ..h.layout()
         });
         let bitmap = sensor.icon.as_ref().expect("an icon").bitmap();
         // Every fully opaque pixel is the dark text colour, not white.
@@ -344,9 +308,9 @@ mod tests {
 
     #[test]
     fn asks_first_then_acts() {
-        let platform = Recorder::default();
+        let h = recorder();
         let mut sensor = create(json!({ "mode": "restart", "force": true }));
-        with_ctx(&platform, |cx| {
+        with_ctx(&h, |cx| {
             assert_eq!(
                 sensor.click(cx),
                 ClickResult::Confirm(Question {
@@ -354,20 +318,20 @@ mod tests {
                     action: "Restart".into(),
                 })
             );
-            assert!(platform.0.lock().expect("lock").is_empty(), "not yet");
+            assert!(h.platform.log().is_empty(), "not yet");
             sensor.confirmed(cx);
         });
-        assert_eq!(*platform.0.lock().expect("lock"), ["Restart force=true"]);
+        assert_eq!(h.platform.log(), ["Restart force=true"]);
     }
 
     #[test]
     fn without_confirmation_acts_at_once_and_force_only_where_it_applies() {
-        let platform = Recorder::default();
+        let h = recorder();
         let mut lock = create(json!({ "mode": "lock", "confirm": false, "force": true }));
-        with_ctx(&platform, |cx| {
+        with_ctx(&h, |cx| {
             assert_eq!(lock.click(cx), ClickResult::Handled);
         });
-        assert_eq!(*platform.0.lock().expect("lock"), ["Lock force=false"]);
+        assert_eq!(h.platform.log(), ["Lock force=false"]);
     }
 
     #[test]
@@ -388,8 +352,8 @@ mod tests {
     #[test]
     fn a_mode_this_computer_lacks_does_nothing() {
         let mut sensor = create(json!({ "mode": "hibernate", "confirm": false }));
-        let platform = Recorder::default();
-        with_ctx(&platform, |cx| {
+        let h = recorder();
+        with_ctx(&h, |cx| {
             assert_eq!(
                 sensor.hint(cx),
                 Some(HintContent::Text(
@@ -398,6 +362,6 @@ mod tests {
             );
             assert_eq!(sensor.click(cx), ClickResult::None);
         });
-        assert!(platform.0.lock().expect("lock").is_empty());
+        assert!(h.platform.log().is_empty());
     }
 }

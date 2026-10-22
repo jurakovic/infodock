@@ -296,17 +296,12 @@ impl Sensor for Uptime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::RectF;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
     use crate::sampler::UptimeSample;
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{NoPlatform, theme};
+    use crate::sensors::test_support::{Harness, resolved};
+    use crate::test_util::NO_PLATFORM;
 
     fn uptime(stored: Value, state: Value) -> Box<dyn Sensor> {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty());
+        let props = resolved(SCHEMA, stored);
         let state = state.as_object().cloned().unwrap_or_default();
         UptimeType.create(&props, &state).expect("valid props")
     }
@@ -320,7 +315,7 @@ mod tests {
         let convert = |pairs: &[(&str, &str)]| {
             crate::sensors::test_support::convert_legacy(
                 &UptimeType,
-                &NoPlatform,
+                &NO_PLATFORM,
                 "DockUpTime",
                 pairs,
             )
@@ -367,38 +362,13 @@ mod tests {
     }
 
     fn with_ctx<R>(f: impl FnOnce(&SensorCtx) -> R) -> R {
-        let settings = Settings::default();
-        f(&SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate: true,
-            changes: &crate::sampler::ChangeSink::NONE,
-            platform: &NoPlatform,
-        })
+        f(&Harness::new().ctx())
     }
 
     const DAY: u64 = 86_400;
 
     fn drawn(sensor: &mut dyn Sensor) -> String {
-        let theme = theme();
-        let width = sensor.measure(&LayoutCtx {
-            theme: &theme,
-            text: &FixedMetrics,
-            scale: 1.0,
-            numbers: Default::default(),
-            icons: &crate::sensors::NoIcons,
-        });
-        let mut canvas = RecordingCanvas::new(1.0);
-        let rect = RectF::new(0.0, 0.0, width, 28.0);
-        sensor.draw(
-            &mut canvas,
-            &DrawCtx {
-                theme: &theme,
-                rect,
-            },
-        );
-        canvas.dump()
+        Harness::new().drawn(sensor).1
     }
 
     #[test]

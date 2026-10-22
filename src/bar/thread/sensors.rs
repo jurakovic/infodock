@@ -66,11 +66,14 @@ impl BarLogic {
     }
 
     /// The locale for dates and numbers may have changed (the setting, or the OS regional
-    /// format): numbers are read again, and clocks re-read the locale as on a clock change.
+    /// format): it is read again, and every sensor measures again with it (SPEC §8.6).
     pub(super) fn locale_changed(&mut self, window: &dyn BarWindow) {
-        self.numbers = Numbers::from(&self.platform.locale(self.settings.date_locale));
+        self.locale = self.platform.locale(self.settings.date_locale);
+        self.numbers = Numbers::from(&self.locale);
+        self.sensors.invalidate_all();
         window.invalidate();
-        self.clock_changed(window);
+        self.refresh_hint(window);
+        self.relayout_popup(window);
     }
 
     /// The wall clock jumped: clocks read it again and move their wake-ups.

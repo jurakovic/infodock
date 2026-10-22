@@ -33,7 +33,7 @@ impl BarLogic {
         };
         // Placed by its sensor, which may have moved.
         self.sensors
-            .refresh_layout(&self.theme, self.text.as_ref(), &self.icons);
+            .refresh_layout(&layout_ctx!(self, self.sensors.scale()));
         let Some((anchor, _)) = self.anchor(&owner) else {
             self.close_popup(window);
             return;
@@ -141,6 +141,7 @@ impl BarLogic {
             edge,
             free_left: open.free_left,
             animate: self.animate,
+            numbers: self.numbers,
             now: Instant::now(),
         };
         Some(f(open, &cx))

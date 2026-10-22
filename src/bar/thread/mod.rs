@@ -45,7 +45,7 @@ use crate::look::theme::Theme;
 use crate::platform::geometry::{DEFAULT_FLOATING_WIDTH, nearer_edge};
 use crate::platform::{
     AccessibleAction, AccessibleBar, Band, BarGeometry, BarHandler, BarWindow, Brush, Canvas,
-    DragEvent, DropEffect, Key, Modifiers, OsAppearance, Platform, PointF, PointerButton,
+    DragEvent, DropEffect, Key, Locale, Modifiers, OsAppearance, Platform, PointF, PointerButton,
     PopupCursor, PopupInput, Rect, RectF, Shape, SizeF, TextEngine, TimerId, UiEvent, UiWaker,
 };
 use crate::sampler::{Change, ChangeSink, Delivery, TopicRequest};
@@ -66,7 +66,24 @@ macro_rules! sensor_env {
             platform: $logic.platform.as_ref(),
             alt: $alt,
             animate: $logic.animate,
+            locale: &$logic.locale,
+            numbers: $logic.numbers,
             changes: &$logic.changes,
+        }
+    };
+}
+
+/// The sensors' [`LayoutCtx`] at `scale`, from the bar logic's fields; a macro for the same
+/// reason as [`sensor_env`].
+macro_rules! layout_ctx {
+    ($logic:expr, $scale:expr) => {
+        LayoutCtx {
+            theme: &$logic.theme,
+            text: $logic.text.as_ref(),
+            scale: $scale,
+            locale: &$logic.locale,
+            numbers: $logic.numbers,
+            icons: &$logic.icons,
         }
     };
 }
@@ -180,8 +197,10 @@ pub(super) struct BarLogic {
     subscribed: HashMap<String, Vec<TopicRequest>>,
     /// Transitions animate (the setting, or the OS for `auto`; SPEC §5.5).
     animate: bool,
-    /// How the locale of `settings.dateLocale` writes numbers (SPEC §8.6), read once and again
-    /// when the setting or the OS regional format changes.
+    /// The locale of `settings.dateLocale` (SPEC §8.6) and how it writes numbers, read once and
+    /// again when the setting or the OS regional format changes; sensors and popups get them on
+    /// their contexts, so none reads the locale itself.
+    locale: Locale,
     numbers: Numbers,
     /// The pointer is over the bar.
     inside: bool,
@@ -260,7 +279,8 @@ impl BarLogic {
     ) -> Self {
         let appearance = platform.appearance();
         let animate = anim::enabled(config.settings.bar.animations, appearance.animations);
-        let numbers = Numbers::from(&platform.locale(config.settings.date_locale));
+        let locale = platform.locale(config.settings.date_locale);
+        let numbers = Numbers::from(&locale);
         Self {
             theme: Theme::resolve(&config.settings, appearance),
             settings: config.settings,
@@ -288,6 +308,7 @@ impl BarLogic {
             tray_shown: None,
             subscribed: HashMap::new(),
             animate,
+            locale,
             numbers,
             inside: false,
             hovered: None,

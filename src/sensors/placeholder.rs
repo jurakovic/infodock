@@ -95,29 +95,22 @@ impl Sensor for Placeholder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::Settings;
-    use crate::look::theme::Theme;
-    use crate::platform::OsAppearance;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
+    use crate::platform::recording::RecordingCanvas;
+    use crate::sensors::test_support::Harness;
 
     #[test]
     fn draws_a_dimmed_outlined_label() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let h = Harness::new();
+        let theme = &h.theme;
         let mut sensor = Placeholder::unknown("cpu-graph");
-        let width = sensor.measure(&LayoutCtx {
-            theme: &theme,
-            text: &FixedMetrics,
-            scale: 1.0,
-            numbers: Default::default(),
-            icons: &crate::sensors::NoIcons,
-        });
+        let width = sensor.measure(&h.layout());
         // 9 characters × 5 px + 2 × 4 px.
         assert_eq!(width, 53.0);
         let mut canvas = RecordingCanvas::new(1.0);
         sensor.draw(
             &mut canvas,
             &DrawCtx {
-                theme: &theme,
+                theme,
                 rect: RectF::new(7.0, 0.0, 60.0, 28.0),
             },
         );

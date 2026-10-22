@@ -50,7 +50,9 @@ use serde_json::{Map, Value};
 use crate::config::legacy::LegacyProps;
 use crate::config::model::Settings;
 use crate::look::theme::Theme;
-use crate::platform::{Bitmap, Canvas, Capability, Platform, PointF, RectF, SizeF, TextEngine};
+use crate::platform::{
+    Bitmap, Canvas, Capability, Locale, Platform, PointF, RectF, SizeF, TextEngine,
+};
 use crate::sampler::{ChangeSink, Sample, Topic, TopicRequest};
 use schema::PropField;
 
@@ -171,7 +173,9 @@ pub struct LayoutCtx<'a> {
     pub text: &'a dyn TextEngine,
     /// Physical px per logical px, e.g. for decoding images at their drawn size.
     pub scale: f32,
-    /// How the locale writes numbers (SPEC §8.6), kept by the bar.
+    /// The locale of `settings.dateLocale` (SPEC §8.6), kept by the bar.
+    pub locale: &'a Locale,
+    /// How that locale writes numbers.
     pub numbers: format::Numbers,
     /// Shell icons of files, folders and drives (SPEC §9.17–9.18) and image files (§9.2).
     pub icons: &'a dyn IconSource,
@@ -259,6 +263,10 @@ pub struct SensorCtx<'a> {
     pub alt: bool,
     /// Transitions animate (SPEC §5.5); otherwise they jump.
     pub animate: bool,
+    /// The locale of `settings.dateLocale` (SPEC §8.6) and how it writes numbers, kept by the
+    /// bar and read again when the setting or the OS regional format changes.
+    pub locale: &'a Locale,
+    pub numbers: format::Numbers,
     pub platform: &'a dyn Platform,
     /// Tells the sampler what a sensor's action changed, e.g. that the Recycle Bin was emptied,
     /// so its topics are read again at once (SPEC §4.4); clone it for actions that finish on
@@ -492,7 +500,8 @@ pub trait Sensor {
         false
     }
     /// The wall clock jumped: the time or time zone changed, or the system resumed. Clocks
-    /// read the time again and move their wake-ups (SPEC §9.4–9.5).
+    /// read the time again and move their wake-ups (SPEC §9.4–9.5). A new locale is not a
+    /// clock change: the bar measures every sensor again with it.
     fn on_clock_change(&mut self, _now: Instant, _cx: &SensorCtx) -> Dirty {
         false
     }
@@ -507,330 +516,5 @@ pub trait Sensor {
     }
 }
 
-/// Helpers for the sensor types' tests: the default modern theme, fixed text metrics, scale 1.
 #[cfg(test)]
-pub(crate) mod test_support {
-    use std::sync::Mutex;
-
-    use serde_json::json;
-
-    use super::schema::{FieldKind, Lit, PropField};
-    use super::{
-        Category, DefaultsCtx, DrawCtx, Fetched, IconSource, LayoutCtx, Props, Sensor, SensorType,
-        State, legacy,
-    };
-    use crate::config::model::DateLocale;
-    use crate::config::model::Settings;
-    use crate::look::theme::Theme;
-    use crate::platform::recording::{FixedMetrics, RecordingCanvas};
-    use crate::platform::time::{Date, LocalTime};
-    use crate::platform::{
-        Bitmap, Canvas, Capabilities, Locale, MonitorInfo, OsAppearance, Platform, RectF,
-        TextEngine, TextStyle,
-    };
-
-    /// Draws its text as the label, so tests can see what it was created with.
-    pub struct Echo(pub String);
-
-    impl Sensor for Echo {
-        fn measure(&mut self, _cx: &LayoutCtx) -> f32 {
-            10.0
-        }
-
-        fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
-            let layout = FixedMetrics.layout(&self.0, &TextStyle::new(&cx.theme.sensor_font, 10.0));
-            canvas.draw_text(&layout, Default::default(), cx.theme.sensor_text);
-        }
-    }
-
-    const CLOCK_SCHEMA: &[PropField] = &[
-        PropField::new("use24h", FieldKind::Bool, "x", Lit::Bool(true)).machine(),
-        PropField::new("showSeconds", FieldKind::Bool, "x", Lit::Bool(false)),
-    ];
-
-    /// A type with a machine-derived field: `use24h` defaults to `true`, the machine says
-    /// `false`. It draws its props.
-    pub struct Clock;
-
-    impl SensorType for Clock {
-        fn id(&self) -> &'static str {
-            "clock"
-        }
-        fn category(&self) -> Category {
-            Category::Info
-        }
-        fn name(&self) -> &'static str {
-            "test.clock"
-        }
-        fn description(&self) -> &'static str {
-            "test.clock.description"
-        }
-        fn schema(&self) -> &'static [PropField] {
-            CLOCK_SCHEMA
-        }
-        fn machine_defaults(&self, _ctx: &DefaultsCtx) -> Props {
-            MACHINE_READS.with(|n| n.set(n.get() + 1));
-            let mut p = Props::new();
-            p.insert("use24h".into(), json!(false));
-            p
-        }
-        fn create(&self, props: &Props, _state: &State) -> serde_json::Result<Box<dyn Sensor>> {
-            Ok(Box::new(Echo(format!(
-                "use24h={} showSeconds={}",
-                props["use24h"], props["showSeconds"]
-            ))))
-        }
-    }
-
-    /// A platform with a settable clock (2026-10-13, a Tuesday) and the en-US locale that
-    /// records what it is asked to play and open.
-    #[derive(Default)]
-    pub struct FakeClock {
-        time: Mutex<Option<LocalTime>>,
-        log: Mutex<Vec<String>>,
-    }
-
-    impl FakeClock {
-        pub fn set(&self, hour: u8, minute: u8, second: u8) {
-            let date = Date::new(2026, 10, 13).expect("a date");
-            *self.time.lock().expect("lock") = Some(LocalTime {
-                date,
-                hour,
-                minute,
-                second,
-                millis: 0,
-            });
-        }
-
-        pub fn log(&self) -> Vec<String> {
-            self.log.lock().expect("lock").clone()
-        }
-    }
-
-    impl Platform for FakeClock {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> std::time::Duration {
-            std::time::Duration::ZERO
-        }
-        fn local_time(&self) -> LocalTime {
-            self.time.lock().expect("lock").expect("set first")
-        }
-        fn locale(&self, _which: DateLocale) -> Locale {
-            Locale::en_us()
-        }
-        fn play_sound(&self, wav: &'static [u8]) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("play {}", wav.len()));
-        }
-        fn open(&self, target: &str) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("open {target}"));
-        }
-        fn reveal(&self, path: &str) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("reveal {path}"));
-        }
-        fn known_folder(&self, folder: crate::platform::KnownFolder) -> Option<String> {
-            Some(match folder {
-                crate::platform::KnownFolder::Programs => "C:\\Users\\me\\Programs".into(),
-                crate::platform::KnownFolder::CommonPrograms => "C:\\ProgramData\\Programs".into(),
-            })
-        }
-        fn eject(&self, root: &str, report: crate::platform::EjectReport) {
-            let (title, body) = report(&Ok(()));
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("eject {root}: {title}: {body}"));
-        }
-        fn file_operation(
-            &self,
-            op: crate::platform::FileOp,
-            paths: Vec<String>,
-            folder: String,
-            done: Box<dyn FnOnce() + Send>,
-        ) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("{op:?} {} into {folder}", paths.join(", ")));
-            done();
-        }
-        fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("recycle {}", paths.join(", ")));
-            done();
-        }
-        fn create_url_file(&self, folder: &str, stem: &str, url: &str) {
-            self.log
-                .lock()
-                .expect("lock")
-                .push(format!("url file {folder}\\{stem}.url {url}"));
-        }
-        fn launch(&self, launch: &crate::platform::Launch) {
-            self.log.lock().expect("lock").push(format!(
-                "launch {} args={} dir={} admin={}",
-                launch.target,
-                launch.args,
-                launch.dir.unwrap_or_default(),
-                launch.admin
-            ));
-        }
-    }
-
-    thread_local! {
-        /// How often this thread asked [`Clock`] for its machine defaults.
-        static MACHINE_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-    }
-
-    pub fn machine_reads() -> u32 {
-        MACHINE_READS.with(std::cell::Cell::get)
-    }
-
-    /// A platform without capabilities or monitors.
-    pub struct NoPlatform;
-
-    impl Platform for NoPlatform {
-        fn capabilities(&self) -> Capabilities {
-            Capabilities::default()
-        }
-        fn monitors(&self) -> Vec<MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> OsAppearance {
-            OsAppearance::default()
-        }
-        fn uptime(&self) -> std::time::Duration {
-            std::time::Duration::ZERO
-        }
-    }
-
-    pub fn theme() -> Theme {
-        Theme::resolve(&Settings::default(), OsAppearance::default())
-    }
-
-    /// What `ty` makes of a legacy sensor of type `legacy_type` with the properties `pairs`
-    /// on `platform`: its props (not yet checked by the import), state and warnings.
-    pub fn convert_legacy(
-        ty: &dyn SensorType,
-        platform: &dyn Platform,
-        legacy_type: &str,
-        pairs: &[(&str, &str)],
-    ) -> (Props, State, Vec<String>) {
-        let raw = pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
-        let defaults = DefaultsCtx { platform };
-        let mut cx = legacy::LegacyCtx {
-            legacy_type,
-            defaults: &defaults,
-            warnings: Vec::new(),
-            state: State::new(),
-        };
-        let props = ty.convert_legacy(&raw, &mut cx);
-        let warnings = cx.warnings.iter().map(|w| w.message()).collect();
-        (props, cx.state, warnings)
-    }
-
-    pub fn measure(sensor: &mut dyn Sensor) -> f32 {
-        measure_with(sensor, &crate::sensors::NoIcons)
-    }
-
-    /// Measures `sensor` with its shell icons and image files from `icons`.
-    pub fn measure_with(sensor: &mut dyn Sensor, icons: &dyn IconSource) -> f32 {
-        sensor.measure(&LayoutCtx {
-            theme: &theme(),
-            text: &FixedMetrics,
-            scale: 1.0,
-            numbers: Default::default(),
-            icons,
-        })
-    }
-
-    /// Image files as the bar reads them, off the bar thread: loading until the test says it
-    /// arrived (or failed); no shell icons.
-    #[derive(Default)]
-    pub struct Later {
-        image: Mutex<Option<Fetched>>,
-        asked: Mutex<Vec<(String, u32)>>,
-    }
-
-    impl Later {
-        pub fn arrive(&self, bitmap: Bitmap) {
-            *self.image.lock().expect("lock") = Some(Fetched::Ready(bitmap));
-        }
-
-        pub fn fail(&self) {
-            *self.image.lock().expect("lock") = Some(Fetched::None);
-        }
-
-        /// The images asked for, by path and height.
-        pub fn asked(&self) -> Vec<(String, u32)> {
-            self.asked.lock().expect("lock").clone()
-        }
-    }
-
-    impl IconSource for Later {
-        fn shell_icon(&self, _path: &str, _px: u32) -> Fetched {
-            Fetched::None
-        }
-
-        fn image(&self, path: &str, px: u32) -> Fetched {
-            let mut asked = self.asked.lock().expect("lock");
-            if !asked.iter().any(|(p, h)| p == path && *h == px) {
-                asked.push((path.to_owned(), px));
-            }
-            self.image
-                .lock()
-                .expect("lock")
-                .clone()
-                .unwrap_or(Fetched::Loading)
-        }
-
-        fn forget(&self, _path: &str) {}
-    }
-
-    /// Gives `sensor` `width`, as the bar does when the zones do not fit (SPEC §5.4).
-    pub fn fit(sensor: &mut dyn Sensor, width: f32) {
-        sensor.fit(
-            width,
-            &LayoutCtx {
-                theme: &theme(),
-                text: &FixedMetrics,
-                scale: 1.0,
-                numbers: Default::default(),
-                icons: &crate::sensors::NoIcons,
-            },
-        );
-    }
-
-    /// What `sensor` draws at x = 7 with `width`, on a 28 px bar.
-    pub fn draw(sensor: &dyn Sensor, width: f32) -> String {
-        let mut canvas = RecordingCanvas::new(1.0);
-        sensor.draw(
-            &mut canvas,
-            &DrawCtx {
-                theme: &theme(),
-                rect: RectF::new(7.0, 0.0, 7.0 + width, 28.0),
-            },
-        );
-        canvas.dump()
-    }
-}
+pub(crate) mod test_support;

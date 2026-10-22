@@ -169,10 +169,11 @@ mod tests {
 
     use super::*;
     use crate::sensors::registry::registry;
-    use crate::sensors::test_support::{Clock, NoPlatform};
+    use crate::sensors::test_support::Clock;
+    use crate::test_util::NO_PLATFORM;
 
-    const CTX: DefaultsCtx = DefaultsCtx {
-        platform: &NoPlatform,
+    static CTX: DefaultsCtx = DefaultsCtx {
+        platform: &NO_PLATFORM,
     };
 
     fn props(v: Value) -> Props {

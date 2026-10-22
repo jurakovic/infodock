@@ -379,16 +379,11 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::{ClicksWhenLocked, Settings};
-    use crate::platform::Platform;
-    use crate::sampler::ChangeSink;
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{FakeClock, draw, measure};
+    use crate::config::model::ClicksWhenLocked;
+    use crate::sensors::test_support::{Harness, draw, measure, resolved};
 
     fn create(stored: serde_json::Value) -> Wifi {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
+        let props = resolved(SCHEMA, stored);
         Wifi {
             props: typed(&props).expect("valid props"),
             status: None,
@@ -411,33 +406,8 @@ mod tests {
         }
     }
 
-    struct Harness {
-        platform: FakeClock,
-        settings: Settings,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                platform: FakeClock::default(),
-                settings: Settings::default(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: self.settings.locked,
-                alt: false,
-                animate: false,
-                platform: &self.platform as &dyn Platform,
-                changes: &ChangeSink::NONE,
-            }
-        }
-
-        fn feed(&self, sensor: &mut Wifi, status: WifiStatus) -> bool {
-            sensor.on_sample(&Topic::Wifi, &Sample::Wifi(status), &self.ctx())
-        }
+    fn feed(h: &Harness, sensor: &mut Wifi, status: WifiStatus) -> bool {
+        sensor.on_sample(&Topic::Wifi, &Sample::Wifi(status), &h.ctx())
     }
 
     #[test]
@@ -470,22 +440,22 @@ mod tests {
     fn name_above_the_signal() {
         let h = Harness::new();
         let mut wifi = create(json!({}));
-        assert!(h.feed(&mut wifi, connected()));
-        assert!(!h.feed(&mut wifi, connected()));
+        assert!(feed(&h, &mut wifi, connected()));
+        assert!(!feed(&h, &mut wifi, connected()));
         assert_eq!(
             (wifi.label().as_str(), wifi.value().as_str()),
             ("HomeNet", "78%")
         );
         let dbm = create(json!({ "display": "dbm" }));
         let mut dbm = dbm;
-        h.feed(&mut dbm, connected());
+        feed(&h, &mut dbm, connected());
         assert_eq!(dbm.value(), "-58 dBm");
         // The name below the name would say it twice: the percentage instead.
         let mut name = create(json!({ "display": "name" }));
-        h.feed(&mut name, connected());
+        feed(&h, &mut name, connected());
         assert_eq!(name.value(), "78%");
         let mut titled = create(json!({ "display": "name", "title": "Office" }));
-        h.feed(&mut titled, connected());
+        feed(&h, &mut titled, connected());
         assert_eq!(
             (titled.label().as_str(), titled.value().as_str()),
             ("Office", "HomeNet")
@@ -509,7 +479,7 @@ mod tests {
             ssid: None,
             ..connected()
         };
-        h.feed(&mut wifi, offline);
+        feed(&h, &mut wifi, offline);
         assert!(wifi.inactive());
         assert_eq!(
             (wifi.label().as_str(), wifi.value().as_str()),
@@ -523,7 +493,7 @@ mod tests {
             radio_on: false,
             ..connected()
         };
-        h.feed(&mut wifi, radio_off);
+        feed(&h, &mut wifi, radio_off);
         assert!(wifi.inactive());
         assert!(wifi.hint_text(&h.ctx()).contains("\nWi-Fi is turned off\n"));
         measure(&mut wifi);
@@ -534,7 +504,7 @@ mod tests {
     fn hint_and_click() {
         let mut h = Harness::new();
         let mut wifi = create(json!({}));
-        h.feed(&mut wifi, connected());
+        feed(&h, &mut wifi, connected());
         assert_eq!(
             wifi.hint_text(&h.ctx()),
             "Wi-Fi Signal\nNetwork:\tHomeNet\nInfo:\t802.11ax, 5 GHz, channel 36, 1201 Mbps\n\
@@ -560,7 +530,7 @@ mod tests {
             location_denied: true,
             ..connected()
         };
-        h.feed(&mut wifi, denied);
+        feed(&h, &mut wifi, denied);
         assert_eq!(
             (wifi.label().as_str(), wifi.value().as_str()),
             ("Wi-Fi", "84%")

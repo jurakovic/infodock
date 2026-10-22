@@ -754,22 +754,13 @@ impl Sensor for BatterySensor {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use serde_json::json;
 
     use super::*;
-    use crate::config::model::Settings;
-    use crate::platform::Platform;
-    use crate::sampler::ChangeSink;
-    use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{draw, measure};
+    use crate::sensors::test_support::{Harness, draw, measure, resolved};
 
     fn props(stored: serde_json::Value) -> Props {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty(), "{ignored:?}");
-        props
+        resolved(SCHEMA, stored)
     }
 
     fn create(stored: serde_json::Value) -> BatterySensor {
@@ -788,58 +779,8 @@ mod tests {
         }
     }
 
-    /// Records notifications.
-    #[derive(Default)]
-    struct Toasts(Mutex<Vec<String>>);
-
-    impl Platform for Toasts {
-        fn capabilities(&self) -> crate::platform::Capabilities {
-            Default::default()
-        }
-        fn monitors(&self) -> Vec<crate::platform::MonitorInfo> {
-            Vec::new()
-        }
-        fn appearance(&self) -> crate::platform::OsAppearance {
-            Default::default()
-        }
-        fn uptime(&self) -> Duration {
-            Duration::ZERO
-        }
-        fn notify(&self, title: &str, body: &str) {
-            self.0
-                .lock()
-                .expect("lock")
-                .push(format!("{title}: {body}"));
-        }
-    }
-
-    struct Harness {
-        platform: Toasts,
-        settings: Settings,
-    }
-
-    impl Harness {
-        fn new() -> Self {
-            Self {
-                platform: Toasts::default(),
-                settings: Settings::default(),
-            }
-        }
-
-        fn ctx(&self) -> SensorCtx<'_> {
-            SensorCtx {
-                settings: &self.settings,
-                locked: false,
-                alt: false,
-                animate: false,
-                platform: &self.platform as &dyn Platform,
-                changes: &ChangeSink::NONE,
-            }
-        }
-
-        fn feed(&self, sensor: &mut BatterySensor, s: BatterySample) -> bool {
-            sensor.on_sample(&Topic::Battery(0), &Sample::Battery(s), &self.ctx())
-        }
+    fn feed(h: &Harness, sensor: &mut BatterySensor, s: BatterySample) -> bool {
+        sensor.on_sample(&Topic::Battery(0), &Sample::Battery(s), &h.ctx())
     }
 
     #[test]
@@ -890,7 +831,11 @@ mod tests {
             (battery.label(), battery.value()),
             (String::new(), String::new())
         );
-        assert!(h.feed(&mut battery, sample(73.0, false, BatteryState::Discharging)));
+        assert!(feed(
+            &h,
+            &mut battery,
+            sample(73.0, false, BatteryState::Discharging)
+        ));
         assert_eq!(
             (battery.label().as_str(), battery.value().as_str()),
             ("In Use", "73%")
@@ -914,28 +859,33 @@ mod tests {
             "{dump}"
         );
 
-        h.feed(&mut battery, sample(10.0, false, BatteryState::Discharging));
+        feed(
+            &h,
+            &mut battery,
+            sample(10.0, false, BatteryState::Discharging),
+        );
         assert_eq!(battery.label(), "Low Battery");
-        h.feed(&mut battery, sample(60.0, true, BatteryState::Charging));
+        feed(&h, &mut battery, sample(60.0, true, BatteryState::Charging));
         assert_eq!(
             (battery.label().as_str(), battery.value().as_str()),
             ("Charging", "60%")
         );
-        h.feed(&mut battery, sample(100.0, true, BatteryState::Full));
+        feed(&h, &mut battery, sample(100.0, true, BatteryState::Full));
         assert_eq!(
             (battery.label().as_str(), battery.value().as_str()),
             ("Full", "100%")
         );
         // Assumed charged: no percentage next to Full.
         let mut assumed = create(json!({ "assumeChargedAt": 95 }));
-        h.feed(&mut assumed, sample(97.0, true, BatteryState::Charging));
+        feed(&h, &mut assumed, sample(97.0, true, BatteryState::Charging));
         assert_eq!(
             (assumed.label().as_str(), assumed.value().as_str()),
             ("Full", "")
         );
         // No battery: inactive, crossed out, no level.
         let mut none = create(json!({ "battery": 1 }));
-        h.feed(
+        feed(
+            &h,
             &mut none,
             BatterySample {
                 present: false,
@@ -957,19 +907,23 @@ mod tests {
     fn times_left_and_to_full() {
         let h = Harness::new();
         let mut battery = create(json!({ "onBatteryShow": "time", "chargingShow": "time" }));
-        h.feed(&mut battery, sample(73.0, false, BatteryState::Discharging));
+        feed(
+            &h,
+            &mut battery,
+            sample(73.0, false, BatteryState::Discharging),
+        );
         assert_eq!(battery.value(), "*", "unknown yet");
         let left = BatterySample {
             time_to_empty: Some(Duration::from_secs(2 * 3600 + 41 * 60)),
             ..sample(73.0, false, BatteryState::Discharging)
         };
-        h.feed(&mut battery, left);
+        feed(&h, &mut battery, left);
         assert_eq!(battery.value(), "~ 2:41");
         let to_full = BatterySample {
             time_to_full: Some(Duration::from_secs(52 * 60)),
             ..sample(73.0, true, BatteryState::Charging)
         };
-        h.feed(&mut battery, to_full);
+        feed(&h, &mut battery, to_full);
         assert_eq!(battery.value(), "0:52");
         assert_eq!(
             battery.hint_text().as_deref(),
@@ -1033,12 +987,16 @@ mod tests {
         let h = Harness::new();
         let mut battery = create(json!({}));
         assert_eq!(battery.hint(&h.ctx()), None);
-        h.feed(&mut battery, sample(73.0, false, BatteryState::Discharging));
+        feed(
+            &h,
+            &mut battery,
+            sample(73.0, false, BatteryState::Discharging),
+        );
         assert_eq!(
             battery.hint_text().as_deref(),
             Some("SMP 5B10\nCapacity is 73%\nCalculating Time Remaining")
         );
-        h.feed(&mut battery, sample(100.0, true, BatteryState::Full));
+        feed(&h, &mut battery, sample(100.0, true, BatteryState::Full));
         assert_eq!(
             battery.hint_text().as_deref(),
             Some("SMP 5B10\nCapacity is 100%\nBattery Is Charged")
@@ -1048,7 +1006,7 @@ mod tests {
             time_to_empty: Some(Duration::from_secs(161 * 60)),
             ..sample(99.0, false, BatteryState::Discharging)
         };
-        h.feed(&mut battery, unplugged);
+        feed(&h, &mut battery, unplugged);
         assert_eq!(
             battery.hint_text().as_deref(),
             Some("SMP 5B10\nCapacity is 99%\n2:41 Remaining\n0:00 Already In Use")
@@ -1057,7 +1015,7 @@ mod tests {
             name: String::new(),
             ..sample(50.0, false, BatteryState::Discharging)
         };
-        h.feed(&mut battery, unnamed);
+        feed(&h, &mut battery, unnamed);
         assert!(
             battery
                 .hint_text()
@@ -1074,7 +1032,11 @@ mod tests {
             ClickResult::None,
             "nothing known yet"
         );
-        h.feed(&mut battery, sample(73.0, false, BatteryState::Discharging));
+        feed(
+            &h,
+            &mut battery,
+            sample(73.0, false, BatteryState::Discharging),
+        );
         assert_eq!(battery.click(&h.ctx()), ClickResult::Handled);
         assert_eq!(battery.value(), "*");
         assert_eq!(
@@ -1086,7 +1048,7 @@ mod tests {
         );
         assert_eq!(battery.take_props(), None, "taken once");
         // Charging toggles its own line.
-        h.feed(&mut battery, sample(74.0, true, BatteryState::Charging));
+        feed(&h, &mut battery, sample(74.0, true, BatteryState::Charging));
         battery.click(&h.ctx());
         assert_eq!(
             battery.take_props(),
@@ -1111,22 +1073,26 @@ mod tests {
     fn the_alert_shows_once_per_charge() {
         let h = Harness::new();
         let mut battery = create(json!({ "alertAbove": 90 }));
-        h.feed(&mut battery, sample(90.0, true, BatteryState::Charging));
-        assert!(h.platform.0.lock().expect("lock").is_empty());
-        h.feed(&mut battery, sample(91.0, true, BatteryState::Charging));
-        h.feed(&mut battery, sample(92.0, true, BatteryState::Charging));
+        feed(&h, &mut battery, sample(90.0, true, BatteryState::Charging));
+        assert!(h.platform.log().is_empty());
+        feed(&h, &mut battery, sample(91.0, true, BatteryState::Charging));
+        feed(&h, &mut battery, sample(92.0, true, BatteryState::Charging));
         assert_eq!(
-            *h.platform.0.lock().expect("lock"),
-            ["Battery: Battery at 91% — you can unplug the charger"]
+            h.platform.log(),
+            ["notify Battery: Battery at 91% — you can unplug the charger"]
         );
         // Full and charging again on AC (99 % ↔ 100 %): the same charge, no new alert.
-        h.feed(&mut battery, sample(100.0, true, BatteryState::Full));
-        h.feed(&mut battery, sample(99.0, true, BatteryState::Charging));
-        assert_eq!(h.platform.0.lock().expect("lock").len(), 1);
+        feed(&h, &mut battery, sample(100.0, true, BatteryState::Full));
+        feed(&h, &mut battery, sample(99.0, true, BatteryState::Charging));
+        assert_eq!(h.platform.log().len(), 1);
         // Unplugged and charging again: a new charge, a new alert.
-        h.feed(&mut battery, sample(91.0, false, BatteryState::Discharging));
-        h.feed(&mut battery, sample(92.0, true, BatteryState::Charging));
-        assert_eq!(h.platform.0.lock().expect("lock").len(), 2);
+        feed(
+            &h,
+            &mut battery,
+            sample(91.0, false, BatteryState::Discharging),
+        );
+        feed(&h, &mut battery, sample(92.0, true, BatteryState::Charging));
+        assert_eq!(h.platform.log().len(), 2);
     }
 
     #[test]

@@ -219,14 +219,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::platform::recording::FixedMetrics;
     use crate::sensors::schema::resolve;
-    use crate::sensors::test_support::{Later, draw, measure, measure_with, theme};
+    use crate::sensors::test_support::{
+        Harness, Later, draw, measure, measure_with, resolved, theme,
+    };
 
     fn image(stored: serde_json::Value) -> Image {
-        let stored = stored.as_object().cloned().unwrap_or_default();
-        let (props, ignored) = resolve(SCHEMA, &stored, &Props::new());
-        assert!(ignored.is_empty());
+        let props = resolved(SCHEMA, stored);
         Image {
             props: typed(&props).expect("valid props"),
             bitmap: None,
@@ -245,12 +244,10 @@ mod tests {
         );
 
         // At 150 % it is decoded at its physical size: 41 px, 27.3 logical px wide.
+        let h = Harness::new();
         let width = sensor.measure(&LayoutCtx {
-            theme: &theme(),
-            text: &FixedMetrics,
             scale: 1.5,
-            numbers: Default::default(),
-            icons: &crate::sensors::NoIcons,
+            ..h.layout()
         });
         assert_eq!(width, 28.0);
         assert_eq!(sensor.bitmap.as_ref().map(Bitmap::height), Some(41));
@@ -325,16 +322,8 @@ mod tests {
 
     #[test]
     fn hint_is_the_popup_text_with_the_version() {
-        let settings = crate::config::model::Settings::default();
-        let platform = crate::platform::current();
-        let cx = SensorCtx {
-            settings: &settings,
-            locked: false,
-            alt: false,
-            animate: true,
-            changes: &crate::sampler::ChangeSink::NONE,
-            platform: platform.as_ref(),
-        };
+        let h = Harness::new();
+        let cx = h.ctx();
         assert_eq!(image(json!({})).hint(&cx), None);
         assert_eq!(
             image(json!({ "popupText": "Infodock %v" })).hint(&cx),

@@ -9,15 +9,14 @@ use super::layout::{self, Zones};
 use crate::config::model::{Layout, SensorInstance, Settings, Zone};
 use crate::look::theme::{Inactive, Theme};
 use crate::platform::{
-    AccessibleItem, Brush, Canvas, Capabilities, Color, Platform, RectF, Shape, TextEngine,
+    AccessibleItem, Brush, Canvas, Capabilities, Color, Locale, Platform, RectF, Shape,
 };
 use crate::sampler::{ChangeSink, Delivery, Sample, Topic, TopicRequest};
 use crate::sensors::drop::{DragInfo, DropAction, Dropped};
 use crate::sensors::format::Numbers;
 use crate::sensors::registry::Registry;
 use crate::sensors::{
-    ClickResult, DrawCtx, HintContent, IconSource, LayoutCtx, MenuId, MenuItem, Props, Sensor,
-    SensorCtx, State,
+    ClickResult, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props, Sensor, SensorCtx, State,
 };
 
 /// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
@@ -106,6 +105,9 @@ pub(super) struct Env<'a> {
     pub alt: bool,
     /// Transitions animate (SPEC §5.5).
     pub animate: bool,
+    /// The locale of `settings.dateLocale` and how it writes numbers (SPEC §8.6).
+    pub locale: &'a Locale,
+    pub numbers: Numbers,
     /// Where sensors report what their actions changed (SPEC §4.4).
     pub changes: &'a ChangeSink,
 }
@@ -117,6 +119,8 @@ impl Env<'_> {
             locked: self.settings.locked,
             alt: self.alt,
             animate: self.animate,
+            locale: self.locale,
+            numbers: self.numbers,
             platform: self.platform,
             changes: self.changes,
         }
@@ -147,10 +151,9 @@ pub(super) struct BarSensors {
     relayout: bool,
     /// Ids of the sensors created since [`Self::take_created`] was last called.
     created: Vec<String>,
-    /// The bar width, scale, numbers and the theme's padding and gap of the last layout.
+    /// The bar width, scale and the theme's padding and gap of the last layout.
     bar_width: f32,
     scale: f32,
-    numbers: Numbers,
     spacing: (f32, f32),
 }
 
@@ -235,12 +238,11 @@ impl BarSensors {
     /// scale or the spacing (Sensor spacing, SPEC §10.4) changed; sensors that must give way
     /// for the zones to fit the bar are narrowed (§5.4).
     pub fn update_layout(&mut self, cx: &LayoutCtx, bar_width: f32) {
-        if cx.scale != self.scale || cx.numbers != self.numbers {
+        if cx.scale != self.scale {
             // Images are decoded at their physical size; numbers are written as the locale
             // writes them.
             self.invalidate_all();
             self.scale = cx.scale;
-            self.numbers = cx.numbers;
         }
         let mut resized = false;
         for p in self.all_mut().filter(|p| p.dirty) {
@@ -279,19 +281,18 @@ impl BarSensors {
         }
     }
 
-    /// Measures and places what changed now, with the scale and bar width of the last layout,
-    /// rather than at the next paint; e.g. before a hint is placed next to its sensor.
-    pub fn refresh_layout(&mut self, theme: &Theme, text: &dyn TextEngine, icons: &dyn IconSource) {
+    /// Measures and places what changed now, with the bar width of the last layout, rather
+    /// than at the next paint; e.g. before a hint is placed next to its sensor. `cx` is at the
+    /// last layout's [`BarSensors::scale`].
+    pub fn refresh_layout(&mut self, cx: &LayoutCtx) {
         if self.scale > 0.0 {
-            let cx = LayoutCtx {
-                theme,
-                text,
-                scale: self.scale,
-                numbers: self.numbers,
-                icons,
-            };
-            self.update_layout(&cx, self.bar_width);
+            self.update_layout(cx, self.bar_width);
         }
+    }
+
+    /// The scale of the last layout; 0 before the first.
+    pub fn scale(&self) -> f32 {
+        self.scale
     }
 
     /// Draws every sensor in its place: left, right, then the centre on top (SPEC §5.4). A
@@ -732,6 +733,7 @@ mod tests {
             theme,
             text: &FixedMetrics,
             scale,
+            locale: crate::test_util::en_us(),
             numbers: Default::default(),
             icons: &crate::sensors::NoIcons,
         }
@@ -903,6 +905,8 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            locale: crate::test_util::en_us(),
+            numbers: Default::default(),
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let start = Instant::now();
@@ -938,6 +942,8 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            locale: crate::test_util::en_us(),
+            numbers: Default::default(),
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let start = Instant::now();
@@ -1001,6 +1007,8 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            locale: crate::test_util::en_us(),
+            numbers: Default::default(),
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let mut sensors = BarSensors::default();
@@ -1026,6 +1034,8 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            locale: crate::test_util::en_us(),
+            numbers: Default::default(),
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let caps = Capabilities {
@@ -1132,6 +1142,8 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            locale: crate::test_util::en_us(),
+            numbers: Default::default(),
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let mut sensors = BarSensors::default();
@@ -1203,6 +1215,8 @@ mod tests {
             platform: platform.as_ref(),
             alt: false,
             animate: true,
+            locale: crate::test_util::en_us(),
+            numbers: Default::default(),
             changes: &crate::sampler::ChangeSink::NONE,
         };
         let mut sensors = BarSensors::default();

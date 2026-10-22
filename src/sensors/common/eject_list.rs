@@ -17,7 +17,7 @@ use crate::platform::{
     TextLayout, TextStyle, Volume,
 };
 use crate::sampler::{Change, ChangeSink};
-use crate::sensors::format::{self, Numbers};
+use crate::sensors::format::{self};
 use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
 use crate::sensors::{Fetched, disk};
 
@@ -121,7 +121,6 @@ pub struct EjectList {
     ejecting: HashSet<String>,
     ejected_tx: Sender<String>,
     ejected_rx: Receiver<String>,
-    numbers: Numbers,
     changes: ChangeSink,
     current: Option<Target>,
     pressed: Option<Target>,
@@ -129,7 +128,7 @@ pub struct EjectList {
 }
 
 impl EjectList {
-    pub fn new(drives: Arc<Mutex<Drives>>, numbers: Numbers, changes: ChangeSink) -> Self {
+    pub fn new(drives: Arc<Mutex<Drives>>, changes: ChangeSink) -> Self {
         let (sizes_tx, sizes_rx) = mpsc::channel();
         let (ejected_tx, ejected_rx) = mpsc::channel();
         Self {
@@ -143,7 +142,6 @@ impl EjectList {
             ejecting: HashSet::new(),
             ejected_tx,
             ejected_rx,
-            numbers,
             changes,
             current: None,
             pressed: None,
@@ -368,7 +366,7 @@ impl Popup for EjectList {
                     .flatten()
                     .map(|total| {
                         cx.text
-                            .layout(&format::bytes(total, None, self.numbers), &style)
+                            .layout(&format::bytes(total, None, cx.numbers), &style)
                     });
                 let used = button.width()
                     + 2.0 * BUTTON_PAD
@@ -559,7 +557,7 @@ mod tests {
             volumes,
             generation: 1,
         }));
-        let list = EjectList::new(Arc::clone(&drives), Numbers::default(), ChangeSink::NONE);
+        let list = EjectList::new(Arc::clone(&drives), ChangeSink::NONE);
         (list, drives)
     }
 

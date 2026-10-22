@@ -228,7 +228,7 @@ fn a_press_dims_the_sensor_until_release() {
 fn a_click_that_asks_first_waits_for_the_answer() {
     let (mut logic, window, _host, _) = bar(Settings::default());
     let power = with_power_sensor(&mut logic, &window);
-    let actions = || power.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let actions = || power.log();
     // Declined: nothing happens.
     window.decline.set(true);
     press(&mut logic, &window, LOGO, false);
@@ -242,7 +242,7 @@ fn a_click_that_asks_first_waits_for_the_answer() {
     window.decline.set(false);
     press(&mut logic, &window, LOGO, false);
     release(&mut logic, &window, LOGO);
-    assert_eq!(actions(), ["ShutDown"]);
+    assert_eq!(actions(), ["ShutDown force=false"]);
 }
 
 #[test]
