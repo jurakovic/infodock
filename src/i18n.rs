@@ -125,4 +125,66 @@ mod tests {
             "only {checked} keys found; is the scan broken?"
         );
     }
+
+    /// Keys in `t("…")`, `t_args("…", …)` and `t_count("…", …)` calls of Rust source.
+    fn rust_keys(source: &str) -> Vec<&str> {
+        ["t(\"", "t_args(\"", "t_count(\""]
+            .iter()
+            .flat_map(|call| {
+                source
+                    .match_indices(call)
+                    // `t(` itself, not the end of another name (`get(`), and not in a comment.
+                    .filter(|(i, _)| {
+                        let line = &source[source[..*i].rfind('\n').map_or(0, |n| n + 1)..*i];
+                        !line.trim_start().starts_with("//")
+                            && !line.ends_with(|c: char| c.is_alphanumeric() || c == '_')
+                    })
+                    .map(move |(i, _)| i + call.len())
+            })
+            .filter_map(|start| source[start..].split('"').next())
+            .collect()
+    }
+
+    /// The `.rs` files under `dir`, recursively.
+    fn rust_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("a source folder") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                rust_files(&path, files);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    /// The literal keys; those built with `format!` from ids are checked by
+    /// `settings::contract::every_built_key_exists`.
+    #[test]
+    fn every_literal_key_in_rust_exists() {
+        let mut files = Vec::new();
+        rust_files(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        let mut checked = 0;
+        for path in files {
+            let source = std::fs::read_to_string(&path).expect("rust source");
+            // The one key that is missing on purpose, in `missing_key_returns_key`.
+            for key in rust_keys(&source)
+                .into_iter()
+                .filter(|k| *k != "no.such.key")
+            {
+                assert!(
+                    CATALOG.contains_key(key),
+                    "{}: unknown key {key}",
+                    path.display()
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 100,
+            "only {checked} keys found; is the scan broken?"
+        );
+    }
 }

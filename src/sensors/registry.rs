@@ -350,6 +350,49 @@ mod tests {
         assert!(missing.is_empty(), "missing in en.json: {missing:?}");
     }
 
+    /// A select's options and the type's props (a serde enum, mostly) are two lists that must
+    /// agree: an option the props cannot take would make a placeholder when chosen. Power modes
+    /// and CPU series, which Settings lists from the machine, too.
+    #[test]
+    fn every_option_creates_its_sensor() {
+        use crate::platform::PowerAction;
+        use crate::sensors::schema::FieldKind;
+        let mut checked = 0;
+        for ty in &super::registry().types {
+            for field in ty.schema() {
+                let values: Vec<Value> = match field.kind {
+                    FieldKind::Select { options } => {
+                        options.iter().map(|o| o.value.to_value()).collect()
+                    }
+                    FieldKind::PowerMode => PowerAction::ALL
+                        .iter()
+                        .map(|a| Value::from(a.id()))
+                        .collect(),
+                    FieldKind::CpuSeries => ["total", "user", "system", "core0"]
+                        .map(Value::from)
+                        .to_vec(),
+                    _ => continue,
+                };
+                for value in values {
+                    let mut stored = Props::new();
+                    stored.insert(field.key.to_owned(), value.clone());
+                    let (props, ignored) = schema::resolve(ty.schema(), &stored, &Props::new());
+                    assert!(ignored.is_empty(), "{} {}: {ignored:?}", ty.id(), field.key);
+                    let created = ty.create(&props, &State::new());
+                    assert!(
+                        created.is_ok(),
+                        "{} {} = {value}: {:?}",
+                        ty.id(),
+                        field.key,
+                        created.err()
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 40, "only {checked} options; is the scan broken?");
+    }
+
     #[test]
     fn every_type_creates_a_sensor_from_its_defaults() {
         let caps = Capabilities {

@@ -30,7 +30,7 @@ pub enum RowKind {
 }
 
 impl RowKind {
-    /// The kind's number in the window (`PropRow.kind` in `settings.slint`).
+    /// The kind's number in the window (`RowKinds` in `settings.slint`).
     pub fn code(self) -> i32 {
         self as i32
     }
@@ -60,7 +60,7 @@ pub struct FormRow {
 }
 
 /// The colour modes a field offers, in list order (SPEC §8.4).
-fn modes(dynamic: bool) -> &'static [&'static str] {
+pub(super) fn modes(dynamic: bool) -> &'static [&'static str] {
     if dynamic {
         &["standard", "custom", "dynamic"]
     } else {

@@ -1,11 +1,8 @@
-//! Drops from other apps onto the bar (SPEC §6.3): what each dragged item is, and the sensor a
-//! drop creates for it.
+//! Drops from other apps onto the bar (SPEC §6.3): what each dragged item is; the sensor a
+//! drop creates for it is the sensors' (`sensors::drop::new_sensor`).
 
-use serde_json::Value;
-
-use crate::platform::{DragItem, DropEffect, DropEffects, PathKind};
-use crate::sensors::Props;
-pub use crate::sensors::drop::Dropped;
+use crate::platform::{DragItem, DropEffect, DropEffects};
+pub use crate::sensors::drop::{Dropped, new_sensor};
 
 /// Whether `path` is a drive's root: `E:\` or `E:`.
 fn is_drive_root(path: &str) -> bool {
@@ -47,33 +44,6 @@ pub fn classify(item: &DragItem) -> Option<Dropped> {
     }
 }
 
-/// The sensor a drop on the bar creates for `dropped` (SPEC §6.3): its type and props;
-/// `kind` says what a path names, and a missing one makes nothing.
-pub fn new_sensor(
-    dropped: &Dropped,
-    kind: impl Fn(&str) -> PathKind,
-) -> Option<(&'static str, Props)> {
-    let props = |pairs: &[(&str, &str)]| -> Props {
-        pairs
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), Value::from(*v)))
-            .collect()
-    };
-    Some(match dropped {
-        Dropped::Drive(root) => ("disk", props(&[("drive", root)])),
-        Dropped::Path(path) => match kind(path) {
-            PathKind::Folder => ("folder-menu", props(&[("folder", path)])),
-            PathKind::File => ("shortcut", props(&[("target", path)])),
-            PathKind::Missing => return None,
-        },
-        Dropped::Url { url, title: None } => ("shortcut", props(&[("url", url)])),
-        Dropped::Url {
-            url,
-            title: Some(title),
-        } => ("shortcut", props(&[("url", url), ("title", title)])),
-    })
-}
-
 /// The effect of a drop that creates sensors: a link where the source allows it (the items
 /// stay where they are), else a copy; nothing if it allows neither.
 pub fn creation_effect(allowed: DropEffects) -> DropEffect {
@@ -88,19 +58,7 @@ pub fn creation_effect(allowed: DropEffects) -> DropEffect {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
-
-    fn kind(path: &str) -> PathKind {
-        if path.ends_with(".txt") {
-            PathKind::File
-        } else if path.contains("Gone") {
-            PathKind::Missing
-        } else {
-            PathKind::Folder
-        }
-    }
 
     fn path(p: &str) -> DragItem {
         DragItem::Path(p.into())
@@ -143,35 +101,6 @@ mod tests {
         );
         assert!(!is_drive_root("C:\\Data"));
         assert!(!is_drive_root("1:\\"));
-    }
-
-    #[test]
-    fn the_sensor_each_creates() {
-        let new =
-            |d: Dropped| new_sensor(&d, kind).map(|(kind, props)| (kind, Value::Object(props)));
-        assert_eq!(
-            new(Dropped::Drive("E:\\".into())),
-            Some(("disk", json!({ "drive": "E:\\" })))
-        );
-        assert_eq!(
-            new(Dropped::Path("C:\\Data".into())),
-            Some(("folder-menu", json!({ "folder": "C:\\Data" })))
-        );
-        assert_eq!(
-            new(Dropped::Path("C:\\a.txt".into())),
-            Some(("shortcut", json!({ "target": "C:\\a.txt" })))
-        );
-        assert_eq!(new(Dropped::Path("C:\\Gone".into())), None);
-        assert_eq!(
-            new(Dropped::Url {
-                url: "https://example.com/".into(),
-                title: Some("Example".into())
-            }),
-            Some((
-                "shortcut",
-                json!({ "url": "https://example.com/", "title": "Example" })
-            ))
-        );
     }
 
     #[test]

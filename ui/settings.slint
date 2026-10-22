@@ -8,7 +8,7 @@ import { I18n } from "i18n.slint";
 // One field of a sensor's properties form (SPEC §6.7, §8.2); see `settings/form.rs`.
 export struct PropRow {
     key: string,
-    // 0 text, 1 switch, 2 list, 3 slider, 4 colour, 5 colour mode, 6 file, 7 folder.
+    // See `RowKinds`.
     kind: int,
     label: string,
     help: string,
@@ -39,7 +39,7 @@ export struct PickerRow {
 
 // One line of the Layout manager (SPEC §10.7).
 export struct LayoutRow {
-    // 0 = a zone's heading, 1 = a sensor, 2 = the note in an empty zone.
+    // See `LineKinds`.
     kind: int,
     // 0 = left, 1 = center, 2 = right.
     zone: int,
@@ -72,16 +72,41 @@ export struct SkinPackRow {
     problem: string,
 }
 
-// The pages' numbers past the plain settings pages (0 = General, 1 = Bar, 2 = Appearance,
-// 3 = Sensors, 4 = Popups, 5 = Applications): the rest of the navigation, then the pages it does
-// not list. Rust has the same numbers (`model::PAGES`, each module's `PAGE`; a test compares).
+// The pages' numbers: the navigation's in its order, then the pages it does not list. Rust has
+// the same numbers (`model::PAGES`, each module's `PAGE`), and so do `RowKinds` (`RowKind::code`)
+// and `LineKinds` (`LineKind::code`); `settings/contract.rs` compares them.
 export global Pages {
+    out property <int> general: 0;
+    out property <int> bar: 1;
+    out property <int> appearance: 2;
+    out property <int> sensors: 3;
+    out property <int> popups: 4;
+    out property <int> applications: 5;
     out property <int> help: 6;
     out property <int> about: 7;
     // Pages the navigation does not list.
     out property <int> properties: 8;
     out property <int> picker: 9;
     out property <int> welcome: 10;
+}
+
+// How a row of the properties form is edited (`PropRow.kind`).
+export global RowKinds {
+    out property <int> text: 0;
+    out property <int> flag: 1;
+    out property <int> choice: 2;
+    out property <int> number: 3;
+    out property <int> color: 4;
+    out property <int> color-mode: 5;
+    out property <int> file: 6;
+    out property <int> folder: 7;
+}
+
+// What a line of the Layout manager is (`LayoutRow.kind`).
+export global LineKinds {
+    out property <int> heading: 0;
+    out property <int> sensor: 1;
+    out property <int> empty: 2;
 }
 
 export global SettingsState {
@@ -794,7 +819,7 @@ component LayoutList inherits Rectangle {
         width: parent.width;
         height: root.line-height;
 
-        if row.kind == 0: HorizontalLayout {
+        if row.kind == LineKinds.heading: HorizontalLayout {
             padding-top: 8px;
             spacing: 8px;
             Text {
@@ -818,7 +843,7 @@ component LayoutList inherits Rectangle {
             }
         }
 
-        if row.kind == 2: Text {
+        if row.kind == LineKinds.empty: Text {
             x: 8px;
             text: row.name;
             vertical-alignment: center;
@@ -826,7 +851,7 @@ component LayoutList inherits Rectangle {
             opacity: 0.7;
         }
 
-        if row.kind == 1: line := Rectangle {
+        if row.kind == LineKinds.sensor: line := Rectangle {
             // What screen readers call it, in its row's buttons too.
             property <string> named: row.detail == "" ? row.name : row.name + ", " + row.detail;
             border-radius: 4px;
@@ -1773,7 +1798,7 @@ component HelpPage inherits VerticalLayout {
                 text: I18n.tr("help.keyboard.change");
                 // General, where the hotkey is set.
                 clicked => {
-                    SettingsState.page = 0;
+                    SettingsState.page = Pages.general;
                 }
             }
         }
@@ -1856,7 +1881,7 @@ component HelpPage inherits VerticalLayout {
                 text: I18n.tr("help.layout.open");
                 // Sensors, which starts with the Layout manager.
                 clicked => {
-                    SettingsState.page = 3;
+                    SettingsState.page = Pages.sensors;
                 }
             }
         }
@@ -1980,7 +2005,7 @@ component PropertiesPage inherits VerticalLayout {
             help: row.help;
             error: row.error;
 
-            if row.kind == 0: LineEdit {
+            if row.kind == RowKinds.text: LineEdit {
                 width: 280px;
                 text: row.text;
                 accessible-label: row.label;
@@ -1988,14 +2013,14 @@ component PropertiesPage inherits VerticalLayout {
                     SettingsState.prop-text(row.key, text);
                 }
             }
-            if row.kind == 1: Switch {
+            if row.kind == RowKinds.flag: Switch {
                 checked: row.checked;
                 accessible-label: row.label;
                 toggled => {
                     SettingsState.prop-flag(row.key, self.checked);
                 }
             }
-            if row.kind == 2: ComboBox {
+            if row.kind == RowKinds.choice: ComboBox {
                 width: 280px;
                 model: row.options;
                 current-index: row.index;
@@ -2004,7 +2029,7 @@ component PropertiesPage inherits VerticalLayout {
                     SettingsState.prop-choice(row.key, self.current-index);
                 }
             }
-            if row.kind == 3: ValueSlider {
+            if row.kind == RowKinds.number: ValueSlider {
                 label: row.label;
                 minimum: row.minimum;
                 maximum: row.maximum;
@@ -2015,7 +2040,7 @@ component PropertiesPage inherits VerticalLayout {
                     SettingsState.prop-number(row.key, v);
                 }
             }
-            if row.kind == 4: ColorField {
+            if row.kind == RowKinds.color: ColorField {
                 label: row.label;
                 every-edit: true;
                 value: row.text;
@@ -2023,7 +2048,7 @@ component PropertiesPage inherits VerticalLayout {
                     SettingsState.prop-text(row.key, text);
                 }
             }
-            if row.kind == 5: VerticalLayout {
+            if row.kind == RowKinds.color-mode: VerticalLayout {
                 spacing: 8px;
                 ComboBox {
                     width: 280px;
@@ -2044,7 +2069,7 @@ component PropertiesPage inherits VerticalLayout {
                     }
                 }
             }
-            if row.kind == 6 || row.kind == 7: HorizontalLayout {
+            if row.kind == RowKinds.file || row.kind == RowKinds.folder: HorizontalLayout {
                 spacing: 8px;
                 // Every edit counts, as in a text row: clicking Save does not take the focus, so
                 // the box cannot wait for focus-out.
@@ -2346,12 +2371,12 @@ export component SettingsWindow inherits Window {
                 content := VerticalLayout {
                     width: scroll.visible-width - 20px;
                     padding-bottom: 24px;
-                    if SettingsState.page == 0: GeneralPage { }
-                    if SettingsState.page == 1: BarPage { }
-                    if SettingsState.page == 2: AppearancePage { }
-                    if SettingsState.page == 3: SensorsPage { }
-                    if SettingsState.page == 4: PopupsPage { }
-                    if SettingsState.page == 5: ApplicationsPage { }
+                    if SettingsState.page == Pages.general: GeneralPage { }
+                    if SettingsState.page == Pages.bar: BarPage { }
+                    if SettingsState.page == Pages.appearance: AppearancePage { }
+                    if SettingsState.page == Pages.sensors: SensorsPage { }
+                    if SettingsState.page == Pages.popups: PopupsPage { }
+                    if SettingsState.page == Pages.applications: ApplicationsPage { }
                     if SettingsState.page == Pages.help: HelpPage { }
                     if SettingsState.page == Pages.about: AboutPage { }
                     if SettingsState.page == Pages.properties: PropertiesPage { }

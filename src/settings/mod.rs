@@ -10,6 +10,8 @@ mod about;
 mod accessibility;
 mod appearance;
 mod applications;
+#[cfg(test)]
+mod contract;
 mod form;
 mod layout;
 mod model;

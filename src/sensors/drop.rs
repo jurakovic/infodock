@@ -1,8 +1,15 @@
-//! Drops onto sensors (SPEC §6.3, §9.16, §9.19): the dragged items as the bar classified
-//! them, what a sensor would do with them, and the wording of the floating drop hint.
+//! Drops (SPEC §6.3, §9.16, §9.19): the dragged items as the bar classified them, the sensor a
+//! drop onto the bar creates for each, what a sensor would do with them, and the wording of
+//! the floating drop hint.
 
+use serde_json::Value;
+
+use super::disk_launcher::DiskType;
+use super::folder_menu::FolderMenuType;
+use super::shortcut::ShortcutType;
+use super::{Props, SensorType};
 use crate::i18n::t_count;
-use crate::platform::{DropEffect, DropEffects, FileOp, Modifiers};
+use crate::platform::{DropEffect, DropEffects, FileOp, Modifiers, PathKind};
 
 /// A dragged item the bar can take.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +31,34 @@ impl Dropped {
             Self::Drive(_) | Self::Url { .. } => None,
         }
     }
+}
+
+/// The sensor a drop on the bar creates for `dropped` (SPEC §6.3): its type and props; `kind`
+/// says what a path names, and a missing one makes nothing. The props are the types' own keys,
+/// which a test checks through `ops::add`.
+pub fn new_sensor(
+    dropped: &Dropped,
+    kind: impl Fn(&str) -> PathKind,
+) -> Option<(&'static str, Props)> {
+    let props = |pairs: &[(&str, &str)]| -> Props {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), Value::from(*v)))
+            .collect()
+    };
+    Some(match dropped {
+        Dropped::Drive(root) => (DiskType.id(), props(&[("drive", root)])),
+        Dropped::Path(path) => match kind(path) {
+            PathKind::Folder => (FolderMenuType.id(), props(&[("folder", path)])),
+            PathKind::File => (ShortcutType.id(), props(&[("target", path)])),
+            PathKind::Missing => return None,
+        },
+        Dropped::Url { url, title: None } => (ShortcutType.id(), props(&[("url", url)])),
+        Dropped::Url {
+            url,
+            title: Some(title),
+        } => (ShortcutType.id(), props(&[("url", url), ("title", title)])),
+    })
 }
 
 /// The keys held and the effects the source allows, as the drag goes on.
@@ -166,7 +201,86 @@ pub fn parent(path: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::config::model::{Config, Zone};
+    use crate::sensors::ops;
+    use crate::sensors::registry::registry;
+
+    fn kind(path: &str) -> PathKind {
+        if path.ends_with(".txt") {
+            PathKind::File
+        } else if path.contains("Gone") {
+            PathKind::Missing
+        } else {
+            PathKind::Folder
+        }
+    }
+
+    #[test]
+    fn the_sensor_each_creates() {
+        let new =
+            |d: Dropped| new_sensor(&d, kind).map(|(kind, props)| (kind, Value::Object(props)));
+        assert_eq!(
+            new(Dropped::Drive("E:\\".into())),
+            Some(("disk", json!({ "drive": "E:\\" })))
+        );
+        assert_eq!(
+            new(Dropped::Path("C:\\Data".into())),
+            Some(("folder-menu", json!({ "folder": "C:\\Data" })))
+        );
+        assert_eq!(
+            new(Dropped::Path("C:\\a.txt".into())),
+            Some(("shortcut", json!({ "target": "C:\\a.txt" })))
+        );
+        assert_eq!(new(Dropped::Path("C:\\Gone".into())), None);
+        assert_eq!(
+            new(Dropped::Url {
+                url: "https://example.com/".into(),
+                title: Some("Example".into())
+            }),
+            Some((
+                "shortcut",
+                json!({ "url": "https://example.com/", "title": "Example" })
+            ))
+        );
+    }
+
+    /// What the bar asks the app to add for a drop, the app adds: the types exist and take
+    /// the props as given.
+    #[test]
+    fn every_dropped_sensor_is_added_as_it_is() {
+        let dropped = [
+            Dropped::Drive("E:\\".into()),
+            Dropped::Path("C:\\Data".into()),
+            Dropped::Path("C:\\a.txt".into()),
+            Dropped::Url {
+                url: "https://example.com/".into(),
+                title: None,
+            },
+            Dropped::Url {
+                url: "https://example.com/".into(),
+                title: Some("Example".into()),
+            },
+        ];
+        for item in &dropped {
+            let (kind, props) = new_sensor(item, kind).expect("a sensor");
+            let mut config = Config::default();
+            let added = ops::add(
+                &mut config,
+                registry(),
+                &Props::new(),
+                kind,
+                Zone::Left,
+                0,
+                &props,
+            );
+            assert!(added.is_ok(), "{item:?}: {added:?}");
+            assert_eq!(config.layout.left[0].kind, kind);
+            assert_eq!(config.layout.left[0].props, props, "{item:?}");
+        }
+    }
 
     #[test]
     fn hints_name_one_item_or_count_them() {

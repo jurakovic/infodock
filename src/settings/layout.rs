@@ -30,6 +30,13 @@ pub enum LineKind {
     Empty,
 }
 
+impl LineKind {
+    /// The kind's number in the window (`LineKinds` in `settings.slint`).
+    pub fn code(self) -> i32 {
+        self as i32
+    }
+}
+
 /// A line of the list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
@@ -156,11 +163,7 @@ pub(super) fn fill(open: &Open, app: &App, layout: &Layout) {
     let rows: Vec<ui::LayoutRow> = lines
         .iter()
         .map(|line| ui::LayoutRow {
-            kind: match line.kind {
-                LineKind::Heading => 0,
-                LineKind::Sensor => 1,
-                LineKind::Empty => 2,
-            },
+            kind: line.kind.code(),
             zone: line.zone as i32,
             id: line.id.as_str().into(),
             name: line.name.as_str().into(),
