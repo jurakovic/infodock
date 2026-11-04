@@ -13,6 +13,7 @@ mod droptarget;
 mod eject;
 mod fileops;
 mod hint;
+pub(super) mod hotkeys;
 mod icons;
 pub mod image;
 pub mod instance;

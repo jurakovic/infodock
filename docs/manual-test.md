@@ -634,6 +634,10 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Hotkey taken by another app** (since M5 S14p)
+
+- [ ] With an app that registers a global hotkey running (e.g. ShareX's Ctrl+Shift+PrintScreen, or AutoHotkey with `^!k::MsgBox`), Settings ▸ General ▸ *Hotkey*, press that combination: recording ends with *Another app already uses Ctrl+Alt+K. Choose a different combination.*, the button shows the previous hotkey, which still works, and the other app did not react. A free combination is recorded as before.
+
 **Acrylic and the material** (since M5 S14n; CI's runner draws no material, so this is the check)
 
 - [ ] Modern theme, transparency effects on (Settings ▸ Personalization ▸ Colors): with a colourful window behind the bar (or a colourful wallpaper), the bar shows it blurred and darkened, not an opaque grey, also while it has the keyboard (hotkey) and after clicking another window. Move the window behind: the blur follows.

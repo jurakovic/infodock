@@ -546,8 +546,10 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
 /// Handles the native window's events: while `recording-hotkey` is set, the next key pressed
 /// with its modifiers becomes the hotkey (SPEC §6.5); Esc, leaving the window or the General
 /// page cancels. The keys are read from winit as physical keys, so the keyboard layout does not
-/// matter (Ctrl+Alt is AltGr on many layouts). When the OS switches between light and dark,
-/// what follows it shows it (the Fluent palette follows by itself, SPEC §10.3).
+/// matter (Ctrl+Alt is AltGr on many layouts). A combination another app holds never reaches
+/// the window, so the platform watches for those meanwhile ([`taken_hotkey`]). When the OS
+/// switches between light and dark, what follows it shows it (the Fluent palette follows by
+/// itself, SPEC §10.3).
 fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     use slint::winit_030::winit::event::{ElementState, WindowEvent};
     use slint::winit_030::winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -556,11 +558,25 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     let app = Arc::clone(app);
     let weak = window.as_weak();
     let mut modifiers = ModifiersState::empty();
+    let mut watch: Option<crate::platform::HotkeyWatch> = None;
     window.window().on_winit_window_event(move |_, event| {
         let Some(window) = weak.upgrade() else {
             return EventResult::Propagate;
         };
         let state = window.global::<ui::SettingsState>();
+        // The watch runs exactly while recording; the window's events come often enough (the
+        // modifiers' own presses among them) to start it before a combination is complete.
+        let recording = state.get_recording_hotkey() && state.get_page() == GENERAL_PAGE;
+        if recording != watch.is_some() {
+            watch = if recording {
+                let (app, weak) = (Arc::clone(&app), weak.clone());
+                crate::platform::watch_taken_hotkeys(Box::new(move |combo| {
+                    taken_hotkey(&app, &weak, combo);
+                }))
+            } else {
+                None
+            };
+        }
         let stop = || {
             state.set_recording_hotkey(false);
             state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
@@ -619,6 +635,40 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
             _ => {}
         }
         EventResult::Propagate
+    });
+}
+
+/// A combination someone holds was pressed while recording (SPEC §6.5): it ends the recording
+/// as a combination the window saw would, so registering it fails with *Another app already
+/// uses …* and the previous hotkey stays (or, for Infodock's own hotkey, it is kept). Runs
+/// from the keyboard hook, so the work waits for the event loop.
+fn taken_hotkey(
+    app: &Arc<App>,
+    window: &slint::Weak<ui::SettingsWindow>,
+    combo: crate::platform::keys::KeyCombo,
+) {
+    let (app, window) = (Arc::clone(app), window.clone());
+    slint::Timer::single_shot(Duration::ZERO, move || {
+        let Some(window) = window.upgrade() else {
+            return;
+        };
+        let state = window.global::<ui::SettingsState>();
+        if !state.get_recording_hotkey() {
+            return;
+        }
+        let held = hotkey::Modifiers {
+            ctrl: combo.ctrl,
+            alt: combo.alt,
+            shift: combo.shift,
+            win: combo.win,
+        };
+        match hotkey::accelerator(held, combo.code) {
+            Ok(accelerator) => {
+                state.set_recording_hotkey(false);
+                apply_hotkey(&app, &accelerator);
+            }
+            Err(e) => state.set_hotkey_error(e.into()),
+        }
     });
 }
 

@@ -12,6 +12,7 @@ pub mod bitmap;
 pub mod canvas;
 pub mod drag;
 pub mod geometry;
+pub mod keys;
 pub mod locale;
 pub mod notify;
 pub mod recording;
@@ -902,6 +903,27 @@ pub fn current() -> Arc<dyn Platform> {
 // ---------------------------------------------------------------------------------------------
 // Drawing: text and images (SPEC §4.6)
 // ---------------------------------------------------------------------------------------------
+
+/// While it lives, Settings hears of the hotkey combinations other apps hold (SPEC §6.5): such
+/// a combination goes to its app and never reaches the window, so recording would wait for keys
+/// that never come. Dropping it ends the watch.
+pub struct HotkeyWatch {
+    #[cfg(windows)]
+    _hook: windows::hotkeys::Hook,
+}
+
+/// Watches the keyboard on this thread, Settings' (main) thread, while a hotkey is recorded:
+/// `taken` hears of each combination someone holds, which is kept from them meanwhile. `None`
+/// where nothing needs watching or the keyboard cannot be watched.
+pub fn watch_taken_hotkeys(taken: Box<dyn Fn(keys::KeyCombo)>) -> Option<HotkeyWatch> {
+    #[cfg(windows)]
+    return windows::hotkeys::watch(taken).map(|hook| HotkeyWatch { _hook: hook });
+    #[cfg(not(windows))]
+    {
+        let _ = taken;
+        None
+    }
+}
 
 /// The text engine for this thread's windows: DirectWrite on Windows, fixed metrics elsewhere.
 pub fn text_engine() -> Rc<dyn TextEngine> {
