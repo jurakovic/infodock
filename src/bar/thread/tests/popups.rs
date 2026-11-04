@@ -248,6 +248,8 @@ fn a_folder_menu_opens_its_list_closes_on_esc_and_resizes() {
 fn screen_readers_list_a_folder_menus_rows_and_mark_them() {
     let dir = crate::sensors::common::folder_browser::tests::sample_folder();
     let (mut logic, window, _, mut config) = bar(Settings::default());
+    // Lists as on every OS: Windows' own platform hides by attribute, so ".hidden" would show.
+    logic.platform = Arc::new(FakePlatform::default()) as Arc<dyn Platform>;
     let logo = &mut config.layout.center[0];
     logo.kind = "folder-menu".into();
     logo.props = serde_json::json!({ "folder": dir.path().to_string_lossy() })
