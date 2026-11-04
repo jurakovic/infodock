@@ -229,3 +229,48 @@ pub fn font_families() -> Result<Vec<String>> {
         Ok(families)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The characters messages may use beyond ASCII (`i18n::NON_ASCII`) are in the fonts
+    /// Settings draws with, where installed: Windows 11's and the fallback, Segoe UI.
+    #[test]
+    fn the_ui_fonts_have_every_character_the_messages_use() {
+        // SAFETY: plain DirectWrite queries.
+        unsafe {
+            let factory: IDWriteFactory =
+                DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).expect("DirectWrite");
+            let mut fonts = None;
+            factory
+                .GetSystemFontCollection(&mut fonts, false)
+                .expect("system fonts");
+            let fonts = fonts.expect("system fonts");
+            let mut checked = 0;
+            for family in ["Segoe UI Variable Text", "Segoe UI"] {
+                let (mut index, mut exists) = (0, BOOL(0));
+                fonts
+                    .FindFamilyName(&HSTRING::from(family), &mut index, &mut exists)
+                    .expect("family lookup");
+                if !exists.as_bool() {
+                    continue;
+                }
+                let font = fonts
+                    .GetFontFamily(index)
+                    .and_then(|f| f.GetFont(0))
+                    .expect("a font of the family");
+                for c in crate::i18n::NON_ASCII.chars() {
+                    let has = font.HasCharacter(u32::from(c)).expect("cmap");
+                    assert!(
+                        has.as_bool(),
+                        "{family} has no {c:?} (U+{:04X})",
+                        u32::from(c)
+                    );
+                }
+                checked += 1;
+            }
+            assert!(checked > 0, "Segoe UI is installed");
+        }
+    }
+}

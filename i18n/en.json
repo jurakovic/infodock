@@ -651,7 +651,7 @@
   "settings.appearance.opacity.classicHelp": "The theme default is {value} %. It applies to the skin, not to the sensors.",
   "settings.appearance.material": "Material",
   "settings.appearance.material.help": "Acrylic and Mica let the desktop show through the bar, blurred.",
-  "settings.appearance.material.off": "Turn on Transparency effects in Windows Settings ▸ Personalisation ▸ Colours to use a material.",
+  "settings.appearance.material.off": "Turn on Transparency effects in Windows Settings › Personalisation › Colours to use a material.",
   "settings.appearance.material.none": "None",
   "settings.appearance.material.acrylic": "Acrylic",
   "settings.appearance.material.mica": "Mica",

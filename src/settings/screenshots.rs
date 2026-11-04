@@ -89,7 +89,7 @@ fn render_settings_pages() {
     super::layout::fill(&open, &app, &app.store.get().layout);
     ui.show().expect("shown");
 
-    let render_sized = |name: &str, height: u32| {
+    let render_at = |name: &str, width: u32, height: u32| {
         window.set_size(PhysicalSize::new(width, height));
         // Start what the change animates (the page's fade, the navigation's pill: change
         // handlers run here) and let it finish, with the state animations (e.g. a button
@@ -109,6 +109,7 @@ fn render_settings_pages() {
             .collect();
         write_png(&screenshot_path(name), width, height, &rgba);
     };
+    let render_sized = |name: &str, height: u32| render_at(name, width, height);
     let render = |name: &str| render_sized(name, height);
     let state = ui.global::<ui::SettingsState>();
     for (index, page) in super::model::PAGES.iter().enumerate() {
@@ -122,6 +123,27 @@ fn render_settings_pages() {
         state.set_page(index.unwrap_or_default() as i32);
         render_sized(&format!("settings-{page}-full"), 1500);
     }
+    // At the window's minimum width the controls narrow, so a label keeps room for its words
+    // ("Position" broke inside the word before): beside a control on Bar, beside a font list
+    // on Sensors.
+    let label_width = |label: &str| bounds(&ui, AccessibleRole::Text, label).2;
+    state.set_page(1);
+    render_at("settings-bar-narrow", 640, height);
+    for label in [
+        "settings.bar.mode",
+        "settings.bar.edge",
+        "settings.bar.monitor",
+    ] {
+        let room = label_width(&t(label));
+        assert!(room >= 150.0, "{label}: {room} px at the minimum width");
+    }
+    state.set_page(super::model::SENSORS_PAGE as i32);
+    render_at("settings-sensors-narrow", 640, 1400);
+    let font = label_width(&t("settings.font"));
+    assert!(
+        font >= 150.0,
+        "the font's label: {font} px at the minimum width"
+    );
     // The whole Bar page.
     state.set_page(1);
     render_sized("settings-bar-full", 1000);

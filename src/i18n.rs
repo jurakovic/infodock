@@ -14,6 +14,13 @@ static CATALOG: LazyLock<HashMap<String, Value>> =
 
 static REPORTED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 
+/// The characters beyond ASCII that messages (and the Settings window's own bullet, •) may use:
+/// each is in the fonts Settings draws with, Segoe UI Variable and Segoe UI (a Windows test
+/// checks them, `platform/windows/text.rs`). Slint draws a character its font lacks as a gap,
+/// as "▸" was (SPEC §13); a new one is added here once the fonts have it.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) const NON_ASCII: &str = "×–—‘’“”…•←→›";
+
 /// The message for `key`, or the key itself (logged once) if it is missing.
 pub fn t(key: &str) -> String {
     t_args(key, &[])
@@ -84,6 +91,27 @@ mod tests {
             t_count("tray.quit", 2, &[]),
             "Quit Infodock",
             "not a plural entry"
+        );
+    }
+
+    #[test]
+    fn messages_use_only_characters_the_fonts_have() {
+        let mut texts = Vec::new();
+        for value in CATALOG.values() {
+            match value {
+                Value::String(s) => texts.push(s.as_str()),
+                Value::Object(forms) => texts.extend(forms.values().filter_map(Value::as_str)),
+                _ => {}
+            }
+        }
+        let missing: std::collections::BTreeSet<char> = texts
+            .iter()
+            .flat_map(|t| t.chars())
+            .filter(|c| !c.is_ascii() && !NON_ASCII.contains(*c))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "characters not known to be in the UI fonts: {missing:?}"
         );
     }
 

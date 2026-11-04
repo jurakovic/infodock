@@ -130,12 +130,15 @@ global Look {
     // TextFillColorSecondary: help text and details.
     out property <color> secondary-text: self.dark ? #ffffffc8 : #0000009e;
     out property <length> radius: 4px;
+    // The window is narrower than 720 px: the controls narrow, so a setting's label keeps at
+    // least 160 px for its words down to the window's minimum width (SPEC §10.7).
+    in-out property <bool> narrow;
     // The width of a setting's control (ComboBox, slider, hotkey), and of the wide ones that
     // show font names or a form's text.
-    out property <length> control-width: 240px;
-    out property <length> wide-control-width: 280px;
+    out property <length> control-width: self.narrow ? 180px : 240px;
+    out property <length> wide-control-width: self.narrow ? 200px : 280px;
     // A path's box, which has *Browse…* beside it.
-    out property <length> path-width: 220px;
+    out property <length> path-width: self.narrow ? 160px : 220px;
 }
 
 // A page of the navigation.
@@ -2492,8 +2495,13 @@ export component SettingsWindow inherits Window {
     icon: @image-url("../icons/32x32.png");
     preferred-width: 760px;
     preferred-height: 560px;
-    min-width: 560px;
+    // With the navigation (180 px), the page's margins and a card's padding, a label beside the
+    // widest narrowed control (200 px) keeps 160 px; Look.narrow below 720 px.
+    min-width: 640px;
     min-height: 420px;
+    changed width => {
+        Look.narrow = self.width < 720px;
+    }
     background: Look.window;
     // Windows 11's UI font at WinUI's Body size, 14 px (Slint would take the system's message
     // font, 12 px); help text stays at Caption, 12 px. Where the font is missing (Windows 10)
@@ -2524,6 +2532,7 @@ export component SettingsWindow inherits Window {
     }
     init => {
         root.apply-color-scheme();
+        Look.narrow = self.width < 720px;
     }
 
     function apply-color-scheme() {

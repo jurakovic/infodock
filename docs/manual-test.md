@@ -634,6 +634,11 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Settings: narrow window and glyphs** (since M5 S14s)
+
+- [ ] Make Settings as narrow as it goes (640 px at 100 %): on Bar, *Position* and the other labels wrap between words, never inside one, and help texts keep several words a line; the controls are narrower. Wider than 720 px: the controls are as before.
+- [ ] Appearance with transparency effects off: the Material help reads "Windows Settings › Personalisation › Colours", with no gaps.
+
 **Wi-Fi and location access** (since M5 S14r; Windows 11 24H2 or later, a laptop with Wi-Fi)
 
 - [ ] Settings ▸ Privacy & security ▸ Location: *Let desktop apps access your location* off (or never decided). Add a Wi-Fi Signal sensor: no *Let Windows and apps access your location?* prompt appears, the bar's right-click menu opens as usual, and the sensor shows `Wi-Fi` with the signal; its hint says *Allow location access to show the network name*, and a click opens the location settings.
