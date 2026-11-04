@@ -440,6 +440,7 @@ pad = 7            // logical px edge padding
 gap = settings.sensorSpacing (1..20, default 10)
 left:   x = pad; for s in left:   place(s, x);  x += width(s) + gap
 center: total = Σ(width(s) + gap) over center; x = round((barWidth − total)/2)
+        x = clamp(x, end of left + gap, start of right − gap − width of center)
         for s in center: place(s, x); x += width(s) + gap
 right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s, x); x −= gap
 ```
@@ -447,7 +448,7 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 (The center total deliberately includes one trailing gap.)
 
 * Sensor width is **intrinsic** (content), except for sensors with a width property (Spacer, graphs).
-* When the zones do not fit the bar with a gap between them and the padding at its ends, sensors whose text can be cut give way with an ellipsis: the center zone first, then left, then right, each zone only as far as its own overlap needs (the left and right zones as far as they meet the center, or each other when the center is empty), its sensors in proportion to what they can give, in whole px, down to a minimum each. What still does not fit overlaps; the center zone is drawn on top. The Text sensor gives way, down to two ems of its font size (plus its shadow); its hint shows the whole text while it is cut (§9.1). Other sensors keep their width: values have reserved widths, and the launchers show only icons (§9.17–9.19).
+* A center zone that would meet the left or right zone moves towards the side with room, as far as it needs (the clamp above), so nothing is cut or overlaps while the zones fit the bar side by side. When they do not fit with a gap between them and the padding at its ends, sensors whose text can be cut give way with an ellipsis until they do: the center zone first, then left, then right, a zone's sensors in proportion to what they can give, in whole px, down to a minimum each. What still does not fit overlaps: the center zone then sits midway between the zones beside it, drawn on top. (Until M5 S14q the center stayed centred and gave way only as far as its centred place needed, so it overlapped the left zone on a narrow bar while the right zone had room.) The Text sensor gives way, down to two ems of its font size (plus its shadow); its hint shows the whole text while it is cut (§9.1). Other sensors keep their width: values have reserved widths, and the launchers show only icons (§9.17–9.19).
 * Implementation: widths and positions computed by `bar/layout.rs` (pure, tested functions: `fit`, then `place`) from the widths each sensor measures (`measure()`, §8.1) and the minimums it can be cut to (`min_width()`); a sensor given less than it measured is told so (`fit()`), and lays out its text again with that maximum width (DirectWrite trimming with an ellipsis sign). Values use tabular numerals (DirectWrite `tnum`) and per-sensor reserved minimum widths (§9) so changing numbers do not shift the bar.
 
 ### 5.5 Appearance

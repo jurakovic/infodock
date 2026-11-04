@@ -634,6 +634,10 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Overlapping zones, fairly** (since M5 S14q)
+
+- [ ] A floating bar with a Network Graph (rates shown) on the left, an icon sensor (e.g. the Recycle Bin) in the centre and a Text sensor on the right: narrow it slowly from its end. The centre moves towards the right while the text is whole, then the text gives way with "…", and only once it is down to a few characters does anything overlap. With the zones swapped it moves left.
+
 **Hotkey taken by another app** (since M5 S14p)
 
 - [ ] With an app that registers a global hotkey running (e.g. ShareX's Ctrl+Shift+PrintScreen, or AutoHotkey with `^!k::MsgBox`), Settings ▸ General ▸ *Hotkey*, press that combination: recording ends with *Another app already uses Ctrl+Alt+K. Choose a different combination.*, the button shows the previous hotkey, which still works, and the other app did not react. A free combination is recorded as before.

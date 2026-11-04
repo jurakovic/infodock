@@ -848,22 +848,23 @@ mod tests {
             let dump = canvas.dump();
             dump.lines().last().unwrap_or_default().to_owned()
         };
-        // 13 px text: 6.5 px a character. On 200 px the centre may start at 76, after the left
-        // and its gap, so it gets 200 − 10 − 2 × 76 = 38 px of its 163.
+        // 13 px text: 6.5 px a character. Side by side the zones need 7 + 59 + 10 + 163 + 10 +
+        // 40 + 7 = 296 of 200 px: the centre gives the 96 px and fills the room between the
+        // left's gap (76) and the spacer's (143).
         sensors.update_layout(&layout_ctx(&theme, 1.0), 200.0);
         assert_eq!(
             sensors.places(),
             [
                 ("a".into(), 7.0, 59.0),
-                ("b".into(), 76.0, 38.0),
+                ("b".into(), 76.0, 67.0),
                 ("c".into(), 153.0, 40.0)
             ]
         );
-        assert!(centre(&sensors).contains("\"A ra…\" "), "cut");
+        assert!(centre(&sensors).contains("\"A rather …\" "), "cut");
         // Measured again, it stays cut.
         sensors.invalidate_all();
         sensors.update_layout(&layout_ctx(&theme, 1.0), 200.0);
-        assert!(centre(&sensors).contains("\"A ra…\" "));
+        assert!(centre(&sensors).contains("\"A rather …\" "));
         // With room, it is whole again.
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert_eq!(sensors.places()[1], ("b".into(), 114.0, 163.0));
