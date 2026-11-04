@@ -4,8 +4,8 @@
 //!
 //! Transparency: the window keeps its redirection surface and enables per-pixel alpha with
 //! `DwmEnableBlurBehindWindow` and an empty blur region (the same setup the M0 webview bar had
-//! through tao), so a DWM material set by `window-vibrancy` shows through wherever the bar is
-//! drawn translucent.
+//! through tao), so the material (`material.rs`) shows through wherever the bar is drawn
+//! translucent.
 //!
 //! Re-entrancy: Win32 calls made by the handler can dispatch messages to this window again
 //! (modal loops such as menus run their own message pumps). Events that arrive while the handler
@@ -15,15 +15,11 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::num::NonZeroIsize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::Duration;
 
-use raw_window_handle::{
-    HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
-};
 use windows::Win32::Foundation::{FILETIME, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DwmEnableBlurBehindWindow,
@@ -587,20 +583,12 @@ impl BarWindow for WindowState {
     }
 
     fn set_material(&self, material: Material) {
-        let Some(handle) = NonZeroIsize::new(self.hwnd.get()).map(BarHandle) else {
+        if self.hwnd.get() == 0 {
             return;
-        };
-        let _ = window_vibrancy::clear_acrylic(&handle);
-        let _ = window_vibrancy::clear_mica(&handle);
-        // The bar draws its own tint (SPEC §12.2), so the backdrop itself stays untinted.
-        let result = match material {
-            Material::None => Ok(()),
-            Material::Acrylic => window_vibrancy::apply_acrylic(&handle, Some((0, 0, 0, 0))),
-            Material::Mica => window_vibrancy::apply_mica(&handle, None),
-        };
-        match result {
-            Ok(()) => tracing::debug!("window material: {material:?}"),
-            Err(e) => tracing::warn!("window material {material:?} not available: {e}"),
+        }
+        match super::material::apply(self.hwnd(), material) {
+            Ok(()) => tracing::info!("bar material: {material:?}"),
+            Err(e) => tracing::warn!("bar material {material:?} not available: {e}"),
         }
     }
 
@@ -780,17 +768,6 @@ impl BarWindow for WindowState {
         if let Some(Ok(popup)) = self.popup.get() {
             popup.capture(capture);
         }
-    }
-}
-
-/// The bar window as a raw window handle, for `window-vibrancy`.
-struct BarHandle(NonZeroIsize);
-
-impl HasWindowHandle for BarHandle {
-    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-        let raw = RawWindowHandle::Win32(Win32WindowHandle::new(self.0));
-        // SAFETY: the bar window lives as long as the process.
-        Ok(unsafe { WindowHandle::borrow_raw(raw) })
     }
 }
 

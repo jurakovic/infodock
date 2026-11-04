@@ -632,6 +632,13 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Acrylic and the material** (since M5 S14n; CI's runner draws no material, so this is the check)
+
+- [ ] Modern theme, transparency effects on (Settings ▸ Personalization ▸ Colors): with a colourful window behind the bar (or a colourful wallpaper), the bar shows it blurred and darkened, not an opaque grey, also while it has the keyboard (hotkey) and after clicking another window. Move the window behind: the blur follows.
+- [ ] *Material* → Mica (Windows 11): the bar takes the wallpaper's tint, faintly, not a flat grey; back to Acrylic.
+- [ ] Transparency effects off: the bar is opaque (no see-through), Settings ▸ Appearance greys out *Material*; on again: the blur returns without a restart.
+- [ ] `cargo test material -- --ignored --nocapture` on the machine: `acrylic` reads a dark red, `none` red; the line for `acrylic-backdrop` (the old way) reads grey.
+
 **Accent colour from Windows' colour API** (since M5 S14m)
 
 - [ ] With Windows' default blue accent (Settings ▸ Personalization ▸ Colors ▸ *Accent color* manual, the first blue), press the hotkey: the ring around the bar is blue, also where `HKCU\Software\Microsoft\Windows\DWM\AccentColor` reads 0. Drag a sensor: the placer is blue too.

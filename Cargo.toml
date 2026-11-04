@@ -121,7 +121,6 @@ tracing-appender = "0.2"
 [target.'cfg(windows)'.dependencies]
 # Batteries for the `battery/<i>` topic (SPEC Appendix A): charge, state, times, names.
 starship-battery = "0.12"
-window-vibrancy = "0.8"
 # Points and matrices of the Direct2D API; the version the `windows` crate uses.
 windows-numerics = "0.3"
 # The `#[implement]` macro (the bar's `IDropTarget`) names this crate; the version the

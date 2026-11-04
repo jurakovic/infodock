@@ -17,6 +17,7 @@ mod icons;
 pub mod image;
 pub mod instance;
 mod locale;
+mod material;
 mod memory;
 mod menu;
 mod monitors;

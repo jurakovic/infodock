@@ -125,7 +125,7 @@ Later (backlog §18): RSS/Atom feeds, mail, hardware temperatures/fans, internet
 | Serialisation | `serde`, `serde_json`; `quick-xml` (legacy import) | |
 | Logging | `tracing` + `tracing-appender` (rolling files) | |
 | Other OS services | Through the platform layer (§4.6): single-instance lock, known folders, launching files and URLs, file pickers (`IFileOpenDialog`, `IFileSaveDialog`), toast notifications (WinRT), autostart (the per-user `Run` key) | |
-| Window effects | `window-vibrancy` (Acrylic/Mica on the bar window) | Optional per theme |
+| Window effects | DWM directly (`platform/windows/material.rs`: Acrylic through the accent policy, Mica as the system backdrop) | Optional per theme |
 | Windows resources | `embed-resource`: exe icon, application manifest (per-monitor DPI v2, common controls 6), version information | |
 | UI tests | Rust unit tests for the bar and the Settings mapping; offscreen rendering of the Settings pages to PNG (§16) | |
 | Packaging | `cargo-packager` → **NSIS per-user installer** (no admin); the portable exe needs nothing else | |
@@ -1498,7 +1498,7 @@ Settings has its own look (§4.3) and does not use the bar theme, except for ski
 
 ### 12.2 Modern theme (default)
 
-* Bar: `#1C1C1F` at 80 % over **Acrylic** (DWM via `window-vibrancy`; Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28.
+* Bar: `#1C1C1F` at 80 % over **Acrylic** (Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28. Acrylic is the accent policy (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`, almost untinted), as taskbars use it: Windows 11's system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`) draws a solid fallback behind a window that is not active, and the bar never is, so it showed opaque grey. Mica exists only as a system backdrop; its frame is drawn active. Without transparency effects there is no material and the bar is opaque, as Windows' own surfaces are (the theme's opacity applies only with them). `platform/windows/material.rs`
 * Typography: Segoe UI Variable; small 10 px, medium 11 px, large 15 px; semibold labels; tabular numerals.
 * Icons: the Infodock SVG set (Appendix C), monochrome, rasterised at the physical size and tinted with the sensor text colour.
 * Popups: radius 8 px, `#202024` at 92 %, soft shadow, 12 px text.
@@ -1699,7 +1699,7 @@ Ordered by expected value; each item reuses the framework unchanged.
 | # | Item | Mitigation / status |
 |---|---|---|
 | R1 | Browsers offer links in different clipboard formats | The bar's own `IDropTarget` reads `CFSTR_INETURLW`, `UniformResourceLocatorW` and the HTML fragment (§6.3). Fallback: "Paste URL" in Shortcut properties |
-| R2 | Per-pixel alpha with a DWM material on a natively drawn window | Validated first in M1 (same window setup as the M0 webview bar: DWM blur-behind for alpha, `window-vibrancy` for the material). Fallback: a layered window (`UpdateLayeredWindow`) with the accent-policy blur |
+| R2 | Per-pixel alpha with a DWM material on a natively drawn window | Validated first in M1 (same window setup as the M0 webview bar: DWM blur-behind for alpha, a DWM material; M5 S14n moved Acrylic to the accent policy, since the system backdrop is a solid fallback behind a window that never activates). Fallback: a layered window (`UpdateLayeredWindow`) with the accent-policy blur |
 | R3 | Wi-Fi SSID requires Location permission on Windows 11 24H2+ | Graceful degradation (§9.15) |
 | R4 | Custom drawing costs more code than HTML/CSS (text layout, the Folder Menu popup, the calendar, accessibility) | Shared building blocks (§8.3), a small canvas API (§4.6), snapshot tests against a recording canvas, rendered PNGs from CI for review. UI Automation is scoped to name/value/invoke per sensor |
 | R5 | CPU % may differ from Task Manager | Use PDH `\Processor Information(_Total)\% Processor Utility` (clamped to 100) for the total, as Task Manager does; per-core via the same counter set; user/kernel split from `GetSystemTimes` |

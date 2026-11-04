@@ -112,9 +112,13 @@ impl Theme {
         Self {
             id: s.theme,
             bar_height: s.bar_height(),
-            bar_background: background.with_alpha(percent(
-                s.background.opacity.unwrap_or(d.background_opacity),
-            )),
+            // Without transparency effects the bar is opaque, as Windows' own surfaces are
+            // (SPEC §12.2).
+            bar_background: background.with_alpha(if os.transparency {
+                percent(s.background.opacity.unwrap_or(d.background_opacity))
+            } else {
+                1.0
+            }),
             skin,
             hairline,
             material,
@@ -364,14 +368,17 @@ mod tests {
     }
 
     #[test]
-    fn no_material_without_transparency_effects() {
+    fn no_material_and_no_translucency_without_transparency_effects() {
         let os = OsAppearance {
             transparency: false,
             ..DARK
         };
-        assert_eq!(
-            Theme::resolve(&Settings::default(), os).material,
-            Material::None
+        let theme = Theme::resolve(&Settings::default(), os);
+        assert_eq!(theme.material, Material::None);
+        assert_eq!(theme.bar_background.a, 1.0, "the bar is opaque");
+        assert!(
+            Theme::resolve(&Settings::default(), DARK).bar_background.a < 1.0,
+            "with them on, the theme's opacity"
         );
     }
 }

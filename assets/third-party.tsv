@@ -501,7 +501,6 @@ wgpu-hal	30.0.1	-
 wgpu-naga-bridge	30.0.1	-
 wgpu-types	30.0.1	-
 winapi-util	0.1.11	-
-window-vibrancy	0.8.1	Apache-2.0 OR MIT
 windows	0.62.2	MIT OR Apache-2.0
 windows-collections	0.3.2	MIT OR Apache-2.0
 windows-core	0.62.2	MIT OR Apache-2.0
@@ -519,7 +518,6 @@ windows-sys	0.61.2	MIT OR Apache-2.0
 windows-targets	0.48.5	-
 windows-targets	0.52.6	MIT OR Apache-2.0
 windows-threading	0.2.1	MIT OR Apache-2.0
-windows-version	0.1.7	MIT OR Apache-2.0
 windows_aarch64_gnullvm	0.48.5	-
 windows_aarch64_gnullvm	0.52.6	-
 windows_aarch64_msvc	0.48.5	-
