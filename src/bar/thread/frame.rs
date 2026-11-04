@@ -156,6 +156,17 @@ impl BarLogic {
                 &Brush::Solid(self.theme.accent),
                 focus::RING_WIDTH,
             );
+            let background = self.theme.bar_background.with_alpha(1.0);
+            if let Some((inner, color)) = focus::inner_line(rect, self.theme.accent, background) {
+                canvas.stroke(
+                    &Shape::RoundedRect {
+                        rect: inner,
+                        radius: focus::RING_RADIUS - focus::RING_WIDTH / 2.0,
+                    },
+                    &Brush::Solid(color),
+                    focus::INNER_WIDTH,
+                );
+            }
         }
         if opacity < 1.0 {
             canvas.pop();

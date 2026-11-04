@@ -304,11 +304,11 @@ impl Platform for WindowsPlatform {
             // Missing values: apps use light mode and transparency is on (the OS defaults).
             dark: read_dword(PERSONALIZE, w!("AppsUseLightTheme")).is_some_and(|v| v == 0),
             transparency: read_dword(PERSONALIZE, w!("EnableTransparency")).is_none_or(|v| v != 0),
-            // The accent colour as 0xAABBGGRR.
-            accent: read_dword(DWM, w!("AccentColor")).map_or(defaults.accent, |v| {
-                let [r, g, b, _] = v.to_le_bytes();
-                Color::rgba(r, g, b, 1.0)
-            }),
+            accent: accent()
+                .or_else(|| {
+                    read_dword(DWM, w!("AccentColor")).and_then(OsAppearance::accent_from_dwm)
+                })
+                .unwrap_or(defaults.accent),
             animations: client_area_animation().unwrap_or(defaults.animations),
         }
     }
@@ -320,7 +320,19 @@ impl Platform for WindowsPlatform {
     }
 }
 
-/// A DWORD value under `HKEY_CURRENT_USER`, if present.
+/// The accent colour from Windows' colour API (SPEC §12.1), which has it where the DWM's
+/// registry value may not (seen 0 with the default blue on Windows 11).
+fn accent() -> Option<Color> {
+    use windows::UI::ViewManagement::{UIColorType, UISettings};
+    match UISettings::new().and_then(|s| s.GetColorValue(UIColorType::Accent)) {
+        Ok(c) => OsAppearance::accent_from(c.R, c.G, c.B, c.A),
+        Err(e) => {
+            tracing::debug!("the accent colour is not available from UISettings: {e}");
+            None
+        }
+    }
+}
+
 /// "Animation effects" (Settings ▸ Accessibility ▸ Visual effects).
 fn client_area_animation() -> Option<bool> {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -340,6 +352,7 @@ fn client_area_animation() -> Option<bool> {
     Some(on.as_bool())
 }
 
+/// A DWORD value under `HKEY_CURRENT_USER`, if present.
 fn read_dword(key: PCWSTR, value: PCWSTR) -> Option<u32> {
     let mut data: u32 = 0;
     let mut size = size_of::<u32>() as u32;

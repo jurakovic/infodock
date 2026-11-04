@@ -1,13 +1,17 @@
 //! The keyboard on the bar (SPEC §14.4), the pure part: which sensor Tab moves the focus ring
-//! to, where the focus goes when its sensor is removed, and where the ring is drawn.
+//! to, where the focus goes when its sensor is removed, and where and how the ring is drawn.
 
-use crate::platform::{RectF, SizeF};
+use crate::platform::{Color, RectF, SizeF};
 
 /// How far the ring lies inside the bar, logical px; its stroke is centred on that line.
 const RING_INSET: f32 = 1.5;
 /// The ring's stroke and corners, logical px.
 pub(super) const RING_WIDTH: f32 = 2.0;
 pub(super) const RING_RADIUS: f32 = 3.0;
+/// The contrast the ring needs against the bar on its own: WCAG's 3:1 for focus indicators.
+const RING_CONTRAST: f32 = 3.0;
+/// The stroke of the line inside a ring that lacks it, logical px.
+pub(super) const INNER_WIDTH: f32 = 1.0;
 
 /// A move of the focus ring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +81,22 @@ pub(super) fn ring(place: Option<(f32, f32)>, size: SizeF, gap: f32) -> RectF {
         }
         None => RectF::new(RING_INSET, top, size.width - RING_INSET, bottom),
     }
+}
+
+/// The line drawn just inside the ring when the accent is too close to the bar's `background`
+/// for the ring to show on its own (an accent like the bar's colour, or black on a dark bar):
+/// its rectangle inside `ring` and white or black, whichever stands out more from the
+/// background. `None` when the accent has the contrast.
+pub(super) fn inner_line(ring: RectF, accent: Color, background: Color) -> Option<(RectF, Color)> {
+    if accent.contrast(background) >= RING_CONTRAST {
+        return None;
+    }
+    let color = if Color::WHITE.contrast(background) >= Color::BLACK.contrast(background) {
+        Color::WHITE
+    } else {
+        Color::BLACK
+    };
+    Some((ring.inset((RING_WIDTH + INNER_WIDTH) / 2.0), color))
 }
 
 #[cfg(test)]
@@ -167,5 +187,35 @@ mod tests {
             "kept inside the bar"
         );
         assert_eq!(ring(None, size, 8.0), RectF::new(1.5, 1.5, 998.5, 26.5));
+    }
+
+    #[test]
+    fn the_ring_gets_a_line_where_the_accent_is_close_to_the_bar() {
+        let ring = RectF::new(1.5, 1.5, 98.5, 26.5);
+        let blue = Color::rgba(0x00, 0x78, 0xD4, 1.0);
+        let dark = Color::rgba(0x20, 0x20, 0x20, 1.0);
+        let light = Color::rgba(0xF3, 0xF3, 0xF3, 1.0);
+        assert_eq!(
+            inner_line(ring, blue, dark),
+            None,
+            "the default blue on a dark bar"
+        );
+        assert_eq!(inner_line(ring, blue, light), None, "and on a light bar");
+        let line = inner_line(ring, Color::BLACK, dark);
+        assert_eq!(
+            line,
+            Some((RectF::new(3.0, 3.0, 97.0, 25.0), Color::WHITE)),
+            "black on a dark bar: a white line inside the ring's stroke"
+        );
+        assert_eq!(
+            inner_line(ring, Color::rgba(0xE0, 0xE0, 0xE0, 1.0), light).map(|(_, c)| c),
+            Some(Color::BLACK),
+            "a pale accent on a light bar: a black line"
+        );
+        let navy = Color::rgba(0x1F, 0x3A, 0x5F, 1.0);
+        assert!(
+            inner_line(ring, navy, Color::BLACK).is_some(),
+            "a dark accent on a black bar"
+        );
     }
 }

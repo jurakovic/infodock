@@ -90,6 +90,20 @@ pub struct OsAppearance {
     pub animations: bool,
 }
 
+impl OsAppearance {
+    /// The accent colour in channels from the OS; `None` when it has no alpha, as the DWM's
+    /// `AccentColor` value can be 0 while Windows has an accent set (SPEC §12.1).
+    pub fn accent_from(r: u8, g: u8, b: u8, a: u8) -> Option<Color> {
+        (a != 0).then(|| Color::rgba(r, g, b, 1.0))
+    }
+
+    /// The accent colour in the DWM's `AccentColor` value, `0xAABBGGRR`.
+    pub fn accent_from_dwm(value: u32) -> Option<Color> {
+        let [r, g, b, a] = value.to_le_bytes();
+        Self::accent_from(r, g, b, a)
+    }
+}
+
 impl Default for OsAppearance {
     fn default() -> Self {
         Self {
@@ -1527,8 +1541,22 @@ mod tests {
     use std::cmp::Ordering;
 
     use super::{
-        ProcessMemory, WifiStatus, file_name, natural_cmp, path_root, unique_path, url_file_text,
+        Color, OsAppearance, ProcessMemory, WifiStatus, file_name, natural_cmp, path_root,
+        unique_path, url_file_text,
     };
+
+    #[test]
+    fn accent_colours_from_the_os() {
+        let blue = Some(Color::rgba(0x00, 0x78, 0xD4, 1.0));
+        assert_eq!(OsAppearance::accent_from_dwm(0xFFD4_7800), blue);
+        assert_eq!(
+            OsAppearance::accent_from_dwm(0),
+            None,
+            "0 is no accent, not black"
+        );
+        assert_eq!(OsAppearance::accent_from(0x00, 0x78, 0xD4, 0xFF), blue);
+        assert_eq!(OsAppearance::accent_from(0, 0, 0, 0), None);
+    }
 
     #[test]
     fn process_memory_for_the_log() {

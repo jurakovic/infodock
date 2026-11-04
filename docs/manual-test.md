@@ -631,3 +631,9 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] CI's job summary lists *First run, welcome page open (report only)* beside the three stages, and *Memory the app logged*: run 1 at the bar's first frame, 10 s after Settings opened on the welcome page and 10 s after it closed; run 2 the same without the welcome page. Each private working set the app logged is within about 1 MB of the stage CI measured at the same moment.
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
+
+**Accent colour from Windows' colour API** (since M5 S14m)
+
+- [ ] With Windows' default blue accent (Settings ▸ Personalization ▸ Colors ▸ *Accent color* manual, the first blue), press the hotkey: the ring around the bar is blue, also where `HKCU\Software\Microsoft\Windows\DWM\AccentColor` reads 0. Drag a sensor: the placer is blue too.
+- [ ] Change the accent to another colour while the ring shows: the ring takes it without a restart.
+- [ ] Choose a custom accent close to the bar's colour (a dark grey on the dark bar, or a pale grey with *Color scheme* light): a thin white (or black) line shows just inside the ring, so the ring stays visible; with a bright accent there is no line.

@@ -65,6 +65,27 @@ impl Color {
     pub fn faded(self, opacity: f32) -> Self {
         self.with_alpha(self.a * opacity)
     }
+
+    /// The relative luminance of the colour (WCAG 2): 0 for black to 1 for white; alpha is
+    /// ignored.
+    pub fn luminance(self) -> f32 {
+        let linear = |c: f32| {
+            let c = c.clamp(0.0, 1.0);
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(self.r) + 0.7152 * linear(self.g) + 0.0722 * linear(self.b)
+    }
+
+    /// The contrast ratio between two colours (WCAG 2): 1 for the same luminance to 21 for
+    /// black on white; alpha is ignored.
+    pub fn contrast(self, other: Self) -> f32 {
+        let (a, b) = (self.luminance(), other.luminance());
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -212,6 +233,17 @@ pub trait Canvas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contrast_ratios_as_wcag_gives_them() {
+        assert!((Color::BLACK.contrast(Color::WHITE) - 21.0).abs() < 1e-4);
+        assert!((Color::WHITE.contrast(Color::BLACK) - 21.0).abs() < 1e-4);
+        let grey = Color::rgba(0x77, 0x77, 0x77, 1.0);
+        assert!((grey.contrast(grey) - 1.0).abs() < 1e-6);
+        // #777777 on white is just under 4.5:1 (4.48).
+        assert!((grey.contrast(Color::WHITE) - 4.48).abs() < 0.01);
+        assert_eq!(grey.luminance(), grey.with_alpha(0.2).luminance());
+    }
 
     #[test]
     fn parses_hex_colours() {
