@@ -37,7 +37,9 @@ mod wlan;
 use std::mem::size_of;
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
-use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::System::Registry::{
+    HKEY, HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
+};
 use windows::Win32::UI::Shell::{FOLDERID_CommonPrograms, FOLDERID_Programs};
 use windows::core::{PCWSTR, w};
 
@@ -371,6 +373,32 @@ fn read_dword(key: PCWSTR, value: PCWSTR) -> Option<u32> {
         )
     };
     (status == ERROR_SUCCESS).then_some(data)
+}
+
+/// A string value under `root`, if present.
+fn read_string(root: HKEY, key: PCWSTR, value: PCWSTR) -> Option<String> {
+    let mut size = 0u32;
+    // SAFETY: no buffer: asks for the size in bytes only.
+    let status =
+        unsafe { RegGetValueW(root, key, value, RRF_RT_REG_SZ, None, None, Some(&mut size)) };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let mut buf = vec![0u16; (size as usize).div_ceil(2)];
+    let mut size = (buf.len() * 2) as u32;
+    // SAFETY: `buf` holds `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            root,
+            key,
+            value,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+    };
+    (status == ERROR_SUCCESS).then(|| from_wide(&buf))
 }
 
 /// A NUL-terminated UTF-16 buffer as a `String`.

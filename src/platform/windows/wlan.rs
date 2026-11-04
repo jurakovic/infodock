@@ -2,9 +2,19 @@
 //! used: it is missing on Windows editions without the wireless LAN feature, and a static import
 //! would keep Infodock from starting there. Only its types come from the `windows` crate; its
 //! functions are looked up in the loaded library.
+//!
+//! Location: from Windows 11 24H2 the network name, the BSS list and the notifications need
+//! location access, and asking for them while the user has not decided brings up Windows'
+//! *Let Windows and apps access your location?* (which also kept the bar's menus from opening).
+//! So they are used only once location access is allowed, which is checked without asking
+//! ([`may_read_name`]); until then the signal comes from the RSSI and changes from polling.
 
 use std::ffi::c_void;
+use std::time::{Duration, Instant};
 
+use windows::Security::Authorization::AppCapabilityAccess::{
+    AppCapability, AppCapabilityAccessStatus,
+};
 use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, FreeLibrary, HANDLE, HMODULE, WIN32_ERROR};
 use windows::Win32::NetworkManagement::WiFi::{
     DOT11_PHY_TYPE, DOT11_SSID, L2_NOTIFICATION_DATA, WLAN_BSS_LIST, WLAN_CONNECTION_ATTRIBUTES,
@@ -20,7 +30,8 @@ use windows::Win32::NetworkManagement::WiFi::{
 use windows::Win32::System::LibraryLoader::{
     GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
 };
-use windows::core::{GUID, PCSTR, s, w};
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+use windows::core::{GUID, HSTRING, PCSTR, PCWSTR, s, w};
 
 use crate::platform::{WifiReader, WifiStatus};
 
@@ -59,6 +70,17 @@ type RegisterNotification = unsafe extern "system" fn(
 
 /// The client version for Windows Vista and later.
 const CLIENT_VERSION: u32 = 2;
+/// Windows 11 24H2, the first build whose WLAN API needs location access.
+const LOCATION_BUILD: u32 = 26100;
+/// How long an answer about location access holds before it is asked again, so allowing it in
+/// Settings shows the name within a few readings.
+const LOCATION_RECHECK: Duration = Duration::from_secs(5);
+/// Where Windows keeps the answers about location access.
+const CONSENT: PCWSTR =
+    w!(r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location");
+const CONSENT_DESKTOP: PCWSTR = w!(
+    r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location\NonPackaged"
+);
 
 /// `wlanapi.dll` while loaded.
 struct Library(HMODULE);
@@ -135,6 +157,10 @@ pub struct WinWifi {
     register: RegisterNotification,
     /// The callback's context, freed after the handle is closed.
     changed: *mut Changed,
+    /// The notifications are registered (only with location access, from 24H2).
+    registered: bool,
+    /// Whether the name may be read, and when that was checked.
+    access: Option<(Instant, bool)>,
     /// Kept loaded while the functions above are used; dropped last.
     _lib: Library,
 }
@@ -167,25 +193,7 @@ impl WinWifi {
             tracing::warn!("the WLAN service cannot be opened: error {status}");
             return None;
         }
-        let changed = Box::into_raw(Box::new(changed));
-        let sources = WLAN_NOTIFICATION_SOURCE_ACM.0 | WLAN_NOTIFICATION_SOURCE_MSM.0;
-        // SAFETY: the context lives until after the handle is closed (Drop).
-        let status = unsafe {
-            register(
-                handle,
-                sources,
-                1,
-                Some(on_notification),
-                changed as *const c_void,
-                std::ptr::null(),
-                std::ptr::null_mut(),
-            )
-        };
-        if status != 0 {
-            // Still readable, only not pushed.
-            tracing::warn!("WLAN notifications are not available: error {status}");
-        }
-        Some(Self {
+        let mut wifi = Self {
             handle,
             enumerate,
             query,
@@ -193,9 +201,62 @@ impl WinWifi {
             free,
             close,
             register,
-            changed,
+            changed: Box::into_raw(Box::new(changed)),
+            registered: false,
+            access: None,
             _lib: lib,
-        })
+        };
+        if wifi.may_read_name() {
+            wifi.register_notifications();
+        }
+        Some(wifi)
+    }
+
+    /// Asks for connection and radio changes; until then (or if it fails) they show at the
+    /// next reading.
+    fn register_notifications(&mut self) {
+        let sources = WLAN_NOTIFICATION_SOURCE_ACM.0 | WLAN_NOTIFICATION_SOURCE_MSM.0;
+        // SAFETY: the context lives until after the handle is closed (Drop).
+        let status = unsafe {
+            (self.register)(
+                self.handle,
+                sources,
+                1,
+                Some(on_notification),
+                self.changed as *const c_void,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+            )
+        };
+        if status != 0 {
+            // Still readable, only not pushed; not asked again.
+            tracing::warn!("WLAN notifications are not available: error {status}");
+        }
+        self.registered = true;
+    }
+
+    /// Whether the network name may be read now without Windows asking for location access,
+    /// asked again every few seconds.
+    fn may_read_name(&mut self) -> bool {
+        let now = Instant::now();
+        if let Some((at, allowed)) = self.access
+            && now.duration_since(at) < LOCATION_RECHECK
+        {
+            return allowed;
+        }
+        let allowed = location_allowed();
+        if self.access.is_none_or(|(_, was)| was != allowed) {
+            tracing::info!(
+                "Wi-Fi: the network name {}",
+                if allowed {
+                    "may be read"
+                } else {
+                    "waits for location access"
+                }
+            );
+        }
+        self.access = Some((now, allowed));
+        allowed
     }
 
     /// Queries `opcode` of `interface`; the data (freed by the caller with `free`) or the
@@ -305,6 +366,10 @@ fn message(code: u32) -> String {
 
 impl WifiReader for WinWifi {
     fn read(&mut self) -> Result<WifiStatus, String> {
+        let allowed = self.may_read_name();
+        if allowed && !self.registered {
+            self.register_notifications();
+        }
         let interfaces = self.interfaces()?;
         let Some(interface) = interfaces.first() else {
             return Ok(WifiStatus::default());
@@ -319,8 +384,11 @@ impl WifiReader for WinWifi {
         if !status.connected {
             return Ok(status);
         }
-        // SAFETY: the data is a WLAN_CONNECTION_ATTRIBUTES (or a LONG for the RSSI), freed
-        // after reading.
+        if !allowed {
+            self.signal_only(&guid, &mut status);
+            return Ok(status);
+        }
+        // SAFETY: the data is a WLAN_CONNECTION_ATTRIBUTES, freed after reading.
         unsafe {
             match self.query(&guid, wlan_intf_opcode_current_connection.0) {
                 Ok(data) => {
@@ -341,20 +409,91 @@ impl WifiReader for WinWifi {
                         status.frequency_mhz = (khz > 0).then_some(khz / 1000);
                     }
                 }
-                // Windows 11 24H2: the network name needs location access; the signal does not.
+                // Location access was taken back since it was checked.
                 Err(code) if code == ERROR_ACCESS_DENIED.0 => {
-                    status.location_denied = true;
-                    if let Ok(data) = self.query(&guid, wlan_intf_opcode_rssi.0) {
-                        let rssi = *data.cast::<i32>();
-                        (self.free)(data);
-                        status.rssi_dbm = Some(rssi);
-                        status.quality = WifiStatus::quality_from_rssi(rssi);
-                    }
+                    self.access = Some((Instant::now(), false));
+                    self.signal_only(&guid, &mut status);
                 }
                 Err(code) => return Err(message(code)),
             }
         }
         Ok(status)
+    }
+}
+
+impl WinWifi {
+    /// Without location access (Windows 11 24H2): no name, the signal from the RSSI, which
+    /// needs none.
+    fn signal_only(&self, interface: &GUID, status: &mut WifiStatus) {
+        status.location_denied = true;
+        // SAFETY: the data is a LONG, freed after reading.
+        unsafe {
+            if let Ok(data) = self.query(interface, wlan_intf_opcode_rssi.0) {
+                let rssi = *data.cast::<i32>();
+                (self.free)(data);
+                status.rssi_dbm = Some(rssi);
+                status.quality = WifiStatus::quality_from_rssi(rssi);
+            }
+        }
+    }
+}
+
+/// Whether Windows lets this app read the network name without asking (SPEC §9.15): always
+/// before 24H2; then when location access is allowed, as `AppCapability` says without asking,
+/// or where it cannot tell, as the privacy settings' answers say.
+fn location_allowed() -> bool {
+    let build = super::read_string(
+        HKEY_LOCAL_MACHINE,
+        w!(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"),
+        w!("CurrentBuildNumber"),
+    )
+    .and_then(|b| b.trim().parse().ok());
+    let capability = AppCapability::Create(&HSTRING::from("location"))
+        .and_then(|c| c.CheckAccess())
+        .ok();
+    let answer = |root, key| super::read_string(root, key, w!("Value"));
+    let consent = Consent {
+        service: answer(HKEY_LOCAL_MACHINE, CONSENT),
+        user: answer(HKEY_CURRENT_USER, CONSENT),
+        desktop_apps: answer(HKEY_CURRENT_USER, CONSENT_DESKTOP),
+    };
+    may_read_name(build, capability, &consent)
+}
+
+/// Windows' answers about location access (`ConsentStore\location`): the location service, the
+/// user's switch for apps, and the one for desktop apps; `Allow` or `Deny`, `None` where unset.
+#[derive(Debug, Default)]
+struct Consent {
+    service: Option<String>,
+    user: Option<String>,
+    desktop_apps: Option<String>,
+}
+
+/// The rule of [`location_allowed`]: `build` is Windows' build number, `capability` what
+/// `AppCapability.CheckAccess` said for `location`.
+fn may_read_name(
+    build: Option<u32>,
+    capability: Option<AppCapabilityAccessStatus>,
+    consent: &Consent,
+) -> bool {
+    if build.is_some_and(|b| b < LOCATION_BUILD) {
+        return true;
+    }
+    match capability {
+        Some(AppCapabilityAccessStatus::Allowed) => true,
+        // Asking would bring up the prompt; denied is denied.
+        Some(
+            AppCapabilityAccessStatus::UserPromptRequired
+            | AppCapabilityAccessStatus::DeniedByUser
+            | AppCapabilityAccessStatus::DeniedBySystem,
+        ) => false,
+        // It cannot tell (an app without a package may get "not declared"): the settings do.
+        _ => {
+            let is = |answer: &Option<String>, value| answer.as_deref() == Some(value);
+            !is(&consent.service, "Deny")
+                && !is(&consent.user, "Deny")
+                && is(&consent.desktop_apps, "Allow")
+        }
     }
 }
 
@@ -427,6 +566,72 @@ fn phy_name(phy: DOT11_PHY_TYPE) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_name_is_read_only_with_location_access() {
+        let consent = |service: &str, user: &str, desktop: &str| {
+            let some = |s: &str| (!s.is_empty()).then(|| s.to_owned());
+            Consent {
+                service: some(service),
+                user: some(user),
+                desktop_apps: some(desktop),
+            }
+        };
+        let none = Consent::default();
+        // Before 24H2 nothing asks.
+        assert!(may_read_name(
+            Some(22631),
+            Some(AppCapabilityAccessStatus::DeniedByUser),
+            &none
+        ));
+        // From 24H2, as the capability says, without asking.
+        let new = Some(26100);
+        assert!(may_read_name(
+            new,
+            Some(AppCapabilityAccessStatus::Allowed),
+            &none
+        ));
+        for status in [
+            AppCapabilityAccessStatus::UserPromptRequired,
+            AppCapabilityAccessStatus::DeniedByUser,
+            AppCapabilityAccessStatus::DeniedBySystem,
+        ] {
+            let allow = consent("Allow", "Allow", "Allow");
+            assert!(!may_read_name(new, Some(status), &allow), "{status:?}");
+        }
+        // Where it cannot tell, the privacy settings decide: desktop apps allowed, nothing
+        // above them denied.
+        let unknown = [None, Some(AppCapabilityAccessStatus::NotDeclaredByApp)];
+        for capability in unknown {
+            assert!(may_read_name(
+                new,
+                capability,
+                &consent("Allow", "Allow", "Allow")
+            ));
+            assert!(may_read_name(new, capability, &consent("", "", "Allow")));
+            assert!(!may_read_name(
+                new,
+                capability,
+                &consent("Deny", "Allow", "Allow")
+            ));
+            assert!(!may_read_name(
+                new,
+                capability,
+                &consent("Allow", "Deny", "Allow")
+            ));
+            assert!(!may_read_name(
+                new,
+                capability,
+                &consent("Allow", "Allow", "Deny")
+            ));
+            assert!(
+                !may_read_name(new, capability, &none),
+                "undecided: it would ask"
+            );
+        }
+        // An unknown build counts as a new one.
+        assert!(!may_read_name(None, None, &none));
+    }
 
     /// Runs on the Windows CI runner (`cargo test -- --ignored`), which has no WLAN service: no
     /// reader. Where there is one, it reads and closes cleanly.

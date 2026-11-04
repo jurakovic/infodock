@@ -1,9 +1,9 @@
 //! Starting at sign-in (SPEC §10.1): a value of the per-user `Run` key, and Task Manager's mark
 //! for it under `StartupApproved\Run` (a missing mark means enabled).
 
-use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, WIN32_ERROR};
+use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, WIN32_ERROR};
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -16,37 +16,7 @@ const APPROVED: PCWSTR =
 /// The command of the `Run` value `name`, if it is a string.
 pub fn read(name: &str) -> Option<String> {
     let name = HSTRING::from(name);
-    let mut size = 0u32;
-    // SAFETY: no buffer: asks for the size in bytes only.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            RUN,
-            &name,
-            RRF_RT_REG_SZ,
-            None,
-            None,
-            Some(&mut size),
-        )
-    };
-    if status != ERROR_SUCCESS {
-        return None;
-    }
-    let mut buf = vec![0u16; (size as usize).div_ceil(2)];
-    let mut size = (buf.len() * 2) as u32;
-    // SAFETY: `buf` holds `size` bytes.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            RUN,
-            &name,
-            RRF_RT_REG_SZ,
-            None,
-            Some(buf.as_mut_ptr().cast()),
-            Some(&mut size),
-        )
-    };
-    (status == ERROR_SUCCESS).then(|| super::from_wide(&buf))
+    super::read_string(HKEY_CURRENT_USER, RUN, PCWSTR(name.as_ptr()))
 }
 
 /// Writes or removes the `Run` value `name`.

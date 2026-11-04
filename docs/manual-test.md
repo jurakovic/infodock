@@ -634,6 +634,12 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Wi-Fi and location access** (since M5 S14r; Windows 11 24H2 or later, a laptop with Wi-Fi)
+
+- [ ] Settings ▸ Privacy & security ▸ Location: *Let desktop apps access your location* off (or never decided). Add a Wi-Fi Signal sensor: no *Let Windows and apps access your location?* prompt appears, the bar's right-click menu opens as usual, and the sensor shows `Wi-Fi` with the signal; its hint says *Allow location access to show the network name*, and a click opens the location settings.
+- [ ] Still without location access, turn Wi-Fi off in the quick settings: within about 2 s the sensor shows *offline*; on again: back to the signal.
+- [ ] Turn *Let desktop apps access your location* on: within a few seconds the sensor shows the network name, without a restart; the log says `Wi-Fi: the network name may be read`.
+
 **Overlapping zones, fairly** (since M5 S14q)
 
 - [ ] A floating bar with a Network Graph (rates shown) on the left, an icon sensor (e.g. the Recycle Bin) in the centre and a Text sensor on the right: narrow it slowly from its end. The centre moves towards the right while the text is whole, then the text gives way with "…", and only once it is down to a few characters does anything overlap. With the zones swapped it moves left.
