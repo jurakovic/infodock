@@ -12,7 +12,7 @@ To start over from first run, quit Infodock and delete `%APPDATA%\app.infodock.d
 
 ## M0 — Skeleton
 
-Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survives an Explorer restart, and a clean exit restores the work area. The bar is empty in M0 (sensors arrive in M1–M2).
+Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survives an Explorer restart, and a clean exit restores the work area. These checks are about the bar window itself; the sensors on it are M1's and later.
 
 **Start-up and placement**
 
@@ -77,7 +77,8 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 **Sensors on the bar** (since M1 S4)
 
-- [ ] With the first-run config, the bar shows the Infodock logo in the centre, and dimmed, outlined labels `cpu-graph`, `memory-meter`, `network-graph` on the left and `date`, `time` on the right: those sensor types arrive in M2.
+- [ ] With the first-run config, the bar shows CPU Graph, Memory Meter and Network Graph on the left, the Infodock logo in the centre, and Date and Time on the right (SPEC §11.5).
+- [ ] A type this version does not know (a config from a newer version): quit Infodock, add `{ "id": "s_test1", "type": "mail" }` to `layout.left` in `config.json` and start it again: the sensor shows as a dimmed, outlined label `mail`, and `config.json` keeps the entry unchanged. The placeholder checks below use it; remove it afterwards (*Remove sensor*).
 - [ ] Settings ▸ General ▸ *Space between sensors*: the gaps on the left and right change at once.
 - [ ] At 125 % and 150 % scaling, the logo and the labels are crisp, not blurred (an Image is drawn from a whole pixel since S12d).
 - [ ] Add a Text sensor (*New sensor… ▸ Text*) with the text "Hello": it shows "Hello"; a Spacer with *Show divider* shows a faint vertical line; an Image with a picture file shows that picture one pixel less than the bar tall.
@@ -85,24 +86,24 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 **Menus and Lock** (since M1 S6)
 
-- [ ] Right-click an empty part of the bar: *New sensor…*, *Tools ▸* (only *Layout manager…* enabled), *Settings…*, *Lock*, *Popups*, *Quit Infodock*. The check marks match the tray menu.
-- [ ] Right-click the logo: *New sensor…*, *Properties…*, *Remove sensor*, *Tools ▸*, *Settings…*, *Lock*, *Popups*. On a placeholder (e.g. `cpu-graph`), *Properties…* is greyed out.
+- [ ] Right-click an empty part of the bar: *New sensor…*, *Tools ▸* (*Layout manager…*, *Import layout…*, *Export layout…*, *Import legacy XML layout…*, *Help*, all enabled), *Settings…*, *Lock*, *Popups*, *Quit Infodock*. The check marks match the tray menu.
+- [ ] Right-click the logo: *New sensor…*, *Properties…*, *Remove sensor*, *Tools ▸*, *Settings…*, *Lock*, *Popups*. On the `mail` placeholder, *Properties…* is greyed out.
 - [ ] *Remove sensor* on the logo asks "Remove sensor “Image”?"; *Cancel* keeps it, *Remove* removes it at once (and from `config.json`).
-- [ ] Settings ▸ General ▸ *“New sensor” in the bar’s menu* → *Lists the sensor types*: *New sensor* becomes a submenu *General ▸ Image, Spacer, Text*; choosing *Text* adds a "Text" sensor after the one you clicked (or in the zone under the pointer) and opens its properties.
+- [ ] Settings ▸ General ▸ *“New sensor” in the bar’s menu* → *Lists the sensor types*: *New sensor* becomes a submenu by category (*General ▸ Image, Spacer, Text*, then *Info*, *System*, *Network*, *Launchers*; Start Menu and Eject USB only where Windows offers them); choosing *Text* adds a "Text" sensor after the one you clicked (or in the zone under the pointer) and opens its properties.
 - [ ] Press and hold the left button on the logo: it dims; release: it is back.
 - [ ] *Lock* on and Settings ▸ General ▸ *Clicks while locked* → *Only while Alt is held*: pressing the logo no longer dims it; with Alt held it does.
 
 **Reordering** (since M1 S8)
 
 - [ ] Drag the logo (press, move more than a few px): it stays dimmed and a thin accent-coloured line shows where it would go: between sensors, or after the left zone's last sensor when over empty space in the left third, before the right zone's first sensor in the right third. Release: the logo moves there, and the order is kept after a restart.
-- [ ] Drag a placeholder onto the right half of its neighbour: they swap. Drop a sensor right next to itself: nothing changes.
+- [ ] Drag a sensor onto the right half of its neighbour: they swap. Drop a sensor right next to itself: nothing changes.
 - [ ] While dragging, press Esc: the drag ends and nothing moves. No hint appears during a drag.
 - [ ] *Lock* on: dragging does nothing (and releasing elsewhere is no click).
 
 **Hints** (since M1 S7)
 
 - [ ] Rest the pointer on the logo: after about half a second a dark rounded hint "Infodock 0.1.0" appears above it, with a small triangle pointing at the logo and a soft shadow; it fades in quickly. Move away: it disappears after a moment.
-- [ ] Rest on a placeholder (e.g. `cpu-graph`): its hint explains that the sensor is not available in this version. Near the screen's left edge the hint stays on screen and its triangle still points at the sensor.
+- [ ] Rest on the `mail` placeholder: its hint explains that the sensor is not available in this version. Near the screen's left edge the hint stays on screen and its triangle still points at the sensor.
 - [ ] With a hint shown, move straight to another sensor: the hint switches at once, without a new delay.
 - [ ] Click a sensor while its hint shows: the hint closes and does not come back until the pointer moves to another sensor. Right-click: the hint closes before the menu opens.
 - [ ] Tray → *Popups* off: no hints. On again: hints are back.
@@ -143,7 +144,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 **New sensor** (since M1 S9)
 
-- [ ] Right-click the logo → *New sensor…*: Settings opens "New sensor" with the search box focused, *Insert After the “Image” sensor*, and *General ▸ Image, Spacer, Text*, each with its description. *Add* is greyed out until a type is selected.
+- [ ] Right-click the logo → *New sensor…*: Settings opens "New sensor" with the search box focused, *Insert After the “Image” sensor*, and the types by category (*General ▸ Image, Spacer, Text*, *Info*, *System*, *Network*, *Launchers*), each with its description. *Add* is greyed out until a type is selected.
 - [ ] Type `line`: only *Text* (and *Spacer*, whose description mentions a line) remain; type `xyz`: "No sensor matches the search."
 - [ ] Choose *Before*, double-click *Text*: "Text properties" opens and a "Text" sensor appears left of the logo. *Cancel*: it is gone again. Again with *Save*: it stays.
 - [ ] Right-click empty space in the right third → *New sensor…*: there is no Insert choice; *Add* puts the sensor at the start of the right zone (next to the centre). In the left third, at the end of the left zone.
@@ -152,7 +153,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 **Layout manager** (since M1 S9)
 
-- [ ] Right-click the bar → *Tools ▸ Layout manager…*: Settings opens on *Sensors* with *Layout* at the top; *Left*, *Centre* and *Right* list the bar's sensors in order. The logo's row reads *Image* with *Infodock logo* below it; placeholders read "Not available in this version" and their *Properties* button is greyed out. The sensor defaults follow below the list.
+- [ ] Right-click the bar → *Tools ▸ Layout manager…*: Settings opens on *Sensors* with *Layout* at the top; *Left*, *Centre* and *Right* list the bar's sensors in order. The logo's row reads *Image* with *Infodock logo* below it; the `mail` placeholder reads "Not available in this version" and its *Properties* button is greyed out. The sensor defaults follow below the list.
 - [ ] *Move down* on the logo: it moves to the start of the right zone, on the bar too. *Move up* brings it back. The first sensor's *Move up* and the last one's *Move down* are greyed out.
 - [ ] Drag a row: it dims and an accent line shows where it will go; release: the bar follows. Drag sideways out of the list and release: nothing moves.
 - [ ] Drag a sensor on the bar: the list in Settings follows at once.
@@ -181,11 +182,11 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 ## M2 — System sensors
 
-The first-run placeholders are real sensors now. The M0 and M1 checks above still apply. CI renders every system sensor with made-up data (`bar-system*.png` in `infodock-screenshots`) and measures the idle CPU; the checks here cover what only real hardware shows.
+The first-run layout's system sensors (CPU Graph, Memory Meter, Network Graph, Date, Time) are checked here, with the others of M2. The M0 and M1 checks above still apply. CI renders every system sensor with made-up data (`bar-system*.png` in `infodock-screenshots`) and measures the idle CPU; the checks here cover what only real hardware shows.
 
 **Time** (since M2 S6)
 
-- [ ] The first-run *time* placeholder is now a clock: the hour large, the minutes small and raised to its right; on an en-US system with *am*/*pm* under the minutes (a 12-hour clock), on a 24-hour regional format without. It turns to the next minute within a moment of the system clock.
+- [ ] The first-run Time sensor is a clock: the hour large, the minutes small and raised to its right; on an en-US system with *am*/*pm* under the minutes (a 12-hour clock), on a 24-hour regional format without. It turns to the next minute within a moment of the system clock.
 - [ ] Properties: *24-hour clock* switches the format; *Show seconds* shows `H:MM` large with the seconds small, updating every second; the bar does not shift as the digits change (it may when the hour gains a digit).
 - [ ] Hover: the hint shows today's long date in the regional format. Click: Settings ▸ Time & language ▸ Date & time opens.
 - [ ] *Chime* → *Every 15 minutes*: a soft two-tone chime plays at :00, :15, :30 and :45, not at other minutes, and not right after starting Infodock or waking the computer.
@@ -193,10 +194,10 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 **Date** (since M2 S7)
 
-- [ ] The first-run *date* placeholder is now the date: the day large (`Tuesday, 13`) with the year above the month (`2026` / `october`) to its right.
+- [ ] The first-run Date sensor shows the date: the day large (`Tuesday, 13`) with the year above the month (`2026` / `october`) to its right.
 - [ ] Properties: each weekday, month and year choice changes the view as described (e.g. *Year* → *None* gives one line in the regional order, such as `Tuesday, October 13`); with a German regional format the names are German.
 - [ ] Hover: a month calendar from Monday (or Sunday, per *Calendar*), weekends in the strong popup colour, today highlighted, and `Week …, Day …` below; with *Calendar* → *None*, only that line.
-- [ ] Click: the date and time settings open; with *Settings ▸ Applications ▸ Calendar* set (when that page exists), that app.
+- [ ] Click: the date and time settings open; with *Settings ▸ Applications ▸ Calendar* set (e.g. `outlookcal:`), that app.
 - [ ] Just after midnight (or after changing the date), the date shows the new day.
 
 **Uptime** (since M2 S8)
@@ -207,7 +208,7 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 **CPU** (since M2 S9)
 
-- [ ] The first-run *cpu-graph* placeholder is now a CPU graph: a 50 px plot scrolling left once a second with green columns, and `CPU` / `37%` beside it. Its value stays within 3 % of Task Manager ▸ Performance ▸ CPU *Utilization* (open both side by side, load the CPU with a build or a video).
+- [ ] The first-run CPU Graph: a 50 px plot scrolling left once a second with green columns, and `CPU` / `37%` beside it. Its value stays within 3 % of Task Manager ▸ Performance ▸ CPU *Utilization* (open both side by side, load the CPU with a build or a video).
 - [ ] Hover: `8 CPUs use` (your count of logical processors), activity, user, system and idle with one decimal, and *Click to open Task Manager*; click: Task Manager opens.
 - [ ] *New sensor… ▸ System ▸ CPU Meter*: a thin bar filling with the load and `CPU` / `37%`; *Colour* → *Dynamic* turns it green, yellow and red with the load.
 - [ ] Graph properties: *Width* 50–150 in steps of 5; background and grid colours and opacities (both off by default); *Graph colour* → *Dynamic* colours each column by its value; *Update every* 1–10 s slows the scrolling.
@@ -216,7 +217,7 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 **Memory** (since M2 S11)
 
-- [ ] The first-run *memory-meter* placeholder is now a meter: `RAM` / `43%`, its bar filled to the same share. The value stays within 3 % of Task Manager ▸ Performance ▸ Memory (*In use* of the total); load memory (open many browser tabs) and watch both.
+- [ ] The first-run Memory Meter: `RAM` / `43%`, its bar filled to the same share. The value stays within 3 % of Task Manager ▸ Performance ▸ Memory (*In use* of the total); load memory (open many browser tabs) and watch both.
 - [ ] Hover: *Total Physical*, *Available Physical* and *Memory Load* (Total a little below the installed size, as Windows reserves some), and *Click to open Task Manager*; click: Task Manager opens.
 - [ ] *New sensor… ▸ System ▸ Memory Graph*: a graph of the load with `RAM` / `5.21 GB` (the used size); *Show* → *Percentage in use* shows `43%` instead; the plot is the same in both. Graph properties behave as for the CPU graph.
 - [ ] Meter properties: *Update every* 1–60 s (2 s by default); *Colour* → *Dynamic* goes from green to red with the load.
@@ -235,7 +236,7 @@ The first-run placeholders are real sensors now. The M0 and M1 checks above stil
 
 **Network** (since M2 S14)
 
-- [ ] The first-run *network-graph* placeholder is now a network graph: receive in blue growing up from the middle, send in orange growing down, and the two rates beside it (`1.24 MB/s` over `86.0 KB/s`). During a large download the receive rate matches Task Manager ▸ Performance ▸ Wi-Fi/Ethernet *Receive* (and Resource Monitor ▸ Network ▸ *Network Activity* in total) within a few percent.
+- [ ] The first-run Network Graph: receive in blue growing up from the middle, send in orange growing down, and the two rates beside it (`1.24 MB/s` over `86.0 KB/s`). During a large download the receive rate matches Task Manager ▸ Performance ▸ Wi-Fi/Ethernet *Receive* (and Resource Monitor ▸ Network ▸ *Network Activity* in total) within a few percent.
 - [ ] The graphs scale to the largest rate in view (at least 1 KB/s); hover: *Adapter: Wi-Fi (Intel(R) …)*, *Status: active*, receive and send with *max.* (the scale in use), and *Click to open Network Connections*; click: Network Connections opens.
 - [ ] Properties: *Connection* lists *Automatic* and your connections (no loopback); pick one, save, and the graph shows only it. *Maximum* `12500000` fixes both scales at 100 Mbit/s (`max. 11.9 MB/s`), `12500000,2500000` each; the colours, opacities and *Send grows down* work as for the CPU dual graph.
 - [ ] Automatic follows the connection to the internet: switch from Wi-Fi to Ethernet (or connect a VPN) and the hint's adapter changes within a second, without a spike. Unplug the chosen adapter: *Status: inactive* and 0 rates; the properties keep it as `… (not connected)`.
@@ -473,7 +474,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 **Import and export** (since M4 S7–S8)
 
-- [ ] Right-click the bar ▸ *Tools*: *Import layout…* and *Export layout…* are enabled (and *Import legacy XML layout…* since S9), *Help* greyed out.
+- [ ] Right-click the bar ▸ *Tools*: *Import layout…* and *Export layout…* are enabled (and *Import legacy XML layout…* since S9), and *Help* (since M5 S14).
 - [ ] *Export layout…*: the save picker suggests `Infodock layout` with the type *Infodock layout*; save it to the desktop: `Infodock layout.infodock.json` holds `schema`, `layout` and `state`, no settings. Export again with the type *Infodock settings and layout*: the file holds the whole config. A name typed without an extension gets `.infodock.json`; an existing file asks before it is replaced.
 - [ ] While the picker is open, the bar's clock and graphs go on; a second *Export layout…* or *Import layout…* from the bar does nothing.
 - [ ] Move a sensor, then *Import layout…* the first export: the picker lists `.infodock.json` files; the question shows *Replace the layout* and *Add to the layout* with the number of sensors. *Replace*: the bar shows the exported layout again, and a toast says "Layout imported" with the count. *Add to the layout*: the sensors are added at the end of their zones (with an Uptime sensor: its longest uptime comes along).
@@ -625,7 +626,7 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 **Help page** (since M5 S14)
 
-- [ ] Right-click the bar ▸ *Tools ▸ Help* (no longer greyed out): Settings opens on Help, between Applications and About. The keyboard section names the configured hotkey; change the hotkey on General and come back: it shows the new one. *Change the hotkey* opens General; *Open the Layout manager* opens Sensors with the Layout manager at the top.
+- [ ] Right-click the bar ▸ *Tools ▸ Help*: Settings opens on Help, between Applications and About. The keyboard section names the configured hotkey; change the hotkey on General and come back: it shows the new one. *Change the hotkey* opens General; *Open the Layout manager* opens Sensors with the Layout manager at the top.
 - [ ] Try each tip once: the drops (a drive, a folder, a file, a link; onto a Folder Menu with Ctrl, Shift and Alt; onto the Recycle Bin), the Folder Menu's keys and Alt+click, and the keyboard on the bar: each does what the page says.
 
 **Memory with the welcome page** (since M5 S14k)
@@ -671,6 +672,10 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 **Hotkey taken by another app** (since M5 S14p)
 
 - [ ] With an app that registers a global hotkey running (e.g. ShareX's Ctrl+Shift+PrintScreen, or AutoHotkey with `^!k::MsgBox`), Settings ▸ General ▸ *Hotkey*, press that combination: recording ends with *Another app already uses Ctrl+Alt+K. Choose a different combination.*, the button shows the previous hotkey, which still works, and the other app did not react. A free combination is recorded as before.
+
+**Z-order: floating start and "Always behind"** (since M5 S14o)
+
+- [ ] The checks are in M0 ▸ *Settings ▸ Bar*: *Always behind other windows* with Win+D, and *Floating* with *Always on top* after a restart.
 
 **Acrylic and the material** (since M5 S14n; CI's runner draws no material, so this is the check)
 
