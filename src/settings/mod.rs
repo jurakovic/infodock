@@ -22,7 +22,9 @@ mod screenshots;
 mod welcome;
 mod window;
 
+use std::cell::Cell;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value;
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecModel};
@@ -38,6 +40,15 @@ use window::{pick, with_open, with_open_mut};
 
 /// The page with the hotkey.
 const GENERAL_PAGE: i32 = 0;
+/// How long after Settings opens or closes the app logs its memory: as long as CI's memory
+/// check waits before it measures (SPEC §14.1).
+const MEMORY_LOG_DELAY: Duration = Duration::from_secs(10);
+
+thread_local! {
+    /// Counts Settings' openings and closings, so a memory log planned after one is dropped
+    /// when another came first.
+    static OPENED_OR_CLOSED: Cell<u64> = const { Cell::new(0) };
+}
 
 /// The open window and what its controls were filled from.
 struct Open {
@@ -191,6 +202,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     fill(&mut open, app, &config.settings);
     layout::fill(&open, app, &config.layout);
     window::set(Some(open));
+    log_memory_later(app, true);
     Ok(window)
 }
 
@@ -202,6 +214,34 @@ fn closing(app: &Arc<App>) {
         welcome::left(open, app);
     });
     let _ = slint::invoke_from_event_loop(|| window::set(None));
+    log_memory_later(app, false);
+}
+
+/// Logs the process's memory [`MEMORY_LOG_DELAY`] after Settings opened (`opened`) or closed,
+/// unless it was closed or opened again meanwhile (SPEC §14.1): a log from real hardware shows
+/// what Settings costs there, and whether closing it gives the memory back.
+fn log_memory_later(app: &Arc<App>, opened: bool) {
+    let planned = OPENED_OR_CLOSED.with(|count| {
+        count.set(count.get() + 1);
+        count.get()
+    });
+    let platform = Arc::clone(&app.platform);
+    slint::Timer::single_shot(MEMORY_LOG_DELAY, move || {
+        if OPENED_OR_CLOSED.with(Cell::get) != planned {
+            return;
+        }
+        let Some(memory) = platform.process_memory() else {
+            return;
+        };
+        let secs = MEMORY_LOG_DELAY.as_secs();
+        if opened {
+            let welcome = with_open(|open| open.welcome.shown).unwrap_or(false);
+            let page = if welcome { " on the welcome page" } else { "" };
+            tracing::info!("memory {secs} s after Settings opened{page}: {memory}");
+        } else {
+            tracing::info!("memory {secs} s after Settings closed: {memory}");
+        }
+    });
 }
 
 /// Closes the window, as its close button does.

@@ -625,3 +625,9 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] Right-click the bar ▸ *Tools ▸ Help* (no longer greyed out): Settings opens on Help, between Applications and About. The keyboard section names the configured hotkey; change the hotkey on General and come back: it shows the new one. *Change the hotkey* opens General; *Open the Layout manager* opens Sensors with the Layout manager at the top.
 - [ ] Try each tip once: the drops (a drive, a folder, a file, a link; onto a Folder Menu with Ctrl, Shift and Alt; onto the Recycle Bin), the Folder Menu's keys and Alt+click, and the keyboard on the bar: each does what the page says.
+
+**Memory with the welcome page** (since M5 S14k)
+
+- [ ] CI's job summary lists *First run, welcome page open (report only)* beside the three stages, and *Memory the app logged*: run 1 at the bar's first frame, 10 s after Settings opened on the welcome page and 10 s after it closed; run 2 the same without the welcome page. Each private working set the app logged is within about 1 MB of the stage CI measured at the same moment.
+- [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
+- [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.

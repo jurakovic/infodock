@@ -905,9 +905,17 @@ unsafe extern "system" fn window_proc(
 }
 
 /// Logs how long after the process was created its first bar frame reached the window, and
-/// when the start-up's steps were done. CI reads the line from a first and a later run as the
-/// cold and warm start (SPEC §14.1).
+/// when the start-up's steps were done; then the process's memory. CI reads the time from a
+/// first and a later run as the cold and warm start (SPEC §14.1).
 fn log_first_frame() {
+    log_start_time();
+    match super::memory::process() {
+        Some(memory) => tracing::info!("memory at the bar's first frame: {memory}"),
+        None => tracing::debug!("memory at the bar's first frame could not be read"),
+    }
+}
+
+fn log_start_time() {
     let Some(age) = process_age() else {
         tracing::debug!("bar visible; the process start time is unknown");
         return;

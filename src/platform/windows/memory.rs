@@ -1,13 +1,23 @@
 //! Physical memory and page files (SPEC Appendix A, `memory` and `swap`):
 //! `GlobalMemoryStatusEx`, and `NtQuerySystemInformation(SystemPageFileInformation)`, which
-//! gives every page file's size and use in one cheap call (no WMI).
+//! gives every page file's size and use in one cheap call (no WMI). Also this process's own
+//! memory, for the log (SPEC §14.1).
 
 use windows::Wdk::System::SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS};
+use windows::Win32::Foundation::CloseHandle;
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+};
+use windows::Win32::System::ProcessStatus::{
+    GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    PROCESS_MEMORY_COUNTERS_EX2,
+};
 use windows::Win32::System::SystemInformation::{
     GetSystemInfo, GlobalMemoryStatusEx, MEMORYSTATUSEX, SYSTEM_INFO,
 };
+use windows::Win32::System::Threading::GetCurrentProcess;
 
-use crate::platform::{MemoryStatus, PageFile};
+use crate::platform::{MemoryStatus, PageFile, ProcessMemory};
 
 /// `SystemPageFileInformation`: one `SYSTEM_PAGEFILE_INFORMATION` per page file.
 const PAGE_FILE_INFORMATION: SYSTEM_INFORMATION_CLASS = SYSTEM_INFORMATION_CLASS(18);
@@ -64,6 +74,73 @@ pub fn page_files() -> Result<Vec<PageFile>, String> {
         let used = (returned as usize).min(bytes.len());
         return Ok(parse(&bytes[..used], base, page));
     }
+}
+
+/// This process's memory: `GetProcessMemoryInfo`, with the private working set where Windows
+/// reports it (`PROCESS_MEMORY_COUNTERS_EX2`; older builds of Windows 10 fail the call or leave
+/// it 0, and the plain extended counters are read instead), and its threads.
+pub fn process() -> Option<ProcessMemory> {
+    let mut ex2 = PROCESS_MEMORY_COUNTERS_EX2::default();
+    // SAFETY: `ex2` is writable for the size passed and starts with the plain counters' fields;
+    // the pseudo handle needs no closing.
+    let read = unsafe {
+        GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            (&raw mut ex2).cast::<PROCESS_MEMORY_COUNTERS>(),
+            size_of::<PROCESS_MEMORY_COUNTERS_EX2>() as u32,
+        )
+    };
+    let (private, working_set, commit) = if read.is_ok() {
+        let private = ex2.PrivateWorkingSetSize as u64;
+        (
+            (private > 0).then_some(private),
+            ex2.WorkingSetSize,
+            ex2.PrivateUsage,
+        )
+    } else {
+        let mut ex = PROCESS_MEMORY_COUNTERS_EX::default();
+        // SAFETY: as above, with the extended counters' size.
+        unsafe {
+            GetProcessMemoryInfo(
+                GetCurrentProcess(),
+                (&raw mut ex).cast::<PROCESS_MEMORY_COUNTERS>(),
+                size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32,
+            )
+        }
+        .ok()?;
+        (None, ex.WorkingSetSize, ex.PrivateUsage)
+    };
+    Some(ProcessMemory {
+        private_working_set: private,
+        working_set: working_set as u64,
+        commit: commit as u64,
+        threads: threads(),
+    })
+}
+
+/// This process's thread count, from a ToolHelp snapshot of the system's processes.
+fn threads() -> Option<u32> {
+    // SAFETY: plain call; the snapshot is closed below.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }.ok()?;
+    let me = std::process::id();
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut found = None;
+    // SAFETY: `entry` is writable and its size is set, as the calls require.
+    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok();
+    while more {
+        if entry.th32ProcessID == me {
+            found = Some(entry.cntThreads);
+            break;
+        }
+        // SAFETY: as above.
+        more = unsafe { Process32NextW(snapshot, &mut entry) }.is_ok();
+    }
+    // SAFETY: the snapshot is open and closed once.
+    let _ = unsafe { CloseHandle(snapshot) };
+    found
 }
 
 /// The page files in `SYSTEM_PAGEFILE_INFORMATION` entries (sizes in pages of `page` bytes),

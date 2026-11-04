@@ -3,12 +3,14 @@
 # and after Settings was closed; its CPU use at idle over 60 s, as a share of all processors
 # (Task Manager's "CPU" column); and the time from process creation to the bar's first frame,
 # which the app logs, of the first run (cold) and the measured run (warm). Adds the times the
-# budget tests recorded (`target/budgets/*.json`, `cargo test budget_ -- --ignored`). Also
-# saves screenshots, quits the app gracefully and prints its log. Writes summary tables to the
-# job summary.
+# budget tests recorded (`target/budgets/*.json`, `cargo test budget_ -- --ignored`) and the
+# memory the app logged itself (at the bar's first frame, 10 s after Settings opened and
+# closed). Also saves screenshots, quits the app gracefully and prints its log. Writes summary
+# tables to the job summary.
 #
-# The first run opens the welcome page (SPEC §11.5): a run before the measured one closes it,
-# which ends the first run, so the measured run starts with the bar alone.
+# The first run opens the welcome page (SPEC §11.5): a run before the measured one measures it
+# (reported, not enforced) and closes it, which ends the first run, so the measured run starts
+# with the bar alone.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -53,7 +55,8 @@ function Get-ProcessTree([int] $RootId) {
 
 $results = [System.Collections.Generic.List[object]]::new()
 
-function Measure-Tree([string] $Label, [int] $RootId) {
+# Measures the stage $Label; one measured with -ReportOnly is listed but never fails the step.
+function Measure-Tree([string] $Label, [int] $RootId, [switch] $ReportOnly) {
     $rows = foreach ($p in Get-ProcessTree $RootId) {
         $perf = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter "IDProcess = $($p.ProcessId)"
         if ($perf) {
@@ -63,7 +66,7 @@ function Measure-Tree([string] $Label, [int] $RootId) {
     $total = [math]::Round((($rows | Measure-Object PrivateMb -Sum).Sum), 1)
     Write-Host "== ${Label}: $total MB in $(@($rows).Count) process(es)"
     $rows | Format-Table -AutoSize | Out-String | Write-Host
-    $results.Add([pscustomobject]@{ Stage = $Label; TotalMb = $total; Processes = @($rows).Count })
+    $results.Add([pscustomobject]@{ Stage = $Label; TotalMb = $total; Processes = @($rows).Count; ReportOnly = [bool]$ReportOnly })
 }
 
 function Save-Screenshot([string] $Path) {
@@ -119,6 +122,21 @@ function Get-StartTimes {
         })
 }
 
+# The memory the app logged, oldest first: at each start's first frame (which begins a run)
+# and 10 s after Settings opened and closed.
+function Get-LoggedMemory {
+    if (-not (Test-Path $LogDir)) { return @() }
+    $lines = Get-ChildItem $LogDir -Filter 'infodock*.log' | Sort-Object Name | Get-Content
+    $run = 0
+    $pattern = '\bmemory ((?:at|\d+ s after) [^:]+): (.+)$'
+    $readings = foreach ($line in ($lines | Select-String -Pattern $pattern)) {
+        $when = $line.Matches[0].Groups[1].Value
+        if ($when.StartsWith('at ')) { $run++ }
+        [pscustomobject]@{ Run = $run; When = $when; Reading = $line.Matches[0].Groups[2].Value }
+    }
+    @($readings)
+}
+
 # The start a run logged: the one more than before it; $null if it logged none.
 function Get-NewStartTime([object[]] $Before) {
     $after = @(Get-StartTimes)
@@ -127,14 +145,16 @@ function Get-NewStartTime([object[]] $Before) {
 
 $startTimes = @(Get-StartTimes)
 
-# The first run: the welcome page, closed.
+# The first run: the welcome page, measured and closed. The app logs its memory 10 s after
+# Settings closed, so the run lasts until then.
 $first = Start-Process -FilePath $Exe -PassThru
 try {
     Start-Sleep -Seconds 10
     if ($first.HasExited) { throw "Infodock exited during its first run (code $($first.ExitCode))" }
+    Measure-Tree 'First run, welcome page open' $first.Id -ReportOnly
     Save-Screenshot (Join-Path $OutDir 'welcome.png')
     if (-not (Close-Settings)) { Write-Warning 'The welcome page did not open on the first run' }
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 12
 } finally {
     Stop-Gracefully $first
 }
@@ -161,13 +181,15 @@ try {
     $second = Start-Process -FilePath $Exe -PassThru
     if (-not $second.WaitForExit(15000)) { Write-Warning 'The second instance did not exit' }
     Start-Sleep -Seconds 10
-    Measure-Tree 'Settings open' $app.Id
+    Measure-Tree 'Settings open' $app.Id -ReportOnly
     Save-Screenshot (Join-Path $OutDir 'settings.png')
 
     if (-not (Close-Settings)) { Write-Warning 'Settings window not found' }
     Start-Sleep -Seconds 10
     if ($app.HasExited) { throw 'Infodock quit when Settings was closed' }
     Measure-Tree 'Settings closed' $app.Id
+    # The app's own reading 10 s after Settings closed may follow the measurement.
+    Start-Sleep -Seconds 2
 } finally {
     Stop-Gracefully $app
     Show-Log
@@ -189,7 +211,15 @@ foreach ($id in $Recorded) {
 }
 
 $summary = @("### Memory (private working set, budget $BudgetMb MB)", '', '| Stage | Total MB | Processes |', '|---|---:|---:|')
-$summary += $results | ForEach-Object { "| $($_.Stage) | $($_.TotalMb) | $($_.Processes) |" }
+$summary += $results | ForEach-Object {
+    $stage = if ($_.ReportOnly) { "$($_.Stage) (report only)" } else { $_.Stage }
+    "| $stage | $($_.TotalMb) | $($_.Processes) |"
+}
+$logged = @(Get-LoggedMemory)
+if ($logged) {
+    $summary += @('', '### Memory the app logged', '', 'Run 1 is the first run (the welcome page), run 2 the measured run.', '', '| Run | When | Reading |', '|---:|---|---|')
+    $summary += $logged | ForEach-Object { "| $($_.Run) | $($_.When) | $($_.Reading) |" }
+}
 $summary += @('', "### Idle CPU (budget $CpuBudgetPercent %)", '', "$cpuPercent % of $([Environment]::ProcessorCount) processors over $CpuSeconds s")
 $summary += @('', '### Times', '', '| Measure | Measured | Budget |', '|---|---:|---:|')
 $summary += $times | ForEach-Object {
@@ -203,7 +233,7 @@ if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding
 $summary -join "`n" | Write-Host
 
 $problems = @()
-$over = $results | Where-Object { $_.Stage -ne 'Settings open' -and $_.TotalMb -gt $BudgetMb }
+$over = $results | Where-Object { -not $_.ReportOnly -and $_.TotalMb -gt $BudgetMb }
 if ($over) {
     $problems += "over the $BudgetMb MB budget: " + (($over | ForEach-Object { "$($_.Stage) $($_.TotalMb) MB" }) -join ', ')
 }

@@ -499,6 +499,42 @@ pub struct MemoryStatus {
     pub load: u32,
 }
 
+/// This process's own memory, bytes, as Task Manager shows it: the app logs it so a log from
+/// real hardware shows what CI's runner cannot (SPEC §14.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProcessMemory {
+    /// The private working set: Task Manager's *Memory* column, the measure of the budget;
+    /// `None` where the OS does not report it (older builds of Windows 10).
+    pub private_working_set: Option<u64>,
+    /// The whole working set, pages shared with other processes included.
+    pub working_set: u64,
+    /// The private memory committed (Task Manager's *Commit size*).
+    pub commit: u64,
+    /// `None` when they could not be counted.
+    pub threads: Option<u32>,
+}
+
+impl std::fmt::Display for ProcessMemory {
+    /// `private working set 12.9 MB, working set 31.0 MB, commit 20.4 MB, 14 threads`, in MB of
+    /// 2^20 bytes as Task Manager counts them; what is unknown is left out.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mb = |bytes: u64| bytes as f64 / f64::from(1 << 20);
+        if let Some(private) = self.private_working_set {
+            write!(f, "private working set {:.1} MB, ", mb(private))?;
+        }
+        write!(
+            f,
+            "working set {:.1} MB, commit {:.1} MB",
+            mb(self.working_set),
+            mb(self.commit)
+        )?;
+        if let Some(threads) = self.threads {
+            write!(f, ", {threads} threads")?;
+        }
+        Ok(())
+    }
+}
+
 /// A change to the per-user `Run` entry that starts Infodock at sign-in (SPEC §10.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutostartChange<'a> {
@@ -539,7 +575,7 @@ pub const UNSUPPORTED: &str = "not supported on this platform";
 /// Wi-Fi readers), which the sampler turns into an error sample after three failures in a row
 /// (SPEC §14.2). `disk_space`, `volumes`, `net_interface`, `net_interfaces` and `path_kind`
 /// fold a failure into absence (`None`, an empty list, [`PathKind::Missing`]), which sensors
-/// show as missing or "n/a". Typed errors ([`EjectError`], [`ImageError`]) are for callers
+/// show as missing or "n/a"; so does `process_memory`, which only the log reads. Typed errors ([`EjectError`], [`ImageError`]) are for callers
 /// that act on the reason.
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
@@ -770,6 +806,11 @@ pub trait Platform: Send + Sync {
     /// (the legacy import, SPEC §11.4); `None` where the platform cannot convert them.
     fn decode_code_page(&self, bytes: &[u8], code_page: Option<u32>) -> Option<String> {
         let _ = (bytes, code_page);
+        None
+    }
+    /// This process's memory now, for the log (SPEC §14.1); `None` where it cannot be read.
+    /// It counts the system's processes once, a few milliseconds.
+    fn process_memory(&self) -> Option<ProcessMemory> {
         None
     }
     /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
@@ -1485,7 +1526,29 @@ pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, Platf
 mod tests {
     use std::cmp::Ordering;
 
-    use super::{WifiStatus, file_name, natural_cmp, path_root, unique_path, url_file_text};
+    use super::{
+        ProcessMemory, WifiStatus, file_name, natural_cmp, path_root, unique_path, url_file_text,
+    };
+
+    #[test]
+    fn process_memory_for_the_log() {
+        let memory = ProcessMemory {
+            private_working_set: Some(13_526_000),
+            working_set: 32_505_856,
+            commit: 21_390_000,
+            threads: Some(14),
+        };
+        assert_eq!(
+            memory.to_string(),
+            "private working set 12.9 MB, working set 31.0 MB, commit 20.4 MB, 14 threads"
+        );
+        let unknown = ProcessMemory {
+            private_working_set: None,
+            threads: None,
+            ..memory
+        };
+        assert_eq!(unknown.to_string(), "working set 31.0 MB, commit 20.4 MB");
+    }
 
     #[test]
     fn wifi_quality_from_rssi() {

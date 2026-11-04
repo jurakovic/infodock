@@ -138,6 +138,10 @@ impl Platform for WindowsPlatform {
         memory::page_files()
     }
 
+    fn process_memory(&self) -> Option<super::ProcessMemory> {
+        memory::process()
+    }
+
     fn volumes(&self) -> Vec<super::Volume> {
         disk::volumes()
     }
