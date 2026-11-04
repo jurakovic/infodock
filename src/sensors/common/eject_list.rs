@@ -13,11 +13,11 @@ use super::icon::{self, Icon};
 use crate::i18n::t;
 use crate::look::theme::Theme;
 use crate::platform::{
-    Bitmap, Canvas, Color, Key, Launch, PointF, PointerButton, PopupInput, RectF, Shape, SizeF,
-    TextLayout, TextStyle, Volume,
+    AccessiblePopup, AccessibleRow, Bitmap, Canvas, Color, Key, Launch, PointF, PointerButton,
+    PopupInput, RectF, Shape, SizeF, TextLayout, TextStyle, Volume,
 };
 use crate::sampler::{Change, ChangeSink};
-use crate::sensors::format::{self};
+use crate::sensors::format::{self, Numbers};
 use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
 use crate::sensors::{Fetched, disk};
 
@@ -40,6 +40,8 @@ const BUTTON_PAD: f32 = 10.0;
 const BUTTON_RADIUS: f32 = 4.0;
 /// The line above the footer and the space around it.
 const SEPARATOR: f32 = 9.0;
+/// The footer's row id for screen readers; the drives' are their roots.
+const FOOTER: &str = "footer";
 /// The system's *Safely Remove Hardware* dialog (SPEC §9.22).
 const HOTPLUG: (&str, &str) = ("rundll32.exe", "shell32.dll,Control_RunDLL hotplug.dll");
 
@@ -124,6 +126,8 @@ pub struct EjectList {
     changes: ChangeSink,
     current: Option<Target>,
     pressed: Option<Target>,
+    /// How sizes are written, as last laid out.
+    numbers: Numbers,
     view: View,
 }
 
@@ -145,6 +149,7 @@ impl EjectList {
             changes,
             current: None,
             pressed: None,
+            numbers: Numbers::default(),
             view: View::default(),
         }
     }
@@ -340,6 +345,7 @@ impl Popup for EjectList {
     fn layout(&mut self, cx: &PopupCtx) -> SizeF {
         self.refresh();
         self.read_sizes(cx);
+        self.numbers = cx.numbers;
         let width = WIDTH.min(cx.room.width).floor();
         let height = (self.footer_top() + ROW).min(cx.room.height);
         self.view.size = SizeF::new(width, height);
@@ -517,6 +523,66 @@ impl Popup for EjectList {
             PopupInput::Key { key, .. } => self.select(*key),
             _ => PopupReply::Nothing,
         }
+    }
+
+    /// A row per drive (SPEC §14.4), named by the drive, its size and its button (*Eject* or
+    /// *Ejecting…*), or *Nothing to eject*; then the footer. The marked button marks its row.
+    fn accessible(&self) -> AccessiblePopup {
+        let SizeF { width, height } = self.view.size;
+        let row = |id: String, name: String, top: f32| AccessibleRow {
+            id,
+            name,
+            rect: (top < height).then(|| RectF::new(0.0, top, width, (top + ROW).min(height))),
+        };
+        let mut rows: Vec<AccessibleRow> = self
+            .volumes
+            .iter()
+            .enumerate()
+            .map(|(i, volume)| {
+                let mut parts = vec![disk::volume_name(volume)];
+                if let Some(Some(total)) = self.sizes.get(&size_key(volume)) {
+                    parts.push(format::bytes(*total, None, self.numbers));
+                }
+                parts.push(t(if self.ejecting.contains(&volume.root) {
+                    "sensor.ejectUsb.ejecting"
+                } else {
+                    "sensor.ejectUsb.eject"
+                }));
+                row(volume.root.clone(), parts.join(", "), i as f32 * ROW)
+            })
+            .collect();
+        if rows.is_empty() {
+            rows.push(row(String::new(), t("sensor.ejectUsb.nothing"), 0.0));
+        }
+        rows.push(row(
+            FOOTER.to_owned(),
+            t("sensor.ejectUsb.safelyRemove"),
+            self.footer_top(),
+        ));
+        let selected = match &self.current {
+            Some(Target::Eject(root)) => self.volumes.iter().position(|v| v.root == *root),
+            Some(Target::Footer) => Some(rows.len() - 1),
+            None => None,
+        };
+        AccessiblePopup {
+            name: String::new(),
+            rows,
+            selected,
+        }
+    }
+
+    /// Marks the button of the drive with root `id`, unless it is being ejected, or the footer.
+    fn accessible_select(&mut self, id: &str) -> PopupReply {
+        let target = if id == FOOTER {
+            Target::Footer
+        } else {
+            Target::Eject(id.to_owned())
+        };
+        if !self.targets().contains(&target) {
+            return PopupReply::Nothing;
+        }
+        self.current = Some(target);
+        PopupReply::Redraw
     }
 
     /// Drives that came or went, sizes read, and ejects that finished.
@@ -744,5 +810,49 @@ mod tests {
         );
         list.input(&key(Key::Home), &h.ctx());
         assert_eq!(list.current, Some(Target::Eject("E:\\".into())));
+    }
+
+    #[test]
+    fn screen_readers_list_the_drives_and_the_footer() {
+        let h = Harness::new();
+        // Nothing to eject: its message, then the footer.
+        let (mut empty, _) = list(Vec::new());
+        empty.layout(&h.ctx());
+        let names: Vec<String> = empty
+            .accessible()
+            .rows
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        assert_eq!(names, ["Nothing to eject", "Safely Remove Hardware…"]);
+
+        let (mut list, _) = list(vec![stick("E:\\", "STICK"), stick("G:\\", "")]);
+        list.preset_sizes(&[("E:\\", 32_000_000_000)]);
+        list.ejecting.insert("G:\\".into());
+        list.layout(&h.ctx());
+        let rows = list.accessible().rows;
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "STICK (E:), 29.8 GB, Eject",
+                "USB Drive (G:), Ejecting…",
+                "Safely Remove Hardware…"
+            ]
+        );
+        assert_eq!(rows[1].id, "G:\\");
+        assert_eq!(rows[1].rect, Some(RectF::new(0.0, ROW, 300.0, 2.0 * ROW)));
+        assert_eq!(
+            rows[2].rect,
+            Some(RectF::new(0.0, 2.0 * ROW + 9.0, 300.0, 3.0 * ROW + 9.0))
+        );
+        assert_eq!(list.accessible().selected, None);
+        // Marked as by the keys: a drive's button, the footer; not a drive being ejected.
+        assert_eq!(list.accessible_select("E:\\"), PopupReply::Redraw);
+        assert_eq!(list.current, Some(Target::Eject("E:\\".into())));
+        assert_eq!(list.accessible().selected, Some(0));
+        assert_eq!(list.accessible_select("G:\\"), PopupReply::Nothing);
+        assert_eq!(list.accessible_select(FOOTER), PopupReply::Redraw);
+        assert_eq!(list.accessible().selected, Some(2));
     }
 }

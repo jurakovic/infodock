@@ -30,7 +30,9 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::config::model::{BarMode, DateLocale, Edge, FloatingRect, Material, ZOrder};
-pub use accessible::{AccessibleAction, AccessibleBar, AccessibleItem};
+pub use accessible::{
+    AccessibleAction, AccessibleBar, AccessibleItem, AccessiblePopup, AccessibleRow,
+};
 pub use bitmap::{Bitmap, ImageError, decode_image, load_image};
 pub use canvas::{Brush, Canvas, Color, PointF, RectF, Shape, SizeF};
 pub use drag::{DragEvent, DragItem, DropEffect, DropEffects};
@@ -1253,7 +1255,8 @@ pub enum UiEvent {
     PopupDeactivated,
     /// A key pressed while the bar window has the keyboard focus (SPEC §14.4).
     Key { key: Key, modifiers: Modifiers },
-    /// A screen reader asks something of a sensor through UI Automation (SPEC §14.4).
+    /// A screen reader asks something of a sensor or the popup through UI Automation (SPEC
+    /// §14.4).
     Accessible(AccessibleAction),
     /// The bar window got the keyboard focus.
     FocusGained,
@@ -1475,13 +1478,15 @@ pub trait BarWindow {
     /// Shows the popup window (SPEC §7.2) at `rect` (physical screen px) with what `paint`
     /// draws at `scale` and gives it the keyboard focus: fading in when it was hidden, updated
     /// in place (and moved) when it was shown. Its input arrives as [`UiEvent::Popup`]. `name`
-    /// is its title, which screen readers read (§14.4).
+    /// is its title, which screen readers read (§14.4); `describe` says what they list in it,
+    /// asked once a UI Automation client asked for the popup window.
     fn show_popup(
         &self,
         rect: Rect,
         scale: f32,
         name: &str,
         paint: &mut dyn FnMut(&mut dyn Canvas),
+        describe: &dyn Fn() -> AccessiblePopup,
     );
     /// Hides the popup window; no [`UiEvent::PopupDeactivated`] follows.
     fn hide_popup(&self);

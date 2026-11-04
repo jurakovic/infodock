@@ -58,7 +58,7 @@ const BAR_ID: &str = "InfodockBar";
 /// hands the queued actions to the bar logic ([`Uia::take_actions`]).
 pub(super) const WM_UIA: u32 = WM_APP + 3;
 /// The first part of a window's runtime id (`UiaHwndRuntimeIdBase`), followed by its handle.
-const HWND_RUNTIME_ID: i32 = 42;
+pub(super) const HWND_RUNTIME_ID: i32 = 42;
 
 /// What the providers answer from, shared by all of them.
 type Shared = Rc<RefCell<Tree>>;
@@ -245,11 +245,11 @@ impl Uia {
 }
 
 /// Returns no element (a null pointer with success), as UI Automation expects for "none".
-fn none<T>() -> Result<T> {
+pub(super) fn none<T>() -> Result<T> {
     Err(Error::empty())
 }
 
-fn gone() -> Error {
+pub(super) fn gone() -> Error {
     Error::from(HRESULT(UIA_E_ELEMENTNOTAVAILABLE as i32))
 }
 
@@ -268,7 +268,7 @@ fn variant(vt: VARENUM, value: VARIANT_0_0_0) -> VARIANT {
 }
 
 /// A string for UI Automation, which frees it.
-fn text(value: &str) -> VARIANT {
+pub(super) fn text(value: &str) -> VARIANT {
     variant(
         VT_BSTR,
         VARIANT_0_0_0 {
@@ -278,7 +278,7 @@ fn text(value: &str) -> VARIANT {
 }
 
 /// A variant this side owns, freed when dropped.
-struct Owned(VARIANT);
+pub(super) struct Owned(pub(super) VARIANT);
 
 impl Drop for Owned {
     fn drop(&mut self) {
@@ -295,17 +295,17 @@ fn expand_state(popup: Option<bool>) -> ExpandCollapseState {
     }
 }
 
-fn int(value: i32) -> VARIANT {
+pub(super) fn int(value: i32) -> VARIANT {
     variant(VT_I4, VARIANT_0_0_0 { lVal: value })
 }
 
-fn boolean(value: bool) -> VARIANT {
+pub(super) fn boolean(value: bool) -> VARIANT {
     let value = if value { VARIANT_TRUE } else { VARIANT_FALSE };
     variant(VT_BOOL, VARIANT_0_0_0 { boolVal: value })
 }
 
 /// A runtime id for UI Automation, which frees it: appended to the window's.
-fn runtime_array(n: i32) -> Result<*mut SAFEARRAY> {
+pub(super) fn runtime_array(n: i32) -> Result<*mut SAFEARRAY> {
     // SAFETY: a new two-element vector of i32, filled by index; destroyed again on failure.
     unsafe {
         let array = SafeArrayCreateVector(VT_I4, 0, 2);
@@ -581,26 +581,92 @@ mod tests {
     };
 
     use windows::Win32::UI::Accessibility::{
-        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationExpandCollapsePattern,
-        IUIAutomationInvokePattern, IUIAutomationValuePattern,
+        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationElement4,
+        IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
+        IUIAutomationSelectionItemPattern, IUIAutomationSelectionPattern, IUIAutomationTreeWalker,
+        IUIAutomationValuePattern, UIA_ListControlTypeId, UIA_ListItemControlTypeId,
+        UIA_SelectionItemPatternId, UIA_SelectionPatternId,
     };
     use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    use windows::core::Interface;
 
     use super::*;
-    use crate::platform::{AccessibleItem, BarHandler, BarWindow, Canvas, SizeF, UiEvent};
+    use crate::platform::{
+        AccessibleItem, AccessiblePopup, AccessibleRow, BarHandler, BarWindow, Canvas, Color, Rect,
+        SizeF, UiEvent,
+    };
+
+    /// Where the test shows the popup, physical screen px, at a scale of 1.
+    const POPUP: Rect = Rect {
+        left: 100,
+        top: 100,
+        right: 360,
+        bottom: 200,
+    };
 
     /// A bar logic that only describes two sensors, the first with a popup and the second with
-    /// the focus ring, and keeps what screen readers ask.
-    struct Described(Arc<Mutex<Vec<AccessibleAction>>>);
+    /// the focus ring, and keeps what screen readers ask. Expanding the first shows a Folder
+    /// Menu's list, a row of which is marked.
+    struct Described {
+        seen: Arc<Mutex<Vec<AccessibleAction>>>,
+        marked: Option<usize>,
+    }
+
+    /// Folder Menu's list as the bar describes it: three items, the last scrolled out of view.
+    fn folder(marked: Option<usize>) -> AccessiblePopup {
+        let row = |i: usize, name: &str| AccessibleRow {
+            id: format!(r"C:\Users\me\Documents\{name}"),
+            name: name.into(),
+            rect: (i < 2).then(|| {
+                let top = 38.0 + i as f32 * 20.0;
+                RectF::new(10.0, top, 250.0, top + 20.0)
+            }),
+        };
+        AccessiblePopup {
+            name: "Documents".into(),
+            rows: vec![
+                row(0, "Projects"),
+                row(1, "report 10.pdf"),
+                row(2, "report 9.pdf"),
+            ],
+            selected: marked,
+        }
+    }
+
+    impl Described {
+        fn show_popup(&self, window: &dyn BarWindow) {
+            let popup = folder(self.marked);
+            window.show_popup(
+                POPUP,
+                1.0,
+                &popup.name,
+                &mut |canvas| canvas.fill_rect(RectF::new(0.0, 0.0, 260.0, 100.0), Color::WHITE),
+                &|| popup.clone(),
+            );
+        }
+    }
 
     impl BarHandler for Described {
-        fn on_event(&mut self, _window: &dyn BarWindow, event: UiEvent) {
-            if let UiEvent::Accessible(action) = event {
-                self.0
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(action);
+        fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent) {
+            let UiEvent::Accessible(action) = event else {
+                return;
+            };
+            match &action {
+                AccessibleAction::Expand(_) => {
+                    self.marked = Some(1);
+                    self.show_popup(window);
+                }
+                AccessibleAction::DescribePopup => self.show_popup(window),
+                AccessibleAction::SelectRow(id) => {
+                    self.marked = folder(None).row(id).map(|(i, _)| i);
+                    self.show_popup(window);
+                }
+                _ => {}
             }
+            self.seen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(action);
         }
         fn paint(&mut self, _canvas: &mut dyn Canvas, _size: SizeF) {}
         fn accessible(&self) -> AccessibleBar {
@@ -657,8 +723,13 @@ mod tests {
     fn ui_automation_walks_the_bars_sensors_and_clicks_them() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let handler_seen = Arc::clone(&seen);
-        crate::platform::start_bar_thread(Box::new(move |_| Box::new(Described(handler_seen))))
-            .expect("the bar thread");
+        crate::platform::start_bar_thread(Box::new(move |_| {
+            Box::new(Described {
+                seen: handler_seen,
+                marked: None,
+            })
+        }))
+        .expect("the bar thread");
         // SAFETY: plain UI Automation client calls on this test's thread.
         unsafe {
             let hwnd = FindWindowW(super::super::window::CLASS_NAME, None).expect("the bar");
@@ -734,6 +805,119 @@ mod tests {
                     .is_err(),
                 "no popup, no expanding"
             );
+            walks_the_popups_rows(&automation, &walker, &seen);
+        }
+    }
+
+    /// Expanding the Folder Menu showed its list (S14u2): the popup window is a list of its
+    /// rows, the marked one selected; selecting another reaches the bar logic.
+    fn walks_the_popups_rows(
+        automation: &IUIAutomation,
+        walker: &IUIAutomationTreeWalker,
+        seen: &Mutex<Vec<AccessibleAction>>,
+    ) {
+        let until = Instant::now() + Duration::from_secs(5);
+        let hwnd = loop {
+            // SAFETY: a plain query.
+            match unsafe { FindWindowW(super::super::popup::CLASS_NAME, None) } {
+                Ok(hwnd) => break hwnd,
+                Err(_) if Instant::now() < until => std::thread::sleep(Duration::from_millis(20)),
+                Err(e) => panic!("no popup window: {e}"),
+            }
+        };
+        let name = |e: &IUIAutomationElement| {
+            // SAFETY: plain UI Automation client calls, on the thread that made `automation`.
+            unsafe { e.CurrentName() }
+                .map(|n| n.to_string())
+                .unwrap_or_default()
+        };
+        let selected = |e: &IUIAutomationElement| {
+            // SAFETY: as above.
+            unsafe {
+                e.GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(
+                    UIA_SelectionItemPatternId,
+                )
+                .and_then(|p| p.CurrentIsSelected())
+                .map(|b| b.as_bool())
+                .unwrap_or(false)
+            }
+        };
+        // SAFETY: as above.
+        unsafe {
+            // Asking for it describes it.
+            let list = automation
+                .ElementFromHandle(hwnd)
+                .expect("the popup's element");
+            assert_eq!(name(&list), "Documents");
+            assert_eq!(
+                list.CurrentControlType().expect("type"),
+                UIA_ListControlTypeId
+            );
+
+            let first = walker.GetFirstChildElement(&list).expect("the first row");
+            assert_eq!(name(&first), "Projects");
+            assert_eq!(
+                first.CurrentControlType().expect("type"),
+                UIA_ListItemControlTypeId
+            );
+            let place = |e: &IUIAutomationElement| {
+                let e4 = e.cast::<IUIAutomationElement4>().expect("UIA 4");
+                (
+                    e4.CurrentPositionInSet().expect("position"),
+                    e4.CurrentSizeOfSet().expect("size"),
+                )
+            };
+            assert_eq!(place(&first), (1, 3));
+            assert!(!selected(&first));
+            let parent = walker.GetParentElement(&first).expect("parent");
+            assert!(
+                automation
+                    .CompareElements(&parent, &list)
+                    .expect("compare")
+                    .as_bool()
+            );
+
+            let second = walker
+                .GetNextSiblingElement(&first)
+                .expect("the second row");
+            assert_eq!(name(&second), "report 10.pdf");
+            assert_eq!(place(&second), (2, 3));
+            assert!(selected(&second), "the marked row");
+            // Its place: the window's corner plus its place in the window, at a scale of 1.
+            let rect = second.CurrentBoundingRectangle().expect("rect");
+            assert_eq!((rect.left, rect.top), (POPUP.left + 10, POPUP.top + 58));
+            assert_eq!((rect.right - rect.left, rect.bottom - rect.top), (240, 20));
+            let selection = list
+                .GetCurrentPatternAs::<IUIAutomationSelectionPattern>(UIA_SelectionPatternId)
+                .and_then(|p| p.GetCurrentSelection())
+                .expect("the selection");
+            assert_eq!(selection.Length().expect("length"), 1);
+            assert_eq!(
+                name(&selection.GetElement(0).expect("selected")),
+                "report 10.pdf"
+            );
+
+            let third = walker
+                .GetNextSiblingElement(&second)
+                .expect("the third row");
+            assert_eq!(name(&third), "report 9.pdf");
+            assert!(third.CurrentIsOffscreen().expect("offscreen").as_bool());
+            assert!(walker.GetNextSiblingElement(&third).is_err(), "no fourth");
+
+            // Selecting a row marks it.
+            first
+                .GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(
+                    UIA_SelectionItemPatternId,
+                )
+                .and_then(|p| p.Select())
+                .expect("selected");
+            let id = folder(None).rows[0].id.clone();
+            assert!(received(seen, &AccessibleAction::SelectRow(id)));
+            let until = Instant::now() + Duration::from_secs(5);
+            while !selected(&first) && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(selected(&first) && !selected(&second), "the mark moved");
         }
     }
 }

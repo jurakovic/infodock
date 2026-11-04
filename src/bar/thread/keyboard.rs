@@ -130,13 +130,18 @@ impl BarLogic {
     }
 
     /// What a screen reader asks of a sensor (SPEC §14.4): a click, its popup opened or
-    /// closed, the focus ring moved to it. Deliberate, like a key, so the Lock rules for the
+    /// closed, the focus ring moved to it; or of the open popup: a row marked, or the popup
+    /// described. Deliberate, like a key, so the Lock rules for the
     /// pointer do not apply.
     pub(super) fn accessible_action(&mut self, window: &dyn BarWindow, action: AccessibleAction) {
-        let (AccessibleAction::Invoke(id)
-        | AccessibleAction::Expand(id)
-        | AccessibleAction::Collapse(id)
-        | AccessibleAction::Focus(id)) = &action;
+        let id = match &action {
+            AccessibleAction::Invoke(id)
+            | AccessibleAction::Expand(id)
+            | AccessibleAction::Collapse(id)
+            | AccessibleAction::Focus(id) => id,
+            AccessibleAction::SelectRow(row) => return self.select_popup_row(window, row),
+            AccessibleAction::DescribePopup => return self.render_popup(window),
+        };
         if self.sensors.find(id).is_none() {
             return;
         }
@@ -154,7 +159,10 @@ impl BarLogic {
                 self.close_popup(window);
                 self.refocus(window);
             }
-            AccessibleAction::Expand(_) | AccessibleAction::Collapse(_) => {}
+            AccessibleAction::Expand(_)
+            | AccessibleAction::Collapse(_)
+            | AccessibleAction::SelectRow(_)
+            | AccessibleAction::DescribePopup => {}
             AccessibleAction::Focus(id) => {
                 if !self.keys.as_ref().is_some_and(|k| k.focused) {
                     self.focus_bar(window);

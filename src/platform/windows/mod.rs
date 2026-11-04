@@ -31,6 +31,7 @@ pub mod text;
 pub mod toast;
 mod tray;
 mod uia;
+mod uia_popup;
 pub mod window;
 mod wlan;
 

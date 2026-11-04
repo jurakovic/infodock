@@ -1,7 +1,8 @@
 //! The bar as screen readers see it (SPEC §14.4): the bar logic describes its sensors after each
 //! frame, and the platform's UI Automation provider (`windows/uia.rs`) answers from that, raises
 //! the events that tell screen readers what changed ([`events`]) and hands what they ask for
-//! back to the bar logic ([`AccessibleAction`]).
+//! back to the bar logic ([`AccessibleAction`]). An open popup is described the same way, as a
+//! list of its rows, after each of its frames (`windows/uia_popup.rs`, [`popup_events`]).
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -63,7 +64,69 @@ impl AccessibleBar {
     }
 }
 
-/// What a screen reader asks of a sensor, by id; the bar logic does it (SPEC §14.4).
+/// A row of an open popup, as UI Automation lists it: a list item.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccessibleRow {
+    /// Tells it from the other rows while it is shown (an item's path, a drive's root); its
+    /// runtime id is given to this.
+    pub id: String,
+    pub name: String,
+    /// Where it is, logical px from the popup window's top-left corner; `None` while it is
+    /// scrolled out of view.
+    pub rect: Option<RectF>,
+}
+
+/// An open popup as screen readers see it (SPEC §14.4): a list named as its window, of its rows
+/// in order, one of them marked by the keys or the pointer.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AccessiblePopup {
+    /// Its window's title (`Popup::name`); the bar fills it in.
+    pub name: String,
+    pub rows: Vec<AccessibleRow>,
+    /// The marked row, an index into `rows`: the selection, which has the keyboard focus.
+    pub selected: Option<usize>,
+}
+
+impl AccessiblePopup {
+    /// The row with id `id`, and its index.
+    pub fn row(&self, id: &str) -> Option<(usize, &AccessibleRow)> {
+        self.rows.iter().enumerate().find(|(_, r)| r.id == id)
+    }
+
+    pub fn selected_row(&self) -> Option<&AccessibleRow> {
+        self.rows.get(self.selected?)
+    }
+
+    /// The row in view at `x`, `y` (logical px from the window's top-left corner).
+    pub fn row_at(&self, x: f32, y: f32) -> Option<&AccessibleRow> {
+        self.rows.iter().find(|row| {
+            row.rect
+                .is_some_and(|r| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+        })
+    }
+
+    /// The row before (`-1`) or after (`1`) row `id`.
+    pub fn sibling(&self, id: &str, offset: isize) -> Option<&AccessibleRow> {
+        let (at, _) = self.row(id)?;
+        self.rows.get(at.checked_add_signed(offset)?)
+    }
+
+    /// The rows moved by `dx`, `dy`: from the content's corner to the window's.
+    pub fn shifted(mut self, dx: f32, dy: f32) -> Self {
+        for rect in self.rows.iter_mut().filter_map(|r| r.rect.as_mut()) {
+            *rect = RectF::new(
+                rect.left + dx,
+                rect.top + dy,
+                rect.right + dx,
+                rect.bottom + dy,
+            );
+        }
+        self
+    }
+}
+
+/// What a screen reader asks of a sensor or a popup's row, by id; the bar logic does it (SPEC
+/// §14.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessibleAction {
     /// The Invoke pattern: a click.
@@ -73,6 +136,11 @@ pub enum AccessibleAction {
     Collapse(String),
     /// The focus ring goes to it.
     Focus(String),
+    /// The open popup's row with this id is marked (its SelectionItem pattern, or its focus).
+    SelectRow(String),
+    /// A client asked for the popup window for the first time: it is described from now on,
+    /// so it is described now.
+    DescribePopup,
 }
 
 /// What changed between two descriptions of the bar, for UI Automation's events.
@@ -90,6 +158,43 @@ pub enum AccessibleEvent {
     },
     /// A sensor's popup opened (`true`) or closed.
     Expanded { id: String, open: bool },
+}
+
+/// What changed in an open popup, for UI Automation's events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PopupEvent {
+    /// Rows came, went or moved: the popup appeared, a folder opened, drives came or went.
+    Structure,
+    /// Its name changed from `old` (another folder shows).
+    Renamed { old: String, new: String },
+    /// The mark moved to this row: it is selected and has the focus.
+    Selected(String),
+}
+
+/// The events that tell screen readers how a popup changed from `old` (`None`: it just
+/// appeared) to `new`. A popup that appears is read with its window, so only its rows and its
+/// mark are announced.
+pub fn popup_events(old: Option<&AccessiblePopup>, new: &AccessiblePopup) -> Vec<PopupEvent> {
+    let mut events = Vec::new();
+    let ids = |popup: &AccessiblePopup| popup.rows.iter().map(|r| r.id.clone()).collect::<Vec<_>>();
+    if old.is_none_or(|old| ids(old) != ids(new)) {
+        events.push(PopupEvent::Structure);
+    }
+    if let Some(old) = old
+        && old.name != new.name
+    {
+        events.push(PopupEvent::Renamed {
+            old: old.name.clone(),
+            new: new.name.clone(),
+        });
+    }
+    let selected = |popup: &AccessiblePopup| popup.selected_row().map(|r| r.id.clone());
+    if let Some(id) = selected(new)
+        && old.and_then(selected) != Some(id.clone())
+    {
+        events.push(PopupEvent::Selected(id));
+    }
+    events
 }
 
 /// Which values were last announced and when, so each sensor's are announced at most once per
@@ -295,5 +400,87 @@ mod tests {
             [AccessibleEvent::Structure]
         );
         assert!(!announced.0.contains_key("a"));
+    }
+
+    fn popup(name: &str, ids: &[&str], selected: Option<usize>) -> AccessiblePopup {
+        AccessiblePopup {
+            name: name.into(),
+            rows: ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| AccessibleRow {
+                    id: (*id).into(),
+                    name: id.to_uppercase(),
+                    rect: (i < 2)
+                        .then(|| RectF::new(0.0, i as f32 * 20.0, 100.0, (i + 1) as f32 * 20.0)),
+                })
+                .collect(),
+            selected,
+        }
+    }
+
+    #[test]
+    fn finds_a_popups_rows() {
+        let list = popup("Docs", &["a", "b", "c"], Some(1));
+        assert_eq!(list.row("c").map(|(i, _)| i), Some(2));
+        assert_eq!(list.selected_row().map(|r| r.id.as_str()), Some("b"));
+        assert_eq!(list.row_at(50.0, 25.0).map(|r| r.id.as_str()), Some("b"));
+        assert_eq!(list.row_at(50.0, 45.0), None, "c is scrolled out of view");
+        assert_eq!(list.sibling("a", 1).map(|r| r.id.as_str()), Some("b"));
+        assert_eq!(list.sibling("a", -1), None);
+        assert_eq!(list.sibling("c", 1), None);
+        // From the content's corner to the window's.
+        let shifted = list.shifted(10.0, 10.0);
+        assert_eq!(
+            shifted.rows[1].rect,
+            Some(RectF::new(10.0, 30.0, 110.0, 50.0))
+        );
+        assert_eq!(shifted.rows[2].rect, None);
+    }
+
+    #[test]
+    fn a_popups_structure_name_and_mark_are_announced() {
+        let docs = popup("Docs", &["a", "b"], None);
+        // Appearing: its rows; the mark only once there is one.
+        assert_eq!(popup_events(None, &docs), [PopupEvent::Structure]);
+        let marked = popup("Docs", &["a", "b"], Some(1));
+        assert_eq!(
+            popup_events(None, &marked),
+            [PopupEvent::Structure, PopupEvent::Selected("b".into())]
+        );
+        // The mark moves, or goes (to the header): only a new mark is announced.
+        assert_eq!(
+            popup_events(Some(&docs), &marked),
+            [PopupEvent::Selected("b".into())]
+        );
+        assert_eq!(popup_events(Some(&marked), &docs), []);
+        assert_eq!(popup_events(Some(&marked), &marked), []);
+        // Into a folder: other rows and another name, nothing marked.
+        let sub = popup("Sub", &["x"], None);
+        assert_eq!(
+            popup_events(Some(&marked), &sub),
+            [
+                PopupEvent::Structure,
+                PopupEvent::Renamed {
+                    old: "Docs".into(),
+                    new: "Sub".into()
+                }
+            ]
+        );
+        // Back: the folder gone into is marked.
+        assert_eq!(
+            popup_events(Some(&sub), &marked),
+            [
+                PopupEvent::Structure,
+                PopupEvent::Renamed {
+                    old: "Sub".into(),
+                    new: "Docs".into()
+                },
+                PopupEvent::Selected("b".into())
+            ]
+        );
+        // A row arrives; the mark stays.
+        let more = popup("Docs", &["a", "b", "c"], Some(1));
+        assert_eq!(popup_events(Some(&marked), &more), [PopupEvent::Structure]);
     }
 }

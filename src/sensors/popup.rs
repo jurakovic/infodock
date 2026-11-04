@@ -11,7 +11,7 @@ use super::{IconSource, Props};
 use crate::config::model::Edge;
 use crate::look::theme::Theme;
 use crate::platform::{
-    Canvas, Platform, PointF, PopupCursor, PopupInput, SizeF, TextEngine, UiWaker,
+    AccessiblePopup, Canvas, Platform, PointF, PopupCursor, PopupInput, SizeF, TextEngine, UiWaker,
 };
 
 /// How a popup lines up with its sensor (SPEC §7.3, §9.19).
@@ -111,5 +111,14 @@ pub trait Popup {
     /// taken once.
     fn take_props(&mut self) -> Option<Props> {
         None
+    }
+    /// Its rows as screen readers list them (SPEC §14.4), as laid out: places in logical px
+    /// from the content's top-left corner, and the marked row. The bar names the list.
+    fn accessible(&self) -> AccessiblePopup {
+        AccessiblePopup::default()
+    }
+    /// A screen reader marks row `id` (of [`Popup::accessible`]), as the keys would.
+    fn accessible_select(&mut self, _id: &str) -> PopupReply {
+        PopupReply::Nothing
     }
 }

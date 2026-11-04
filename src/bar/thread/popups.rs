@@ -69,9 +69,20 @@ impl BarLogic {
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| t("app.name"));
         let rect = physical_rect(frame.window, scale);
-        window.show_popup(rect, scale, &name, &mut |canvas| {
-            popup::paint(canvas, open, theme);
-        });
+        window.show_popup(
+            rect,
+            scale,
+            &name,
+            &mut |canvas| popup::paint(canvas, open, theme),
+            &|| open.accessible(&name),
+        );
+    }
+
+    /// A screen reader marks a row of the open popup (SPEC §14.4).
+    pub(super) fn select_popup_row(&mut self, window: &dyn BarWindow, id: &str) {
+        if let Some(reply) = self.with_popup(|open, _| open.popup.accessible_select(id)) {
+            self.popup_reply(window, reply);
+        }
     }
 
     /// Closes the open popup, if any: its window hides, its sensor's active state ends, and

@@ -729,6 +729,7 @@ impl BarWindow for WindowState {
         scale: f32,
         name: &str,
         paint: &mut dyn FnMut(&mut dyn Canvas),
+        describe: &dyn Fn() -> crate::platform::AccessiblePopup,
     ) {
         let popup = self.popup.get_or_init(|| {
             // SAFETY: the state is leaked when the bar window is created and never freed.
@@ -741,7 +742,7 @@ impl BarWindow for WindowState {
         let Ok(popup) = popup else {
             return;
         };
-        match popup.show(rect, scale, name, paint) {
+        match popup.show(rect, scale, name, paint, describe) {
             Ok(true) => {
                 // About 60 steps a second while it fades in.
                 // SAFETY: plain call on our own window.

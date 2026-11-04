@@ -20,8 +20,8 @@ use crate::i18n::t;
 use crate::look::anim::{Easing, FRAME};
 use crate::look::theme::Theme;
 use crate::platform::{
-    Bitmap, Canvas, Color, DirItem, Key, Platform, PointF, PointerButton, PopupCursor, PopupInput,
-    RectF, SizeF, TextLayout, TextStyle, UiWaker,
+    AccessiblePopup, AccessibleRow, Bitmap, Canvas, Color, DirItem, Key, Platform, PointF,
+    PointerButton, PopupCursor, PopupInput, RectF, SizeF, TextLayout, TextStyle, UiWaker,
 };
 use crate::sensors::popup::{Popup, PopupAlign, PopupCtx, PopupReply};
 use crate::sensors::{Fetched, Props};
@@ -658,6 +658,18 @@ impl FolderBrowser {
         PopupReply::Close
     }
 
+    /// The message the list shows instead of rows: *no items*, *Loading…* or that the folder
+    /// cannot be read.
+    fn message(&self) -> Option<&'static str> {
+        let level = self.level();
+        match &level.listing {
+            Some(Listing::Pending { .. }) if level.loading => Some("folderBrowser.loading"),
+            Some(Listing::Ready(items)) if items.is_empty() => Some("folderBrowser.empty"),
+            Some(Listing::Failed) => Some("folderBrowser.failed"),
+            _ => None,
+        }
+    }
+
     /// Moves the animations on to `now`; returns whether one still runs.
     fn animate(&mut self, now: Instant) -> bool {
         if let Some(slide) = &mut self.slide {
@@ -798,13 +810,7 @@ impl Popup for FolderBrowser {
                 if cx.now.saturating_duration_since(*since) >= LOADING_AFTER
         );
         self.level_mut().loading = loading;
-        let message = match &self.level().listing {
-            Some(Listing::Pending { .. }) if loading => Some("folderBrowser.loading"),
-            Some(Listing::Ready(items)) if items.is_empty() => Some("folderBrowser.empty"),
-            Some(Listing::Failed) => Some("folderBrowser.failed"),
-            _ => None,
-        };
-        self.view.message = message.map(|key| cx.text.layout(&t(key), &style));
+        self.view.message = self.message().map(|key| cx.text.layout(&t(key), &style));
         self.view.highlight = highlight(cx.theme.popup_background);
         self.view.size
     }
@@ -988,6 +994,54 @@ impl Popup for FolderBrowser {
 
     fn on_wake(&mut self, _cx: &PopupCtx) -> PopupReply {
         PopupReply::Relayout
+    }
+
+    /// The current folder's items (SPEC §14.4), by path, in view where the list shows them;
+    /// or the message it shows instead.
+    fn accessible(&self) -> AccessiblePopup {
+        let width = self.view.size.width;
+        let list = (LIST_TOP, LIST_TOP + self.view.list_height);
+        let scroll = self.level().scroll;
+        let mut rows: Vec<AccessibleRow> = self
+            .items()
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let top = LIST_TOP + i as f32 * ROW - scroll;
+                let (top, bottom) = (top.max(list.0), (top + ROW).min(list.1));
+                AccessibleRow {
+                    id: item.path.clone(),
+                    name: item.name.clone(),
+                    rect: (bottom > top).then(|| RectF::new(0.0, top, width, bottom)),
+                }
+            })
+            .collect();
+        if rows.is_empty()
+            && let Some(key) = self.message()
+        {
+            rows.push(AccessibleRow {
+                id: String::new(),
+                name: t(key),
+                rect: Some(RectF::new(0.0, list.0, width, list.1)),
+            });
+        }
+        let selected = match self.level().current {
+            Some(Target::Row(i)) if i < self.items().len() => Some(i),
+            _ => None,
+        };
+        AccessiblePopup {
+            name: String::new(),
+            rows,
+            selected,
+        }
+    }
+
+    /// Marks the item with path `id` and scrolls it into view.
+    fn accessible_select(&mut self, id: &str) -> PopupReply {
+        match self.items().iter().position(|item| item.path == id) {
+            Some(i) => self.select_row(i),
+            None => PopupReply::Nothing,
+        }
     }
 
     fn poll(&mut self, _cx: &PopupCtx) -> PopupReply {
@@ -1217,6 +1271,60 @@ pub(crate) mod tests {
         assert!(dump.contains("clip 0,28 240×292"), "{dump}");
         assert_eq!(b.kind(), "folder-browser");
         assert_eq!(b.align(), PopupAlign::LeftEdge);
+    }
+
+    #[test]
+    fn screen_readers_list_the_items_and_mark_them() {
+        let h = Harness::new();
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let mut b = browser(&dir.path().to_string_lossy());
+        b.layout(&h.ctx());
+        // Empty: the message is the only row, marked never.
+        let empty = b.accessible();
+        assert_eq!(empty.rows.len(), 1);
+        assert_eq!(empty.rows[0].name, "no items");
+        assert_eq!(empty.selected, None);
+        assert_eq!(b.accessible_select(""), PopupReply::Nothing);
+
+        // 20 files in a list 292 px tall: rows 15 and later are out of view, 14 is cut.
+        for i in 0..20 {
+            fs::write(dir.path().join(format!("f{i:02}")), b"x").expect("a file");
+        }
+        let mut b = browser(&dir.path().to_string_lossy());
+        b.layout(&h.ctx());
+        let list = b.accessible();
+        assert_eq!(list.rows.len(), 20);
+        assert_eq!(list.rows[0].name, "f00");
+        let path = |i: usize| {
+            dir.path()
+                .join(format!("f{i:02}"))
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(list.rows[0].id, path(0));
+        assert_eq!(list.rows[0].rect, Some(RectF::new(0.0, 28.0, 240.0, 48.0)));
+        assert_eq!(
+            list.rows[14].rect,
+            Some(RectF::new(0.0, 308.0, 240.0, 320.0))
+        );
+        assert_eq!(list.rows[15].rect, None);
+        assert_eq!(list.selected, None);
+        // The keys mark a row; a screen reader can too, which scrolls it into view.
+        b.input(&key(Key::Down), &h.ctx());
+        assert_eq!(b.accessible().selected, Some(0));
+        assert_eq!(b.accessible_select(&path(19)), PopupReply::Relayout);
+        b.layout(&h.ctx());
+        let list = b.accessible();
+        assert_eq!(list.selected, Some(19));
+        assert_eq!(
+            list.rows[19].rect,
+            Some(RectF::new(0.0, 300.0, 240.0, 320.0))
+        );
+        assert_eq!(list.rows[0].rect, None, "scrolled away");
+        assert_eq!(b.accessible_select("elsewhere"), PopupReply::Nothing);
+        // The header marked: no row is.
+        b.input(&PopupInput::PointerMove(PointF::new(10.0, 10.0)), &h.ctx());
+        assert_eq!(b.accessible().selected, None);
     }
 
     #[test]

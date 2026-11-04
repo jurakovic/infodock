@@ -243,3 +243,73 @@ fn a_folder_menu_opens_its_list_closes_on_esc_and_resizes() {
         host.calls()
     );
 }
+
+#[test]
+fn screen_readers_list_a_folder_menus_rows_and_mark_them() {
+    let dir = crate::sensors::common::folder_browser::tests::sample_folder();
+    let (mut logic, window, _, mut config) = bar(Settings::default());
+    let logo = &mut config.layout.center[0];
+    logo.kind = "folder-menu".into();
+    logo.props = serde_json::json!({ "folder": dir.path().to_string_lossy() })
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    logic.apply_config(&window, config);
+    logic.sync_sensors(&window);
+    logic.paint(&mut RecordingCanvas::new(1.0), SizeF::new(WIDTH, 28.0));
+    press(&mut logic, &window, LOGO, false);
+    release(&mut logic, &window, LOGO);
+    // Named as its window; the rows in window px, 10 px in (shadow and padding).
+    let described = window.popup_described.borrow().clone();
+    let title = dir
+        .path()
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    assert_eq!(described.name, title);
+    assert_eq!(*window.popup_name.borrow(), title);
+    let names: Vec<&str> = described.rows.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "archive",
+            "Projects",
+            "Editor",
+            "report 2.pdf",
+            "report 10.pdf"
+        ]
+    );
+    assert_eq!(
+        described.rows[1].rect,
+        Some(RectF::new(10.0, 58.0, 250.0, 78.0))
+    );
+    assert_eq!(described.selected, None);
+
+    // A screen reader marks a row: drawn again, marked.
+    let id = described.rows[3].id.clone();
+    let draws = window.popup_draws.get();
+    logic.on_event(
+        &window,
+        UiEvent::Accessible(AccessibleAction::SelectRow(id)),
+    );
+    assert_eq!(window.popup_draws.get(), draws + 1);
+    assert_eq!(window.popup_described.borrow().selected, Some(3));
+    // A client asking for the popup has it described again.
+    logic.on_event(
+        &window,
+        UiEvent::Accessible(AccessibleAction::DescribePopup),
+    );
+    assert_eq!(window.popup_draws.get(), draws + 2);
+    // Closed: neither asks anything.
+    logic.close_popup(&window);
+    logic.on_event(
+        &window,
+        UiEvent::Accessible(AccessibleAction::SelectRow(String::new())),
+    );
+    logic.on_event(
+        &window,
+        UiEvent::Accessible(AccessibleAction::DescribePopup),
+    );
+    assert_eq!(window.popup_draws.get(), draws + 2);
+    assert!(window.popup.borrow().is_none());
+}

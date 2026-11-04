@@ -2,9 +2,10 @@
 //! topmost, a tool window owned by the bar, and focusable, so it reads the keyboard. Created on
 //! first use and reused. Its input goes to the bar logic as [`UiEvent::Popup`]; it hides itself
 //! and says so when it loses the activation (a click elsewhere, Alt+F4). A popup that appears
-//! fades in over 120 ms, stepped by the bar window's timer.
+//! fades in over 120 ms, stepped by the bar window's timer. Screen readers see it as a list of
+//! the popup's rows (`uia_popup.rs`, SPEC §14.4).
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -13,6 +14,7 @@ use std::time::Instant;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{AC_SRC_ALPHA, AC_SRC_OVER, BLENDFUNCTION, ScreenToClient};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Accessibility::UiaRootObjectId;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE, TRACKMOUSEEVENT,
@@ -25,20 +27,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_NOMOVE, SWP_NOSIZE,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursor, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, ShowWindow, SystemParametersInfoW, ULW_ALPHA, UpdateLayeredWindow, WA_INACTIVE,
-    WM_ACTIVATE, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SETCURSOR, WM_SYSCOMMAND, WM_SYSKEYDOWN, WNDCLASSEXW, WS_EX_LAYERED,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_ACTIVATE, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_GETOBJECT, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SYSCOMMAND, WM_SYSKEYDOWN, WNDCLASSEXW,
+    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::{PCWSTR, Result, w};
 
 use super::hint::FADE;
 use super::render::Renderer;
+use super::uia::WM_UIA;
+use super::uia_popup::PopupUia;
 use crate::platform::{
-    Canvas, Key, Modifiers, PointF, PointerButton, PopupCursor, PopupInput, Rect, UiEvent,
+    AccessibleAction, AccessiblePopup, Canvas, Key, Modifiers, PointF, PointerButton, PopupCursor,
+    PopupInput, Rect, UiEvent,
 };
 
-const CLASS_NAME: PCWSTR = w!("Infodock.Popup");
+pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Popup");
 /// One wheel notch (`WHEEL_DELTA`).
 const NOTCH: f32 = 120.0;
 /// `WHEEL_PAGESCROLL`: the user scrolls by pages; taken as this many lines.
@@ -65,6 +70,8 @@ struct Shared {
     tracking_leave: Cell<bool>,
     /// The pointer's shape over the window.
     cursor: Cell<PopupCursor>,
+    /// The UI Automation provider (SPEC §14.4); created when a client first asks for it.
+    uia: OnceCell<PopupUia>,
 }
 
 impl Shared {
@@ -87,7 +94,15 @@ impl Shared {
             unsafe {
                 let _ = ShowWindow(hwnd, SW_HIDE);
             }
+            self.forget_rows();
             (self.sink)(UiEvent::PopupDeactivated);
+        }
+    }
+
+    /// The window is hidden: screen readers no longer find its rows.
+    fn forget_rows(&self) {
+        if let Some(uia) = self.uia.get() {
+            uia.clear();
         }
     }
 
@@ -179,6 +194,24 @@ impl Shared {
             }
             // Alt alone does not start menu mode in a window without a menu.
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => {}
+            // A UI Automation client asks for the popup (SPEC §14.4): from now on it is
+            // described with each frame, so a shown one is described now.
+            WM_GETOBJECT if lparam.0 as i32 == UiaRootObjectId => {
+                let first = self.uia.get().is_none();
+                let uia = self.uia.get_or_init(|| PopupUia::new(hwnd));
+                if first && self.visible.get() {
+                    (self.sink)(UiEvent::Accessible(AccessibleAction::DescribePopup));
+                }
+                return Some(uia.answer(wparam, lparam));
+            }
+            // Screen readers asked something of its rows.
+            WM_UIA => {
+                if let Some(uia) = self.uia.get() {
+                    for action in uia.take_actions() {
+                        (self.sink)(UiEvent::Accessible(action));
+                    }
+                }
+            }
             _ => return None,
         }
         Some(LRESULT(0))
@@ -294,6 +327,7 @@ impl PopupWindow {
             scale: Cell::new(1.0),
             tracking_leave: Cell::new(false),
             cursor: Cell::new(PopupCursor::Arrow),
+            uia: OnceCell::new(),
         }));
         // SAFETY: plain class registration and window creation; the window and `shared` live
         // until the process ends.
@@ -334,14 +368,15 @@ impl PopupWindow {
     }
 
     /// Renders and shows the popup at `rect` (physical screen px), activated and titled `name`
-    /// for screen readers. Returns whether a fade-in started (the caller then steps it with
-    /// [`Self::fade_step`]).
+    /// for screen readers, who list what `describe` says once they asked for the window.
+    /// Returns whether a fade-in started (the caller then steps it with [`Self::fade_step`]).
     pub(super) fn show(
         &self,
         rect: Rect,
         scale: f32,
         name: &str,
         paint: &mut dyn FnMut(&mut dyn Canvas),
+        describe: &dyn Fn() -> AccessiblePopup,
     ) -> Result<bool> {
         super::hint::name_window(self.hwnd, name, &self.name);
         let (width, height) = (rect.width().max(1), rect.height().max(1));
@@ -392,6 +427,9 @@ impl PopupWindow {
                 let _ = SetFocus(Some(self.hwnd));
                 self.fading_since.set(Some(Instant::now()));
             }
+        }
+        if let Some(uia) = self.shared.uia.get() {
+            uia.update(describe(), scale, appearing);
         }
         Ok(appearing)
     }
@@ -458,6 +496,7 @@ impl PopupWindow {
             unsafe {
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
             }
+            self.shared.forget_rows();
         }
     }
 }

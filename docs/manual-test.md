@@ -634,6 +634,14 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Popups for screen readers** (since M5 S14u2)
+
+- [ ] Narrator on. Press the hotkey, Tab to a Folder Menu, Enter: Narrator reads the list's name (the folder) and "list". ↓: it reads each item as the mark reaches it, with its place ("report 10.pdf, 2 of 5, selected"); Page Down, End and typed letters too. Hover rows with the pointer: Narrator follows the mark.
+- [ ] → on a folder: Narrator reads the subfolder's name as the list's; ← (or Backspace): the folder's name again and the subfolder, marked. A slow folder (a network share) reads *Loading…*, an empty one *no items*.
+- [ ] Eject USB with a stick in: Narrator reads "STICK (E:), 29.8 GB, Eject, 1 of 2", then the footer "Safely Remove Hardware…"; with nothing to eject, *Nothing to eject* first. Enter ejects: the row reads *Ejecting…* until the toast.
+- [ ] Accessibility Insights on an open Folder Menu: the popup window is a list `InfodockPopup` of list items, one per item of the folder (also those scrolled out of view, with *IsOffscreen* true); each item's rectangle is on its row, also at 150 %. *Select* on an item marks it and scrolls it into view; the list's *Selection* names it. Close the popup: the list has no items.
+- [ ] Start Menu: the same, its merged folders listed once.
+
 **Smaller fixes** (since M5 S14u)
 
 - [ ] On a machine with a VPN client or Hyper-V: a Network Graph's *Connection* list shows the adapters Network Connections (`ncpa.cpl`) shows, and no *WAN Miniport* or *Hyper-V Virtual Switch Extension Adapter*.

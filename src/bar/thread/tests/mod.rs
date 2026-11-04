@@ -47,6 +47,8 @@ struct FakeWindow {
     hint: RefCell<Option<(Rect, String)>>,
     hint_name: RefCell<String>,
     popup_name: RefCell<String>,
+    /// What screen readers list in the shown popup.
+    popup_described: RefCell<crate::platform::AccessiblePopup>,
     /// The shown popup: where, and what it draws; and how often it was drawn.
     popup: RefCell<Option<(Rect, String)>>,
     popup_draws: Cell<u32>,
@@ -100,11 +102,13 @@ impl BarWindow for FakeWindow {
         scale: f32,
         name: &str,
         paint: &mut dyn FnMut(&mut dyn Canvas),
+        describe: &dyn Fn() -> crate::platform::AccessiblePopup,
     ) {
         let mut canvas = RecordingCanvas::new(scale);
         paint(&mut canvas);
         *self.popup.borrow_mut() = Some((rect, canvas.dump()));
         *self.popup_name.borrow_mut() = name.to_owned();
+        *self.popup_described.borrow_mut() = describe();
         self.popup_draws.set(self.popup_draws.get() + 1);
     }
     fn hide_popup(&self) {

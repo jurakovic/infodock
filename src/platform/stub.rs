@@ -78,6 +78,7 @@ impl BarWindow for NoWindow {
         _scale: f32,
         _name: &str,
         _paint: &mut dyn FnMut(&mut dyn Canvas),
+        _describe: &dyn Fn() -> super::AccessiblePopup,
     ) {
     }
 

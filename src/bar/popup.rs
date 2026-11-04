@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use super::hint::{self, HintFrame};
 use super::placement::Anchor;
 use crate::look::theme::Theme;
-use crate::platform::{Canvas, PointF, PopupInput, SizeF};
+use crate::platform::{AccessiblePopup, Canvas, PointF, PopupInput, SizeF};
 use crate::sensors::popup::{Popup, PopupAlign};
 
 /// A sensor whose popup has just closed ignores clicks this long, so the click that closed it
@@ -69,6 +69,17 @@ impl Open {
     pub fn origin(&self) -> Option<PointF> {
         self.frame
             .map(|f| PointF::new(f.bubble.left + PADDING, f.bubble.top + PADDING))
+    }
+
+    /// The popup as screen readers see it, named `name`: its rows in window px.
+    pub fn accessible(&self, name: &str) -> AccessiblePopup {
+        let Some(o) = self.origin() else {
+            return AccessiblePopup::default();
+        };
+        AccessiblePopup {
+            name: name.to_owned(),
+            ..self.popup.accessible().shifted(o.x, o.y)
+        }
     }
 
     /// `input` in window px as the content sees it, from its top-left corner.
