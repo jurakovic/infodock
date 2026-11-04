@@ -358,12 +358,17 @@ fn client_area_animation() -> Option<bool> {
 
 /// A DWORD value under `HKEY_CURRENT_USER`, if present.
 fn read_dword(key: PCWSTR, value: PCWSTR) -> Option<u32> {
+    read_dword_in(HKEY_CURRENT_USER, key, value)
+}
+
+/// A DWORD value under `root`, if present.
+fn read_dword_in(root: HKEY, key: PCWSTR, value: PCWSTR) -> Option<u32> {
     let mut data: u32 = 0;
     let mut size = size_of::<u32>() as u32;
     // SAFETY: `data` is a DWORD-sized out buffer and `size` says so.
     let status = unsafe {
         RegGetValueW(
-            HKEY_CURRENT_USER,
+            root,
             key,
             value,
             RRF_RT_REG_DWORD,

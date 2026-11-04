@@ -5,6 +5,8 @@
 /// Locale data for one locale.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Locale {
+    /// The locale's name (`en-US`, `de-DE`), for what depends on the language.
+    pub name: String,
     /// Weekday names, Monday first.
     pub weekdays: [String; 7],
     pub weekdays_short: [String; 7],
@@ -57,6 +59,7 @@ impl Locale {
             "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         ]);
         Self {
+            name: "en-US".into(),
             weekdays: strings([
                 "Monday",
                 "Tuesday",
@@ -83,6 +86,15 @@ impl Locale {
     }
 }
 
+impl Locale {
+    /// The locale's language is English, whose month names the Date sensor writes in lower
+    /// case (SPEC §9.4); other languages keep their own case (German capitalises them).
+    pub fn is_english(&self) -> bool {
+        let language = self.name.split(['-', '_']).next().unwrap_or_default();
+        language.eq_ignore_ascii_case("en")
+    }
+}
+
 /// Whether a time pattern in the Windows picture format (`h:mm:ss tt`, `HH:mm`) uses a 12-hour
 /// clock: its first hour letter outside quotes is `h`.
 pub(crate) fn hour12_from_pattern(pattern: &str) -> bool {
@@ -101,6 +113,16 @@ pub(crate) fn hour12_from_pattern(pattern: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn english_by_the_locale_name() {
+        let mut locale = Locale::en_us();
+        assert!(locale.is_english());
+        for (name, english) in [("en-GB", true), ("EN", true), ("de-DE", false), ("", false)] {
+            locale.name = name.into();
+            assert_eq!(locale.is_english(), english, "{name:?}");
+        }
+    }
 
     #[test]
     fn hour_cycle_from_the_time_pattern() {

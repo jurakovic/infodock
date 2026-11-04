@@ -634,6 +634,12 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Smaller fixes** (since M5 S14u)
+
+- [ ] On a machine with a VPN client or Hyper-V: a Network Graph's *Connection* list shows the adapters Network Connections (`ncpa.cpl`) shows, and no *WAN Miniport* or *Hyper-V Virtual Switch Extension Adapter*.
+- [ ] Regional format German (Germany): the Date sensor's month line reads `Oktober` (`Okt` short); English (United States) or (United Kingdom): `october`.
+- [ ] Narrator on, right-click the bar: Narrator reads "Context menu", then each item as the arrow keys reach it ("New sensor…, menu item", "Tools, submenu"…), the checked ones as checked; Esc reads the menu closing. The tray menu and a sensor's menu the same. (UI Automation tools may show these menus without items, as they do for Explorer's own; Narrator reads them.)
+
 **Focus after a bar menu** (since M5 S14t)
 
 - [ ] Type in Notepad, right-click the bar, press Esc: typing goes on in Notepad at once. The same with the tray icon's menu, and with a click on the bar instead of Esc.

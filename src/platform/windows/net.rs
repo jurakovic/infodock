@@ -2,7 +2,9 @@
 //! `GetIfEntry2` reads one interface's counters each tick, and `GetBestInterfaceEx` finds the
 //! one carrying the default route (a route lookup; nothing is sent).
 
-use windows::Win32::Foundation::NO_ERROR;
+use std::collections::HashSet;
+
+use windows::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, NO_ERROR};
 use windows::Win32::NetworkManagement::IpHelper::{
     ConvertInterfaceGuidToLuid, FreeMibTable, GetBestInterfaceEx, GetIfEntry2, GetIfTable2,
     IF_TYPE_SOFTWARE_LOOPBACK, MIB_IF_ROW2, MIB_IF_TABLE2,
@@ -12,7 +14,10 @@ use windows::Win32::Networking::WinSock::{
     AF_INET, AF_INET6, IN_ADDR, IN_ADDR_0, IN6_ADDR, IN6_ADDR_0, SOCKADDR, SOCKADDR_IN,
     SOCKADDR_IN6,
 };
-use windows::core::GUID;
+use windows::Win32::System::Registry::{
+    HKEY, HKEY_LOCAL_MACHINE, KEY_READ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
+};
+use windows::core::{GUID, PCWSTR, PWSTR, w};
 
 use super::from_wide;
 use crate::platform::NetInterface;
@@ -20,6 +25,13 @@ use crate::platform::NetInterface;
 /// `InterfaceAndOperStatusFlags`: a hardware adapter, and a filter driver's view of one.
 const HARDWARE_INTERFACE: u8 = 1;
 const FILTER_INTERFACE: u8 = 2;
+/// The network adapters' device class; each numbered subkey is an adapter, with its
+/// interface's GUID (`NetCfgInstanceId`) and `Characteristics`.
+const ADAPTER_CLASS: PCWSTR =
+    w!(r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}");
+/// `Characteristics`: an adapter hidden from the user (the WAN Miniports, Hyper-V's switch
+/// extensions), which Network Connections leaves out too.
+const NCF_HIDDEN: u32 = 0x8;
 
 /// A GUID as `GUID::try_from` reads it back: `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`.
 fn guid_text(guid: &GUID) -> String {
@@ -43,13 +55,68 @@ fn read(row: &MIB_IF_ROW2) -> NetInterface {
     }
 }
 
-/// A connection users know: no loopback and no filter driver's view; a hardware adapter, or
-/// another one while it is connected (e.g. a VPN).
-fn listed(row: &MIB_IF_ROW2) -> bool {
+/// A connection users know: no loopback, no filter driver's view and no adapter hidden from the
+/// user (`hidden`, by GUID); a hardware adapter, or another one while it is connected (e.g. a
+/// VPN).
+fn listed(row: &MIB_IF_ROW2, hidden: &HashSet<String>) -> bool {
     let flags = row.InterfaceAndOperStatusFlags._bitfield;
     row.Type != IF_TYPE_SOFTWARE_LOOPBACK
         && flags & FILTER_INTERFACE == 0
         && (flags & HARDWARE_INTERFACE != 0 || row.OperStatus == IfOperStatusUp)
+        && !hidden.contains(&guid_text(&row.InterfaceGuid))
+}
+
+/// The GUIDs ([`guid_text`]) of the adapters hidden from the user (`NCF_HIDDEN`); none where the
+/// class cannot be read.
+fn hidden_adapters() -> HashSet<String> {
+    let mut hidden = HashSet::new();
+    let mut class = HKEY::default();
+    // SAFETY: opens the class key for reading; it is closed below.
+    if unsafe {
+        RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            ADAPTER_CLASS,
+            None,
+            KEY_READ,
+            &mut class,
+        )
+    } != ERROR_SUCCESS
+    {
+        return hidden;
+    }
+    for index in 0u32.. {
+        let mut name = [0u16; 64];
+        let mut length = name.len() as u32;
+        // SAFETY: `name` holds `length` characters; the subkey's name is NUL-terminated.
+        let status = unsafe {
+            RegEnumKeyExW(
+                class,
+                index,
+                Some(PWSTR(name.as_mut_ptr())),
+                &mut length,
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+        if status == ERROR_NO_MORE_ITEMS {
+            break;
+        }
+        if status != ERROR_SUCCESS {
+            continue;
+        }
+        let adapter = PCWSTR(name.as_ptr());
+        let characteristics = super::read_dword_in(class, adapter, w!("Characteristics"));
+        if characteristics.is_some_and(|c| c & NCF_HIDDEN != 0)
+            && let Some(id) = super::read_string(class, adapter, w!("NetCfgInstanceId"))
+        {
+            hidden.insert(id.trim_matches(['{', '}']).to_uppercase());
+        }
+    }
+    // SAFETY: closes the key opened above.
+    let _ = unsafe { RegCloseKey(class) };
+    hidden
 }
 
 pub fn interfaces() -> Vec<NetInterface> {
@@ -64,8 +131,9 @@ pub fn interfaces() -> Vec<NetInterface> {
         let first = (&raw const (*table).Table).cast::<MIB_IF_ROW2>();
         std::slice::from_raw_parts(first, (*table).NumEntries as usize)
     };
+    let hidden = hidden_adapters();
     let mut list: Vec<NetInterface> = Vec::new();
-    for row in rows.iter().filter(|row| listed(row)) {
+    for row in rows.iter().filter(|row| listed(row, &hidden)) {
         let interface = read(row);
         if !list.iter().any(|i| i.id == interface.id) {
             list.push(interface);
@@ -144,6 +212,13 @@ mod tests {
     fn lists_and_reads_interfaces() {
         let list = interfaces();
         assert!(!list.is_empty(), "no interfaces");
+        // Hidden adapters (the runner has WAN Miniports) are not listed.
+        assert!(
+            !list
+                .iter()
+                .any(|i| i.description.starts_with("WAN Miniport")),
+            "{list:?}"
+        );
         let auto = interface(None).expect("a default route");
         assert!(auto.up, "{auto:?}");
         let again = interface(Some(&auto.id)).expect("found by id");

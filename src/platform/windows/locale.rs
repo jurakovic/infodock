@@ -5,8 +5,8 @@
 use windows::Win32::Globalization::{
     CP_ACP, GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK, LOCALE_RETURN_GENITIVE_NAMES, LOCALE_S1159,
     LOCALE_S2359, LOCALE_SABBREVDAYNAME1, LOCALE_SABBREVMONTHNAME1, LOCALE_SDAYNAME1,
-    LOCALE_SDECIMAL, LOCALE_SLONGDATE, LOCALE_SMONTHDAY, LOCALE_SMONTHNAME1, LOCALE_SSHORTDATE,
-    LOCALE_STIMEFORMAT, MULTI_BYTE_TO_WIDE_CHAR_FLAGS, MultiByteToWideChar,
+    LOCALE_SDECIMAL, LOCALE_SLONGDATE, LOCALE_SMONTHDAY, LOCALE_SMONTHNAME1, LOCALE_SNAME,
+    LOCALE_SSHORTDATE, LOCALE_STIMEFORMAT, MULTI_BYTE_TO_WIDE_CHAR_FLAGS, MultiByteToWideChar,
 };
 use windows::core::{PCWSTR, w};
 
@@ -62,6 +62,9 @@ fn read_named(name: PCWSTR) -> Locale {
         }
     };
     let mut locale = Locale::en_us();
+    if let Some(name) = info(LOCALE_SNAME) {
+        locale.name = name;
+    }
     fill(&mut locale.weekdays, LOCALE_SDAYNAME1);
     fill(&mut locale.weekdays_short, LOCALE_SABBREVDAYNAME1);
     fill(&mut locale.months, LOCALE_SMONTHNAME1);

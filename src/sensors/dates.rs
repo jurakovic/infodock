@@ -113,6 +113,7 @@ mod tests {
         let names =
             |items: &[&str]| -> Vec<String> { items.iter().map(|s| (*s).to_owned()).collect() };
         let mut de = Locale::en_us();
+        de.name = "de-DE".into();
         de.weekdays = names(&[
             "Montag",
             "Dienstag",

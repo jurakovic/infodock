@@ -280,12 +280,13 @@ impl DateSensor {
         }
     }
 
-    /// The month line in lower case (`october`, `oct`, `10`), if shown.
+    /// The month line (`october`, `oct`, `10`), if shown: in lower case in English, the look
+    /// of the original; in the locale's own case otherwise (German `Oktober`).
     fn month_line(&self, date: Date, locale: &Locale) -> Option<String> {
         let month = usize::from(date.month - 1);
         match self.props.month {
-            Month::Long => Some(locale.months[month].to_lowercase()),
-            Month::Short => Some(locale.months_short[month].to_lowercase()),
+            Month::Long => Some(month_case(&locale.months[month], locale)),
+            Month::Short => Some(month_case(&locale.months_short[month], locale)),
             Month::Number => Some(date.month.to_string()),
             Month::None => None,
         }
@@ -572,6 +573,15 @@ impl RichHint for MonthCalendar {
     }
 }
 
+/// A month's name on the month line: lower case in English, the locale's own case otherwise.
+fn month_case(name: &str, locale: &Locale) -> String {
+    if locale.is_english() {
+        name.to_lowercase()
+    } else {
+        name.to_owned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -634,6 +644,16 @@ mod tests {
             texts(&h, json!({ "month": "number" })),
             ["Tuesday, 13", "2026", "10"]
         );
+    }
+
+    #[test]
+    fn month_names_keep_the_case_of_languages_other_than_english() {
+        let mut locale = Locale::en_us();
+        assert_eq!(month_case("October", &locale), "october");
+        locale.name = "de-DE".into();
+        assert_eq!(month_case("Oktober", &locale), "Oktober");
+        locale.name = "hr-HR".into();
+        assert_eq!(month_case("listopad", &locale), "listopad");
     }
 
     #[test]
