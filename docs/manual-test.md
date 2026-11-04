@@ -29,6 +29,8 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 - [ ] *Height* slider: the bar's height changes and maximised windows follow. *Use theme default* returns to 28.
 - [ ] *Reserve screen space* off: maximised windows extend under the bar (the bar stays on top). On again: they stop at the bar.
 - [ ] *Stacking* → *Like other windows*: clicking another window brings it in front of the bar where they overlap. → *Always behind other windows*: windows always cover the bar, but on an empty desktop the bar is still visible above the wallpaper; the hotkey (Ctrl+Alt+Shift+I) brings it forward until you click elsewhere. Back to *Always on top*.
+- [ ] *Always behind other windows* with a window open: press Win+D (Show desktop): the bar stays visible over the desktop; click a window on the taskbar: it covers the bar again (since M5 S14o).
+- [ ] *Floating* with *Always on top*: quit and start Infodock: the bar is above other windows at once (a window dragged over it stays below), without choosing the setting again (since M5 S14o).
 - [ ] Full-screen: play a video full-screen (or press F11 in a browser) on the bar's monitor: the bar steps behind it. Leave full-screen: the bar is back on top. With *Step back for full-screen apps* off, the bar stays on top.
 
 **Monitors and DPI** (two monitors, one at 100 % and one at 150 % if possible)

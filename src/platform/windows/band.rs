@@ -12,11 +12,10 @@ use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POI
 use windows::Win32::Graphics::Gdi::{AC_SRC_ALPHA, AC_SRC_OVER, BLENDFUNCTION};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GW_HWNDPREV, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW,
-    GetWindowRect, HWND_TOP, HWND_TOPMOST, IsWindowVisible, RegisterClassExW, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
-    ShowWindow, ULW_ALPHA, UpdateLayeredWindow, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, GW_HWNDPREV, GetWindow, GetWindowRect, HWND_TOP, HWND_TOPMOST,
+    IsWindowVisible, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, ShowWindow, ULW_ALPHA, UpdateLayeredWindow,
+    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, Result, w};
 
@@ -197,7 +196,9 @@ impl BandWindow {
 
     /// Keeps the band right above the bar in the z-order. Owned windows stay above their owner
     /// anyway; this also covers the bar turning topmost or going to the bottom (a full-screen
-    /// app, SPEC §5.3) while the band is shown.
+    /// app, SPEC §5.3) while the band is shown. The band stays in the bar's layer: placed after
+    /// a window of the other one, it would change layers, and Windows takes a topmost owner
+    /// down with an owned window that stops being topmost.
     fn restack(&self) {
         // SAFETY: plain queries and a z-order change of our own window.
         unsafe {
@@ -205,10 +206,13 @@ impl BandWindow {
             if above == Some(self.hwnd) {
                 return;
             }
-            let topmost =
-                GetWindowLongPtrW(self.owner, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0;
+            let topmost = super::appbar::is_topmost(self.owner);
             let insert_after = match above {
-                Some(window) if !window.is_invalid() => window,
+                Some(window)
+                    if !window.is_invalid() && super::appbar::is_topmost(window) == topmost =>
+                {
+                    window
+                }
                 _ if topmost => HWND_TOPMOST,
                 _ => HWND_TOP,
             };

@@ -425,7 +425,7 @@ Implementation note: the AppBar is registered for the bar window itself. Infodoc
 
 ### 5.3 Z-order, full-screen, focus, power
 
-* `zOrder`: `topmost` (default, usual for appbars) | `normal` | `bottom` (always behind normal windows). With `bottom`, the hotkey brings the bar to the front until it loses focus.
+* `zOrder`: `topmost` (default, usual for appbars) | `normal` | `bottom` (always behind normal windows). With `bottom`, the hotkey brings the bar to the front until it loses focus, and the bar comes up over the desktop while that is the foreground window (a foreground hook, `EVENT_SYSTEM_FOREGROUND`, sees `Progman` or `WorkerW`): Show desktop (Win+D) raises the desktop over every normal window, which would otherwise hide the bar too; once another window is in front, the bar goes back behind. A bar that should be topmost and loses that place to other code (seen at the start of a floating bar) takes it back, at most once a second, and logs it; its shadow band (§12.2) never leaves the bar's layer, since Windows takes a topmost owner down with an owned window that stops being topmost.
 * **Full-screen apps** (`hideOnFullscreen`, default true): on `ABN_FULLSCREENAPP(true)` for our monitor → drop topmost and hide the hint/popup windows; restore on `false`.
 * **Sleep/resume**: `WM_POWERBROADCAST / PBT_APMRESUMEAUTOMATIC` → emit `system-resume`. Providers reset delta baselines (CPU, network); the UI re-renders Date/Time/Uptime immediately.
 * **Time or time-zone changes** (`WM_TIMECHANGE`) → Date/Time refresh.

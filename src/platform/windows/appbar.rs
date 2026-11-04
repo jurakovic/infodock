@@ -16,22 +16,25 @@
 
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
+use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::Shell::{
     ABE_BOTTOM, ABE_TOP, ABM_ACTIVATE, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS,
     ABM_WINDOWPOSCHANGED, ABN_FULLSCREENAPP, ABN_POSCHANGED, ABN_STATECHANGE, APPBARDATA,
     SHAppBarMessage,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChangeWindowMessageFilterEx, DefWindowProcW, GWL_EXSTYLE, GetForegroundWindow,
-    GetWindowLongPtrW, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW,
-    PostMessageW, RegisterWindowMessageW, SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow,
-    SetWindowPos, ShowWindow, WA_INACTIVE, WINDOWPOS, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED,
+    ChangeWindowMessageFilterEx, DefWindowProcW, EVENT_SYSTEM_FOREGROUND, GA_ROOT, GWL_EXSTYLE,
+    GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, HWND_BOTTOM,
+    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW, PostMessageW, RegisterWindowMessageW,
+    SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetWindowPos, ShowWindow,
+    WA_INACTIVE, WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED,
     WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED,
     WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
 };
@@ -47,6 +50,14 @@ use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest}
 
 /// `wParam` of the private "reposition" message when it asks to raise the bar instead.
 const RAISE: usize = 1;
+/// `wParam` of the private "reposition" message when another window became the foreground one;
+/// `lParam` is 1 when it is the desktop.
+const FOREGROUND: usize = 2;
+/// How often at most the bar takes back a topmost place it lost to other code.
+const RESTORE_TOPMOST_EVERY: Duration = Duration::from_secs(1);
+
+/// The bar window, for the foreground hook; 0 before it is installed.
+static HOOKED_BAR: AtomicIsize = AtomicIsize::new(0);
 
 struct Messages {
     /// AppBar notifications (ABN_*).
@@ -93,6 +104,10 @@ struct UiState {
     fullscreen: bool,
     /// Brought to the front by the hotkey; cleared when the bar loses focus.
     raised: bool,
+    /// The desktop is the foreground window (Show desktop, or a click on it).
+    desktop: bool,
+    /// When the bar last took back a topmost place it lost.
+    restored: Option<Instant>,
     /// Our own `SetWindowPos`/`ShowWindow` is in progress: `WM_WINDOWPOSCHANGING` leaves the
     /// z-order and visibility alone.
     positioning: bool,
@@ -124,6 +139,27 @@ impl Shared {
         unsafe {
             let _ = ChangeWindowMessageFilterEx(hwnd, m.taskbar_created, MSGFLT_ALLOW, None);
             let _ = ChangeWindowMessageFilterEx(hwnd, m.callback, MSGFLT_ALLOW, None);
+        }
+        // Show desktop (Win+D) raises the desktop over every normal window: a bar kept behind
+        // them comes up while the desktop is in front (SPEC §5.3). The hook calls back on this
+        // thread, the bar thread, from its message loop.
+        HOOKED_BAR.store(hwnd.0 as isize, Ordering::SeqCst);
+        // SAFETY: a plain hook with a static callback; it lasts as long as the process.
+        let hook = unsafe {
+            SetWinEventHook(
+                EVENT_SYSTEM_FOREGROUND,
+                EVENT_SYSTEM_FOREGROUND,
+                None,
+                Some(foreground_changed),
+                0,
+                0,
+                WINEVENT_OUTOFCONTEXT,
+            )
+        };
+        if hook.is_invalid() {
+            tracing::warn!(
+                "the foreground hook is not available; Show desktop covers a bar kept behind"
+            );
         }
         Arc::new(Self {
             hwnd: hwnd.0 as isize,
@@ -243,8 +279,7 @@ impl Shared {
             req.edge
         };
 
-        let (fullscreen, raised) = self.ui(|u| (u.fullscreen, u.raised));
-        let insert_after = insert_after(req, fullscreen, raised, self.is_topmost());
+        let insert_after = insert_after(req, self.stacking());
         let (changed, offset) = self.ui(|u| {
             let changed = u
                 .applied
@@ -258,6 +293,10 @@ impl Shared {
         // A repeated placement during the rise keeps the window where the rise has it.
         let shown = shifted(rect, offset);
         self.set_window_pos(insert_after, shown, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        if insert_after == HWND_TOPMOST && !self.is_topmost() {
+            tracing::warn!("the bar did not become topmost; trying again");
+            self.restack();
+        }
         self.ui(|u| u.applied = Some((req.clone(), rect)));
         if changed {
             tracing::info!(
@@ -396,22 +435,71 @@ impl Shared {
     }
 
     fn is_topmost(&self) -> bool {
-        // SAFETY: reads our own window's extended style.
-        let ex_style = unsafe { GetWindowLongPtrW(self.hwnd(), GWL_EXSTYLE) };
-        ex_style & WS_EX_TOPMOST.0 as isize != 0
+        is_topmost(self.hwnd())
     }
 
-    /// Re-applies only the z-order (full-screen changes, losing focus while raised).
+    /// What decides the z-order now besides the settings.
+    fn stacking(&self) -> Stacking {
+        let (fullscreen, raised, desktop) = self.ui(|u| (u.fullscreen, u.raised, u.desktop));
+        Stacking {
+            fullscreen,
+            raised,
+            desktop,
+            topmost_now: self.is_topmost(),
+        }
+    }
+
+    /// Re-applies only the z-order (full-screen changes, losing focus while raised, the desktop
+    /// coming to the front or leaving it).
     fn restack(&self) {
         let Some(req) = lock(&self.request).clone() else {
             return;
         };
-        let (fullscreen, raised) = self.ui(|u| (u.fullscreen, u.raised));
         self.set_window_pos(
-            insert_after(&req, fullscreen, raised, self.is_topmost()),
+            insert_after(&req, self.stacking()),
             Rect::default(),
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
+    }
+
+    /// Another window became the foreground one; `desktop`: it is the desktop.
+    fn on_foreground(&self, desktop: bool) {
+        let changed = self.ui(|u| std::mem::replace(&mut u.desktop, desktop)) != desktop;
+        let behind = lock(&self.request)
+            .as_ref()
+            .is_some_and(|r| r.visible && r.z_order == ZOrder::Bottom);
+        if changed && behind {
+            self.restack();
+        }
+    }
+
+    /// The bar's place in the z-order changed from outside: a bar that should be topmost and
+    /// is not any more takes its place back, at most once a second (SPEC §5.3).
+    fn on_pos_changed(&self) {
+        let Some(req) = lock(&self.request).clone() else {
+            return;
+        };
+        let lost = req.visible
+            && insert_after(&req, self.stacking()) == HWND_TOPMOST
+            && !self.is_topmost();
+        if !lost {
+            return;
+        }
+        let now = Instant::now();
+        let due = self.ui(|u| {
+            let recently = u
+                .restored
+                .is_some_and(|at| now.duration_since(at) < RESTORE_TOPMOST_EVERY);
+            if u.positioning || recently {
+                return false;
+            }
+            u.restored = Some(now);
+            true
+        });
+        if due {
+            tracing::info!("the bar lost its topmost place; taking it back");
+            self.post(0);
+        }
     }
 
     fn raise_now(&self) {
@@ -483,11 +571,11 @@ impl Shared {
         let Some((req, rect)) = ui.applied.clone() else {
             return;
         };
-        let (fullscreen, raised) = (ui.fullscreen, ui.raised);
+        let (fullscreen, raised, desktop) = (ui.fullscreen, ui.raised, ui.desktop);
         drop(ui);
         pin_geometry(pos, rect);
-        let keep_low =
-            (fullscreen && req.hide_on_fullscreen) || (req.z_order == ZOrder::Bottom && !raised);
+        let keep_low = (fullscreen && req.hide_on_fullscreen)
+            || (req.z_order == ZOrder::Bottom && !raised && !desktop);
         if keep_low && !pos.flags.contains(SWP_NOZORDER) {
             pos.hwndInsertAfter = HWND_BOTTOM;
         }
@@ -519,21 +607,74 @@ fn pin_geometry(pos: &mut WINDOWPOS, rect: Rect) {
     }
 }
 
-/// Where the bar goes in the z-order (SPEC §5.3). `topmost_now` is the window's current
-/// `WS_EX_TOPMOST`: `HWND_NOTOPMOST` only has an effect on a topmost window, so a non-topmost
-/// bar that should behave like a normal window is brought up with `HWND_TOP` instead (e.g. after
-/// a full-screen app sent it to the bottom).
-fn insert_after(req: &DockRequest, fullscreen: bool, raised: bool, topmost_now: bool) -> HWND {
-    if fullscreen && req.hide_on_fullscreen {
+/// What decides the bar's z-order besides its settings.
+#[derive(Debug, Clone, Copy, Default)]
+struct Stacking {
+    /// A full-screen app is open on the bar's monitor.
+    fullscreen: bool,
+    /// Brought to the front by the hotkey.
+    raised: bool,
+    /// The desktop is the foreground window.
+    desktop: bool,
+    /// The window is topmost now (`WS_EX_TOPMOST`).
+    topmost_now: bool,
+}
+
+/// Where the bar goes in the z-order (SPEC §5.3). `HWND_NOTOPMOST` only has an effect on a
+/// topmost window, so a non-topmost bar that should behave like a normal window is brought up
+/// with `HWND_TOP` instead (e.g. after a full-screen app sent it to the bottom). A bar kept
+/// behind other windows comes up over the desktop while that is in front, as after Show
+/// desktop, which raises it over every normal window.
+fn insert_after(req: &DockRequest, now: Stacking) -> HWND {
+    if now.fullscreen && req.hide_on_fullscreen {
         return HWND_BOTTOM;
     }
     match req.z_order {
         ZOrder::Topmost => HWND_TOPMOST,
-        ZOrder::Normal if topmost_now => HWND_NOTOPMOST,
+        ZOrder::Normal if now.topmost_now => HWND_NOTOPMOST,
         ZOrder::Normal => HWND_TOP,
-        ZOrder::Bottom if raised => HWND_TOP,
+        ZOrder::Bottom if now.raised || now.desktop => HWND_TOP,
         ZOrder::Bottom => HWND_BOTTOM,
     }
+}
+
+/// `hwnd` has `WS_EX_TOPMOST`.
+pub(super) fn is_topmost(hwnd: HWND) -> bool {
+    // SAFETY: reads a window's extended style; 0 for a window that is gone.
+    let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
+    ex_style & WS_EX_TOPMOST.0 as isize != 0
+}
+
+/// The desktop's top-level windows: `Progman`, and the `WorkerW` that Show desktop puts in
+/// front of every normal window.
+fn is_desktop_class(class: &str) -> bool {
+    matches!(class, "Progman" | "WorkerW")
+}
+
+/// The foreground hook: tells the bar window whether the desktop came to the front.
+unsafe extern "system" fn foreground_changed(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    hwnd: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    let mut class = [0u16; 32];
+    // SAFETY: plain queries; the buffer's length is passed with it.
+    let length = unsafe { GetClassNameW(GetAncestor(hwnd, GA_ROOT), &mut class) };
+    let class = String::from_utf16_lossy(&class[..length.max(0) as usize]);
+    let bar = HWND(HOOKED_BAR.load(Ordering::SeqCst) as *mut c_void);
+    // SAFETY: posting to the bar window, which outlives the hook.
+    let _ = unsafe {
+        PostMessageW(
+            Some(bar),
+            messages().reposition,
+            WPARAM(FOREGROUND),
+            LPARAM(isize::from(is_desktop_class(&class))),
+        )
+    };
 }
 
 impl Shared {
@@ -542,10 +683,10 @@ impl Shared {
     pub(super) fn handle(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
         let m = messages();
         if msg == m.reposition {
-            if wparam.0 == RAISE {
-                self.raise_now();
-            } else {
-                self.reposition();
+            match wparam.0 {
+                RAISE => self.raise_now(),
+                FOREGROUND => self.on_foreground(lparam.0 != 0),
+                _ => self.reposition(),
             }
             return Some(LRESULT(0));
         }
@@ -573,7 +714,10 @@ impl Shared {
                 // SAFETY: for this message lParam points to a WINDOWPOS owned by the caller.
                 self.on_pos_changing(unsafe { &mut *(lparam.0 as *mut WINDOWPOS) });
             }
-            WM_WINDOWPOSCHANGED => self.appbar_notify(ABM_WINDOWPOSCHANGED),
+            WM_WINDOWPOSCHANGED => {
+                self.appbar_notify(ABM_WINDOWPOSCHANGED);
+                self.on_pos_changed();
+            }
             // Alt+F4 and the system menu's Close must not destroy the bar; quitting is a tray
             // action. A plain WM_CLOSE (graceful taskkill, Restart Manager) quits the app cleanly.
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) == SC_CLOSE as usize => return Some(LRESULT(0)),
@@ -632,7 +776,13 @@ mod tests {
     #[test]
     fn z_order_follows_settings_and_fullscreen() {
         let top = |z, hide, fullscreen, raised, topmost_now| {
-            insert_after(&req(z, hide), fullscreen, raised, topmost_now)
+            let now = Stacking {
+                fullscreen,
+                raised,
+                desktop: false,
+                topmost_now,
+            };
+            insert_after(&req(z, hide), now)
         };
         assert_eq!(
             top(ZOrder::Topmost, true, false, false, false),
@@ -647,5 +797,49 @@ mod tests {
         assert_eq!(top(ZOrder::Bottom, true, false, true, false), HWND_TOP);
         assert_eq!(top(ZOrder::Topmost, true, true, false, true), HWND_BOTTOM);
         assert_eq!(top(ZOrder::Topmost, false, true, false, true), HWND_TOPMOST);
+    }
+
+    #[test]
+    fn z_order_at_start_for_each_mode() {
+        // At start the window is neither topmost nor raised, and nothing is full screen.
+        let start = Stacking::default();
+        for mode in [BarMode::Docked, BarMode::Floating] {
+            let at_start = |z| {
+                insert_after(
+                    &DockRequest {
+                        mode,
+                        reserve_space: mode == BarMode::Docked,
+                        ..req(z, true)
+                    },
+                    start,
+                )
+            };
+            assert_eq!(at_start(ZOrder::Topmost), HWND_TOPMOST, "{mode:?}");
+            assert_eq!(at_start(ZOrder::Normal), HWND_TOP, "{mode:?}");
+            assert_eq!(at_start(ZOrder::Bottom), HWND_BOTTOM, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn a_bar_kept_behind_comes_up_over_the_desktop() {
+        let behind = req(ZOrder::Bottom, true);
+        let desktop = Stacking {
+            desktop: true,
+            ..Stacking::default()
+        };
+        assert_eq!(insert_after(&behind, desktop), HWND_TOP);
+        assert_eq!(insert_after(&behind, Stacking::default()), HWND_BOTTOM);
+        // The other choices are as they were; a full-screen app still sends it down.
+        assert_eq!(
+            insert_after(&req(ZOrder::Topmost, true), desktop),
+            HWND_TOPMOST
+        );
+        let fullscreen = Stacking {
+            fullscreen: true,
+            ..desktop
+        };
+        assert_eq!(insert_after(&behind, fullscreen), HWND_BOTTOM);
+        assert!(is_desktop_class("WorkerW") && is_desktop_class("Progman"));
+        assert!(!is_desktop_class("Shell_TrayWnd") && !is_desktop_class("Notepad"));
     }
 }
