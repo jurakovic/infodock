@@ -634,6 +634,11 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] On your own PC at the resolution and scale you use: rename `%APPDATA%\app.infodock.desktop\config.json` and start Infodock, so the welcome page opens. After 10 s, Task Manager ▸ *Details* ▸ *Memory (active private working set)* and the log's `memory 10 s after Settings opened on the welcome page` line agree. Close the page: 10 s later the `memory 10 s after Settings closed` line, and Task Manager, are back near the bar alone (within 30 MB). Put the old config back.
 - [ ] Restart Windows and start Infodock (the bar alone): the log's `memory at the bar's first frame` line and, 10 s later, Task Manager's *Memory* column stay within 30 MB. Note the screen's resolution and scale and the processor count beside the numbers.
 
+**Focus after a bar menu** (since M5 S14t)
+
+- [ ] Type in Notepad, right-click the bar, press Esc: typing goes on in Notepad at once. The same with the tray icon's menu, and with a click on the bar instead of Esc.
+- [ ] Right-click the bar, then click Notepad's window: Notepad has the focus (nothing jumps). Hotkey, Shift+F10, Esc: the menu closes and the ring stays on the bar.
+
 **Settings: narrow window and glyphs** (since M5 S14s)
 
 - [ ] Make Settings as narrow as it goes (640 px at 100 %): on Bar, *Position* and the other labels wrap between words, never inside one, and help texts keep several words a line; the controls are narrower. Wider than 720 px: the controls are as before.

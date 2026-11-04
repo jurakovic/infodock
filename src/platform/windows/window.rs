@@ -803,7 +803,7 @@ fn bar_key(vk: VIRTUAL_KEY) -> Option<Key> {
 
 /// Whether `hwnd` belongs to the calling thread: the bar's own popup, hint or a dialog it
 /// shows. `false` for no window.
-fn on_this_thread(hwnd: HWND) -> bool {
+pub(super) fn on_this_thread(hwnd: HWND) -> bool {
     // SAFETY: plain queries; a null or stale window gives thread 0.
     !hwnd.is_invalid() && unsafe { GetWindowThreadProcessId(hwnd, None) == GetCurrentThreadId() }
 }

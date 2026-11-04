@@ -506,7 +506,7 @@ Sources: Explorer items (paths) and browser links (URLs).
 
 ### 6.4 Context menus
 
-Native menus (`TrackPopupMenuEx` on the bar thread, at the cursor). Confirmations use native dialogs (`TaskDialogIndirect`).
+Native menus (`TrackPopupMenuEx` on the bar thread, at the cursor). Confirmations use native dialogs (`TaskDialogIndirect`). The bar takes the foreground while a menu is open (or it would not close on a click elsewhere); a menu closed without a choice (Esc, a click on the bar) gives it back to the other app's window that had it, so typing goes there again, unless the keyboard was on the bar (§14.4) or a click elsewhere already chose a window. The tray menu does the same.
 
 **Bar background menu**
 
