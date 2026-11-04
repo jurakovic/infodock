@@ -1,6 +1,8 @@
 [package]
 name = "infodock"
-version = "0.1.0"
+# Local builds are 0.0.0: publish.sh sets the version for CI builds (<next release>-build.<run>)
+# and releases, computed from the tags (SPEC §15.3).
+version = "0.0.0"
 description = "A compact system-information and launcher bar for the desktop"
 license = "MIT"
 edition = "2024"

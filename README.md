@@ -6,12 +6,14 @@ Status: early development. See [SPEC.md](SPEC.md) for the full specification and
 
 ## Download
 
-Every push to `master` builds Windows downloads. Open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download:
+Download from the [releases](https://github.com/jurakovic/infodock/releases):
 
-- `infodock-windows-installer`: contains `infodock_<version>_x64-setup.exe`, a per-user installer that does not need admin rights;
-- `infodock-windows-portable`: contains `infodock.exe`, which runs as is, without installing.
+- `Infodock_<version>_win-x64-setup.exe`: a per-user installer that does not need admin rights;
+- `Infodock_<version>_win-x64.zip`: `infodock.exe`, which runs as is, without installing.
 
-Neither is code-signed yet, so SmartScreen may warn.
+Releases marked as pre-release are previews of the next version. `checksums.txt` in each release has the SHA-256 checksums of both files. Neither is code-signed yet, so SmartScreen may warn.
+
+Every push to `master` that changes the app also builds both: open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download `infodock-windows-installer` or `infodock-windows-portable` under *Artifacts*. Their version is the next release with the run number, e.g. `1.0.0-build.150`.
 
 ## Accessibility
 
@@ -28,6 +30,18 @@ cargo run    # run the app
 cargo test   # tests
 cargo lint   # clippy
 ```
+
+Local builds are version `0.0.0`; CI builds and releases carry theirs.
+
+### Release
+
+Releases are made with the [Publish](.github/workflows/publish.yml) workflow (*Actions* → *Publish* → *Run workflow*), which runs the steps of `publish.sh`:
+
+1. **Build**: runs the tests and builds `infodock.exe` and the installer with the version
+2. **Package**: writes the installer, `infodock.exe` zipped and `checksums.txt` to `release/`
+3. **Release**: tags the built commit `v<version>` and creates the GitHub release
+
+The version is computed from the latest tag: `master` gives the next release (`1.0.0` first, then `1.0.1`), other branches the next preview (`1.0.1-preview.1`). *Bump Type* chooses the part that is increased; *Version* sets it outright. `publish.sh` also runs locally in Git Bash on Windows, see `./publish.sh --help`.
 
 ## Licence
 

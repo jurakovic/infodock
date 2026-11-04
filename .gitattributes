@@ -1,0 +1,2 @@
+# publish.sh runs in Git Bash on the Windows runners
+*.sh text eol=lf

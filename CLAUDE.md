@@ -39,7 +39,8 @@ tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 | Measure the time budgets to `target/budgets/*.json` (Windows only) | `cargo test budget_ -- --ignored --test-threads=1` |
 | Type-check the Windows code from Linux | `cargo check-win` |
 | Run the app | `cargo run` (Windows; elsewhere only Settings opens) |
-| Build the installer (Windows) | `cargo build --release` then `cargo packager --release` |
+| Build the exe and installer with a version (Windows, Git Bash) | `./publish.sh build -v 1.0.0-build.1` (`-t false` skips the tests) |
+| The next release's version, from the tags | `./publish.sh version` |
 
 Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `infodock-screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, budget tests and the memory and time check, a silent install and uninstall) and by the manual checklist in `docs/manual-test.md`.
 
@@ -64,6 +65,7 @@ Reviews: after a slice that warrants it, one reviewer on the slice's `git diff` 
 - Commit straight to `master`, one logical change per commit, and **push after every commit**.
 - Wait for CI once per batch of commits, before moving on; if it is red, fixing it comes before anything else. Do not wait at the end of a session: the next one checks it first. CI runs only when build inputs change (paths in `ci.yml`); docs-only commits do not trigger it.
 - End commit messages with the `Co-Authored-By` trailer the session provides.
+- Never tag, release or change the version in `Cargo.toml` (it stays `0.0.0`): the user releases by running the Publish workflow (SPEC §15.3).
 
 ## Conventions
 

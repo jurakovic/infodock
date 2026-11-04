@@ -1,0 +1,227 @@
+name: Publish
+
+# Builds, packages and releases Infodock, see publish.sh and SPEC §15.3. Run it from the
+# Actions tab ("Run workflow"):
+#
+# - The version is computed from the latest v1.x.y tag: master gives the next release (1.0.0
+#   while there is none, then 1.0.1), other branches the next preview (1.0.1-preview.1).
+#   Bump Type picks the part that is increased; Version overrides it all.
+# - infodock.exe and the installer carry the version: x.y.z.0 as file version and the whole
+#   version as product version.
+# - The release is tagged v<version> on the built commit and published on GitHub with
+#   Infodock_<version>_win-x64-setup.exe, Infodock_<version>_win-x64.zip (the portable
+#   infodock.exe) and checksums.txt with their SHA-256 checksums. Previews are marked as
+#   pre-releases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: 'Step 1: Build'
+        required: false
+        default: true
+        type: boolean
+      package:
+        description: 'Step 2: Package'
+        required: false
+        default: true
+        type: boolean
+      release:
+        description: 'Step 3: Release'
+        required: false
+        default: true
+        type: boolean
+      source_branch:
+        description: 'Source branch (branch to build from, "auto" uses workflow ref)'
+        required: false
+        default: 'auto'
+        type: string
+      version:
+        description: 'Version (leave empty or "auto" to compute from last tag)'
+        required: false
+        default: 'auto'
+        type: string
+      bump_type:
+        description: 'Bump Type (ignored when version is explicit)'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      base_ver:
+        description: 'Major version stream (tags outside this major are ignored)'
+        required: false
+        default: '1'
+        type: string
+      preview:
+        description: 'Preview release (auto = follows branch: non-master → true, master → false)'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+
+# Two releases at once could compute the same version
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      commit: ${{ steps.ver.outputs.commit }}
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      SOURCE_BRANCH: ${{ inputs.source_branch == 'auto' && github.ref_name || inputs.source_branch }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_branch == 'auto' && github.ref || inputs.source_branch }}
+          fetch-depth: 0
+
+      - name: Fetch publish.sh
+        if: ${{ inputs.source_branch != 'auto' }}
+        run: git restore --source "origin/$GITHUB_REF_NAME" -- publish.sh
+
+      - name: Compute Version
+        id: ver
+        env:
+          INPUT_BUILD: ${{ inputs.build }}
+          INPUT_PACKAGE: ${{ inputs.package }}
+          INPUT_RELEASE: ${{ inputs.release }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP_TYPE: ${{ inputs.bump_type }}
+          INPUT_BASE_VER: ${{ inputs.base_ver }}
+          INPUT_PREVIEW: ${{ inputs.preview }}
+        run: |
+          if [ "$INPUT_PACKAGE" = true ] && [ "$INPUT_BUILD" != true ]; then
+            echo "::error::Step 2 (Package) needs step 1 (Build)"
+            exit 1
+          fi
+          if [ "$INPUT_RELEASE" = true ] && { [ "$INPUT_BUILD" != true ] || [ "$INPUT_PACKAGE" != true ]; }; then
+            echo "::error::Step 3 (Release) needs steps 1 (Build) and 2 (Package)"
+            exit 1
+          fi
+
+          chmod +x ./publish.sh
+          if ! VERSION=$(GITHUB_REF_NAME="$SOURCE_BRANCH" ./publish.sh version -v "$INPUT_VERSION" -b "$INPUT_BUMP_TYPE" -M "$INPUT_BASE_VER" -p "$INPUT_PREVIEW"); then
+            echo "$VERSION"
+            echo "::error::Could not compute the version"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Set up Rust
+        if: ${{ inputs.build }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        if: ${{ inputs.build }}
+        uses: Swatinem/rust-cache@v2
+
+      # Pinned: the installer's uninstaller section (Cargo.toml) relies on its NSIS template.
+      - name: Install cargo-packager
+        if: ${{ inputs.build }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-packager@0.11.8
+
+      # Runs the tests and builds infodock.exe and the installer with the version
+      - name: Build
+        if: ${{ inputs.build }}
+        run: GITHUB_REF_NAME="$SOURCE_BRANCH" ./publish.sh build -v "$VERSION" -u true
+
+      - name: Package
+        if: ${{ inputs.package }}
+        run: |
+          GITHUB_REF_NAME="$SOURCE_BRANCH" ./publish.sh package -v "$VERSION" -u true
+
+          {
+            echo "### Infodock $VERSION"
+            echo
+            echo "- Commit: $(git rev-parse HEAD)"
+            echo "- SHA-256:"
+            echo
+            echo '```'
+            cat release/checksums.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Artifacts
+        if: ${{ inputs.package }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: Infodock-${{ env.VERSION }}
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: ${{ inputs.release }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # The commit that was built, even if the branch moved since
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Fetch publish.sh
+        if: ${{ inputs.source_branch != 'auto' }}
+        run: git restore --source "origin/$GITHUB_REF_NAME" -- publish.sh
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: Infodock-${{ needs.build.outputs.version }}
+          path: release
+
+      - name: Git Tag
+        run: |
+          chmod +x ./publish.sh
+          ./publish.sh release -v "$VERSION" -u true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find release
+          prerelease=()
+          case "$VERSION" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
+          gh release create "v$VERSION" release/* \
+            --verify-tag \
+            --title "Infodock $VERSION" \
+            --generate-notes \
+            "${prerelease[@]}"

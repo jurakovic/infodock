@@ -102,7 +102,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 **Hints** (since M1 S7)
 
-- [ ] Rest the pointer on the logo: after about half a second a dark rounded hint "Infodock 0.1.0" appears above it, with a small triangle pointing at the logo and a soft shadow; it fades in quickly. Move away: it disappears after a moment.
+- [ ] Rest the pointer on the logo: after about half a second a dark rounded hint "Infodock" with the build's version (e.g. "Infodock 1.0.0-build.150"; a local build: "Infodock 0.0.0") appears above it, with a small triangle pointing at the logo and a soft shadow; it fades in quickly. Move away: it disappears after a moment.
 - [ ] Rest on the `mail` placeholder: its hint explains that the sensor is not available in this version. Near the screen's left edge the hint stays on screen and its triangle still points at the sensor.
 - [ ] With a hint shown, move straight to another sensor: the hint switches at once, without a new delay.
 - [ ] Click a sensor while its hint shows: the hint closes and does not come back until the pointer moves to another sensor. Right-click: the hint closes before the menu opens.

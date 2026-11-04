@@ -13,6 +13,8 @@ on:
       - "resources/**"
       - "tests/**"
       - "build.rs"
+      - "publish.sh"
+      - ".gitattributes"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".cargo/**"
@@ -28,6 +30,8 @@ on:
       - "resources/**"
       - "tests/**"
       - "build.rs"
+      - "publish.sh"
+      - ".gitattributes"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".cargo/**"
@@ -66,6 +70,20 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # The version is computed from the tags
+          fetch-depth: 0
+      # <next release>-build.<run number>, e.g. 1.0.1-build.42: the version the Publish workflow
+      # would release from master next, marked as a build of it (SPEC §15.3).
+      - name: Compute version
+        shell: bash
+        run: |
+          if ! NEXT=$(./publish.sh version -p false); then
+            echo "$NEXT"
+            echo "::error::Could not compute the version"
+            exit 1
+          fi
+          echo "VERSION=$NEXT-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -84,14 +102,16 @@ jobs:
         run: |
           Remove-Item -Recurse -Force target/budgets -ErrorAction SilentlyContinue
           cargo test budget_ -- --ignored --test-threads=1 --nocapture
-      - name: Build release
-        run: cargo build --release
       # Pinned: the installer's uninstaller section (Cargo.toml) relies on its NSIS template.
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-packager@0.11.8
-      - name: Build installer
-        run: cargo packager --release --formats nsis
+      # infodock.exe and the installer with the version, as releases are built; the tests ran above.
+      - name: Build release and installer
+        shell: bash
+        run: |
+          ./publish.sh build -v "$VERSION" -u true -t false
+          echo "### Infodock $VERSION" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v6
         with:
           name: infodock-windows-installer
