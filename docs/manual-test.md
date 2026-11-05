@@ -5,7 +5,7 @@ Run on real Windows 10 and Windows 11 machines (SPEC §16). Each milestone adds 
 ## Getting a build
 
 1. Open the latest green run of [CI](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) for `master`.
-2. Download the `infodock-windows-installer` artifact, unzip it and run the `infodock_*_x64-setup.exe` inside. It installs per user, without admin rights. It is not signed yet, so SmartScreen may ask: *More info → Run anyway*.
+2. Download the `Infodock_v<version>_win-x64-setup.exe` artifact and run it. It installs per user, without admin rights. It is not signed yet, so SmartScreen may ask: *More info → Run anyway*.
 3. Files: config `%APPDATA%\app.infodock.desktop\config.json`, logs `%LOCALAPPDATA%\app.infodock.desktop\logs\`.
 
 To start over from first run, quit Infodock and delete `%APPDATA%\app.infodock.desktop`.
@@ -182,7 +182,7 @@ The bar is drawn natively since M1 S1, Settings uses Slint (plan D16) and the tr
 
 ## M2 — System sensors
 
-The first-run layout's system sensors (CPU Graph, Memory Meter, Network Graph, Date, Time) are checked here, with the others of M2. The M0 and M1 checks above still apply. CI renders every system sensor with made-up data (`bar-system*.png` in `infodock-screenshots`) and measures the idle CPU; the checks here cover what only real hardware shows.
+The first-run layout's system sensors (CPU Graph, Memory Meter, Network Graph, Date, Time) are checked here, with the others of M2. The M0 and M1 checks above still apply. CI renders every system sensor with made-up data (`bar-system*.png` in `Infodock_v<version>_screenshots`) and measures the idle CPU; the checks here cover what only real hardware shows.
 
 **Time** (since M2 S6)
 
@@ -261,7 +261,7 @@ The first-run layout's system sensors (CPU Graph, Memory Meter, Network Graph, D
 
 Exit criteria (SPEC §17): every §9.14–9.22 behaviour below passes; dragging a link from Edge or Chrome creates a web Shortcut, or a `.url` file in a Folder Menu.
 
-The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.png` in `infodock-screenshots`) with this machine's shell icons and the popups (`popup-folder*`, `popup-start-menu`, `popup-eject`); the checks here cover clicking, the shell, drag & drop and real devices.
+The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.png` in `Infodock_v<version>_screenshots`) with this machine's shell icons and the popups (`popup-folder*`, `popup-start-menu`, `popup-eject`); the checks here cover clicking, the shell, drag & drop and real devices.
 
 **Shortcut** (since M3 S1)
 
@@ -410,7 +410,7 @@ The M0–M2 checks above still apply. CI renders the launchers (`bar-launchers*.
 
 Exit criteria (SPEC §17): Appendix B imports exactly as specified (*Legacy XML import* below; CI's `imports_appendix_b_as_specified` checks layout, state and report); the installer works per user without admin rights (*Installer* below; CI's installer check installs, checks and uninstalls silently).
 
-The M0–M3 checks above still apply. CI renders the classic bar with every built-in skin (`bar-classic-*.png` in `infodock-screenshots`); the checks here cover real monitors and the live bar.
+The M0–M3 checks above still apply. CI renders the classic bar with every built-in skin (`bar-classic-*.png` in `Infodock_v<version>_screenshots`); the checks here cover real monitors and the live bar.
 
 **Built-in skins** (since M4 S1)
 
@@ -521,12 +521,12 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 **Installer** (since M4 S15)
 
-- [ ] As a standard user (no admin rights), run `Infodock_<version>_x64-setup.exe` from CI's `infodock-windows-installer` artifact: no elevation prompt; the welcome and finish pages show the placeholder sidebar, the other pages the header; it installs to `%LOCALAPPDATA%\Infodock`.
+- [ ] As a standard user (no admin rights), run `Infodock_v<version>_win-x64-setup.exe` (CI's artifact of that name): no elevation prompt; the welcome and finish pages show the placeholder sidebar, the other pages the header; it installs to `%LOCALAPPDATA%\Infodock`.
 - [ ] The finish page's *Run Infodock* starts it: the bar and the welcome page appear. Start Menu ▸ *Infodock* starts it too, and its toasts and Settings window group under that Start Menu entry in the taskbar.
 - [ ] *Apps & features* lists Infodock (current user); nothing under `C:\Program Files` or `HKLM\Software`.
 - [ ] Turn *Start with Windows* on, then uninstall from *Apps & features*: Infodock is closed if running, the folder, the Start Menu and desktop shortcuts and the `Run` value are gone; `%APPDATA%\app.infodock.desktop` (config, skins) stays.
 - [ ] Upgrade: with *Start with Windows* on, install a newer build over it (choose *Uninstall before installing*): the `Run` value stays and still starts Infodock at sign-in.
-- [ ] A deployment (since M4 S16a): uninstall, disable any *Infodock* left in Task Manager ▸ *Startup apps*, then as a standard user run `Infodock_<version>_x64-setup.exe /S /AUTOSTART` from a command prompt: nothing starts; the `Run` value `Infodock` names `%LOCALAPPDATA%\Infodock\infodock.exe` in quotes and Task Manager shows it *Enabled*. Sign out and in: the bar starts with the welcome page, whose *Start with Windows* is on. A silent install without `/AUTOSTART` (after uninstalling) writes no `Run` value.
+- [ ] A deployment (since M4 S16a): uninstall, disable any *Infodock* left in Task Manager ▸ *Startup apps*, then as a standard user run `Infodock_v<version>_win-x64-setup.exe /S /AUTOSTART` from a command prompt: nothing starts; the `Run` value `Infodock` names `%LOCALAPPDATA%\Infodock\infodock.exe` in quotes and Task Manager shows it *Enabled*. Sign out and in: the bar starts with the welcome page, whose *Start with Windows* is on. A silent install without `/AUTOSTART` (after uninstalling) writes no `Run` value.
 
 **Budgets** (M4 S18)
 

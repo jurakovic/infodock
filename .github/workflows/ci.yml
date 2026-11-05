@@ -112,22 +112,37 @@ jobs:
         run: |
           ./publish.sh build -v "$VERSION" -u true -t false
           echo "### Infodock $VERSION" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v6
+      # The artifacts are named like the release files (SPEC §15.3). cargo-packager names the
+      # installer infodock_<version>_x64-setup.exe; a copy carries the release's name.
+      - name: Name the installer
+        shell: bash
+        run: |
+          shopt -s nullglob
+          setups=(target/release/*_x64-setup.exe)
+          if [ "${#setups[@]}" -ne 1 ]; then
+            echo "::error::Expected one installer in target/release, found ${#setups[@]}"
+            exit 1
+          fi
+          mkdir -p target/ci
+          cp "${setups[0]}" "target/ci/Infodock_v${VERSION}_win-x64-setup.exe"
+      # Uploaded unzipped, so it downloads as the exe; the artifact takes the file's name.
+      - uses: actions/upload-artifact@v7
         with:
-          name: infodock-windows-installer
-          path: target/release/*-setup.exe
+          path: target/ci/Infodock_v${{ env.VERSION }}_win-x64-setup.exe
+          archive: false
           if-no-files-found: error
           retention-days: 30
-      # Portable build (SPEC §15.3): a single self-contained exe.
-      - uses: actions/upload-artifact@v6
+      # Portable build (SPEC §15.3): a single self-contained exe, downloaded as
+      # Infodock_v<version>_win-x64.zip like the release's.
+      - uses: actions/upload-artifact@v7
         with:
-          name: infodock-windows-portable
+          name: Infodock_v${{ env.VERSION }}_win-x64
           path: target/release/infodock.exe
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
-          name: infodock-screenshots
+          name: Infodock_v${{ env.VERSION }}_screenshots
           path: target/screenshots
           if-no-files-found: ignore
           retention-days: 14
@@ -135,10 +150,10 @@ jobs:
       - name: Memory, CPU and time check
         shell: pwsh
         run: .github/scripts/measure-memory.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/memory-check" -Measured target/budgets -Enforce
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: infodock-memory-check
+          name: Infodock_v${{ env.VERSION }}_memory-check
           path: ${{ runner.temp }}/memory-check
           if-no-files-found: ignore
           retention-days: 14
@@ -147,10 +162,10 @@ jobs:
       - name: Installer check
         shell: pwsh
         run: .github/scripts/check-installer.ps1 -Setup (Get-Item target/release/*-setup.exe).FullName -OutDir "$env:RUNNER_TEMP/installer-check"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: infodock-installer-check
+          name: Infodock_v${{ env.VERSION }}_installer-check
           path: ${{ runner.temp }}/installer-check
           if-no-files-found: ignore
           retention-days: 14

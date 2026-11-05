@@ -11,10 +11,10 @@ name: Publish
 #   1.1.0-preview.1, patch 1.0.1 or 1.0.1-preview.3). Version overrides it all.
 # - infodock.exe and the installer carry the version: x.y.z.0 as file version and the whole
 #   version as product version.
-# - The release is tagged v<version> on the built commit and published on GitHub with
-#   Infodock_<version>_win-x64-setup.exe, Infodock_<version>_win-x64.zip (the portable
-#   infodock.exe) and checksums.txt with their SHA-256 checksums. Previews are marked as
-#   pre-releases.
+# - The release is tagged v<version> on the built commit and published on GitHub as
+#   v<version> with Infodock_v<version>_win-x64-setup.exe, Infodock_v<version>_win-x64.zip
+#   (the portable infodock.exe) and checksums.txt with their SHA-256 checksums. Previews are
+#   marked as pre-releases.
 
 on:
   workflow_dispatch:
@@ -176,7 +176,7 @@ jobs:
         if: ${{ inputs.package }}
         uses: actions/upload-artifact@v6
         with:
-          name: Infodock-${{ env.VERSION }}
+          name: Infodock_v${{ env.VERSION }}
           path: release/*
           if-no-files-found: error
 
@@ -206,7 +206,7 @@ jobs:
       - name: Download All Artifacts
         uses: actions/download-artifact@v6
         with:
-          name: Infodock-${{ needs.build.outputs.version }}
+          name: Infodock_v${{ needs.build.outputs.version }}
           path: release
 
       - name: Git Tag
@@ -225,6 +225,6 @@ jobs:
           esac
           gh release create "v$VERSION" release/* \
             --verify-tag \
-            --title "Infodock $VERSION" \
+            --title "v$VERSION" \
             --generate-notes \
             "${prerelease[@]}"

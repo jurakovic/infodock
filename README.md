@@ -8,12 +8,12 @@ Status: early development. See [SPEC.md](SPEC.md) for the full specification and
 
 Download from the [releases](https://github.com/jurakovic/infodock/releases):
 
-- `Infodock_<version>_win-x64-setup.exe`: a per-user installer that does not need admin rights;
-- `Infodock_<version>_win-x64.zip`: `infodock.exe`, which runs as is, without installing.
+- `Infodock_v<version>_win-x64-setup.exe`: a per-user installer that does not need admin rights;
+- `Infodock_v<version>_win-x64.zip`: `infodock.exe`, which runs as is, without installing.
 
 Releases marked as pre-release are previews of the next version. `checksums.txt` in each release has the SHA-256 checksums of both files. Neither is code-signed yet, so SmartScreen may warn.
 
-Every push to `master` that changes the app also builds both: open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download `infodock-windows-installer` or `infodock-windows-portable` under *Artifacts*. Their version is the next release with the run number, e.g. `1.0.0-build.150`.
+Every push to `master` that changes the app also builds both: open the latest successful [CI run](https://github.com/jurakovic/infodock/actions/workflows/ci.yml) and download `Infodock_v<version>_win-x64-setup.exe` or `Infodock_v<version>_win-x64` (the zipped `infodock.exe`) under *Artifacts*. Their version is the next release with the run number, e.g. `1.0.0-build.150`.
 
 ## Accessibility
 

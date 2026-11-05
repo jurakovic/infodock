@@ -98,8 +98,8 @@ function set_version() {
 
 function package() {
   local release_path="release"
-  local setup_name="${PRODUCT}_${VERSION}_${ARCH}-setup.exe"
-  local zip_name="${PRODUCT}_${VERSION}_${ARCH}.zip"
+  local setup_name="${PRODUCT}_v${VERSION}_${ARCH}-setup.exe"
+  local zip_name="${PRODUCT}_v${VERSION}_${ARCH}.zip"
 
   # cargo-packager names the installer <binary>_<version>_x64-setup.exe
   local setup
