@@ -54,7 +54,7 @@ on:
           - minor
           - patch
       base_ver:
-        description: 'Major version stream ("auto" = the major of the latest tag, at least 1)'
+        description: 'Major version stream (leave empty or "auto" for the major of the latest tag, at least 1)'
         required: false
         default: 'auto'
         type: string

@@ -234,7 +234,10 @@ function read_args() {
         ;;
       "-M" | "--base_ver")
         shift
-        if [ "$1" = "auto" ] || [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        # Empty, as from a cleared workflow input, means auto, as for -v
+        if [ -z "$1" ] || [ "$1" = "auto" ]; then
+            BASE_VER="auto"
+        elif [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]; then
             BASE_VER="$1"
         else
             invalid_argument "$1" "auto 1 2 ..."
