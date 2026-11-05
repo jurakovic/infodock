@@ -6,7 +6,9 @@ name: Publish
 # - The version is computed from the latest tag of the current major (v1.x.y until there is a
 #   v2 tag; Base Ver picks another): master gives the next release (1.0.0 while there is none,
 #   then 1.0.1), other branches the next preview (1.0.1-preview.1). Bump Type picks the part
-#   that is increased; Version overrides it all.
+#   that is increased; while a preview is open, a bump past it starts a new version and one it
+#   covers continues it (after 1.0.0 and 1.0.1-preview.2, minor gives 1.1.0 or
+#   1.1.0-preview.1, patch 1.0.1 or 1.0.1-preview.3). Version overrides it all.
 # - infodock.exe and the installer carry the version: x.y.z.0 as file version and the whole
 #   version as product version.
 # - The release is tagged v<version> on the built commit and published on GitHub with
@@ -43,7 +45,7 @@ on:
         default: 'auto'
         type: string
       bump_type:
-        description: 'Bump Type (ignored when version is explicit)'
+        description: 'Bump Type (ignored when version is explicit; continues an open preview it does not pass)'
         required: false
         default: 'patch'
         type: choice

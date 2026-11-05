@@ -303,6 +303,18 @@ function read_args() {
           current_version="$latest_preview"  # preview cycle is ahead of stable
         fi
       fi
+      # While a preview is open, a bump of the latest stable version past it
+      # starts a new version from the stable one; a bump the preview covers
+      # continues it. After 1.0.0 and 1.0.1-preview.2, minor gives 1.1.0 (or
+      # 1.1.0-preview.1) and patch 1.0.1 (or 1.0.1-preview.3).
+      if [[ -n "$latest_stable" && "$current_version" == "$latest_preview" ]]; then
+        local bumped
+        bumped=$(bump_version_main "$latest_stable" "$BUMP_TYPE")
+        version_compare "$bumped" "${latest_preview%-preview.*}"
+        if [[ $? -eq 1 ]]; then
+          current_version="$latest_stable"
+        fi
+      fi
       VERSION=$(bump_version "$current_version" "$BUMP_TYPE" "$PREVIEW")
     fi
   else
