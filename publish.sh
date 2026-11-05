@@ -16,7 +16,11 @@ BUMP_TYPE="patch"
 PREVIEW="auto"
 UNATTENDED="false"
 TESTS="true"
-BASE_VER="1"
+# The major version stream: "auto" is the major of the latest release or
+# preview tag, but at least FIRST_MAJOR, the major the versions start at; a
+# number picks that stream, e.g. an older one for a fix after a major release
+BASE_VER="auto"
+FIRST_MAJOR="1"
 
 PRODUCT="Infodock"
 TARGET_DIR="target/release"
@@ -230,7 +234,12 @@ function read_args() {
         ;;
       "-M" | "--base_ver")
         shift
-        BASE_VER="$1"
+        if [ "$1" = "auto" ] || [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]; then
+            BASE_VER="$1"
+        else
+            invalid_argument "$1" "auto 1 2 ..."
+            exit 1
+        fi
         ;;
       *)
         if is_in_array "$1" "${_command_values[@]}"; then
@@ -243,6 +252,10 @@ function read_args() {
     esac
     shift
   done
+
+  if [ "$BASE_VER" = "auto" ]; then
+    BASE_VER=$(latest_major)
+  fi
 
   if [ -n "$GITHUB_REF_NAME" ]; then
     BRANCH="$GITHUB_REF_NAME"
@@ -348,7 +361,7 @@ function help() {
   echo "  -v, --version <VERSION>        auto*, x.y.z, x.y.z-preview.N, x.y.z-build.N"
   echo "  -b, --bump_type <BUMP_TYPE>    major, minor, patch*"
   echo "  -p, --preview <PREVIEW>        auto*, true, false"
-  echo "  -M, --base_ver <BASE_VER>      1*, 2, 3, ..."
+  echo "  -M, --base_ver <BASE_VER>      auto*, 1, 2, ... (auto: the major of the latest tag, at least $FIRST_MAJOR)"
   echo "  -t, --tests <TESTS>            true*, false (build: run cargo test first)"
   echo "  -u, --unattended <UNATTENDED>  true, false*"
   echo "  -h, --help"
@@ -360,7 +373,7 @@ function help() {
   echo "  ./publish.sh package -v 1.2.0"
   echo "  ./publish.sh version"
   echo "  ./publish.sh version -b minor"
-  echo "  ./publish.sh version -M 2"
+  echo "  ./publish.sh version -M 1"
 }
 
 function is_in_array() {
@@ -379,6 +392,19 @@ function invalid_argument() {
   echo "Allowed values: ${*:2}"
   echo
   help
+}
+
+# The major of the latest release or preview tag (v<major>.<minor>.<patch>,
+# optionally -preview.N), or FIRST_MAJOR when there is none or it is lower
+function latest_major() {
+  local major
+  major=$(git tag --list 'v*' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-preview\.[0-9]+)?$' \
+    | sed -E 's/^v([0-9]+)\..*/\1/' | sort -n | tail -1)
+  if [ -z "$major" ] || ((10#$major < FIRST_MAJOR)); then
+    major="$FIRST_MAJOR"
+  fi
+  echo "$major"
 }
 
 function version_compare() {

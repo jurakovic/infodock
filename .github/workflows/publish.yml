@@ -3,9 +3,10 @@ name: Publish
 # Builds, packages and releases Infodock, see publish.sh and SPEC §15.3. Run it from the
 # Actions tab ("Run workflow"):
 #
-# - The version is computed from the latest v1.x.y tag: master gives the next release (1.0.0
-#   while there is none, then 1.0.1), other branches the next preview (1.0.1-preview.1).
-#   Bump Type picks the part that is increased; Version overrides it all.
+# - The version is computed from the latest tag of the current major (v1.x.y until there is a
+#   v2 tag; Base Ver picks another): master gives the next release (1.0.0 while there is none,
+#   then 1.0.1), other branches the next preview (1.0.1-preview.1). Bump Type picks the part
+#   that is increased; Version overrides it all.
 # - infodock.exe and the installer carry the version: x.y.z.0 as file version and the whole
 #   version as product version.
 # - The release is tagged v<version> on the built commit and published on GitHub with
@@ -51,9 +52,9 @@ on:
           - minor
           - patch
       base_ver:
-        description: 'Major version stream (tags outside this major are ignored)'
+        description: 'Major version stream ("auto" = the major of the latest tag, at least 1)'
         required: false
-        default: '1'
+        default: 'auto'
         type: string
       preview:
         description: 'Preview release (auto = follows branch: non-master → true, master → false)'
