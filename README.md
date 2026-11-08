@@ -1,4 +1,9 @@
-# Infodock
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="icons/logo-dark.svg">
+    <img src="icons/logo-light.svg" alt="Infodock" width="280">
+  </picture>
+</p>
 
 A compact system-information and launcher bar for the Windows desktop: a thin bar docked to the top or bottom of the screen with small live sensors (CPU, memory, network, date, time, battery…) and launchers.
 

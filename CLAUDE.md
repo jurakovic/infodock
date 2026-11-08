@@ -19,7 +19,7 @@ src/                 Rust sources
   platform/          OS layer behind traits; Windows code in platform/windows, other OSes get a stub
 ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs) and its icons (`ui/icons`)
 i18n/                message catalogs (`en.json`)
-icons/               app icons and the installer's images (`icons/installer`)
+icons/               app icons, the README logo and the installer's images (`icons/installer`)
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check, installer check)

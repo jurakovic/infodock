@@ -1629,7 +1629,7 @@ infodock/                     the Rust crate
   src/                        Rust (§4.2)
   ui/                         Slint markup (§4.3)
   i18n/                       message catalogs (§13)
-  icons/                      app icons (Appendix C)
+  icons/                      app icons and the README logo (Appendix C)
   assets/                     icons/*.svg, logo.svg, sounds/chime.wav (embedded)
   resources/                  Windows application manifest
   tests/fixtures/legacy/      legacy XML samples (Appendix B and more)
@@ -1868,11 +1868,12 @@ Also expected:
 
 ## Appendix C — Artwork and sounds to produce
 
-All artwork is created for Infodock (or from MIT-licensed icon sets, credited on the About page). Placeholders are acceptable until M5.
+All artwork is created for Infodock (or from MIT-licensed icon sets, credited on the About page). Placeholders are acceptable until M5. The app icon and the README logo set their letters in Roboto Mono (Apache License 2.0), stored as outlines, so they need no installed font.
 
 | Item | Format / sizes | Used by |
 |---|---|---|
-| App icon | `.ico` (16, 20, 24, 32, 40, 48, 64, 256) + PNGs for the bundler | Installer, Start Menu, Settings window |
+| App icon | `.ico` (16, 20, 24, 32, 40, 48, 64, 256) + PNGs for the bundler, from `icons/app-icon.svg` (16–24 px from `app-icon-small.svg`, each frame with a whole-pixel margin) | Installer, Start Menu, Settings window |
+| README logo | SVG for light and dark pages (`icons/logo-light.svg`, `icons/logo-dark.svg`) | README |
 | Tray icon | `.ico` 16/20/24/32, light and dark variants | Tray |
 | Logo | SVG (monochrome, tintable) + PNG fallback | Image sensor default, About, welcome page |
 | Battery icon | SVG layers: outline/back, level fill mask, level cap, front, overlays (charging, charged, none) | Battery |
