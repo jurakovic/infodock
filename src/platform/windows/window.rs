@@ -370,6 +370,10 @@ impl WindowState {
                 self.follow_band(hiding);
             }
             WM_SETTINGCHANGE if is_appearance_change(wparam, lparam) => {
+                // The tray icon follows the taskbar's theme on its own (Appendix C).
+                if let Some(tray) = self.tray.get() {
+                    tray.theme_changed();
+                }
                 self.dispatch(UiEvent::AppearanceChanged);
             }
             WM_SETTINGCHANGE if setting_area(lparam).as_deref() == Some("intl") => {

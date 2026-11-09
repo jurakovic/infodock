@@ -755,7 +755,7 @@ mod tests {
         ));
         sensors.update_layout(&layout_ctx(&theme, 1.0), 800.0);
         let places: Vec<(f32, f32)> = sensors.places().iter().map(|p| (p.1, p.2)).collect();
-        // Fixed metrics: 5 px per character at 10 px; the logo is 27 px wide. Date and Time
+        // Fixed metrics: 5 px per character at 10 px; the logo is 103 px wide. Date and Time
         // show nothing until their first wake-up reads the clock.
         assert_eq!(
             places,
@@ -763,7 +763,7 @@ mod tests {
                 (7.0, 75.0),    // CPU Graph: 50 px plot, 5 px gap, "100%"
                 (92.0, 28.0),   // Memory Meter: the bar, the gap and "100%"
                 (130.0, 100.0), // Network Graph: 50 px plot, 5 px gap, "1023 MB/s"
-                (382.0, 27.0),  // logo: round((800 − 37) / 2)
+                (344.0, 103.0), // logo: round((800 − 113) / 2)
                 (783.0, 0.0),   // date
                 (793.0, 0.0)    // time, ending 7 px from the right
             ]
@@ -1329,7 +1329,7 @@ mod tests {
         let mut canvas = RecordingCanvas::new(1.5);
         sensors.draw(&mut canvas, &theme, 28.0);
         assert!(
-            canvas.dump().starts_with("bitmap 41×41"),
+            canvas.dump().starts_with("bitmap 156×41"),
             "{}",
             canvas.dump()
         );

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 57" width="150" height="57">
+  <!-- Installer header (SPEC Appendix C): the NSIS header image, left of the page title on the header's white; the README logo for light backgrounds. -->
+  <rect width="150" height="57" fill="#FFFFFF"/>
+  <image href="../logo-light.svg" x="12" y="12.5" width="126" height="32.93"/>
+</svg>

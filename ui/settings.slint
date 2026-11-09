@@ -846,6 +846,18 @@ component BarPage inherits VerticalLayout {
 }
 
 // A heading for a group of settings on a page, above its cards (Windows 11's Body Strong).
+// The Infodock logo at the top of About and the welcome page (SPEC Appendix C): the README's,
+// for the window's light or dark scheme. Decorative: the page's title names the app.
+component Logo inherits HorizontalLayout {
+    alignment: start;
+    Image {
+        source: Look.dark ? @image-url("../icons/logo-dark.svg") : @image-url("../icons/logo-light.svg");
+        height: 40px;
+        // The logo's aspect ratio.
+        width: self.height * 478.846 / 125.148;
+    }
+}
+
 component SectionHeading inherits VerticalLayout {
     in property <string> title;
     in property <string> help;
@@ -1653,6 +1665,8 @@ component AboutPage inherits VerticalLayout {
     alignment: start;
     spacing: 16px;
 
+    Logo { }
+
     VerticalLayout {
         spacing: 8px;
         Text {
@@ -1980,6 +1994,10 @@ component HelpPage inherits VerticalLayout {
 // a layout to bring along, and how to get going.
 component WelcomePage inherits VerticalLayout {
     alignment: start;
+
+    Logo {
+        padding-bottom: 16px;
+    }
 
     Text {
         text: I18n.tr("welcome.intro");

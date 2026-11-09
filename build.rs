@@ -24,8 +24,10 @@ fn windows_resources() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("set by cargo"));
     let version = std::env::var("CARGO_PKG_VERSION").expect("set by cargo");
     let icon = manifest_dir.join("icons/icon.ico");
+    let tray_dark = manifest_dir.join("icons/tray-dark.ico");
+    let tray_light = manifest_dir.join("icons/tray-light.ico");
     let manifest = manifest_dir.join("resources/infodock.manifest");
-    for path in [&icon, &manifest] {
+    for path in [&icon, &tray_dark, &tray_light, &manifest] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 
@@ -37,9 +39,13 @@ fn windows_resources() {
             .unwrap_or(0)
     };
     let comma = format!("{},{},{},0", numeric(0), numeric(1), numeric(2));
-    // Resource IDs: 1 ICON, RT_MANIFEST (24) with id 1, VS_VERSION_INFO (1).
+    // Resource IDs: 1 ICON (the exe's, the lowest id), 2 and 3 ICON (the tray icon for a dark and
+    // a light taskbar, `platform/windows/tray.rs`), RT_MANIFEST (24) with id 1,
+    // VS_VERSION_INFO (1).
     let rc = format!(
         r#"1 ICON "{icon}"
+2 ICON "{tray_dark}"
+3 ICON "{tray_light}"
 1 24 "{manifest}"
 1 VERSIONINFO
 FILEVERSION {comma}
@@ -68,6 +74,8 @@ BEGIN
 END
 "#,
         icon = rc_path(&icon),
+        tray_dark = rc_path(&tray_dark),
+        tray_light = rc_path(&tray_light),
         manifest = rc_path(&manifest),
     );
     let rc_file = out_dir.join("infodock.rc");

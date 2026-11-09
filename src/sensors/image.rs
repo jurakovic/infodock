@@ -226,24 +226,24 @@ mod tests {
     #[test]
     fn shows_the_logo_one_px_less_than_the_bar() {
         let mut sensor = image(json!({}));
-        // The logo is square: 27 × 27 on a 28 px bar.
-        assert_eq!(measure(&mut sensor), 27.0);
+        // The logo is the wordmark: 103 × 27 on a 28 px bar.
+        assert_eq!(measure(&mut sensor), 103.0);
         assert_eq!(
-            draw(&sensor, 27.0),
-            "bitmap 27×27 into 7,0 27×27 opacity 1\n"
+            draw(&sensor, 103.0),
+            "bitmap 103×27 into 7,0 103×27 opacity 1\n"
         );
 
-        // At 150 % it is decoded at its physical size: 41 px, 27.3 logical px wide.
+        // At 150 % it is decoded at its physical size: 41 px tall, 156 px (104 logical) wide.
         let h = Harness::new();
         let width = sensor.measure(&LayoutCtx {
             scale: 1.5,
             ..h.layout()
         });
-        assert_eq!(width, 28.0);
+        assert_eq!(width, 104.0);
         assert_eq!(sensor.bitmap.as_ref().map(Bitmap::height), Some(41));
         // Drawn from a whole physical px: 7 logical px is 10.5, so 11 (7.33 logical).
         let mut canvas = crate::platform::recording::RecordingCanvas::new(1.5);
-        let rect = RectF::new(7.0, 0.0, 35.0, 28.0);
+        let rect = RectF::new(7.0, 0.0, 111.0, 28.0);
         sensor.draw(
             &mut canvas,
             &DrawCtx {
@@ -254,7 +254,7 @@ mod tests {
         assert!(
             canvas
                 .dump()
-                .starts_with("bitmap 41×41 into 7.33,0 27.33×27.33"),
+                .starts_with("bitmap 156×41 into 7.33,0 104×27.33"),
             "{}",
             canvas.dump()
         );
@@ -276,13 +276,13 @@ mod tests {
                 .iter()
                 .all(|px| px[1] == 0 && px[2] == 0)
         );
-        assert!(draw(&sensor, 27.0).ends_with("opacity 0.5\n"));
+        assert!(draw(&sensor, 103.0).ends_with("opacity 0.5\n"));
     }
 
     #[test]
     fn missing_file_falls_back_to_the_logo() {
         let mut sensor = image(json!({ "image": "Z:\\no\\such\\file.png" }));
-        assert_eq!(measure(&mut sensor), 27.0);
+        assert_eq!(measure(&mut sensor), 103.0);
     }
 
     #[test]
@@ -307,7 +307,7 @@ mod tests {
         let loader = Later::default();
         assert_eq!(measure_with(&mut sensor, &loader), 0.0);
         loader.fail();
-        assert_eq!(measure_with(&mut sensor, &loader), 27.0);
+        assert_eq!(measure_with(&mut sensor, &loader), 103.0);
     }
 
     #[test]

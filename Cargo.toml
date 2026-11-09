@@ -27,7 +27,7 @@ formats = ["nsis"]
 # Per user, without admin rights: %LOCALAPPDATA%\Infodock, HKCU only (SPEC §15.3).
 installMode = "currentUser"
 installerIcon = "icons/icon.ico"
-# Placeholders until the final artwork (SPEC Appendix C).
+# Rendered from icons/installer/*.svg by `cargo run --example icons` (SPEC Appendix C).
 headerImage = "icons/installer/header.bmp"
 sidebarImage = "icons/installer/sidebar.bmp"
 # The template's Start Menu shortcut carries the identifier as its AppUserModelID. This adds:
@@ -180,6 +180,12 @@ windows = { version = "0.62", features = [
     "UI_Notifications",
     "UI_ViewManagement",
 ] }
+
+# Renders the raster artwork from its SVGs (SPEC Appendix C): `cargo run --example icons`. Its
+# tests run with the others and check the committed files against the SVGs.
+[[example]]
+name = "icons"
+test = true
 
 [profile.release]
 codegen-units = 1

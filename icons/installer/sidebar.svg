@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 314" width="164" height="314">
+  <!-- Installer sidebar (SPEC Appendix C): the NSIS welcome and finish pages' image, on the app icon's dark tile; the README logo for dark backgrounds. -->
+  <defs><linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E2E35"/><stop offset="1" stop-color="#18181B"/></linearGradient></defs>
+  <rect width="164" height="314" fill="url(#t)"/>
+  <image href="../logo-dark.svg" x="16" y="118" width="132" height="34.5"/>
+</svg>

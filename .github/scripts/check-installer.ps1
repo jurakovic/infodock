@@ -6,6 +6,8 @@
 # location under HKCU too), the sign-in entry and Task Manager's mark for it. A second
 # silent install with /AUTOSTART writes the sign-in entry for the installed exe and clears Task
 # Manager's mark for it, without starting the app; its uninstall removes the entry again.
+# Before all that, the interactive installer's first two pages are saved as screenshots, for its
+# images (Appendix C), and it is closed there, before anything is installed.
 # Runs after the memory check: it removes that run's config, so the installed app runs first.
 param(
     [Parameter(Mandatory)] [string] $Setup,
@@ -13,7 +15,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
 
 $identifier = 'app.infodock.desktop'
 $product = 'Infodock'
@@ -51,6 +53,43 @@ function Save-Screenshot([string] $Path) {
     $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose()
     $bitmap.Dispose()
+}
+
+# The welcome page (the sidebar image) and the next one (the header image), then closed. Only
+# for looking at: what goes wrong here is a warning.
+function Save-InstallerPages {
+    $installer = Start-Process -FilePath $Setup -PassThru
+    try {
+        $deadline = (Get-Date).AddSeconds(30)
+        while ($installer.MainWindowHandle -eq 0 -and -not $installer.HasExited -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 250
+            $installer.Refresh()
+        }
+        if ($installer.MainWindowHandle -eq 0) {
+            Write-Warning 'The interactive installer showed no window within 30 s'
+            return
+        }
+        Start-Sleep -Seconds 2
+        Save-Screenshot (Join-Path $OutDir 'installer-welcome.png')
+        $window = [System.Windows.Automation.AutomationElement]::FromHandle($installer.MainWindowHandle)
+        $byName = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Next >')
+        $next = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $byName)
+        if (-not $next) {
+            Write-Warning "The installer's Next button was not found"
+            return
+        }
+        $next.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        Start-Sleep -Seconds 2
+        Save-Screenshot (Join-Path $OutDir 'installer-page.png')
+    } catch {
+        Write-Warning "The installer's pages could not be saved: $_"
+    } finally {
+        if (-not $installer.HasExited) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            $null = $installer.WaitForExit(10000)
+        }
+    }
 }
 
 function Get-RunEntry {
@@ -91,6 +130,10 @@ function Get-InstalledApp {
 $bytes = [System.IO.File]::ReadAllBytes($Setup)
 $text = [System.Text.Encoding]::ASCII.GetString($bytes)
 Check ($text -match 'requestedExecutionLevel\s+level="asInvoker"') 'the installer asks for no elevation'
+
+Write-Host '== Saving the installer pages'
+Save-InstallerPages
+Check (-not (Test-Path $exe)) 'closing the interactive installer installed nothing'
 
 # A sign-in entry left from elsewhere, and no config: the installed app's first run.
 if (Test-Path $configDir) { Remove-Item -Recurse -Force $configDir }

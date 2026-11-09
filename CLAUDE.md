@@ -19,7 +19,8 @@ src/                 Rust sources
   platform/          OS layer behind traits; Windows code in platform/windows, other OSes get a stub
 ui/                  Slint UI: the Settings window (`.slint`, compiled by build.rs) and its icons (`ui/icons`)
 i18n/                message catalogs (`en.json`)
-icons/               app icons, the README logo and the installer's images (`icons/installer`)
+icons/               app and tray icons, the README logo and the installer's images (`icons/installer`); SVG sources beside their renders
+examples/            `icons.rs`: renders the artwork's `.ico`, PNG and BMP files from the SVGs
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check, installer check)
@@ -37,6 +38,8 @@ tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 | Render the Settings pages to `target/screenshots/*.png` | `cargo test render_settings_pages -- --ignored` |
 | Render the bar to `target/screenshots/bar-*.png` (Windows only) | `cargo test render_bar -- --ignored` |
 | Measure the time budgets to `target/budgets/*.json` (Windows only) | `cargo test budget_ -- --ignored --test-threads=1` |
+| Render the artwork's `.ico`, PNG and BMP files from their SVGs (commit the results) | `cargo run --example icons` |
+| Render the tray icons and installer images to `target/screenshots/` | `cargo test --example icons -- --ignored` |
 | Type-check the Windows code from Linux | `cargo check-win` |
 | Run the app | `cargo run` (Windows; elsewhere only Settings opens) |
 | Build the exe and installer with a version (Windows, Git Bash) | `./publish.sh build -v 1.0.0-build.1` (`-t false` skips the tests) |

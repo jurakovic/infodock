@@ -521,7 +521,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 **Installer** (since M4 S15)
 
-- [ ] As a standard user (no admin rights), run `Infodock_v<version>_win-x64-setup.exe` (CI's artifact of that name): no elevation prompt; the welcome and finish pages show the placeholder sidebar, the other pages the header; it installs to `%LOCALAPPDATA%\Infodock`.
+- [ ] As a standard user (no admin rights), run `Infodock_v<version>_win-x64-setup.exe` (CI's artifact of that name): no elevation prompt; the welcome and finish pages show the sidebar (the logo on the dark tile), the other pages the header (the logo on white, left of the page title); it installs to `%LOCALAPPDATA%\Infodock`.
 - [ ] The finish page's *Run Infodock* starts it: the bar and the welcome page appear. Start Menu ▸ *Infodock* starts it too, and its toasts and Settings window group under that Start Menu entry in the taskbar.
 - [ ] *Apps & features* lists Infodock (current user); nothing under `C:\Program Files` or `HKLM\Software`.
 - [ ] Turn *Start with Windows* on, then uninstall from *Apps & features*: Infodock is closed if running, the folder, the Start Menu and desktop shortcuts and the `Run` value are gone; `%APPDATA%\app.infodock.desktop` (config, skins) stays.
@@ -628,6 +628,14 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] Right-click the bar ▸ *Tools ▸ Help*: Settings opens on Help, between Applications and About. The keyboard section names the configured hotkey; change the hotkey on General and come back: it shows the new one. *Change the hotkey* opens General; *Open the Layout manager* opens Sensors with the Layout manager at the top.
 - [ ] Try each tip once: the drops (a drive, a folder, a file, a link; onto a Folder Menu with Ctrl, Shift and Alt; onto the Recycle Bin), the Folder Menu's keys and Alt+click, and the keyboard on the bar: each does what the page says.
+
+**Artwork: tray icon, installer, logo** (since M5 S16b; the app icon since S16a)
+
+- [ ] CI's screenshots: `tray-dark.png` and `tray-light.png` show "id" over a bar with a blue dot, light on the dark taskbar and dark on the light one, at 16, 20, 24 and 32 px; `installer.png` the sidebar and the header. The installer check's artifact has `installer-welcome.png` (the sidebar) and `installer-page.png` (the header), and `installed.png` the bar with the wordmark in the centre.
+- [ ] Settings ▸ Personalization ▸ Colors ▸ *Choose your mode* ▸ Custom, *Windows mode* Dark: the tray icon is the light "id" with no tile. Windows mode Light: it turns dark at once, without a restart (the log says `the taskbar is light: tray icon changed`); back to Dark: light again. With the tray icon hidden meanwhile (Settings ▸ General), showing it again shows the right one.
+- [ ] At 125 % and 150 % (and 200 % if you can), the tray icon is crisp at 100 % and 200 % and only a little soft at 125 % and 150 %; the taskbar, Start and Settings (title bar, Alt+Tab) show the app icon, the dark tile with "id".
+- [ ] A new layout (rename `config.json`): the centre of the bar shows the wordmark "infodock" over a bar, in the sensors' text colour (dark on a light bar), with no blue; its hint reads *Infodock* and the version.
+- [ ] Settings ▸ About and the welcome page show the logo above the text: dark letters with Appearance ▸ *Colour scheme* Light, light letters with Dark, the dot blue in both; with *Like Windows* it follows Windows' app mode live.
 
 **Memory with the welcome page** (since M5 S14k)
 

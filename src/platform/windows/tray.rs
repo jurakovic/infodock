@@ -1,6 +1,7 @@
 //! The notification-area icon (SPEC §4.1, §6.5), registered for the bar window. Its callback
 //! message arrives in the bar window procedure and becomes [`UiEvent::TrayClick`] or
-//! [`UiEvent::TrayMenu`](crate::platform::UiEvent).
+//! [`UiEvent::TrayMenu`](crate::platform::UiEvent). The icon follows the taskbar's theme: the
+//! variant for a light or a dark taskbar (Appendix C).
 
 use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,19 +37,31 @@ const ICON_ID: u32 = 1;
 /// `NIN_SELECT | NINF_KEY`: the icon was selected with the keyboard.
 const NIN_KEYSELECT: u32 = NIN_SELECT | 1;
 
-/// The exe's icon (resource 1, `build.rs`) at the small-icon size for the system DPI.
-fn icon() -> HICON {
-    static ICON: OnceLock<isize> = OnceLock::new();
-    let raw = *ICON.get_or_init(|| {
+/// The tray icon's resource (`build.rs`): 2 for a dark taskbar, 3 for a light one.
+fn resource(light_taskbar: bool) -> usize {
+    if light_taskbar { 3 } else { 2 }
+}
+
+/// The tray icon for the taskbar's theme at the small-icon size for the system DPI, loaded once.
+fn icon(light_taskbar: bool) -> HICON {
+    static ICONS: [OnceLock<isize>; 2] = [OnceLock::new(), OnceLock::new()];
+    let raw = *ICONS[usize::from(light_taskbar)].get_or_init(|| {
         // SAFETY: loads a resource of our own module; the icon lives as long as the process.
         unsafe {
             let module = GetModuleHandleW(None).ok();
-            // MAKEINTRESOURCE(1): a resource ID in pointer form, never dereferenced as memory.
-            let id = PCWSTR(std::ptr::without_provenance(1));
+            // MAKEINTRESOURCE: a resource ID in pointer form, never dereferenced as memory.
+            let id = PCWSTR(std::ptr::without_provenance(resource(light_taskbar)));
             LoadIconMetric(module.map(Into::into), id, LIM_SMALL).map_or(0, |icon| icon.0 as isize)
         }
     });
     HICON(raw as *mut _)
+}
+
+/// Whether the taskbar is light: Windows mode *Light* (`SystemUsesLightTheme`). Without the
+/// value (Windows 10 before 1903) the taskbar is dark.
+fn light_taskbar() -> bool {
+    const PERSONALIZE: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    super::read_dword(PERSONALIZE, w!("SystemUsesLightTheme")).is_some_and(|v| v != 0)
 }
 
 /// Explorer reports Enter on the icon as two keyboard selections (Space as one). A keyboard
@@ -74,6 +87,8 @@ impl KeySelectFilter {
 pub(super) struct Tray {
     hwnd: isize,
     shown: AtomicBool,
+    /// The taskbar was light when last read; the icon shows its variant.
+    light_taskbar: AtomicBool,
     tooltip: Mutex<String>,
     key_select: Mutex<KeySelectFilter>,
 }
@@ -83,6 +98,7 @@ impl Tray {
         Self {
             hwnd: hwnd.0 as isize,
             shown: AtomicBool::new(false),
+            light_taskbar: AtomicBool::new(light_taskbar()),
             tooltip: Mutex::new(String::new()),
             key_select: Mutex::new(KeySelectFilter::default()),
         }
@@ -95,7 +111,7 @@ impl Tray {
             uID: ICON_ID,
             uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP,
             uCallbackMessage: WM_TRAY,
-            hIcon: icon(),
+            hIcon: icon(self.light_taskbar.load(Ordering::SeqCst)),
             Anonymous: NOTIFYICONDATAW_0 {
                 uVersion: NOTIFYICON_VERSION_4,
             },
@@ -126,6 +142,8 @@ impl Tray {
     }
 
     fn add(&self) {
+        // The theme may have changed while the icon was hidden.
+        self.light_taskbar.store(light_taskbar(), Ordering::SeqCst);
         let added = self.notify(NIM_ADD);
         if added {
             // Version 4: the callback reports NIN_SELECT and WM_CONTEXTMENU.
@@ -139,6 +157,20 @@ impl Tray {
     pub(super) fn hide(&self) {
         if self.shown.swap(false, Ordering::SeqCst) {
             self.notify(NIM_DELETE);
+        }
+    }
+
+    /// The colour set changed (`ImmersiveColorSet`), perhaps the taskbar's theme: a shown icon
+    /// takes the variant for it.
+    pub(super) fn theme_changed(&self) {
+        let light = light_taskbar();
+        let changed = self.light_taskbar.swap(light, Ordering::SeqCst) != light;
+        if changed && self.shown.load(Ordering::SeqCst) {
+            tracing::info!(
+                "the taskbar is {}: tray icon changed",
+                if light { "light" } else { "dark" }
+            );
+            self.notify(NIM_MODIFY);
         }
     }
 
@@ -179,6 +211,17 @@ impl TrayIcon for Tray {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_tray_icons_are_embedded() {
+        // The test executables carry the app's resources (`build.rs`).
+        for light in [false, true] {
+            assert!(!icon(light).is_invalid(), "light taskbar: {light}");
+        }
+        assert_ne!(resource(false), resource(true));
+        // Neither is the exe's own icon.
+        assert!(resource(false) > 1 && resource(true) > 1);
+    }
 
     #[test]
     fn the_duplicate_keyboard_selection_is_dropped() {
