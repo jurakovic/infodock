@@ -162,13 +162,16 @@ fn downsample(canvas: &Pixmap, factor: u32) -> Result<Pixmap> {
     let source = canvas.data();
     let count = factor * factor;
     let stride = canvas.width() as usize * 4;
-    for (i, pixel) in out.data_mut().chunks_exact_mut(4).enumerate() {
+    for (i, pixel) in out.data_mut().as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let (x, y) = (i as u32 % width, i as u32 / width);
         let mut sum = [0u32; 4];
         for dy in 0..factor {
             let row = (y * factor + dy) as usize * stride;
             let start = row + (x * factor) as usize * 4;
-            for block in source[start..start + factor as usize * 4].chunks_exact(4) {
+            for block in source[start..start + factor as usize * 4]
+                .as_chunks::<4>()
+                .0
+            {
                 for (total, &channel) in sum.iter_mut().zip(block) {
                     *total += u32::from(channel);
                 }
