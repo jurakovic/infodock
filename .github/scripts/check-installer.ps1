@@ -15,7 +15,36 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+# The interactive installer's window: where it is, and its Next button pressed. UI Automation
+# finds the button but offers no Invoke on it, so the dialog gets its IDOK command.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class InstallerWindow {
+    [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+    [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr dialog, int id);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    // NSIS's Next button is IDOK; WM_COMMAND with BN_CLICKED (0) from it.
+    public static bool Next(IntPtr dialog) {
+        return PostMessage(dialog, 0x0111, (IntPtr)1, GetDlgItem(dialog, 1));
+    }
+    // Left, top, right, bottom; none when the window is gone.
+    public static int[] Edges(IntPtr window) {
+        Rect r;
+        if (!GetWindowRect(window, out r)) { return null; }
+        return new int[] { r.Left, r.Top, r.Right, r.Bottom };
+    }
+}
+'@
+
+# The window's place on the screen; empty (the whole screen) when it cannot be read.
+function Get-WindowBounds([IntPtr] $Window) {
+    $edges = [InstallerWindow]::Edges($Window)
+    if (-not $edges) { return [System.Drawing.Rectangle]::Empty }
+    [System.Drawing.Rectangle]::FromLTRB($edges[0], $edges[1], $edges[2], $edges[3])
+}
 
 $identifier = 'app.infodock.desktop'
 $product = 'Infodock'
@@ -45,11 +74,14 @@ function Check([bool] $Ok, [string] $What) {
     }
 }
 
-function Save-Screenshot([string] $Path) {
-    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+# The primary screen, or the part of it in `$Area`. (PowerShell's names ignore case, so the
+# screen's rectangle has a name of its own.)
+function Save-Screenshot([string] $Path, [System.Drawing.Rectangle] $Area = [System.Drawing.Rectangle]::Empty) {
+    $shot = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    if (-not $Area.IsEmpty) { $shot = [System.Drawing.Rectangle]::Intersect($shot, $Area) }
+    $bitmap = New-Object System.Drawing.Bitmap $shot.Width, $shot.Height
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+    $graphics.CopyFromScreen($shot.Location, [System.Drawing.Point]::Empty, $shot.Size)
     $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
     $graphics.Dispose()
     $bitmap.Dispose()
@@ -69,19 +101,15 @@ function Save-InstallerPages {
             Write-Warning 'The interactive installer showed no window within 30 s'
             return
         }
+        $window = $installer.MainWindowHandle
         Start-Sleep -Seconds 2
-        Save-Screenshot (Join-Path $OutDir 'installer-welcome.png')
-        $window = [System.Windows.Automation.AutomationElement]::FromHandle($installer.MainWindowHandle)
-        $byName = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::NameProperty, 'Next >')
-        $next = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $byName)
-        if (-not $next) {
-            Write-Warning "The installer's Next button was not found"
+        Save-Screenshot (Join-Path $OutDir 'installer-welcome.png') (Get-WindowBounds $window)
+        if (-not [InstallerWindow]::Next($window)) {
+            Write-Warning "The installer's Next button could not be pressed"
             return
         }
-        $next.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
         Start-Sleep -Seconds 2
-        Save-Screenshot (Join-Path $OutDir 'installer-page.png')
+        Save-Screenshot (Join-Path $OutDir 'installer-page.png') (Get-WindowBounds $window)
     } catch {
         Write-Warning "The installer's pages could not be saved: $_"
     } finally {
