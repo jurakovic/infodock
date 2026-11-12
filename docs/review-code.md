@@ -4,7 +4,7 @@ A whole-tree review at `136a3d3` (2026-11-12), asked for outside the plan: defec
 
 `review-architecture.md` (at `f3297a9`, three weeks earlier) already lists the structural findings and what was left for after 1.0. This review does not repeat them: it checks that its *before 1.0* items landed (they did, S14b–S14i), reports what is new, and says which of its deferred items the new findings lean on. Windows-only behaviour was read, not run; findings that rest on it say so.
 
-Each finding gives severity (High: wrong behaviour users will meet; Medium: wrong behaviour in a reachable corner, or a hole in a rule the design relies on; Low: polish or hardening), effort (S under half a day, M about a day) and a proposal. Nothing here is a plan item yet; nothing in the code was changed.
+Each finding gives severity (High: wrong behaviour users will meet; Medium: wrong behaviour in a reachable corner, or a hole in a rule the design relies on; Low: polish or hardening), effort (S under half a day, M about a day) and a proposal. The review changed no code; its findings became plan items S16d–S16h (see *Plan* at the end, D100).
 
 ## Summary
 
@@ -164,3 +164,17 @@ One pattern is missing where it would pay: a **single owner for background work*
 Before 1.0, each small and independent: R1 (revision or ordering lock, with a regression test built like the reproduction), R2 (set lookup, no clones, skip while nobody listens), R3 (no backup copy of an unparsed file), R4 (spec text and one `guard` helper), R7, R8. R6 with the next change to `providers`.
 
 After 1.0: A1 (before the next topic), A2 with C14 and C11, R5 with P7 and S-x2, A3 as a spec sentence, then `review-architecture.md`'s list, B1 stage 2 and P1 first.
+
+## Plan
+
+From the suggested order above (D100); each item fixes its findings with the tests the proposal names.
+
+- [ ] **S16d Config store: listeners in order, the good backup kept**: R1 (a revision per swap; consumers drop an older config; Settings' refill reads the store), R3 (no backup copy of a file not known good; the message when the broken file stays in place).
+- [ ] **S16e Popup accessibility only while a client listens**: R2 (a set in `Tree::number`, no cloned ids, no description while nobody listens; a 5,000-row budget test).
+- [ ] **S16f One panic boundary**: R4 (§14.2 as the code is: a caught panic on the bar thread is logged and the bar goes on; one `guard` helper for every OS callback).
+- [ ] **S16g Smaller fixes: the shared battery reader, placeholders in one pass**: R6, R7.
+- [ ] **S16h Release script and workflow, stricter**: R8 (`set -euo pipefail`; third-party actions in `publish.yml` pinned by SHA).
+
+### After 1.0
+
+A1 (a `Source` trait for the sampler, before the next topic is added), A2 beyond R1 (`Arc<Config>`, a revision and a `Changed` set, with C14 and C11), R5 (the icon loader's single worker, with P7 and S-x2), A3 (a sentence in §4.2, or the seven types moved below `config` and `platform`); then `review-architecture.md`'s list, B1 stage 2 and P1 first.
