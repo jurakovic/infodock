@@ -6,7 +6,9 @@
 //! is inactive, and the bar never activates (§5.3), so its Acrylic showed as an opaque grey.
 //! Mica exists only as a system backdrop (Windows 11 22H2 and later): the bar's window
 //! procedure draws its frame as active whenever asked (`WM_NCACTIVATE`, `appbar.rs`), and
-//! applying Mica asks once, since a window that never activates is never asked.
+//! applying Mica asks once, since a window that never activates is never asked. Mica is the
+//! wallpaper, blurred and tinted light or dark by the window's dark-mode attribute
+//! (`DWMWA_USE_IMMERSIVE_DARK_MODE`), so the window takes the bar's darkness first.
 
 use std::ffi::c_void;
 use std::mem::size_of;
@@ -14,7 +16,7 @@ use std::mem::size_of;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
-    DwmSetWindowAttribute,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_NCACTIVATE};
@@ -47,9 +49,13 @@ struct CompositionData {
 
 type SetWindowCompositionAttribute = unsafe extern "system" fn(HWND, *mut CompositionData) -> BOOL;
 
-/// Applies `material` behind the window `hwnd`, after removing the one before; the error says
-/// why it is not available.
-pub(super) fn apply(hwnd: HWND, material: Material) -> Result<(), String> {
+/// Applies `material` behind the window `hwnd`, after removing the one before, in its dark look
+/// when `dark` (the bar's background is dark); the error says why it is not available.
+pub(super) fn apply(hwnd: HWND, material: Material, dark: bool) -> Result<(), String> {
+    // Windows before 10 20H1 lacks the attribute; Mica, which uses it, is newer still.
+    if let Err(e) = dark_mode(hwnd, dark) {
+        tracing::debug!("the bar's dark mode attribute is not available: {e}");
+    }
     // Either way may have been applied before; one that Windows lacks fails harmlessly.
     let _ = accent(hwnd, ACCENT_DISABLED);
     let _ = backdrop(hwnd, DWMSBT_NONE);
@@ -91,6 +97,21 @@ fn accent(hwnd: HWND, state: u32) -> Result<(), String> {
     } else {
         Err("SetWindowCompositionAttribute failed".into())
     }
+}
+
+/// Sets the window's dark-mode attribute, which picks Mica's light or dark look.
+fn dark_mode(hwnd: HWND, dark: bool) -> Result<(), String> {
+    let value = BOOL::from(dark);
+    // SAFETY: the attribute takes a BOOL, passed with its size.
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            (&raw const value).cast(),
+            size_of::<BOOL>() as u32,
+        )
+    }
+    .map_err(|e| e.message())
 }
 
 /// Sets the system backdrop (Windows 11 22H2 and later).
@@ -299,10 +320,11 @@ mod tests {
         }
 
         type Setup = fn(HWND) -> Result<(), String>;
-        let variants: [(&str, Setup); 6] = [
-            ("none", |h| apply(h, Material::None)),
-            ("acrylic", |h| apply(h, Material::Acrylic)),
-            ("mica", |h| apply(h, Material::Mica)),
+        let variants: [(&str, Setup); 7] = [
+            ("none", |h| apply(h, Material::None, true)),
+            ("acrylic", |h| apply(h, Material::Acrylic, true)),
+            ("mica-dark", |h| apply(h, Material::Mica, true)),
+            ("mica-light", |h| apply(h, Material::Mica, false)),
             ("acrylic-backdrop", |h| backdrop(h, DWMSBT_TRANSIENTWINDOW)),
             ("acrylic-backdrop-active", |h| {
                 backdrop(h, DWMSBT_TRANSIENTWINDOW)?;
@@ -316,8 +338,8 @@ mod tests {
         let mut report = format!("transparency effects: {transparency}\n");
         let mut seen = Vec::new();
         for (name, setup) in variants {
-            KEEP_ACTIVE.store(name == "mica", Ordering::SeqCst);
-            let _ = apply(bar, Material::None);
+            KEEP_ACTIVE.store(matches!(name, "mica-dark" | "mica-light"), Ordering::SeqCst);
+            let _ = apply(bar, Material::None, true);
             // SAFETY: a plain message to the test's window: an inactive frame to start from.
             unsafe { SendMessageW(bar, WM_NCACTIVATE, Some(WPARAM(0)), Some(LPARAM(0))) };
             let applied = setup(bar);

@@ -51,7 +51,7 @@ struct NoWindow;
 impl BarWindow for NoWindow {
     fn invalidate(&self) {}
 
-    fn set_material(&self, _material: Material) {}
+    fn set_material(&self, _material: Material, _dark: bool) {}
 
     fn set_tray_icon(&self, _tooltip: Option<&str>) {}
 

@@ -246,3 +246,39 @@ fn without_animations_the_bar_is_simply_there() {
     logic.apply_config(&window, top);
     assert!(host.calls().contains(&"redock".to_owned()));
 }
+
+#[test]
+fn the_material_takes_the_bars_light_or_dark_look() {
+    use crate::config::model::ColorScheme;
+    use crate::config::model::Material;
+    let mut settings = Settings::modern();
+    settings.color_scheme = ColorScheme::Dark;
+    let (mut logic, window, _, config) = bar(settings);
+    assert_eq!(
+        window.materials.borrow().last(),
+        Some(&(Material::Acrylic, true))
+    );
+    // The light look: the same material again, light.
+    let mut light = config.clone();
+    light.settings.color_scheme = ColorScheme::Light;
+    logic.apply_config(&window, light.clone());
+    logic.refresh_theme(&window);
+    assert_eq!(
+        window.materials.borrow().last(),
+        Some(&(Material::Acrylic, false))
+    );
+    // Nothing changed: not applied again.
+    let applied = window.materials.borrow().len();
+    logic.apply_config(&window, light);
+    logic.refresh_theme(&window);
+    assert_eq!(window.materials.borrow().len(), applied);
+    // The classic bar is dark and has no material.
+    let mut classic = config;
+    classic.settings.theme = crate::config::model::ThemeId::Classic;
+    logic.apply_config(&window, classic);
+    logic.refresh_theme(&window);
+    assert_eq!(
+        window.materials.borrow().last(),
+        Some(&(Material::None, true))
+    );
+}

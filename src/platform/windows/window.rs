@@ -586,12 +586,12 @@ impl BarWindow for WindowState {
         }
     }
 
-    fn set_material(&self, material: Material) {
+    fn set_material(&self, material: Material, dark: bool) {
         if self.hwnd.get() == 0 {
             return;
         }
-        match super::material::apply(self.hwnd(), material) {
-            Ok(()) => tracing::info!("bar material: {material:?}"),
+        match super::material::apply(self.hwnd(), material, dark) {
+            Ok(()) => tracing::info!("bar material: {material:?}, dark: {dark}"),
             Err(e) => tracing::warn!("bar material {material:?} not available: {e}"),
         }
     }

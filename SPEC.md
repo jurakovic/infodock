@@ -1306,7 +1306,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | background.colorMode | standard / custom | custom | standard = theme colour |
 | background.color | color | modern `#1C1C1F`; classic `#2A2A2E` | Tint for skins |
 | background.opacity | 0–100 % | modern 50 %; classic 50 % | |
-| background.material | none / acrylic / mica | modern: acrylic; classic: none | Disabled automatically when OS transparency effects are off |
+| background.material | none / acrylic / mica | modern: acrylic; classic: none | Disabled automatically when OS transparency effects are off. Acrylic blurs what is behind the bar; Mica (Windows 11) is the wallpaper's tint, in the bar's light or dark look (§12.2) |
 | classic.skin | skin id | "glass" | §12.4 |
 | classic.customSkin | file (.png .jpg) | "" | Used when skin = custom |
 
@@ -1507,7 +1507,7 @@ Settings has its own look (§4.3) and does not use the bar theme, except for ski
 
 ### 12.2 Modern theme
 
-* Bar: `#1C1C1F` at 50 % over **Acrylic** (Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28. Acrylic is the accent policy (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`, almost untinted), as taskbars use it: Windows 11's system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`) draws a solid fallback behind a window that is not active, and the bar never is, so it showed opaque grey. Mica exists only as a system backdrop; its frame is drawn active. Without transparency effects there is no material (Windows draws Acrylic and Mica solid then), but the background opacity still applies, so the desktop shows through the bar unblurred: the user asked to set the bar's transparency whatever Windows' setting is. `platform/windows/material.rs`
+* Bar: `#1C1C1F` at 50 % over **Acrylic** (Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28. Acrylic is the accent policy (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`, almost untinted), as taskbars use it: Windows 11's system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`) draws a solid fallback behind a window that is not active, and the bar never is, so it showed opaque grey. Mica exists only as a system backdrop; its frame is drawn active. Mica does not show what is behind the bar: it is the wallpaper, blurred and tinted, light or dark by the window's dark-mode attribute (`DWMWA_USE_IMMERSIVE_DARK_MODE`), which the bar sets from its background whatever the material (dark while the background's relative luminance is under 0.18, `Theme::dark_backdrop`), so a dark bar has dark Mica under it and a light one light Mica. Without transparency effects there is no material (Windows draws Acrylic and Mica solid then), but the background opacity still applies, so the desktop shows through the bar unblurred: the user asked to set the bar's transparency whatever Windows' setting is. `platform/windows/material.rs`
 * Typography: Segoe UI Variable; small 10 px, medium 11 px, large 15 px; semibold labels; tabular numerals.
 * Icons: the Infodock SVG set (Appendix C), monochrome, rasterised at the physical size and tinted with the sensor text colour.
 * Popups: radius 8 px, `#202024` at 92 %, soft shadow, 12 px text.

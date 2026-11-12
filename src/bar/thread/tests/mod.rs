@@ -57,11 +57,15 @@ struct FakeWindow {
     popup_cursor: Cell<crate::platform::PopupCursor>,
     cursor: Cell<PopupCursor>,
     popup_captured: Cell<bool>,
+    /// Each material applied, with whether the bar is dark.
+    materials: RefCell<Vec<(Material, bool)>>,
 }
 
 impl BarWindow for FakeWindow {
     fn invalidate(&self) {}
-    fn set_material(&self, _material: Material) {}
+    fn set_material(&self, material: Material, dark: bool) {
+        self.materials.borrow_mut().push((material, dark));
+    }
     fn set_tray_icon(&self, _tooltip: Option<&str>) {}
     fn show_menu(&self, entries: &[MenuEntry], near: Option<Rect>) -> Option<u32> {
         self.menus.borrow_mut().push(entries.to_vec());

@@ -151,6 +151,13 @@ impl Theme {
             },
         }
     }
+
+    /// Whether the bar's background is dark: white stands out on it more than black does
+    /// (relative luminance under 0.18), so a material with a light and a dark look takes the
+    /// dark one (SPEC §12.2).
+    pub fn dark_backdrop(&self) -> bool {
+        self.bar_background.luminance() < 0.18
+    }
 }
 
 #[cfg(test)]
@@ -340,6 +347,16 @@ mod tests {
             Theme::resolve(&classic, DARK).bar_background,
             hex("#2A2A2E").with_alpha(0.5)
         );
+    }
+
+    #[test]
+    fn dark_backdrop_follows_the_background() {
+        assert!(Theme::resolve(&Settings::modern(), DARK).dark_backdrop());
+        assert!(Theme::resolve(&Settings::default(), LIGHT).dark_backdrop());
+        assert!(!Theme::resolve(&Settings::modern(), LIGHT).dark_backdrop());
+        let mut light = Settings::default();
+        light.background.color = Some("#E0E0E0".into());
+        assert!(!Theme::resolve(&light, DARK).dark_backdrop());
     }
 
     #[test]

@@ -1459,8 +1459,9 @@ impl Band {
 pub trait BarWindow {
     /// Schedules a repaint.
     fn invalidate(&self);
-    /// Applies a window material; [`Material::None`] removes it.
-    fn set_material(&self, material: Material);
+    /// Applies a window material; [`Material::None`] removes it. `dark`: the bar's background
+    /// is dark, so a material that has a light and a dark look (Mica) takes the dark one.
+    fn set_material(&self, material: Material, dark: bool);
     /// Shows the notification-area icon with this tooltip, or removes it with `None`.
     fn set_tray_icon(&self, tooltip: Option<&str>);
     /// Shows a menu and returns the chosen item's id: at the pointer, or beside `near`

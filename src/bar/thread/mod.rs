@@ -189,8 +189,9 @@ pub(super) struct BarLogic {
     /// The skin's shadow band or the bar's shadow as last drawn, for the platform to show beside
     /// the bar (SPEC §5.1).
     band: Option<Band>,
-    /// The material last applied to the window; `None` until the first application.
-    material: Option<Material>,
+    /// The material last applied to the window and whether the bar was dark; `None` until the
+    /// first application.
+    material: Option<(Material, bool)>,
     /// Whether the tray icon is shown; `None` until first applied.
     tray_shown: Option<bool>,
     /// The topics each sensor was last subscribed to (SPEC §4.4).
@@ -451,9 +452,10 @@ impl BarLogic {
         self.animate = anim::enabled(self.settings.bar.animations, self.appearance.animations);
         self.refresh_highlight(window);
         let theme = Theme::resolve(&self.settings, self.appearance);
-        if self.material != Some(theme.material) {
-            window.set_material(theme.material);
-            self.material = Some(theme.material);
+        let material = (theme.material, theme.dark_backdrop());
+        if self.material != Some(material) {
+            window.set_material(material.0, material.1);
+            self.material = Some(material);
         }
         if theme != self.theme {
             if theme.skin.is_none() {

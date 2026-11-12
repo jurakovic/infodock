@@ -693,8 +693,9 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] Modern theme, transparency effects on (Settings ▸ Personalization ▸ Colors): with a colourful window behind the bar (or a colourful wallpaper), the bar shows it blurred and darkened, not an opaque grey, also while it has the keyboard (hotkey) and after clicking another window. Move the window behind: the blur follows.
 - [ ] *Material* → Mica (Windows 11): the bar takes the wallpaper's tint, faintly, not a flat grey; back to Acrylic.
+- [ ] Mica with *Background opacity* 10 %: on the dark bar (modern dark, or classic) it is dark grey with the wallpaper's tint, not white; *Colour scheme* → *Light* (modern): light grey, with dark text (since the dark Mica fix).
 - [ ] Transparency effects off: the bar loses its blur but keeps its background opacity (the desktop shows through, unblurred; at 100 % it is opaque), Settings ▸ Appearance greys out *Material*; on again: the blur returns without a restart.
-- [ ] `cargo test material -- --ignored --nocapture` on the machine: `acrylic` reads a dark red, `none` red; the line for `acrylic-backdrop` (the old way) reads grey.
+- [ ] `cargo test material -- --ignored --nocapture` on the machine: `acrylic` reads a dark red, `none` red; the line for `acrylic-backdrop` (the old way) reads grey; on Windows 11 `mica-dark` reads darker than `mica-light`.
 
 **Accent colour from Windows' colour API** (since M5 S14m)
 
