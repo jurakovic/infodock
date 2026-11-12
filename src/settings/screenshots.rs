@@ -85,6 +85,7 @@ fn render_settings_pages() {
         scheme: None,
         welcome: super::welcome::Welcome::default(),
         place: None,
+        hotkey_refused: None,
     };
     fill(&mut open, &app, &app.store.get().settings);
     super::layout::fill(&open, &app, &app.store.get().layout);
@@ -499,6 +500,31 @@ fn render_settings_pages() {
     let restored = app.store.get().settings;
     assert_eq!((restored.sensor_spacing, restored.locked), (1, false));
     assert_eq!(state.get_sensor_spacing(), 1.0, "the page shows them");
+    // A default hotkey that cannot be registered (here none can be) leaves the current one, with
+    // the reason under it, and the page's other settings are restored all the same.
+    app.store
+        .update(|c| {
+            c.settings.hotkey = "Ctrl+Alt+K".into();
+            c.settings.locked = true;
+            Ok(())
+        })
+        .expect("saved");
+    refill();
+    press(&t("settings.restore.button"));
+    press(&t("settings.restore.action"));
+    refill();
+    let restored = app.store.get().settings;
+    assert_eq!(
+        (restored.hotkey.as_str(), restored.locked),
+        ("Ctrl+Alt+K", false)
+    );
+    assert!(!state.get_hotkey_error().is_empty(), "the reason shows");
+    app.store
+        .update(|c| {
+            c.settings.hotkey = crate::config::model::Settings::default().hotkey;
+            Ok(())
+        })
+        .expect("saved");
     window.set_size(size);
     // The calendar app is saved as it is typed (SPEC §10.6).
     nav(applications);

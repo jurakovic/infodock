@@ -71,6 +71,9 @@ struct Open {
     welcome: welcome::Welcome,
     /// Where the window is when neither maximized nor minimized, kept as it moves (SPEC §10.7).
     place: Option<WindowPlace>,
+    /// Why *Restore defaults* could not take the default hotkey (another app holds it), shown
+    /// under the hotkey until the page changes or a hotkey is chosen (SPEC §10.7).
+    hotkey_refused: Option<String>,
 }
 
 /// Why a change was not saved.
@@ -205,6 +208,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         scheme: None,
         welcome: welcome::Welcome::default(),
         place,
+        hotkey_refused: None,
     };
     fill(&mut open, app, &config.settings);
     layout::fill(&open, app, &config.layout);
@@ -345,6 +349,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
             open.window
                 .global::<ui::SettingsState>()
                 .set_restore_confirm(-1);
+            open.hotkey_refused = None;
             if page != properties::PAGE {
                 properties::cancel(open, &a);
             }
@@ -480,7 +485,8 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_autostart(settings.autostart);
     state.set_autostart_error(crate::autostart::error().unwrap_or_default().into());
     state.set_hotkey(settings.hotkey.as_str().into());
-    state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
+    let hotkey_error = hotkey::error().or_else(|| open.hotkey_refused.clone());
+    state.set_hotkey_error(hotkey_error.unwrap_or_default().into());
     state.set_hotkey_action(choice("hotkeyAction"));
     state.set_bar_focus_ring(settings.bar_focus_ring);
     state.set_show_tray_icon(settings.show_tray_icon);
@@ -593,16 +599,22 @@ fn save(app: &Arc<App>, patch: Value) {
     report(app, &result);
 }
 
-/// Puts `page`'s settings back to their defaults (SPEC §10.7). A default hotkey that cannot be
-/// registered (another app holds it) stays as it is, with the reason under it, and the page's
-/// other settings are restored all the same.
+/// Puts `page`'s settings back to their defaults (SPEC §10.7). When the default hotkey cannot
+/// be registered (another app holds it), the current one stays, with the reason under it until
+/// the page changes, and the page's other settings are restored all the same.
 fn restore_defaults(app: &Arc<App>, page: usize) {
     let mut patch = model::page_defaults(page);
     let mut result = apply(app, &patch);
-    if matches!(result, Err(SaveError::Hotkey(_)))
+    let refused = match &result {
+        Err(SaveError::Hotkey(reason)) => Some(reason.clone()),
+        _ => None,
+    };
+    if let Some(reason) = refused
         && let Some(settings) = patch.as_object_mut()
     {
         settings.remove("hotkey");
+        // Kept for the refill the restore sets off, which reads the hotkey's error afresh.
+        with_open_mut(|open| open.hotkey_refused = Some(reason));
         report(app, &result);
         result = apply(app, &patch);
     }
@@ -800,6 +812,7 @@ fn taken_hotkey(
 /// the previous hotkey stays (SPEC §6.5). Registering first also retries a saved hotkey that
 /// failed at start-up.
 fn apply_hotkey(app: &Arc<App>, accelerator: &str) {
+    with_open_mut(|open| open.hotkey_refused = None);
     let configured = app.store.get().settings.hotkey == accelerator;
     let result = hotkey::set(accelerator, configured);
     if result.is_ok() && !configured {
