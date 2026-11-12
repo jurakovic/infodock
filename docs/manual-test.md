@@ -663,7 +663,7 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 **Focus after a bar menu** (since M5 S14t)
 
 - [ ] Type in Notepad, right-click the bar, press Esc: typing goes on in Notepad at once. The same with the tray icon's menu, and with a click on the bar instead of Esc.
-- [ ] Right-click the bar, then click Notepad's window: Notepad has the focus (nothing jumps). Hotkey, Shift+F10, Esc: the menu closes and the ring stays on the bar.
+- [ ] Right-click the bar, then click Notepad's window: Notepad has the focus (nothing jumps). Hotkey, Shift+F10, Esc: the menu closes and the bar keeps the keyboard: Tab rings the first sensor (with Settings ▸ General ▸ *Ring around the bar while it has the keyboard* on, the ring around the bar is back).
 
 **Settings: narrow window and glyphs** (since M5 S14s)
 
