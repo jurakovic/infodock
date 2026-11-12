@@ -497,10 +497,6 @@ component OnOffSwitch inherits HorizontalLayout {
     }
 }
 
-// A colour as #RRGGBB with a swatch. It is accepted as soon as the typed text is a colour, so
-// a click that does not take the focus (Save, the navigation) finds it saved; on Enter or when
-// the field loses focus it is accepted whatever it is, and an invalid one shows an error. With
-// `every-edit` (the properties form, which validates as it goes) every edit is accepted.
 // The swatch beside a colour box: a button that opens Windows' colour dialog (SPEC §10.7). Like
 // the other buttons it does not take the focus on a click; Tab reaches it.
 component ColorSwatch inherits FocusScope {
@@ -539,6 +535,11 @@ component ColorSwatch inherits FocusScope {
     }
 }
 
+// A colour as #RRGGBB with a swatch, which opens Windows' colour dialog. It is accepted as soon
+// as the typed text is a colour, so a click that does not take the focus (Save, the navigation)
+// finds it saved; on Enter or when the field loses focus it is accepted whatever it is, and an
+// invalid one shows an error. With `every-edit` (the properties form, which validates as it
+// goes) every edit is accepted.
 component ColorField inherits HorizontalLayout {
     in property <string> label;
     in property <bool> every-edit;
