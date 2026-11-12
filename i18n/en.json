@@ -89,7 +89,7 @@
   "settings.color.pick": "Choose a colour for {name}",
   "settings.restore": "Restore defaults",
   "settings.restore.help": "Puts the settings on this page back as Infodock first had them.",
-  "settings.restore.confirm": "Restore the defaults of every setting on this page?",
+  "settings.restore.confirm": "Restore this page's defaults?",
   "settings.restore.button": "Restore defaults…",
   "settings.restore.action": "Restore",
   "settings.restore.cancel": "Cancel",
