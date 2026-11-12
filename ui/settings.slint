@@ -1337,6 +1337,8 @@ component AppearancePage inherits VerticalLayout {
     if SettingsState.theme == 1: HorizontalLayout {
         spacing: 8px;
         alignment: start;
+        // Room before the message, the empty list's line or the pack cards that follow.
+        padding-bottom: 8px;
         Button {
             text: I18n.tr("settings.appearance.packs.installFolder");
             clicked => {
