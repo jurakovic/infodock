@@ -2632,6 +2632,12 @@ export component SettingsWindow inherits Window {
             }
 
             if SettingsState.page != Pages.picker: scroll := ScrollView {
+                // One scroll view shows every page: each opens at its top, not where the last
+                // one was left.
+                property <int> page: SettingsState.page;
+                changed page => {
+                    self.content-y = 0;
+                }
                 opacity: root.page-opacity;
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
