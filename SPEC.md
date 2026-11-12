@@ -703,6 +703,8 @@ pub struct LayoutCtx<'a> {
     pub icons: &'a dyn IconSource,                        // shell icons and image files, read on a worker
 }
 pub struct DrawCtx<'a> { pub theme: &'a Theme, pub rect: RectF }   // logical px, bar coordinates
+// `rect`: the sensor's place, as tall as the strip the sensors draw in (the bar's height less
+// `bar.sensorPadding` above and below, `Theme::sensor_top` / `sensor_height`, §10.2)
 ```
 
 All trait methods except the identity ones, `create`, `measure` and `draw` have default implementations (no topics, no hint, no click action, …), so simple types stay small. Each type deserialises a typed props struct from its schema's defaults overlaid with the stored props; the schema is the single source of static defaults. Settings reads the schemas through the sensor types operation (§4.5).
@@ -747,13 +749,13 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 [▮] LABEL
     value
 ```
-* Bar: 4 px wide × (bar height − 6) px tall (19 px at 25 px), at x = 0, vertically centred.
+* Bar: 4 px wide × (the sensor's height − 6) px tall (19 px on a 25 px bar with no `bar.sensorPadding`), at x = 0, vertically centred.
 * Bar background: sensor text colour at 31 % opacity.
-* Fill: height = value × bar height, anchored at the bottom. Colour by `colorMode`: Standard → sensor text colour at **59 %**; Custom → the colour at 100 %; Dynamic → gradient(value) at 100 % (§8.4).
+* Fill: height = value × the meter bar's height, anchored at the bottom. Colour by `colorMode`: Standard → sensor text colour at **59 %**; Custom → the colour at 100 %; Dynamic → gradient(value) at 100 % (§8.4).
 * Label at x = 8. Value right-aligned to x = 32 (classic geometry), i.e. a minimum column that fits "100%".
 
 **Graph** (`common/graph.rs`) — CPU, Memory and Swap graphs:
-* Plot area: `width` logical px (50–150, step 5, default 50) × (bar height − 4), at y = 2.
+* Plot area: `width` logical px (50–150, step 5, default 50) × (the sensor's height − 4), 2 px below its top (with no `bar.sensorPadding`, the bar's height − 4 at y = 2).
 * **One sample per logical px column**, newest at the **right edge**, scrolling left. Each column is a bar from the bottom with height = value × plot height. History length = width.
 * Layers: background (`bkColor` standard = black; `bkOpacity` default **0 %**) → grid (pattern of 5 px cells; `gridColor` standard = `#A0FF9B`; `gridOpacity` default **0 %**) → columns (`graphColor` default **Custom `#00FF00`**; `graphOpacity` default **55 %**, min 20 %). With Dynamic colour, each column takes the colour of its own value.
 * Two-line block to the right of the plot (gap 5 px): label (e.g. "CPU") and value (e.g. "37%") right-aligned in a reserved column (fits "100%" or the sensor-specific reserve).
@@ -764,7 +766,7 @@ Validation (`sensors/schema.rs`): each value is normalised for its field type: c
 * Colour and opacity per series (`topColor`/`topOpacity`, `bottomColor`/`bottomOpacity`).
 * Values are normalised to 0..1 per series by the owning sensor.
 
-**Icon** (`common/icon.rs`) — every icon a sensor shows on the bar: the user's own image (`image`: ICO, PNG, GIF, JPEG or SVG) if set and readable, otherwise the sensor's own (a shell icon, or a built-in SVG where the shell has none); tinted by `color` (§8.4), drawn at `opacity` (20–100 %) and as inactive (§8.5), at the sensor's left, centred vertically on whole physical px. Heights: bar height − 4 (Shortcut, Disk, Recycle Bin), 21 px (Folder Menu, Start Menu, Power, Eject USB), bar height − 1 (Image), bar height − 8 but at least 12 px (Wi-Fi), 23 px or bar height − 2 if less (Battery). Implementation: the fields and their legacy keys (`image`, `colorize`, `opacity`), the heights (`IconSize`) and the measuring and drawing (`BarIcon`: decoded at the physical height; while an image or shell icon is read its square stays free) are defined there once; Image draws its picture from the bar's top and Battery its layers itself.
+**Icon** (`common/icon.rs`) — every icon a sensor shows on the bar: the user's own image (`image`: ICO, PNG, GIF, JPEG or SVG) if set and readable, otherwise the sensor's own (a shell icon, or a built-in SVG where the shell has none); tinted by `color` (§8.4), drawn at `opacity` (20–100 %) and as inactive (§8.5), at the sensor's left, centred vertically on whole physical px. Heights: bar height − 4 (Shortcut, Disk, Recycle Bin), 21 px (Folder Menu, Start Menu, Power, Eject USB), bar height − 1 (Image), bar height − 8 but at least 12 px (Wi-Fi), 23 px or bar height − 2 if less (Battery). Implementation: the fields and their legacy keys (`image`, `colorize`, `opacity`), the heights (`IconSize`) and the measuring and drawing (`BarIcon`: decoded at the physical height; while an image or shell icon is read its square stays free) are defined there once; Image draws its picture from its rect's top (the bar's, with no `bar.sensorPadding`) and Battery its layers itself.
 
 **Icon + two-line** (`common/icon_label.rs`) — Battery, Wi-Fi, Recycle Bin: an icon (≤ bar height − 2) followed by a two-line block after a 2–3 px gap. Implementation: a 3 px gap; the icon's place is kept when it cannot be drawn.
 
