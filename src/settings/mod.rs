@@ -376,7 +376,7 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let a = Arc::clone(app);
     state.on_restore_defaults(move |page| {
         if let Ok(page) = usize::try_from(page) {
-            save(&a, model::page_defaults(page));
+            restore_defaults(&a, page);
         }
     });
     let a = Arc::clone(app);
@@ -590,9 +590,30 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
 /// fails, nothing is saved (SPEC §6.5).
 fn save(app: &Arc<App>, patch: Value) {
     let result = apply(app, &patch);
+    report(app, &result);
+}
+
+/// Puts `page`'s settings back to their defaults (SPEC §10.7). A default hotkey that cannot be
+/// registered (another app holds it) stays as it is, with the reason under it, and the page's
+/// other settings are restored all the same.
+fn restore_defaults(app: &Arc<App>, page: usize) {
+    let mut patch = model::page_defaults(page);
+    let mut result = apply(app, &patch);
+    if matches!(result, Err(SaveError::Hotkey(_)))
+        && let Some(settings) = patch.as_object_mut()
+    {
+        settings.remove("hotkey");
+        report(app, &result);
+        result = apply(app, &patch);
+    }
+    report(app, &result);
+}
+
+/// Shows what saving a change came to: its error, or none.
+fn report(app: &Arc<App>, result: &Result<Config, SaveError>) {
     with_open_mut(|open| {
         let state = open.window.global::<ui::SettingsState>();
-        match &result {
+        match result {
             Ok(_) => state.set_save_error(SharedString::new()),
             Err(SaveError::Hotkey(e)) => state.set_hotkey_error(e.as_str().into()),
             Err(SaveError::Config(e)) => {
