@@ -303,6 +303,9 @@ export global SettingsState {
     callback reset(path: string);
     // Puts the settings of the page (`Pages`) back to their defaults.
     callback restore-defaults(page: int);
+    // Windows' colour dialog opened on the colour `text`: the colour chosen as `#RRGGBB`, or ""
+    // for Cancel.
+    callback pick-color(text: string) -> string;
     // A colour typed as #RRGGBB.
     callback set-color(path: string, text: string);
     // Index 0 is the theme default; then `fonts` or the font styles.
@@ -497,6 +500,44 @@ component OnOffSwitch inherits HorizontalLayout {
 // a click that does not take the focus (Save, the navigation) finds it saved; on Enter or when
 // the field loses focus it is accepted whatever it is, and an invalid one shows an error. With
 // `every-edit` (the properties form, which validates as it goes) every edit is accepted.
+// The swatch beside a colour box: a button that opens Windows' colour dialog (SPEC §10.7). Like
+// the other buttons it does not take the focus on a click; Tab reaches it.
+component ColorSwatch inherits FocusScope {
+    in property <string> label;
+    in property <color> color;
+    callback clicked;
+
+    width: 28px;
+    height: 28px;
+    focus-on-click: false;
+    accessible-role: button;
+    accessible-label: I18n.tr-with("settings.color.pick", "name", root.label);
+    accessible-action-default => {
+        root.clicked();
+    }
+    key-pressed(event) => {
+        if event.text == " " || event.text == Key.Return {
+            root.clicked();
+            return accept;
+        }
+        reject
+    }
+
+    Rectangle {
+        border-radius: 4px;
+        border-width: root.has-focus ? 2px : 1px;
+        border-color: root.has-focus || touch.has-hover ? Palette.foreground : Palette.border;
+        background: root.color;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 component ColorField inherits HorizontalLayout {
     in property <string> label;
     in property <bool> every-edit;
@@ -505,13 +546,17 @@ component ColorField inherits HorizontalLayout {
 
     spacing: 8px;
     alignment: end;
-    Rectangle {
-        width: 28px;
-        height: 28px;
-        border-radius: 4px;
-        border-width: 1px;
-        border-color: Palette.border;
-        background: SettingsState.to-color(root.value);
+    ColorSwatch {
+        label: root.label;
+        color: SettingsState.to-color(root.value);
+        clicked => {
+            // As if typed: the box shows the colour and it is saved.
+            let picked = SettingsState.pick-color(root.value);
+            if picked != "" {
+                root.value = picked;
+                root.accepted(root.value);
+            }
+        }
     }
 
     edit := LineEdit {

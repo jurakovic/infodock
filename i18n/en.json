@@ -84,6 +84,7 @@
   "settings.bar.animations.on": "On",
   "settings.bar.animations.off": "Off",
   "settings.reset": "Use theme default",
+  "settings.color.pick": "Choose a colour for {name}",
   "settings.restore": "Restore defaults",
   "settings.restore.help": "Puts the settings on this page back as Infodock first had them.",
   "settings.restore.confirm": "Restore the defaults of every setting on this page?",

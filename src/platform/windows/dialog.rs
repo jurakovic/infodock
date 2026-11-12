@@ -1,9 +1,12 @@
 //! Native dialogs (SPEC §6.4): confirmations, questions and messages with `TaskDialogIndirect`
-//! (common controls 6, enabled by the application manifest).
+//! (common controls 6, enabled by the application manifest), and the colour dialog
+//! (`ChooseColorW`, §10.7).
 
 use std::mem::size_of;
+use std::sync::{Mutex, PoisonError};
 
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{COLORREF, HWND};
+use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{
     TASKDIALOG_BUTTON, TASKDIALOG_FLAGS, TASKDIALOGCONFIG, TASKDIALOGCONFIG_0, TD_ERROR_ICON,
     TD_INFORMATION_ICON, TD_WARNING_ICON, TDCBF_CANCEL_BUTTON, TDCBF_OK_BUTTON,
@@ -11,10 +14,39 @@ use windows::Win32::UI::Controls::{
 };
 use windows::core::{HSTRING, PCWSTR};
 
-use crate::platform::{Choice, Message, MessageKind};
+use crate::platform::{Choice, Color, Message, MessageKind};
 
 /// The id of the first of our own buttons.
 const FIRST: i32 = 100;
+
+/// The colour dialog's 16 custom colours, kept while the app runs; white until mixed.
+static CUSTOM_COLORS: Mutex<[COLORREF; 16]> = Mutex::new([COLORREF(0x00FF_FFFF); 16]);
+
+/// Windows' colour dialog, opened on `initial` with its colour mixer shown: the colour chosen
+/// with OK, `None` for Cancel. Runs a modal loop.
+pub fn pick_color(owner: Option<HWND>, initial: Color) -> Option<Color> {
+    // A copy, so no lock is held across the modal loop.
+    let mut custom = *CUSTOM_COLORS.lock().unwrap_or_else(PoisonError::into_inner);
+    let channel = |v: f32| u32::from((v.clamp(0.0, 1.0) * 255.0).round() as u8);
+    let mut dialog = CHOOSECOLORW {
+        lStructSize: size_of::<CHOOSECOLORW>() as u32,
+        hwndOwner: owner.unwrap_or_default(),
+        // COLORREF is 0x00BBGGRR.
+        rgbResult: COLORREF(
+            channel(initial.r) | channel(initial.g) << 8 | channel(initial.b) << 16,
+        ),
+        lpCustColors: custom.as_mut_ptr(),
+        Flags: CC_RGBINIT | CC_FULLOPEN,
+        ..Default::default()
+    };
+    // SAFETY: the struct and the custom colours it points to outlive the call.
+    let chosen = unsafe { ChooseColorW(&mut dialog) }.as_bool();
+    *CUSTOM_COLORS.lock().unwrap_or_else(PoisonError::into_inner) = custom;
+    chosen.then(|| {
+        let [r, g, b, _] = dialog.rgbResult.0.to_le_bytes();
+        Color::rgba(r, g, b, 1.0)
+    })
+}
 
 /// Asks `message` with a button labelled `action` and Cancel; returns whether `action` was
 /// chosen. Runs a modal loop.

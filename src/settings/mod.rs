@@ -409,6 +409,17 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
         crate::config::model::normalize_color(text.trim().to_owned()).is_some()
     });
     let a = Arc::clone(app);
+    // Windows' colour dialog from a colour box's swatch, opened on the box's colour (white for
+    // text that is not one yet): the colour chosen, or nothing for Cancel.
+    state.on_pick_color(|text| {
+        use crate::platform::{Color, Dialogs};
+        let initial = Color::from_hex(text.trim()).unwrap_or(Color::rgba(255, 255, 255, 1.0));
+        window::dialogs()
+            .pick_color(initial)
+            .map(Color::to_hex)
+            .unwrap_or_default()
+            .into()
+    });
     state.on_set_color(move |path, text| {
         match crate::config::model::normalize_color(text.trim().to_owned()) {
             Some(color) => save_change(&a, &path, Value::String(color)),

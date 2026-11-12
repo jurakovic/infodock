@@ -1058,6 +1058,12 @@ pub trait Dialogs {
     /// The index of the chosen answer; `None` for Cancel, or where there are no dialogs.
     fn choose(&self, choice: &Choice) -> Option<usize>;
     fn show_message(&self, message: &Message);
+    /// The OS colour picker, opened on `initial`: the colour chosen, `None` for Cancel or where
+    /// there is no picker.
+    fn pick_color(&self, initial: Color) -> Option<Color> {
+        let _ = initial;
+        None
+    }
 }
 
 /// The OS dialogs (`TaskDialogIndirect`, the pickers), modal to the native window `owner`, on
@@ -1074,6 +1080,16 @@ impl Dialogs for NativeDialogs {
 
     fn save_path(&self, request: &SaveRequest) -> Option<(String, usize)> {
         save_path(self.owner, request)
+    }
+
+    fn pick_color(&self, initial: Color) -> Option<Color> {
+        #[cfg(windows)]
+        return windows::dialog::pick_color(self.owner.map(OwnerWindow::hwnd), initial);
+        #[cfg(not(windows))]
+        {
+            let _ = initial;
+            None
+        }
     }
 
     fn choose(&self, choice: &Choice) -> Option<usize> {
