@@ -4,7 +4,7 @@
 use serde_json::{Map, Value};
 
 use crate::config::model::{
-    FloatingRect, LIGHT_BAR_BACKGROUND, PRIMARY_MONITOR, Settings, ThemeDefaults, Zone,
+    FloatingRect, LIGHT_BAR_BACKGROUND, PRIMARY_MONITOR, Settings, ThemeDefaults, WindowPlace, Zone,
 };
 use crate::config::patch::apply_settings_patch;
 use crate::i18n::t_args;
@@ -301,6 +301,28 @@ pub fn floating_with_width(
         }
         None => FloatingRect { x: 0, y: 0, width },
     }
+}
+
+/// The Settings window's title bar, about as tall as Windows 11's (logical px).
+const TITLE_BAR: u32 = 32;
+/// How wide a strip of the title bar a monitor must show for the window to be grabbed there
+/// (logical px).
+const GRAB: u32 = 48;
+
+/// Whether the Settings window at `place` can be grabbed by its title bar on one of `monitors`
+/// (SPEC §10.7): a work area shows a strip of it at least [`GRAB`] px wide. Otherwise, e.g.
+/// when its monitor is gone, the window opens where Windows puts it.
+pub fn place_reachable(place: &WindowPlace, monitors: &[MonitorInfo]) -> bool {
+    monitors.iter().any(|m| {
+        let area = m.work_area;
+        let width = to_physical(place.width, m.scale);
+        let title = to_physical(TITLE_BAR, m.scale);
+        let left = place.x.max(area.left);
+        let right = place.x.saturating_add(width).min(area.right);
+        let top = place.y.max(area.top);
+        let bottom = place.y.saturating_add(title).min(area.bottom);
+        right - left >= to_physical(GRAB, m.scale) && bottom > top
+    })
 }
 
 /// "Primary monitor", then every monitor, then the saved monitor if it is not connected.
@@ -622,6 +644,39 @@ mod tests {
         let mut m = MonitorInfo::new(key.into(), name.into(), bounds, bounds, 1.0, primary);
         m.key = key.into();
         m
+    }
+
+    #[test]
+    fn a_window_place_is_reachable_while_a_monitor_shows_its_title_bar() {
+        let place = |x, y| WindowPlace {
+            x,
+            y,
+            width: 760,
+            height: 560,
+            maximized: false,
+        };
+        let mut right = monitor("b", "LG 27GL850", false);
+        right.work_area = Rect::new(2560, 0, 5120, 1400);
+        let monitors = [monitor("a", "Dell U2720Q", true), right];
+        assert!(place_reachable(&place(100, 100), &monitors));
+        assert!(
+            place_reachable(&place(3000, 200), &monitors),
+            "the second monitor"
+        );
+        // Mostly off the right edge: 100 px of the title bar still show, 30 px do not.
+        assert!(place_reachable(&place(5120 - 100, 100), &monitors));
+        assert!(!place_reachable(&place(5120 - 30, 100), &monitors));
+        // The title bar above the top, or below the work area (the taskbar).
+        assert!(!place_reachable(&place(100, -200), &monitors));
+        assert!(!place_reachable(&place(3000, 1400), &monitors));
+        // Its monitor is gone.
+        assert!(!place_reachable(&place(100, 100), &monitors[1..]));
+        assert!(!place_reachable(&place(100, 100), &[]));
+        // The strip is scaled with the monitor: 60 px is enough at 100 %, not at 200 %.
+        let mut scaled = monitor("a", "Dell U2720Q", true);
+        assert!(place_reachable(&place(2560 - 60, 100), &[scaled.clone()]));
+        scaled.scale = 2.0;
+        assert!(!place_reachable(&place(2560 - 60, 100), &[scaled]));
     }
 
     #[test]

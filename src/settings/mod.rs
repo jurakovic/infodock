@@ -30,7 +30,7 @@ use serde_json::Value;
 use slint::{CloseRequestResponse, ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::app::App;
-use crate::config::model::Settings;
+use crate::config::model::{Settings, WindowPlace};
 use crate::config::patch::apply_settings_patch;
 use crate::config::{Config, ConfigError};
 use crate::platform::geometry::DEFAULT_FLOATING_WIDTH;
@@ -69,6 +69,8 @@ struct Open {
     scheme: Option<crate::config::model::ColorScheme>,
     /// The welcome page (SPEC §11.5).
     welcome: welcome::Welcome,
+    /// Where the window is when neither maximized nor minimized, kept as it moves (SPEC §10.7).
+    place: Option<WindowPlace>,
 }
 
 /// Why a change was not saved.
@@ -187,6 +189,11 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         CloseRequestResponse::HideWindow
     });
 
+    let config = app.store.get();
+    let place = config.settings.settings_window;
+    if let Some(place) = &place {
+        restore_place(&window, place, &app.platform.monitors());
+    }
     let mut open = Open {
         window: window.clone_strong(),
         monitor_keys: Vec::new(),
@@ -197,8 +204,8 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
         gallery: appearance::Gallery::default(),
         scheme: None,
         welcome: welcome::Welcome::default(),
+        place,
     };
-    let config = app.store.get();
     fill(&mut open, app, &config.settings);
     layout::fill(&open, app, &config.layout);
     window::set(Some(open));
@@ -206,9 +213,77 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     Ok(window)
 }
 
-/// Closing drops an open properties form (SPEC §6.7) and leaves the welcome page (§11.5), then
-/// drops the window once it is hidden, which frees what it allocated.
+/// Puts a new window where Settings was closed (SPEC §10.7), before it is first shown: its size
+/// and maximized state, and its place while a monitor still shows its title bar.
+fn restore_place(
+    window: &ui::SettingsWindow,
+    place: &WindowPlace,
+    monitors: &[crate::platform::MonitorInfo],
+) {
+    let w = window.window();
+    w.set_size(slint::LogicalSize::new(
+        place.width as f32,
+        place.height as f32,
+    ));
+    if model::place_reachable(place, monitors) {
+        w.set_position(slint::PhysicalPosition::new(place.x, place.y));
+    }
+    w.set_maximized(place.maximized);
+    window
+        .global::<ui::SettingsState>()
+        .set_maximized(place.maximized);
+}
+
+/// The window's place while it is neither maximized nor minimized (SPEC §10.7).
+fn normal_place(w: &slint::winit_030::winit::window::Window) -> Option<WindowPlace> {
+    if w.is_maximized() || w.is_minimized().unwrap_or(false) {
+        return None;
+    }
+    let position = w.outer_position().ok()?;
+    let size = w.inner_size().to_logical::<f64>(w.scale_factor());
+    Some(WindowPlace {
+        x: position.x,
+        y: position.y,
+        width: size.width.round() as u32,
+        height: size.height.round() as u32,
+        maximized: false,
+    })
+}
+
+/// Saves where the open window is (SPEC §10.7): the place it has, or last had, when neither
+/// maximized nor minimized, and whether it is maximized (as it was before being minimized).
+fn remember_place(app: &Arc<App>) {
+    use slint::winit_030::WinitWindowAccessor;
+    let place = with_open(|open| {
+        let w = open.window.window();
+        let normal = w.with_winit_window(normal_place).flatten().or(open.place);
+        normal.map(|p| WindowPlace {
+            maximized: w.is_maximized(),
+            ..p
+        })
+    })
+    .flatten();
+    let Some(place) = place else {
+        return;
+    };
+    if app.store.get().settings.settings_window == Some(place) {
+        return;
+    }
+    if let Ok(value) = serde_json::to_value(place) {
+        save(app, model::patch("settingsWindow", value));
+    }
+}
+
+/// The app is quitting (main thread): an open window's place is kept, as closing it would.
+pub fn quitting(app: &Arc<App>) {
+    remember_place(app);
+}
+
+/// Closing saves where the window is (SPEC §10.7), drops an open properties form (§6.7) and
+/// leaves the welcome page (§11.5), then drops the window once it is hidden, which frees what
+/// it allocated.
 fn closing(app: &Arc<App>) {
+    remember_place(app);
     with_open_mut(|open| {
         properties::cancel(open, app);
         welcome::left(open, app);
@@ -587,6 +662,20 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
                     let settings = app.store.get().settings;
                     fill(open, &app, &settings);
                 });
+            }
+            // The page follows the window's state; its place is kept for when it closes
+            // (SPEC §10.7). A minimized window keeps both as they were.
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                let shown = window.window().with_winit_window(|w| {
+                    (!w.is_minimized().unwrap_or(false))
+                        .then(|| (w.is_maximized(), normal_place(w)))
+                });
+                if let Some(Some((maximized, place))) = shown {
+                    state.set_maximized(maximized);
+                    if place.is_some() {
+                        with_open_mut(|open| open.place = place);
+                    }
+                }
             }
             WindowEvent::ModifiersChanged(m) => modifiers = m.state(),
             WindowEvent::Focused(false) if state.get_recording_hotkey() => stop(),

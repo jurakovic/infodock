@@ -142,6 +142,7 @@ pub fn run() {
     if let Err(e) = slint::run_event_loop_until_quit() {
         tracing::error!("the event loop failed: {e}");
     }
+    settings::quitting(&app);
     app.shutdown();
 }
 

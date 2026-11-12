@@ -115,6 +115,9 @@ pub struct Settings {
     pub popups: PopupSettings,
     // §10.6
     pub apps: AppSettings,
+    // §10.7
+    /// Where the Settings window was closed; `None` until it first closes.
+    pub settings_window: Option<WindowPlace>,
 }
 
 impl Default for Settings {
@@ -139,6 +142,7 @@ impl Default for Settings {
             sensors: SensorDefaults::default(),
             popups: PopupSettings::default(),
             apps: AppSettings::default(),
+            settings_window: None,
         }
     }
 }
@@ -188,6 +192,20 @@ pub struct FloatingRect {
     pub x: i32,
     pub y: i32,
     pub width: u32,
+}
+
+/// The Settings window's place (SPEC §10.7): `x`, `y` its top-left corner with the frame, in
+/// physical screen px (they name the monitor); `width`, `height` the window without the frame,
+/// in logical px. A maximized window keeps the place it is restored to.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPlace {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    #[serde(default)]
+    pub maximized: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

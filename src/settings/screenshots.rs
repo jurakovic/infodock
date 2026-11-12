@@ -84,6 +84,7 @@ fn render_settings_pages() {
         gallery: super::appearance::Gallery::default(),
         scheme: None,
         welcome: super::welcome::Welcome::default(),
+        place: None,
     };
     fill(&mut open, &app, &app.store.get().settings);
     super::layout::fill(&open, &app, &app.store.get().layout);
@@ -143,6 +144,26 @@ fn render_settings_pages() {
     assert!(
         font >= 150.0,
         "the font's label: {font} px at the minimum width"
+    );
+    // Wide, the page stops at 1000 px; maximized, it takes the window's width (SPEC §10.7).
+    state.set_page(0);
+    let switch_end = || {
+        let (x, _, width, _) = bounds(
+            &ui,
+            AccessibleRole::Switch,
+            &t("settings.general.autostart"),
+        );
+        x + width
+    };
+    render_at("settings-general-wide", 1600, height);
+    let capped = switch_end();
+    state.set_maximized(true);
+    render_at("settings-general-maximized", 1600, height);
+    let maximized = switch_end();
+    state.set_maximized(false);
+    assert!(
+        capped < 1300.0 && maximized > 1500.0,
+        "the switch ends at {capped} px, maximized at {maximized} px"
     );
     // The whole Bar page.
     state.set_page(1);
