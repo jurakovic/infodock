@@ -229,9 +229,6 @@ fn restore_place(
         w.set_position(slint::PhysicalPosition::new(place.x, place.y));
     }
     w.set_maximized(place.maximized);
-    window
-        .global::<ui::SettingsState>()
-        .set_maximized(place.maximized);
 }
 
 /// The window's place while it is neither maximized nor minimized (SPEC §10.7).
@@ -663,18 +660,12 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
                     fill(open, &app, &settings);
                 });
             }
-            // The page follows the window's state; its place is kept for when it closes
-            // (SPEC §10.7). A minimized window keeps both as they were.
+            // The window's place is kept for when it closes (SPEC §10.7); a maximized or
+            // minimized window keeps the one it had before.
             WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
-                let shown = window.window().with_winit_window(|w| {
-                    (!w.is_minimized().unwrap_or(false))
-                        .then(|| (w.is_maximized(), normal_place(w)))
-                });
-                if let Some(Some((maximized, place))) = shown {
-                    state.set_maximized(maximized);
-                    if place.is_some() {
-                        with_open_mut(|open| open.place = place);
-                    }
+                let place = window.window().with_winit_window(normal_place).flatten();
+                if place.is_some() {
+                    with_open_mut(|open| open.place = place);
                 }
             }
             WindowEvent::ModifiersChanged(m) => modifiers = m.state(),

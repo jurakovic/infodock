@@ -150,8 +150,6 @@ struct NavItem {
 export global SettingsState {
     // A page by its number (see `Pages`).
     in-out property <int> page;
-    // The window is maximized: the pages take its whole width (SPEC §10.7).
-    in property <bool> maximized;
 
     // General (SPEC §10.1)
     in-out property <bool> autostart;
@@ -2623,13 +2621,10 @@ export component SettingsWindow inherits Window {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
-                // Beside the scrollbar, and no wider than Windows 11 Settings lets its cards be
-                // unless the window is maximized; on the left, in line with the title (an
-                // element narrower than its parent is centred otherwise).
+                // The window's whole width, beside the scrollbar (SPEC §10.7).
                 content := VerticalLayout {
                     x: 0;
-                    width: SettingsState.maximized ? scroll.visible-width - 20px
-                        : min(scroll.visible-width - 20px, 1000px);
+                    width: scroll.visible-width - 20px;
                     padding-bottom: 24px;
                     if SettingsState.page == Pages.general: GeneralPage { }
                     if SettingsState.page == Pages.bar: BarPage { }
