@@ -22,6 +22,10 @@ pub struct Theme {
     pub id: ThemeId,
     /// Logical px.
     pub bar_height: u32,
+    /// The strip the sensors draw in, logical px: its top and its height, the bar's less the
+    /// space above and below (`bar.sensorPadding`, SPEC §10.2). Icons are sized to its height.
+    pub sensor_top: f32,
+    pub sensor_height: u32,
     /// Tint with the configured opacity as alpha.
     pub bar_background: Color,
     /// The classic bar's skin, drawn with `bar_background`'s alpha (SPEC §12.3); `None` on the
@@ -109,9 +113,18 @@ impl Theme {
             tint: custom_background.then_some(background),
         });
 
+        let bar_height = s.bar_height();
+        // The space above and below the sensors leaves them at least this much.
+        const MIN_SENSOR_HEIGHT: u32 = 12;
+        let padding = s
+            .bar
+            .sensor_padding
+            .min(bar_height.saturating_sub(MIN_SENSOR_HEIGHT) / 2);
         Self {
             id: s.theme,
-            bar_height: s.bar_height(),
+            bar_height,
+            sensor_top: padding as f32,
+            sensor_height: bar_height - 2 * padding,
             // The opacity applies with transparency effects off too, only without the material
             // behind it (SPEC §12.2).
             bar_background: background.with_alpha(percent(
@@ -347,6 +360,21 @@ mod tests {
             Theme::resolve(&classic, DARK).bar_background,
             hex("#2A2A2E").with_alpha(0.5)
         );
+    }
+
+    #[test]
+    fn sensors_draw_in_the_bar_less_the_space_above_and_below() {
+        let mut s = Settings::modern();
+        let t = Theme::resolve(&s, DARK);
+        assert_eq!((t.sensor_top, t.sensor_height), (0.0, 28));
+        s.bar.sensor_padding = 3;
+        let t = Theme::resolve(&s, DARK);
+        assert_eq!((t.bar_height, t.sensor_top, t.sensor_height), (28, 3.0, 22));
+        // At least 12 px stay: 5 px on a 22 px bar.
+        s.bar.height = Some(22);
+        s.bar.sensor_padding = 6;
+        let t = Theme::resolve(&s, DARK);
+        assert_eq!((t.sensor_top, t.sensor_height), (5.0, 12));
     }
 
     #[test]

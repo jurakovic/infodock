@@ -510,6 +510,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_shadow(settings.bar.shadow);
     state.set_animations(choice("bar.animations"));
     state.set_height(settings.bar_height() as f32);
+    state.set_sensor_padding(settings.bar.sensor_padding as f32);
     state.set_theme_height(
         crate::config::model::ThemeDefaults::of(settings.theme).bar_height as i32,
     );

@@ -247,7 +247,8 @@ impl IconSource for DirectIcons<'_> {
 /// What drawing may use (bar thread).
 pub struct DrawCtx<'a> {
     pub theme: &'a Theme,
-    /// The sensor's place on the bar, in logical px; its height is the bar's.
+    /// The sensor's place on the bar, in logical px: its height is the bar's, less the space
+    /// above and below the sensors (`Theme::sensor_top`, SPEC §10.2).
     pub rect: RectF,
 }
 

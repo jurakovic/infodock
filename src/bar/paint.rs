@@ -1239,6 +1239,9 @@ mod tests {
         };
         let platform = crate::platform::current();
         let first_run = crate::config::Config::first_run("1.0.0").layout;
+        // The defaults with space above and below the sensors (SPEC §10.2).
+        let mut padded = Settings::default();
+        padded.bar.sensor_padding = 3;
         for (name, layout, settings, os, bar_width) in [
             ("bar-first-run", &first_run, Settings::modern(), dark, 700.0),
             (
@@ -1248,6 +1251,7 @@ mod tests {
                 dark,
                 700.0,
             ),
+            ("bar-first-run-padding", &first_run, padded, dark, 700.0),
             ("bar-general", &general, Settings::modern(), dark, 700.0),
             (
                 "bar-general-light",

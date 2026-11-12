@@ -162,6 +162,8 @@ pub struct BarSettings {
     pub hide_on_fullscreen: bool,
     /// Logical px, 22–40; `None` = theme default.
     pub height: Option<u32>,
+    /// Space above and below the sensors, logical px, 0–6 (SPEC §10.2).
+    pub sensor_padding: u32,
     pub floating: Option<FloatingRect>,
     pub highlight_on_hover: bool,
     pub shadow: bool,
@@ -178,6 +180,7 @@ impl Default for BarSettings {
             z_order: ZOrder::Bottom,
             hide_on_fullscreen: true,
             height: None,
+            sensor_padding: 0,
             floating: None,
             highlight_on_hover: false,
             shadow: false,
@@ -503,6 +506,7 @@ impl Settings {
         let d = Settings::default();
         self.sensor_spacing = self.sensor_spacing.clamp(1, 20);
         self.bar.height = self.bar.height.map(|h| h.clamp(22, 40));
+        self.bar.sensor_padding = self.bar.sensor_padding.min(6);
         if self.bar.monitor.trim().is_empty() {
             self.bar.monitor = PRIMARY_MONITOR.into();
         }
@@ -713,6 +717,7 @@ mod tests {
         assert_eq!(s.new_sensor_menu, NewSensorMenu::Submenu);
         assert!(!s.bar.reserve_space);
         assert_eq!(s.bar.z_order, ZOrder::Bottom);
+        assert_eq!(s.bar.sensor_padding, 0);
         assert_eq!(s.theme, ThemeId::Classic);
         assert_eq!(s.background.opacity, None);
         assert_eq!(ThemeDefaults::of(ThemeId::Modern).background_opacity, 50);

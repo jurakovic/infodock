@@ -447,6 +447,8 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
 
 (The center total deliberately includes one trailing gap.)
 
+* Vertically each sensor gets the strip the bar's height leaves after `bar.sensorPadding` above and below (§10.2); with 0, the whole height.
+
 * Sensor width is **intrinsic** (content), except for sensors with a width property (Spacer, graphs).
 * A center zone that would meet the left or right zone moves towards the side with room, as far as it needs (the clamp above), so nothing is cut or overlaps while the zones fit the bar side by side. When they do not fit with a gap between them and the padding at its ends, sensors whose text can be cut give way with an ellipsis until they do: the center zone first, then left, then right, a zone's sensors in proportion to what they can give, in whole px, down to a minimum each. What still does not fit overlaps: the center zone then sits midway between the zones beside it, drawn on top. (Until M5 S14q the center stayed centred and gave way only as far as its centred place needed, so it overlapped the left zone on a narrow bar while the right zone had room.) The Text sensor gives way, down to two ems of its font size (plus its shadow); its hint shows the whole text while it is cut (§9.1). Other sensors keep their width: values have reserved widths, and the launchers show only icons (§9.17–9.19).
 * Implementation: widths and positions computed by `bar/layout.rs` (pure, tested functions: `fit`, then `place`) from the widths each sensor measures (`measure()`, §8.1) and the minimums it can be cut to (`min_width()`); a sensor given less than it measured is told so (`fit()`), and lays out its text again with that maximum width (DirectWrite trimming with an ellipsis sign). Values use tabular numerals (DirectWrite `tnum`) and per-sensor reserved minimum widths (§9) so changing numbers do not shift the bar.
@@ -1293,6 +1295,7 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | zOrder | topmost / normal / bottom | bottom | |
 | hideOnFullscreen | bool | true | |
 | height | 22–40 | theme default (28 / 25) | |
+| sensorPadding | 0–6 px | 0 | Space above and below the sensors (§5.4): they draw in the bar's height less twice this, at least 12 px (`Theme::sensor_top`, `sensor_height`). The icon sizes of §9 ("bar height − 4" and so on, `IconSize`) are taken from that strip, the 21 px small icons at most its height, and graphs and meters fill it; text keeps its size, centred in it. The bar's own height, the ends' padding, the gap, hit-testing, hints, popups and the focus ring stay as they are |
 | floating | `{ x, y, width }` | null | `x`, `y`: the top-left corner in physical screen px (they name the monitor); `width`: logical px, 200–3840 in Settings and when dragging an end (§5.1) |
 | highlightOnHover | bool | false | |
 | shadow | bool | false | A soft shadow beside the bar (§5.5) |

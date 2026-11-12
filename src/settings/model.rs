@@ -281,6 +281,7 @@ pub fn page_paths(page: usize) -> &'static [&'static str] {
             "bar.zOrder",
             "bar.hideOnFullscreen",
             "bar.height",
+            "bar.sensorPadding",
             "bar.highlightOnHover",
             "bar.shadow",
             "bar.animations",

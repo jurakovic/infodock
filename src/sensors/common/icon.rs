@@ -75,12 +75,15 @@ impl IconStyle {
     }
 }
 
-/// How tall a sensor's icon is: the one place for every icon on the bar (SPEC §9).
+/// How tall a sensor's icon is: the one place for every icon on the bar (SPEC §9). "Bar height"
+/// is the strip the sensors draw in, the bar's height less the space above and below them
+/// (`Theme::sensor_height`, SPEC §10.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IconSize {
     /// Shortcut, Disk and Recycle Bin: bar height − 4 (SPEC §9.16–§9.18).
     Launcher,
-    /// Folder Menu, Start Menu, Power and Eject USB: 21 px (SPEC §9.19–§9.22).
+    /// Folder Menu, Start Menu, Power and Eject USB: 21 px, less in a lower strip (SPEC
+    /// §9.19–§9.22).
     Small,
     /// Image: bar height − 1 (SPEC §9.2).
     Picture,
@@ -91,14 +94,16 @@ pub enum IconSize {
 }
 
 impl IconSize {
-    /// The height in logical px on a bar of `theme`'s height.
+    /// The height in logical px in the strip `theme`'s sensors draw in: the bar's height, less
+    /// the space above and below the sensors (SPEC §10.2).
     pub fn logical(self, theme: &Theme) -> f32 {
-        let less = |px: u32| theme.bar_height.saturating_sub(px).max(1) as f32;
+        let height = theme.sensor_height;
+        let less = |px: u32| height.saturating_sub(px).max(1) as f32;
         match self {
             Self::Launcher => less(4),
-            Self::Small => 21.0,
+            Self::Small => 21.0_f32.min(height as f32),
             Self::Picture => less(1),
-            Self::Signal => theme.bar_height.saturating_sub(8).max(12) as f32,
+            Self::Signal => height.saturating_sub(8).max(12) as f32,
             Self::Battery => less(2).min(23.0),
         }
     }
@@ -413,9 +418,9 @@ mod tests {
 
     #[test]
     fn one_size_policy() {
-        let sizes = |bar_height| {
+        let sizes = |sensor_height| {
             let theme = Theme {
-                bar_height,
+                sensor_height,
                 ..theme()
             };
             [
@@ -429,7 +434,8 @@ mod tests {
         };
         assert_eq!(sizes(28), [24.0, 21.0, 27.0, 20.0, 23.0]);
         assert_eq!(sizes(25), [21.0, 21.0, 24.0, 17.0, 23.0]);
-        assert_eq!(sizes(14), [10.0, 21.0, 13.0, 12.0, 12.0]);
+        // A low strip (space above and below the sensors) caps the small icons too.
+        assert_eq!(sizes(14), [10.0, 14.0, 13.0, 12.0, 12.0]);
         let theme = theme();
         assert_eq!(IconSize::Launcher.physical(&theme, 1.5), 36);
         assert_eq!(IconSize::Small.physical(&theme, 1.5), 32);

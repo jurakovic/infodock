@@ -301,7 +301,13 @@ impl BarSensors {
     pub fn draw(&self, canvas: &mut dyn Canvas, theme: &Theme, bar_height: f32) {
         for zone in [0, 2, 1] {
             for p in &self.zones[zone] {
-                let rect = RectF::new(p.x, 0.0, p.x + p.width, bar_height);
+                // The strip the sensors draw in: the bar less the space above and below.
+                let rect = RectF::new(
+                    p.x,
+                    theme.sensor_top,
+                    p.x + p.width,
+                    bar_height - theme.sensor_top,
+                );
                 if self.drop_target.as_deref() == Some(p.entry.id.as_str()) {
                     let x = (
                         canvas.snap(rect.left - ACTIVE_REACH),
@@ -869,6 +875,32 @@ mod tests {
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
         assert_eq!(sensors.places()[1], ("b".into(), 118.0, 163.0));
         assert!(centre(&sensors).contains("\"A rather long centre text\""));
+    }
+
+    /// Fills the rect the bar gives it.
+    struct Probe;
+
+    impl Sensor for Probe {
+        fn measure(&mut self, _cx: &LayoutCtx) -> f32 {
+            10.0
+        }
+
+        fn draw(&self, canvas: &mut dyn Canvas, cx: &DrawCtx) {
+            canvas.fill_rect(cx.rect, crate::platform::Color::rgba(255, 0, 0, 1.0));
+        }
+    }
+
+    #[test]
+    fn sensors_draw_in_the_strip_the_space_above_and_below_leaves() {
+        let mut settings = crate::config::model::Settings::modern();
+        settings.bar.sensor_padding = 3;
+        let theme = Theme::resolve(&settings, crate::platform::OsAppearance::default());
+        let mut sensors = BarSensors::default();
+        sensors.zones[0].push(Placed::new(entry("p", "probe", json!({})), Box::new(Probe)));
+        sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
+        let mut canvas = RecordingCanvas::new(1.0);
+        sensors.draw(&mut canvas, &theme, 28.0);
+        assert_eq!(canvas.dump(), "fill rect 7,3 10×22 #FF0000\n");
     }
 
     /// Counts its wake-ups; due every 10 s from `start`.

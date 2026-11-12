@@ -74,6 +74,8 @@
   "settings.bar.hideOnFullscreen": "Step back for full-screen apps",
   "settings.bar.height": "Height",
   "settings.bar.height.help": "The theme default is {height} px.",
+  "settings.bar.sensorPadding": "Space above and below sensors",
+  "settings.bar.sensorPadding.help": "Icons, images, graphs and meters get smaller; text keeps its size.",
   "settings.bar.highlightOnHover": "Highlight on hover",
   "settings.bar.highlightOnHover.help": "The bar becomes more opaque while the pointer is over it.",
   "settings.bar.shadow": "Shadow",

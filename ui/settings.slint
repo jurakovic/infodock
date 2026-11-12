@@ -187,6 +187,7 @@ export global SettingsState {
     // 0 = like Windows, 1 = on, 2 = off.
     in-out property <int> animations;
     in-out property <float> height;
+    in-out property <float> sensor-padding;
     in property <int> theme-height;
     // The height differs from the theme default.
     in property <bool> height-customised;
@@ -902,6 +903,20 @@ component BarPage inherits VerticalLayout {
                         SettingsState.reset("bar.height");
                     }
                 }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.sensorPadding");
+        help: I18n.tr("settings.bar.sensorPadding.help");
+        ValueSlider {
+            label: I18n.tr("settings.bar.sensorPadding");
+            minimum: 0;
+            maximum: 6;
+            value <=> SettingsState.sensor-padding;
+            released(v) => {
+                SettingsState.set-number("bar.sensorPadding", v);
             }
         }
     }
