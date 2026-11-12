@@ -24,7 +24,7 @@ examples/            `icons.rs`: renders the artwork's `.ico`, PNG and BMP files
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory check, installer check)
-docs/                plan.md, manual-test.md, review findings (`review-m1.md`…, `review-architecture.md`)
+docs/                plan.md, manual-test.md, review findings (`review-m1.md`…, `review-architecture.md`, `review-code.md`)
 tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 ```
 
