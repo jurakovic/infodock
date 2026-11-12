@@ -666,6 +666,7 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] Make Settings as narrow as it goes (640 px at 100 %): on Bar, *Position* and the other labels wrap between words, never inside one, and help texts keep several words a line; the controls are narrower. Wider than 720 px: the controls are as before.
 - [ ] Appearance with transparency effects off: the Material help reads "Windows Settings › Personalisation › Colours", with no gaps.
+- [ ] Settings open on any page: in Windows, turn *Transparency effects* off and on again, then switch apps between light and dark mode and back. The window stays drawn the whole time, never blank or see-through, and shows each colour scheme at once without hovering over its controls.
 
 **Wi-Fi and location access** (since M5 S14r; Windows 11 24H2 or later, a laptop with Wi-Fi)
 

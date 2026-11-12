@@ -95,10 +95,13 @@ pub fn run() {
     logging::startup_step("config");
 
     // The Settings window uses Slint's winit backend on this thread; software rendering keeps
-    // GPU drivers out of the process (SPEC §3, §14.1).
+    // GPU drivers out of the process (SPEC §3, §14.1). The window is opaque: Slint asks for a
+    // transparent one, whose content Windows drops when transparency effects change, and the
+    // renderer repaints only what changed, so it stayed blank (SPEC §10.7).
     if let Err(e) = slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
+        .with_winit_window_attributes_hook(|attributes| attributes.with_transparent(false))
         .select()
     {
         tracing::error!("the UI toolkit could not start: {e}");
