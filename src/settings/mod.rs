@@ -339,8 +339,12 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     let state = window.global::<ui::SettingsState>();
     let a = Arc::clone(app);
     state.on_page_changed(move |page| {
-        // Leaving the form or the picker by the navigation drops it.
+        // Leaving the form or the picker by the navigation drops it, and a page's question
+        // whether to restore its defaults.
         with_open_mut(|open| {
+            open.window
+                .global::<ui::SettingsState>()
+                .set_restore_confirm(-1);
             if page != properties::PAGE {
                 properties::cancel(open, &a);
             }
@@ -369,6 +373,12 @@ fn connect(window: &ui::SettingsWindow, app: &Arc<App>) {
     state.on_set_number(move |path, value| save_change(&a, &path, Value::from(value)));
     let a = Arc::clone(app);
     state.on_reset(move |path| save(&a, model::patch(&path, Value::Null)));
+    let a = Arc::clone(app);
+    state.on_restore_defaults(move |page| {
+        if let Ok(page) = usize::try_from(page) {
+            save(&a, model::page_defaults(page));
+        }
+    });
     let a = Arc::clone(app);
     state.on_set_text(move |path, text| {
         save_change(&a, &path, Value::String(text.as_str().to_owned()));

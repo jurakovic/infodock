@@ -272,6 +272,8 @@ export global SettingsState {
     in property <[LayoutRow]> layout-rows;
     // The sensor whose Remove waits for confirmation.
     in-out property <string> layout-confirm;
+    // The page whose *Restore defaults* asks for confirmation; -1 for none.
+    in-out property <int> restore-confirm: -1;
     // A sensor just moved with its Up (or Down) button: the button takes the focus again once
     // the list shows the move, and the request is cleared.
     in-out property <string> layout-focus-id;
@@ -299,6 +301,8 @@ export global SettingsState {
     callback set-floating-width(width: int);
     // Back to the theme default.
     callback reset(path: string);
+    // Puts the settings of the page (`Pages`) back to their defaults.
+    callback restore-defaults(page: int);
     // A colour typed as #RRGGBB.
     callback set-color(path: string, text: string);
     // Index 0 is the theme default; then `fonts` or the font styles.
@@ -549,6 +553,44 @@ component WithReset inherits VerticalLayout {
     }
 }
 
+// The last card of a settings page: puts the page's settings back to their defaults once the
+// question in its place is answered (SPEC §10.7).
+component RestoreDefaults inherits VerticalLayout {
+    in property <int> page;
+    property <bool> asking: SettingsState.restore-confirm == root.page;
+
+    padding-top: 20px;
+    Row {
+        label: I18n.tr("settings.restore");
+        help: root.asking ? I18n.tr("settings.restore.confirm") : I18n.tr("settings.restore.help");
+        if !root.asking: Button {
+            text: I18n.tr("settings.restore.button");
+            clicked => {
+                SettingsState.restore-confirm = root.page;
+            }
+        }
+        if root.asking: HorizontalLayout {
+            spacing: 4px;
+            alignment: end;
+            Button {
+                text: I18n.tr("settings.restore.action");
+                primary: true;
+                clicked => {
+                    SettingsState.restore-confirm = -1;
+                    SettingsState.restore-defaults(root.page);
+                }
+            }
+
+            Button {
+                text: I18n.tr("settings.restore.cancel");
+                clicked => {
+                    SettingsState.restore-confirm = -1;
+                }
+            }
+        }
+    }
+}
+
 component GeneralPage inherits VerticalLayout {
     alignment: start;
 
@@ -686,6 +728,10 @@ component GeneralPage inherits VerticalLayout {
                 SettingsState.set-choice("newSensorMenu", self.current-index);
             }
         }
+    }
+
+    RestoreDefaults {
+        page: Pages.general;
     }
 }
 
@@ -855,6 +901,10 @@ component BarPage inherits VerticalLayout {
                 SettingsState.set-choice("bar.animations", self.current-index);
             }
         }
+    }
+
+    RestoreDefaults {
+        page: Pages.bar;
     }
 }
 
@@ -1399,6 +1449,10 @@ component AppearancePage inherits VerticalLayout {
             }
         }
     }
+
+    RestoreDefaults {
+        page: Pages.appearance;
+    }
 }
 
 component SensorsPage inherits VerticalLayout {
@@ -1497,6 +1551,9 @@ component SensorsPage inherits VerticalLayout {
         }
     }
 
+    RestoreDefaults {
+        page: Pages.sensors;
+    }
 }
 
 component PopupsPage inherits VerticalLayout {
@@ -1643,6 +1700,10 @@ component PopupsPage inherits VerticalLayout {
             }
         }
     }
+
+    RestoreDefaults {
+        page: Pages.popups;
+    }
 }
 
 // The properties form, generated from the sensor type's schema (SPEC §6.7).
@@ -1671,6 +1732,10 @@ component ApplicationsPage inherits VerticalLayout {
                 }
             }
         }
+    }
+
+    RestoreDefaults {
+        page: Pages.applications;
     }
 }
 

@@ -464,6 +464,42 @@ fn render_settings_pages() {
     assert!(!autostart());
     click(AccessibleRole::Switch, &autostart_switch);
     assert!(autostart());
+    // Restore defaults (SPEC §10.7) asks first, then puts the page's settings back. Its card is
+    // the page's last, so its buttons are pressed as a screen reader would, wherever they are.
+    let press = |label: &str| {
+        ElementHandle::find_by_accessible_label(&ui, label)
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .unwrap_or_else(|| panic!("a button named {label:?}"))
+            .invoke_accessible_default_action();
+        settle();
+    };
+    app.store
+        .update(|c| {
+            c.settings.sensor_spacing = 9;
+            c.settings.locked = true;
+            Ok(())
+        })
+        .expect("saved");
+    let size = window.size();
+    window.set_size(PhysicalSize::new(size.width, 1300));
+    refill();
+    press(&t("settings.restore.button"));
+    assert_eq!(state.get_restore_confirm(), 0);
+    render_sized("settings-general-restore", 1300);
+    press(&t("settings.restore.cancel"));
+    assert_eq!(state.get_restore_confirm(), -1);
+    assert_eq!(
+        app.store.get().settings.sensor_spacing,
+        9,
+        "Cancel keeps them"
+    );
+    press(&t("settings.restore.button"));
+    press(&t("settings.restore.action"));
+    refill();
+    let restored = app.store.get().settings;
+    assert_eq!((restored.sensor_spacing, restored.locked), (1, false));
+    assert_eq!(state.get_sensor_spacing(), 1.0, "the page shows them");
+    window.set_size(size);
     // The calendar app is saved as it is typed (SPEC §10.6).
     nav(applications);
     retype(&t("settings.apps.calendar"), "outlookcal:");

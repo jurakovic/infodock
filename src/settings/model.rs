@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use crate::config::model::{
     FloatingRect, LIGHT_BAR_BACKGROUND, PRIMARY_MONITOR, Settings, ThemeDefaults, WindowPlace, Zone,
 };
-use crate::config::patch::apply_settings_patch;
+use crate::config::patch::{apply_settings_patch, merge};
 use crate::i18n::t_args;
 use crate::platform::MonitorInfo;
 use crate::platform::geometry::{floating_rect, to_physical};
@@ -253,6 +253,84 @@ pub fn changes(settings: &Settings, os_dark: bool, path: &str, value: &Value) ->
     apply_settings_patch(settings, &patch(path, value.clone())).map_or(true, |next| {
         in_effect(&next, os_dark, path) != in_effect(settings, os_dark, path)
     })
+}
+
+/// The settings each page's controls save, by page (SPEC §10.7): what its *Restore defaults*
+/// puts back. The Sensors page's are its defaults for every sensor, not the layout; the Bar
+/// page's include the floating place, which its *Width* is part of.
+pub fn page_paths(page: usize) -> &'static [&'static str] {
+    match page {
+        0 => &[
+            "autostart",
+            "hotkey",
+            "hotkeyAction",
+            "barFocusRing",
+            "showTrayIcon",
+            "locked",
+            "popupsEnabled",
+            "clicksWhenLocked",
+            "sensorSpacing",
+            "newSensorMenu",
+        ],
+        1 => &[
+            "bar.mode",
+            "bar.floating",
+            "bar.edge",
+            "bar.monitor",
+            "bar.reserveSpace",
+            "bar.zOrder",
+            "bar.hideOnFullscreen",
+            "bar.height",
+            "bar.highlightOnHover",
+            "bar.shadow",
+            "bar.animations",
+        ],
+        2 => &[
+            "theme",
+            "colorScheme",
+            "background.colorMode",
+            "background.color",
+            "background.opacity",
+            "background.material",
+            "classic.skin",
+            "classic.customSkin",
+        ],
+        SENSORS_PAGE => &[
+            "sensors.textColor",
+            "sensors.font",
+            "sensors.fontStyle",
+            "sensors.inactiveMode",
+            "sensors.inactiveColor",
+            "sensors.inactiveOpacity",
+        ],
+        4 => &[
+            "popups.background",
+            "popups.opacity",
+            "popups.textColor",
+            "popups.strongTextColor",
+            "popups.font",
+            "popups.fontStyle",
+            "popups.fontSize",
+            "popups.shadow",
+            "popups.showDelayMs",
+            "popups.hideDelayMs",
+        ],
+        5 => &["apps.calendar"],
+        _ => &[],
+    }
+}
+
+/// The settings patch that puts `page`'s settings back to their defaults; theme-dependent ones
+/// go back to `null`, following the theme again (SPEC §11.2).
+pub fn page_defaults(page: usize) -> Value {
+    let defaults = serde_json::to_value(Settings::default()).unwrap_or_default();
+    let mut restore = Value::Object(Map::new());
+    for path in page_paths(page) {
+        if let Some(value) = value_at(&defaults, path) {
+            merge(&mut restore, &patch(path, value.clone()));
+        }
+    }
+    restore
 }
 
 /// A settings patch that sets one dotted path: `bar.edge` → `{"bar": {"edge": value}}`.
@@ -575,6 +653,77 @@ mod tests {
         // Invalid: saving it reports the error.
         assert!(changes(&settings, true, "popups.opacity", &json!("x")));
         assert!(changes(&settings, true, "nope", &json!(1)));
+    }
+
+    /// Settings no page shows, which no *Restore defaults* changes.
+    const NO_PAGE: &[&str] = &["language", "dateLocale", "settingsWindow"];
+
+    /// The dotted paths of every value in `settings` that is not an object.
+    fn leaves(settings: &Value, prefix: &str, out: &mut Vec<String>) {
+        match settings {
+            Value::Object(map) => {
+                for (key, value) in map {
+                    let path = if prefix.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{prefix}.{key}")
+                    };
+                    leaves(value, &path, out);
+                }
+            }
+            _ => out.push(prefix.to_owned()),
+        }
+    }
+
+    #[test]
+    fn every_setting_is_on_one_page_or_none() {
+        let defaults = serde_json::to_value(Settings::default()).expect("serializable");
+        let mut all = Vec::new();
+        leaves(&defaults, "", &mut all);
+        let pages: Vec<&str> = (0..PAGES.len()).flat_map(page_paths).copied().collect();
+        for path in &all {
+            let on = pages.iter().filter(|p| **p == path.as_str()).count()
+                + usize::from(NO_PAGE.contains(&path.as_str()));
+            assert_eq!(on, 1, "{path}: on {on} pages (or none)");
+        }
+        for path in pages.iter().chain(NO_PAGE) {
+            assert!(all.iter().any(|p| p == path), "{path} is no setting");
+        }
+    }
+
+    #[test]
+    fn restoring_each_page_gives_the_defaults_back() {
+        let changed = json!({
+            "autostart": false, "hotkey": "Ctrl+Alt+K", "barFocusRing": true, "locked": true,
+            "sensorSpacing": 9, "newSensorMenu": "dialog",
+            "bar": { "edge": "top", "height": 33, "zOrder": "topmost", "reserveSpace": true,
+                     "floating": { "x": 10, "y": 20, "width": 900 }, "mode": "floating" },
+            "theme": "modern", "colorScheme": "dark",
+            "background": { "color": "#102030", "opacity": 70, "material": "mica" },
+            "classic": { "skin": "carbon", "customSkin": "C:\\a.png" },
+            "sensors": { "textColor": "#FFCC00", "font": "Consolas", "inactiveOpacity": 40 },
+            "popups": { "background": "#000000", "fontSize": 14, "shadow": false },
+            "apps": { "calendar": "outlookcal:" },
+        });
+        let mut settings = apply_settings_patch(&Settings::default(), &changed).expect("valid");
+        settings.language = "de".into();
+        let kept = settings.language.clone();
+        for page in 0..PAGES.len() {
+            settings = apply_settings_patch(&settings, &page_defaults(page)).expect("valid");
+        }
+        assert_eq!(settings.language, kept, "not on any page");
+        settings.language = Settings::default().language;
+        assert_eq!(settings, Settings::default());
+        // One page alone leaves the others.
+        let only_bar = apply_settings_patch(
+            &apply_settings_patch(&Settings::default(), &changed).expect("valid"),
+            &page_defaults(1),
+        )
+        .expect("valid");
+        assert_eq!(only_bar.bar, Settings::default().bar);
+        assert!(only_bar.locked);
+        assert_eq!(page_defaults(1)["bar"]["height"], Value::Null);
+        assert_eq!(page_defaults(6), json!({}));
     }
 
     #[test]
