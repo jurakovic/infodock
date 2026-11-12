@@ -10,6 +10,8 @@ Run on real Windows 10 and Windows 11 machines (SPEC §16). Each milestone adds 
 
 To start over from first run, quit Infodock and delete `%APPDATA%\app.infodock.desktop`.
 
+The defaults changed after the early milestones were written (SPEC §10): the bar is now Classic with the Glass skin at 50 %, does not reserve screen space, stays behind other windows, has 1 px between sensors, lists the sensor types in *New sensor ▸*, and starts with Windows. Steps that expect the bar to reserve space or stay on top, the modern look, or the picker from *New sensor…* need those settings chosen first (Settings ▸ Bar ▸ *Reserve screen space* on, *Stacking* → *Always on top*; Appearance ▸ *Theme* → *Modern*; General ▸ *“New sensor” in the bar’s menu* → *Opens the sensor picker*).
+
 ## M0 — Skeleton
 
 Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % DPI, survives an Explorer restart, and a clean exit restores the work area. These checks are about the bar window itself; the sensors on it are M1's and later.
@@ -449,7 +451,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Settings ▸ Appearance lies between Bar and Sensors. *Theme* → *Classic*: the bar switches at once to the classic look (25 px, Arial, Gloss); the page shows the skin gallery. Back to *Modern*: the gallery goes.
 - [ ] Each tile previews its skin as the bar draws it, sharp at 100 % and 150 % (open Settings on a 150 % monitor), as tall as the bar: *Height* 32 makes the previews taller. A click on a tile, or the arrow keys once the gallery has the focus, changes the bar's skin; the chosen tile is outlined. The test pack from S2 shows as a tile with its name.
 - [ ] *Background colour* → *A colour of your choice*, `#3A6EA5`: the bar and every built-in preview take it; the pack's preview is tinted. *Use theme default* goes back to the theme's colour; *The theme's colour* hides the colour box and ignores the colour.
-- [ ] *Background opacity* 50 %: the classic skin fades, its previews too, the sensors do not. *Use theme default* returns to 90 % (classic) or 80 % (modern).
+- [ ] *Background opacity* 20 %: the classic skin fades, its previews too, the sensors do not. *Use theme default* returns to 50 % (either theme).
 - [ ] *Material* lists *Theme default (Acrylic)* (modern) or *(None)* (classic), then None, Acrylic and Mica, and each changes the bar. Turn off *Transparency effects* in Windows, close and reopen Settings: the list is disabled and says why.
 - [ ] *Custom image*: its row shows the path box and *Browse…*; pick a JPEG within 512 px and 1 MB: the bar and the tile show it. A missing, larger or GIF file: the row says why and the bar is Flat.
 - [ ] Set `"skin": "gone"` in the config (or delete the chosen pack's folder and reopen the page): a red line under *Skin* says Gloss is used, and no tile is outlined. A broken pack chosen: the line gives the reason.

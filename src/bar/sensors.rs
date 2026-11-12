@@ -761,10 +761,10 @@ mod tests {
             places,
             [
                 (7.0, 75.0),    // CPU Graph: 50 px plot, 5 px gap, "100%"
-                (92.0, 28.0),   // Memory Meter: the bar, the gap and "100%"
-                (130.0, 100.0), // Network Graph: 50 px plot, 5 px gap, "1023 MB/s"
-                (344.0, 103.0), // logo: round((800 − 113) / 2)
-                (783.0, 0.0),   // date
+                (83.0, 28.0),   // Memory Meter: the bar, the gap and "100%"
+                (112.0, 100.0), // Network Graph: 50 px plot, 5 px gap, "1023 MB/s"
+                (348.0, 103.0), // logo: round((800 − 104) / 2)
+                (792.0, 0.0),   // date
                 (793.0, 0.0)    // time, ending 7 px from the right
             ]
         );
@@ -809,7 +809,7 @@ mod tests {
         assert!(sensors.sync(&layout, &BTreeMap::new(), &caps, registry()));
         assert_eq!(sensors.take_created(), ["a"], "same id, new instance");
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
-        assert_eq!(sensors.places()[1], ("b".into(), 56.0, 9.0));
+        assert_eq!(sensors.places()[1], ("b".into(), 47.0, 9.0));
 
         // Moving a sensor to another zone is a change too.
         let b = layout.left.remove(1);
@@ -848,26 +848,26 @@ mod tests {
             let dump = canvas.dump();
             dump.lines().last().unwrap_or_default().to_owned()
         };
-        // 13 px text: 6.5 px a character. Side by side the zones need 7 + 59 + 10 + 163 + 10 +
-        // 40 + 7 = 296 of 200 px: the centre gives the 96 px and fills the room between the
-        // left's gap (76) and the spacer's (143).
+        // 13 px text: 6.5 px a character. Side by side the zones need 7 + 59 + 1 + 163 + 1 +
+        // 40 + 7 = 278 of 200 px: the centre gives the 78 px and fills the room between the
+        // left's gap (67) and the spacer's (152).
         sensors.update_layout(&layout_ctx(&theme, 1.0), 200.0);
         assert_eq!(
             sensors.places(),
             [
                 ("a".into(), 7.0, 59.0),
-                ("b".into(), 76.0, 67.0),
+                ("b".into(), 67.0, 85.0),
                 ("c".into(), 153.0, 40.0)
             ]
         );
-        assert!(centre(&sensors).contains("\"A rather …\" "), "cut");
+        assert!(centre(&sensors).contains("\"A rather lon…\" "), "cut");
         // Measured again, it stays cut.
         sensors.invalidate_all();
         sensors.update_layout(&layout_ctx(&theme, 1.0), 200.0);
-        assert!(centre(&sensors).contains("\"A rather …\" "));
+        assert!(centre(&sensors).contains("\"A rather lon…\" "));
         // With room, it is whole again.
         sensors.update_layout(&layout_ctx(&theme, 1.0), 400.0);
-        assert_eq!(sensors.places()[1], ("b".into(), 114.0, 163.0));
+        assert_eq!(sensors.places()[1], ("b".into(), 118.0, 163.0));
         assert!(centre(&sensors).contains("\"A rather long centre text\""));
     }
 

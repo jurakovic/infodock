@@ -206,6 +206,7 @@ mod tests {
     fn bar_menu_items() {
         let settings = Settings {
             popups_enabled: true,
+            new_sensor_menu: NewSensorMenu::Dialog,
             ..Settings::default()
         };
         assert_eq!(
@@ -230,6 +231,7 @@ mod tests {
         let settings = Settings {
             locked: true,
             popups_enabled: false,
+            new_sensor_menu: NewSensorMenu::Dialog,
             ..Settings::default()
         };
         let entries = sensor_menu(&settings, registry(), &Capabilities::default(), false, &[]);

@@ -169,7 +169,7 @@ pub fn machine_reads() -> u32 {
 }
 
 pub fn theme() -> Theme {
-    Theme::resolve(&Settings::default(), OsAppearance::default())
+    Theme::resolve(&Settings::modern(), OsAppearance::default())
 }
 
 /// What `ty` makes of a legacy sensor of type `legacy_type` with the properties `pairs`

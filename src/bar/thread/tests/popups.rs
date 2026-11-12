@@ -6,10 +6,10 @@ fn a_popup_opens_next_to_its_sensor_and_takes_input() {
     let logo = config.layout.center[0].id.clone();
     let (probe, log, reply) = new_probe();
     logic.open_popup(&window, &logo, Box::new(probe));
-    // Centred above the logo (its centre at 596): 100 × 50 content, 4 px padding, the 7 px
+    // Centred above the logo (its centre at 600): 100 × 50 content, 4 px padding, the 7 px
     // pointer and a 6 px shadow around it.
     let (rect, dump) = window.popup.borrow().clone().expect("shown");
-    assert_eq!(rect, Rect::new(536, 981, 656, 1058));
+    assert_eq!(rect, Rect::new(540, 981, 660, 1058));
     assert!(dump.contains("fill rect 10,10 100×50 #010203"), "{dump}");
     assert_eq!(
         log.borrow()[0],

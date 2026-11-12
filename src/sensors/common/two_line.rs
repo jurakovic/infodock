@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn draws_a_label_and_a_right_aligned_value() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let theme = Theme::resolve(&Settings::modern(), OsAppearance::default());
         // Modern: 10 px, rows of 11 px centred in 28 px, so baselines at 12.5 and 23.5.
         assert_eq!(baselines(&theme, 28.0), [12.5, 23.5]);
         let block = TwoLine::new(&FixedMetrics, &theme, "CPU", "37%");

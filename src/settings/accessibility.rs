@@ -288,7 +288,7 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
             );
             assert_eq!(
                 themes.accessible_value().as_deref(),
-                Some(t("settings.appearance.theme.modern").as_str())
+                Some(t("settings.appearance.theme.classic").as_str())
             );
         }
         if *route == classic {

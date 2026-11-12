@@ -125,17 +125,17 @@ impl Default for Settings {
         Self {
             language: "auto".into(),
             date_locale: DateLocale::System,
-            autostart: false,
+            autostart: true,
             show_tray_icon: true,
             hotkey: "Ctrl+Alt+Shift+I".into(),
             hotkey_action: HotkeyAction::BringToFront,
             locked: false,
             popups_enabled: true,
             clicks_when_locked: ClicksWhenLocked::Always,
-            sensor_spacing: 10,
-            new_sensor_menu: NewSensorMenu::Dialog,
+            sensor_spacing: 1,
+            new_sensor_menu: NewSensorMenu::Submenu,
             bar: BarSettings::default(),
-            theme: ThemeId::Modern,
+            theme: ThemeId::Classic,
             color_scheme: ColorScheme::System,
             background: BackgroundSettings::default(),
             classic: ClassicSettings::default(),
@@ -171,8 +171,8 @@ impl Default for BarSettings {
             edge: Edge::Bottom,
             mode: BarMode::Docked,
             monitor: PRIMARY_MONITOR.into(),
-            reserve_space: true,
-            z_order: ZOrder::Topmost,
+            reserve_space: false,
+            z_order: ZOrder::Bottom,
             hide_on_fullscreen: true,
             height: None,
             floating: None,
@@ -241,7 +241,7 @@ pub struct ClassicSettings {
 impl Default for ClassicSettings {
     fn default() -> Self {
         Self {
-            skin: "gloss".into(),
+            skin: "glass".into(),
             custom_skin: String::new(),
         }
     }
@@ -420,7 +420,7 @@ impl ThemeDefaults {
             ThemeId::Modern => Self {
                 bar_height: 28,
                 background_color: "#1C1C1F".into(),
-                background_opacity: 80,
+                background_opacity: 50,
                 background_material: Material::Acrylic,
                 sensor_font: "Segoe UI Variable Text".into(),
                 sensor_font_style: FontStyle::Semibold,
@@ -432,7 +432,7 @@ impl ThemeDefaults {
             ThemeId::Classic => Self {
                 bar_height: 25,
                 background_color: "#2A2A2E".into(),
-                background_opacity: 90,
+                background_opacity: 50,
                 background_material: Material::None,
                 sensor_font: "Arial".into(),
                 sensor_font_style: FontStyle::Bold,
@@ -441,6 +441,17 @@ impl ThemeDefaults {
                 popup_font: "Arial".into(),
                 popup_font_style: FontStyle::Bold,
             },
+        }
+    }
+}
+
+#[cfg(test)]
+impl Settings {
+    /// The defaults with the modern theme, which most drawing tests measure against.
+    pub fn modern() -> Self {
+        Self {
+            theme: ThemeId::Modern,
+            ..Self::default()
         }
     }
 }
@@ -687,14 +698,30 @@ mod tests {
         let c: Config = serde_json::from_str("{}").unwrap();
         assert_eq!(c, Config::default());
         assert_eq!(c.settings.bar.edge, Edge::Bottom);
-        assert_eq!(c.settings.bar_height(), 28);
+        assert_eq!(c.settings.bar_height(), 25);
+    }
+
+    #[test]
+    fn defaults_match_the_spec() {
+        let s = Settings::default();
+        assert!(s.autostart);
+        assert_eq!(s.sensor_spacing, 1);
+        assert_eq!(s.new_sensor_menu, NewSensorMenu::Submenu);
+        assert!(!s.bar.reserve_space);
+        assert_eq!(s.bar.z_order, ZOrder::Bottom);
+        assert_eq!(s.theme, ThemeId::Classic);
+        assert_eq!(s.background.opacity, None);
+        assert_eq!(ThemeDefaults::of(ThemeId::Modern).background_opacity, 50);
+        assert_eq!(ThemeDefaults::of(ThemeId::Classic).background_opacity, 50);
+        assert_eq!(s.classic.skin, "glass");
     }
 
     #[test]
     fn serializes_camel_case_and_type_key() {
         let c = Config::first_run("1.0.0");
         let v = serde_json::to_value(&c).unwrap();
-        assert_eq!(v["settings"]["bar"]["reserveSpace"], true);
+        assert_eq!(v["settings"]["bar"]["reserveSpace"], false);
+        assert_eq!(v["settings"]["bar"]["zOrder"], "bottom");
         assert_eq!(v["settings"]["hotkeyAction"], "bringToFront");
         assert_eq!(v["settings"]["sensors"]["fontStyle"], Value::Null);
         assert_eq!(v["layout"]["left"][0]["type"], "cpu-graph");
@@ -704,9 +731,9 @@ mod tests {
     #[test]
     fn theme_defaults_follow_theme() {
         let mut s = Settings::default();
-        assert_eq!(s.bar_height(), 28);
-        s.theme = ThemeId::Classic;
         assert_eq!(s.bar_height(), 25);
+        s.theme = ThemeId::Modern;
+        assert_eq!(s.bar_height(), 28);
         s.bar.height = Some(33);
         assert_eq!(s.bar_height(), 33);
     }

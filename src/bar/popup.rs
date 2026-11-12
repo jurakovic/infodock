@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn input_reaches_the_content_from_its_corner() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let theme = Theme::resolve(&Settings::modern(), OsAppearance::default());
         let mut open = Open {
             owner: "f".into(),
             popup: Box::new(Square),
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn a_popup_being_resized_keeps_its_side() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let theme = Theme::resolve(&Settings::modern(), OsAppearance::default());
         let mut open = Open {
             owner: "f".into(),
             popup: Box::new(Square),

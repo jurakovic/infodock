@@ -54,7 +54,7 @@ Users add sensors through a picker, or by dragging files, folders, drives and UR
 * **Layout import/export** (JSON) and **legacy XML layout import**.
 * **Inactive rendering** of sensors whose state is "nothing to show / offline".
 * Global defaults for sensor text colour, font and style, and for popup colours, font, size and shadow.
-* Modern theme (default) and a compact **Classic** theme with skins.
+* A Modern theme and a compact **Classic** theme with skins; Classic is the default.
 * Multi-monitor support, per-monitor DPI, resume-from-sleep handling.
 * Localisation infrastructure; **English only** at launch.
 
@@ -410,7 +410,7 @@ Sensor types declare `requires: &[Capability]`. The picker hides types whose cap
 
 ### 5.2 Work-area reservation (AppBar)
 
-When `reserveSpace = true` (default) and docked:
+When `reserveSpace = true` and docked:
 
 1. Register with `SHAppBarMessage(ABM_NEW)` using a private callback message.
 2. `ABM_QUERYPOS` → adjust → `ABM_SETPOS` with `ABE_TOP`/`ABE_BOTTOM` and the monitor rect; then move the window to the returned rect.
@@ -419,13 +419,13 @@ When `reserveSpace = true` (default) and docked:
 5. **Explorer restart**: on the registered `TaskbarCreated` message → `ABM_REMOVE` + `ABM_NEW` + reposition.
 6. On exit (and in a panic hook): `ABM_REMOVE`. If the process is killed, Windows removes the appbar together with the window, so no recovery logic is needed.
 
-When `reserveSpace = false`: place the window at the edge without registering; maximised windows may overlap it.
+When `reserveSpace = false` (default): place the window at the edge without registering; maximised windows may overlap it.
 
 Implementation note: the AppBar is registered for the bar window itself. Infodock creates that window and owns its window procedure, which receives the callback message, `WM_ACTIVATE`/`WM_WINDOWPOSCHANGED` (forwarded as `ABM_ACTIVATE`/`ABM_WINDOWPOSCHANGED`) and the broadcasts above. A hidden message-only window does not work: message-only windows receive no broadcasts (`TaskbarCreated`, `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`), and an appbar registered under a different window than the visible bar loses the shell's z-order coupling. The window procedure also keeps other code (Aero Snap, DPI-change resizes) from moving the bar or lifting it out of its z-order.
 
 ### 5.3 Z-order, full-screen, focus, power
 
-* `zOrder`: `topmost` (default, usual for appbars) | `normal` | `bottom` (always behind normal windows). With `bottom`, the hotkey brings the bar to the front until it loses focus, and the bar comes up over the desktop while that is the foreground window (a foreground hook, `EVENT_SYSTEM_FOREGROUND`, sees `Progman` or `WorkerW`): Show desktop (Win+D) raises the desktop over every normal window, which would otherwise hide the bar too; once another window is in front, the bar goes back behind. A bar that should be topmost and loses that place to other code (seen at the start of a floating bar) takes it back, at most once a second, and logs it; its shadow band (§12.2) never leaves the bar's layer, since Windows takes a topmost owner down with an owned window that stops being topmost.
+* `zOrder`: `topmost` (usual for appbars) | `normal` | `bottom` (default; always behind normal windows). With `bottom`, the hotkey brings the bar to the front until it loses focus, and the bar comes up over the desktop while that is the foreground window (a foreground hook, `EVENT_SYSTEM_FOREGROUND`, sees `Progman` or `WorkerW`): Show desktop (Win+D) raises the desktop over every normal window, which would otherwise hide the bar too; once another window is in front, the bar goes back behind. A bar that should be topmost and loses that place to other code (seen at the start of a floating bar) takes it back, at most once a second, and logs it; its shadow band (§12.2) never leaves the bar's layer, since Windows takes a topmost owner down with an owned window that stops being topmost.
 * **Full-screen apps** (`hideOnFullscreen`, default true): on `ABN_FULLSCREENAPP(true)` for our monitor → drop topmost and hide the hint/popup windows; restore on `false`.
 * **Sleep/resume**: `WM_POWERBROADCAST / PBT_APMRESUMEAUTOMATIC` → emit `system-resume`. Providers reset delta baselines (CPU, network); the UI re-renders Date/Time/Uptime immediately.
 * **Time or time-zone changes** (`WM_TIMECHANGE`) → Date/Time refresh.
@@ -437,7 +437,7 @@ Three ordered zones: `left`, `center`, `right`. **Each zone's array is stored in
 
 ```
 pad = 7            // logical px edge padding
-gap = settings.sensorSpacing (1..20, default 10)
+gap = settings.sensorSpacing (1..20, default 1)
 left:   x = pad; for s in left:   place(s, x);  x += width(s) + gap
 center: total = Σ(width(s) + gap) over center; x = round((barWidth − total)/2)
         x = clamp(x, end of left + gap, start of right − gap − width of center)
@@ -511,7 +511,7 @@ Native menus (`TrackPopupMenuEx` on the bar thread, at the cursor). Confirmation
 **Bar background menu**
 
 ```
-New sensor…                 (or a submenu by category if settings.newSensorMenu = "submenu")
+New sensor ▸                (a submenu by category; the sensor picker if settings.newSensorMenu = "dialog")
 ────────
 Tools ▸  Layout manager…
          Import layout…
@@ -530,7 +530,7 @@ Quit Infodock
 **Sensor menu**
 
 ```
-New sensor…                 (inserts relative to this sensor; the picker shows "Insert: Before | After")
+New sensor ▸                (inserts after this sensor; with the picker, which shows "Insert: Before | After", relative to it)
 Properties…                 (disabled if the type has no visible properties)
 Remove sensor               (confirmation: "Remove sensor '{name}'?")
 ────────
@@ -542,7 +542,7 @@ Settings…
 ✓ Popups
 ```
 
-Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a menu hides any hint/popup. The menu opens on the right button's release, or from the keyboard beside the focused sensor (§14.4). *Tools ▸ Help* opens Settings ▸ Help (route `help`). *Import layout…* and *Export layout…* run on the main thread (§11.3), so the bar goes on while their pickers are open. "New sensor…" opens Settings on `new?zone=<zone>&index=<index>` (bar menu: the zone by thirds and its insertion point, §6.6) or `new?target=<id>` (sensor menu); in submenu mode, choosing a type adds it after the target sensor (or at the zone's insertion point) and opens its Properties (`sensor/<id>`). Implementation (`bar/menus.rs`): the sensor's items (`MenuItem`: its own id, label, enabled) are asked for each time the menu opens; the chosen one goes back to the same sensor (`on_menu`), which redraws if what it shows changed. Without own items the menu has no second separator.
+Sensor-specific items come from the sensor type's `menu()` (§8.1). Opening a menu hides any hint/popup. The menu opens on the right button's release, or from the keyboard beside the focused sensor (§14.4). *Tools ▸ Help* opens Settings ▸ Help (route `help`). *Import layout…* and *Export layout…* run on the main thread (§11.3), so the bar goes on while their pickers are open. In dialog mode, "New sensor…" opens Settings on `new?zone=<zone>&index=<index>` (bar menu: the zone by thirds and its insertion point, §6.6) or `new?target=<id>` (sensor menu); in submenu mode, choosing a type adds it after the target sensor (or at the zone's insertion point) and opens its Properties (`sensor/<id>`). Implementation (`bar/menus.rs`): the sensor's items (`MenuItem`: its own id, label, enabled) are asked for each time the menu opens; the chosen one goes back to the same sensor (`on_menu`), which redraws if what it shows changed. Without own items the menu has no second separator.
 
 ### 6.5 Global hotkey and tray
 
@@ -1269,15 +1269,15 @@ Stored under `settings` in the config (§11.2).
 |---|---|---|---|
 | language | auto / available catalogs | auto | Selector hidden while only English exists |
 | dateLocale | system / ui | system | Locale for date/number formats and weekday/month names |
-| autostart | bool | false | Asked on first run. Implementation (`autostart.rs`): the per-user `Run` key's value `Infodock` holds the exe's path in quotes while it is on (the name is fixed: the uninstaller removes it, §15.3). At start-up the entry follows the setting: written when missing, pointed at this exe when the exe it names is gone, e.g. moved (Task Manager's *Disabled* mark for it, under `Explorer\StartupApproved\Run`, is kept; an entry for another copy that is still there stays, so a copy started once does not take it), removed while the setting is off; until the first run is done (`meta.firstRunDone`, §11.5) an existing entry is taken into the setting instead, so an installer that writes it needs nothing more from the app. Turning the setting on writes the entry and clears that mark; turning it off removes both. A failure is logged and shown under the switch |
+| autostart | bool | true | Asked on first run. Implementation (`autostart.rs`): the per-user `Run` key's value `Infodock` holds the exe's path in quotes while it is on (the name is fixed: the uninstaller removes it, §15.3). At start-up the entry follows the setting: written when missing, pointed at this exe when the exe it names is gone, e.g. moved (Task Manager's *Disabled* mark for it, under `Explorer\StartupApproved\Run`, is kept; an entry for another copy that is still there stays, so a copy started once does not take it), removed while the setting is off; until the first run is done (`meta.firstRunDone`, §11.5) an existing entry turns the setting on, so an installer that writes it needs nothing more from the app (a missing one leaves the setting as it is, on by default, so start-up writes it). Turning the setting on writes the entry and clears that mark; turning it off removes both. A failure is logged and shown under the switch |
 | showTrayIcon | bool | true | |
 | hotkey | accelerator | `Ctrl+Alt+Shift+I` | Modifiers in the order `Win+Ctrl+Alt+Shift`, then the key: a letter, a digit or a `KeyboardEvent.code` name (`F5`, `ArrowUp`, `Backquote`) |
 | hotkeyAction | bringToFront / toggleVisibility | bringToFront | |
 | locked | bool | false | |
 | popupsEnabled | bool | true | |
 | clicksWhenLocked | always / altOnly | always | |
-| sensorSpacing | 1–20 px | 10 | |
-| newSensorMenu | dialog / submenu | dialog | |
+| sensorSpacing | 1–20 px | 1 | |
+| newSensorMenu | dialog / submenu | submenu | |
 
 ### 10.2 Bar
 
@@ -1288,8 +1288,8 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | edge | top / bottom | bottom | |
 | mode | docked / floating | docked | |
 | monitor | "primary" \| monitor key | primary | Key from `list_monitors`: `<device>\|<friendly name>\|<width>x<height>`. Matching (§5.1): device and name → name and resolution → device → primary |
-| reserveSpace | bool | true | |
-| zOrder | topmost / normal / bottom | topmost | |
+| reserveSpace | bool | false | |
+| zOrder | topmost / normal / bottom | bottom | |
 | hideOnFullscreen | bool | true | |
 | height | 22–40 | theme default (28 / 25) | |
 | floating | `{ x, y, width }` | null | `x`, `y`: the top-left corner in physical screen px (they name the monitor); `width`: logical px, 200–3840 in Settings and when dragging an end (§5.1) |
@@ -1301,13 +1301,13 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| theme | modern / classic | modern | |
+| theme | modern / classic | classic | |
 | colorScheme | system / light / dark | system | Light or dark for the Settings window and the modern bar (§12.2); `system` follows the OS app mode, live. Settings sets the Fluent palette's colour scheme (`unknown` for `system`, which follows the OS through winit) and its title bar's theme |
 | background.colorMode | standard / custom | custom | standard = theme colour |
 | background.color | color | modern `#1C1C1F`; classic `#2A2A2E` | Tint for skins |
-| background.opacity | 0–100 % | modern 80 %; classic 90 % | |
+| background.opacity | 0–100 % | modern 50 %; classic 50 % | |
 | background.material | none / acrylic / mica | modern: acrylic; classic: none | Disabled automatically when OS transparency effects are off |
-| classic.skin | skin id | "gloss" | §12.4 |
+| classic.skin | skin id | "glass" | §12.4 |
 | classic.customSkin | file (.png .jpg) | "" | Used when skin = custom |
 
 ### 10.4 Sensors (global defaults)
@@ -1484,7 +1484,7 @@ Implementation (`config/legacy.rs`, `sensors/legacy.rs`):
 ### 11.5 First run
 
 1. Create the default config with the layout of §11.2: **left** — CPU Graph, Memory Meter, Network Graph; **center** — Image (logo, popup "Infodock %v"); **right** — Date, Time.
-2. Show a one-time welcome page in Settings: theme choice (Modern/Classic with previews), edge (top/bottom), autostart opt-in, an "Import layout…" button (JSON or legacy XML), and short getting-started tips.
+2. Show a one-time welcome page in Settings: theme choice (Modern/Classic with previews), edge (top/bottom), the autostart switch (on by default), an "Import layout…" button (JSON or legacy XML), and short getting-started tips.
 
 Implementation (`settings/welcome.rs`): Settings opens on the route `welcome` at start-up while `meta.firstRunDone` is false, so a run that ends with the page open shows it again. The page is not in the navigation: the logo (Appendix C) and an introduction; a tile per theme with a preview of the bar's background in it (`skin_preview`, 240 logical px, the bar's height in that theme, its edge and colours, the colour scheme as the OS's mode resolves it), chosen by a click or the arrow keys and saved at once; *Screen edge*; *Start with Windows* (§10.1); *Import layout…*, whose picker offers both kinds (a `.json` file is read as an exchange file, any other as a legacy layout) and runs the import of §11.3; four tips (the menu, dragging and dropping, hovering and clicking, the hotkey); *Get started*, which closes Settings. `meta.firstRunDone` is set when the page is left: *Get started*, another page, or closing Settings.
 
@@ -1505,16 +1505,16 @@ accent colour, inactive style (opacity or colour, §8.5), hairline colour
 
 Settings has its own look (§4.3) and does not use the bar theme, except for skin previews rendered by the bar renderer (`skin_preview`).
 
-### 12.2 Modern theme (default)
+### 12.2 Modern theme
 
-* Bar: `#1C1C1F` at 80 % over **Acrylic** (Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28. Acrylic is the accent policy (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`, almost untinted), as taskbars use it: Windows 11's system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`) draws a solid fallback behind a window that is not active, and the bar never is, so it showed opaque grey. Mica exists only as a system backdrop; its frame is drawn active. Without transparency effects there is no material (Windows draws Acrylic and Mica solid then), but the background opacity still applies, so the desktop shows through the bar unblurred: the user asked to set the bar's transparency whatever Windows' setting is. `platform/windows/material.rs`
+* Bar: `#1C1C1F` at 50 % over **Acrylic** (Mica on Windows 11 when chosen); 1 px hairline `rgba(255,255,255,.08)` on the edge facing the screen center; height 28. Acrylic is the accent policy (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND`, almost untinted), as taskbars use it: Windows 11's system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`) draws a solid fallback behind a window that is not active, and the bar never is, so it showed opaque grey. Mica exists only as a system backdrop; its frame is drawn active. Without transparency effects there is no material (Windows draws Acrylic and Mica solid then), but the background opacity still applies, so the desktop shows through the bar unblurred: the user asked to set the bar's transparency whatever Windows' setting is. `platform/windows/material.rs`
 * Typography: Segoe UI Variable; small 10 px, medium 11 px, large 15 px; semibold labels; tabular numerals.
 * Icons: the Infodock SVG set (Appendix C), monochrome, rasterised at the physical size and tinted with the sensor text colour.
 * Popups: radius 8 px, `#202024` at 92 %, soft shadow, 12 px text.
-* Follows `colorScheme` (§10.3; by default the OS **light/dark** mode): in light mode (if the user has not customised colours) the bar is `#F3F3F3` at 80 % with sensor text `#1A1A1A`. "Not customised" means no background colour set in custom colour mode and the default sensor text colour (`Settings::light_bar`); the light look's background is then the theme's colour, which Settings ▸ Appearance shows as the default, so leaving its colour box keeps it.
+* Follows `colorScheme` (§10.3; by default the OS **light/dark** mode): in light mode (if the user has not customised colours) the bar is `#F3F3F3` at 50 % with sensor text `#1A1A1A`. "Not customised" means no background colour set in custom colour mode and the default sensor text colour (`Settings::light_bar`); the light look's background is then the theme's colour, which Settings ▸ Appearance shows as the default, so leaving its colour box keeps it.
 * Placer: 2 px line in the accent colour.
 
-### 12.3 Classic theme
+### 12.3 Classic theme (default)
 
 A compact, denser look:
 * Height 25; Arial; label/value 9 px bold; day/hour 15 px bold; month/minutes 11 px.
@@ -1531,10 +1531,10 @@ A compact, denser look:
 | Id | Name | Look |
 |---|---|---|
 | `flat` | Flat | Solid base colour |
-| `gloss` | Gloss (default) | Base colour; upper half overlaid with a white gradient 30 % → 5 %; 1 px darker line at the bottom |
+| `gloss` | Gloss | Base colour; upper half overlaid with a white gradient 30 % → 5 %; 1 px darker line at the bottom |
 | `brushed` | Brushed metal | Vertical gradient (lighter top, darker bottom) + a fine repeating horizontal line texture at 4 % |
 | `carbon` | Carbon | Base colour + a 4 px diagonal checker pattern at 6 % |
-| `glass` | Glass | Base colour at reduced alpha; 1 px white highlight at 25 % on the inner edge; soft inner glow |
+| `glass` | Glass (default) | Base colour at reduced alpha; 1 px white highlight at 25 % on the inner edge; soft inner glow |
 | `custom` | Custom image | `classic.customSkin`, tiled horizontally like a pack's tile without a band (its own height is the height it was drawn for; the same checks as a pack's files); missing or unusable file → Flat |
 
 Implementation (`bar/skins/`): a skin is drawn pixel by pixel into a bitmap of the bar's physical size (lines are one logical px in whole physical px; textures are sized in logical px), kept until the skin, its colour, the bar's size or its edge changes, and drawn with the background opacity (and the hover highlight, §5.5). Gloss's line is black at 30 %. Brushed metal runs from 16 % white at the top to 20 % black at the bottom; its texture is a lighter or darker line per physical row with streaks along it, at most 4 %. Carbon's checker is turned by 45°: diamonds 4 px across, the light ones 6 % white. Glass is the base colour at 55 % alpha, with a glow (10 % white) fading over a third of the height from both long edges and its highlight on the edge facing the screen centre (the top of a bottom bar).

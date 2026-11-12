@@ -81,14 +81,14 @@ mod tests {
 
     #[test]
     fn modern_bar_has_a_hairline_towards_the_screen_centre() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let theme = Theme::resolve(&Settings::modern(), OsAppearance::default());
         let size = SizeF::new(800.0, 28.0);
 
         let mut bottom = RecordingCanvas::new(1.0);
         paint_bar(&mut bottom, size, &theme, Edge::Bottom, 0.0, None);
         assert_eq!(
             bottom.dump(),
-            "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,0 800×1 #FFFFFF/8%\n"
+            "fill rect 0,0 800×28 #1C1C1F/50%\nfill rect 0,0 800×1 #FFFFFF/8%\n"
         );
 
         // At 150 % the line is two physical px, so it stays crisp.
@@ -96,46 +96,26 @@ mod tests {
         paint_bar(&mut top, size, &theme, Edge::Top, 0.0, None);
         assert_eq!(
             top.dump(),
-            "fill rect 0,0 800×28 #1C1C1F/80%\nfill rect 0,26.67 800×1.33 #FFFFFF/8%\n"
+            "fill rect 0,0 800×28 #1C1C1F/50%\nfill rect 0,26.67 800×1.33 #FFFFFF/8%\n"
         );
     }
 
     #[test]
     fn hover_highlight_strengthens_the_background() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
-        let mut canvas = RecordingCanvas::new(1.0);
-        // Fully in: 80 % × 1.7, capped at 100 %. Halfway at 40 %: 40 % × 1.35 = 54 %.
-        paint_bar(
-            &mut canvas,
-            SizeF::new(100.0, 28.0),
-            &theme,
-            Edge::Bottom,
-            1.0,
-            None,
-        );
-        assert!(canvas.dump().starts_with("fill rect 0,0 100×28 #1C1C1F\n"));
-        let s = Settings {
-            background: crate::config::model::BackgroundSettings {
-                opacity: Some(40),
-                ..Default::default()
-            },
-            ..Settings::default()
+        let fill = |opacity: Option<u32>, highlight: f32| {
+            let mut s = Settings::modern();
+            s.background.opacity = opacity;
+            let theme = Theme::resolve(&s, OsAppearance::default());
+            let mut canvas = RecordingCanvas::new(1.0);
+            let size = SizeF::new(100.0, 28.0);
+            paint_bar(&mut canvas, size, &theme, Edge::Bottom, highlight, None);
+            canvas.dump().lines().next().unwrap_or_default().to_owned()
         };
-        let theme = Theme::resolve(&s, OsAppearance::default());
-        let mut canvas = RecordingCanvas::new(1.0);
-        paint_bar(
-            &mut canvas,
-            SizeF::new(100.0, 28.0),
-            &theme,
-            Edge::Bottom,
-            0.5,
-            None,
-        );
-        assert!(
-            canvas
-                .dump()
-                .starts_with("fill rect 0,0 100×28 #1C1C1F/54%\n")
-        );
+        // Fully in: 50 % × 1.7 = 85 %; 80 % × 1.7, capped at 100 %. Halfway at 40 %:
+        // 40 % × 1.35 = 54 %.
+        assert_eq!(fill(None, 1.0), "fill rect 0,0 100×28 #1C1C1F/85%");
+        assert_eq!(fill(Some(80), 1.0), "fill rect 0,0 100×28 #1C1C1F");
+        assert_eq!(fill(Some(40), 0.5), "fill rect 0,0 100×28 #1C1C1F/54%");
     }
 
     #[test]
@@ -145,7 +125,7 @@ mod tests {
             ..Settings::default()
         };
         let theme = Theme::resolve(&s, OsAppearance::default());
-        assert_eq!(theme.bar_background, Color::rgba(0x2A, 0x2A, 0x2E, 0.9));
+        assert_eq!(theme.bar_background, Color::rgba(0x2A, 0x2A, 0x2E, 0.5));
         let size = SizeF::new(100.0, 25.0);
         let spec = theme.skin.as_ref().expect("classic has a skin");
         let target = skins::Target::of(size, 1.5, Edge::Bottom);
@@ -153,16 +133,19 @@ mod tests {
         let mut canvas = RecordingCanvas::new(1.5);
         paint_bar(&mut canvas, size, &theme, Edge::Bottom, 0.0, skin.as_ref());
         // The skin, and no hairline.
-        assert_eq!(canvas.dump(), "bitmap 150×38 into 0,0 100×25 opacity 0.9\n");
+        assert_eq!(canvas.dump(), "bitmap 150×38 into 0,0 100×25 opacity 0.5\n");
         // The hover highlight strengthens the skin as it does the modern background.
         let mut canvas = RecordingCanvas::new(1.5);
         paint_bar(&mut canvas, size, &theme, Edge::Bottom, 1.0, skin.as_ref());
-        assert_eq!(canvas.dump(), "bitmap 150×38 into 0,0 100×25 opacity 1\n");
+        assert_eq!(
+            canvas.dump(),
+            "bitmap 150×38 into 0,0 100×25 opacity 0.85\n"
+        );
     }
 
     #[test]
     fn specimen_draws_everywhere() {
-        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let theme = Theme::resolve(&Settings::modern(), OsAppearance::default());
         let engine = crate::platform::recording::FixedMetrics;
         let mut canvas = RecordingCanvas::new(1.0);
         let images = specimen::images(28, 1.0, theme.accent);
@@ -924,14 +907,14 @@ mod tests {
         let mut bars = vec![
             (
                 "bar-modern-dark".to_owned(),
-                Settings::default(),
+                Settings::modern(),
                 dark,
                 Edge::Bottom,
                 1.0,
             ),
             (
                 "bar-modern-light-top".to_owned(),
-                Settings::default(),
+                Settings::modern(),
                 light,
                 Edge::Top,
                 1.0,
@@ -1042,8 +1025,8 @@ mod tests {
         // The bar's own shadow (SPEC §5.5) over a light desktop, where it shows best: modern on
         // both edges and classic at 150 %.
         for (name, settings, os, edge, scale) in [
-            ("bar-shadow", Settings::default(), dark, Edge::Bottom, 1.0),
-            ("bar-shadow-top", Settings::default(), light, Edge::Top, 1.0),
+            ("bar-shadow", Settings::modern(), dark, Edge::Bottom, 1.0),
+            ("bar-shadow-top", Settings::modern(), light, Edge::Top, 1.0),
             (
                 "bar-shadow-classic@1.5x",
                 skinned("gloss", None),
@@ -1090,8 +1073,8 @@ mod tests {
 
         let text = text_engine();
         for (name, settings, os) in [
-            ("bar-specimen", Settings::default(), dark),
-            ("bar-specimen-light", Settings::default(), light),
+            ("bar-specimen", Settings::modern(), dark),
+            ("bar-specimen-light", Settings::modern(), light),
             ("bar-specimen-classic", classic.clone(), dark),
         ] {
             let theme = Theme::resolve(&settings, os);
@@ -1257,13 +1240,7 @@ mod tests {
         let platform = crate::platform::current();
         let first_run = crate::config::Config::first_run("1.0.0").layout;
         for (name, layout, settings, os, bar_width) in [
-            (
-                "bar-first-run",
-                &first_run,
-                Settings::default(),
-                dark,
-                700.0,
-            ),
+            ("bar-first-run", &first_run, Settings::modern(), dark, 700.0),
             (
                 "bar-first-run-classic",
                 &first_run,
@@ -1271,33 +1248,27 @@ mod tests {
                 dark,
                 700.0,
             ),
-            ("bar-general", &general, Settings::default(), dark, 700.0),
+            ("bar-general", &general, Settings::modern(), dark, 700.0),
             (
                 "bar-general-light",
                 &general,
-                Settings::default(),
+                Settings::modern(),
                 light,
                 700.0,
             ),
-            ("bar-system", &system, Settings::default(), dark, 1400.0),
+            ("bar-system", &system, Settings::modern(), dark, 1400.0),
             (
                 "bar-system-light",
                 &system,
-                Settings::default(),
+                Settings::modern(),
                 light,
                 1400.0,
             ),
-            (
-                "bar-launchers",
-                &launchers,
-                Settings::default(),
-                dark,
-                680.0,
-            ),
+            ("bar-launchers", &launchers, Settings::modern(), dark, 680.0),
             (
                 "bar-launchers-light",
                 &launchers,
-                Settings::default(),
+                Settings::modern(),
                 light,
                 680.0,
             ),
@@ -1360,16 +1331,10 @@ mod tests {
         use crate::sensors::HintContent;
         use crate::sensors::date::MonthCalendar;
         for (name, settings, os, edge, calendar) in [
-            (
-                "hint-modern",
-                Settings::default(),
-                dark,
-                Edge::Bottom,
-                false,
-            ),
+            ("hint-modern", Settings::modern(), dark, Edge::Bottom, false),
             (
                 "hint-modern-light-top",
-                Settings::default(),
+                Settings::modern(),
                 light,
                 Edge::Top,
                 false,
@@ -1377,7 +1342,7 @@ mod tests {
             ("hint-classic", classic.clone(), dark, Edge::Bottom, false),
             (
                 "hint-calendar",
-                Settings::default(),
+                Settings::modern(),
                 dark,
                 Edge::Bottom,
                 true,
@@ -1485,7 +1450,7 @@ mod tests {
             ("popup-eject", dark, Box::new(eject), (270.0, 14.0)),
         ];
         for (name, os, make, (hover_x, hover_y)) in popups {
-            let settings = Settings::default();
+            let settings = Settings::modern();
             let theme = Theme::resolve(&settings, os);
             let bar = RectF::new(0.0, 572.0, 800.0, 600.0);
             let anchor = Anchor {

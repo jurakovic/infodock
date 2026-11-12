@@ -417,7 +417,7 @@ mod tests {
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
 
     fn theme(shadow: bool) -> Theme {
-        let mut s = Settings::default();
+        let mut s = Settings::modern();
         s.popups.shadow = shadow;
         Theme::resolve(&s, OsAppearance::default())
     }

@@ -379,7 +379,7 @@ mod tests {
             floating_with_width(&s, &monitors, 1000),
             FloatingRect {
                 x: 460,
-                y: 1000,
+                y: 1003,
                 width: 1000
             }
         );
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn theme_defaults_are_in_effect_until_set() {
-        let modern = Settings::default();
+        let modern = Settings::modern();
         assert_eq!(
             in_effect(&modern, true, "popups.background"),
             Some(json!("#202024"))
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn the_light_look_is_the_modern_themes_colour_in_light_mode() {
-        let settings = Settings::default();
+        let settings = Settings::modern();
         // OS in light mode: the light look's background is the theme's colour (SPEC §12.2), so
         // leaving the colour box keeps following it.
         assert_eq!(
@@ -517,13 +517,13 @@ mod tests {
         // Dark forced, or a text colour of the user's: the dark colour.
         let dark = Settings {
             color_scheme: crate::config::model::ColorScheme::Dark,
-            ..Settings::default()
+            ..Settings::modern()
         };
         assert_eq!(
             in_effect(&dark, false, "background.color"),
             Some(json!("#1C1C1F"))
         );
-        let mut yellow = Settings::default();
+        let mut yellow = Settings::modern();
         yellow.sensors.text_color = "#FFCC00".into();
         assert_eq!(
             in_effect(&yellow, false, "background.color"),
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn only_a_different_value_is_a_change() {
-        let settings = Settings::default();
+        let settings = Settings::modern();
         // The theme's values: nothing to save, the settings stay `null`.
         assert!(!changes(
             &settings,
@@ -564,7 +564,7 @@ mod tests {
                 background: Some("#202024".into()),
                 ..Default::default()
             },
-            ..Settings::default()
+            ..Settings::modern()
         };
         assert!(!changes(
             &pinned,

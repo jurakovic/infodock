@@ -459,10 +459,11 @@ fn render_settings_pages() {
     nav(general);
     let autostart = || app.store.get().settings.autostart;
     let autostart_switch = t("settings.general.autostart");
-    click(AccessibleRole::Switch, &autostart_switch);
-    assert!(autostart());
+    assert!(autostart(), "on by default");
     click(AccessibleRole::Switch, &autostart_switch);
     assert!(!autostart());
+    click(AccessibleRole::Switch, &autostart_switch);
+    assert!(autostart());
     // The calendar app is saved as it is typed (SPEC §10.6).
     nav(applications);
     retype(&t("settings.apps.calendar"), "outlookcal:");

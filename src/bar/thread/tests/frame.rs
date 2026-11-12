@@ -171,7 +171,7 @@ fn highlight_fades_in_while_the_pointer_is_over_the_bar() {
 #[test]
 fn rises_into_place_and_slides_out_before_changing_edges() {
     // On, so the OS "Animation effects" setting (off on CI runners) does not matter.
-    let mut settings = Settings::default();
+    let mut settings = Settings::modern();
     settings.bar.animations = crate::config::model::Animations::On;
     let (mut logic, window, host, config) = rising_bar(settings);
     // Placed: 28 px below its place, transparent, then rising.

@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn the_icon_takes_the_text_colour_so_it_reads_on_a_light_bar() {
         let light = crate::look::theme::Theme::resolve(
-            &Settings::default(),
+            &Settings::modern(),
             crate::platform::OsAppearance {
                 dark: false,
                 ..Default::default()

@@ -1,8 +1,8 @@
 //! Starting with Windows (SPEC §10.1): while `settings.autostart` is on, the per-user `Run` key
 //! starts this exe at sign-in under the value [`RUN_VALUE`]. The entry follows the setting at
 //! start-up (also after the exe it named moved away) and whenever it changes; until the first-run welcome is
-//! done, an existing entry is taken into the setting instead (SPEC §11.5), so an installer that
-//! writes one needs nothing else from the app.
+//! done, an existing entry turns the setting on (SPEC §11.5), so an installer that writes one
+//! needs nothing else from the app.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -32,13 +32,13 @@ pub fn init(store: &ConfigStore, platform: Arc<dyn Platform>) {
     let entry = platform.autostart(RUN_VALUE);
     let config = store.get();
     let mut enabled = config.settings.autostart;
-    if let Some(taken) = taken(config.meta.first_run_done, enabled, entry.is_some()) {
+    if takes_entry(config.meta.first_run_done, enabled, entry.is_some()) {
         let result = store.update(|c| {
-            c.settings.autostart = taken;
+            c.settings.autostart = true;
             Ok(())
         });
         match result {
-            Ok(_) => enabled = taken,
+            Ok(_) => enabled = true,
             Err(e) => tracing::warn!("could not take the sign-in entry into the settings: {e}"),
         }
     }
@@ -89,10 +89,11 @@ pub fn command(exe: &Path) -> String {
     format!("\"{}\"", exe.display())
 }
 
-/// The setting an existing entry gives on first run (before the welcome page is done), if it
-/// differs from the stored one: an entry means on, none off.
-pub fn taken(first_run_done: bool, enabled: bool, entry: bool) -> Option<bool> {
-    (!first_run_done && entry != enabled).then_some(entry)
+/// Whether an existing entry turns the setting on: on first run (before the welcome page is
+/// done) while it is off. A missing entry leaves the setting as it is (on by default), and
+/// start-up then writes one.
+pub fn takes_entry(first_run_done: bool, enabled: bool, entry: bool) -> bool {
+    !first_run_done && entry && !enabled
 }
 
 /// What start-up does to the entry so it follows the setting: write a missing one, point one at
@@ -153,14 +154,15 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_is_taken_into_the_setting_until_the_first_run_is_done() {
-        assert_eq!(taken(false, false, true), Some(true));
-        assert_eq!(taken(false, true, false), Some(false));
-        assert_eq!(taken(false, true, true), None);
-        assert_eq!(taken(false, false, false), None);
+    fn an_entry_turns_the_setting_on_until_the_first_run_is_done() {
+        assert!(takes_entry(false, false, true));
+        // No entry keeps the default (on): start-up writes one.
+        assert!(!takes_entry(false, true, false));
+        assert!(!takes_entry(false, true, true));
+        assert!(!takes_entry(false, false, false));
         // Afterwards the setting decides.
-        assert_eq!(taken(true, false, true), None);
-        assert_eq!(taken(true, true, false), None);
+        assert!(!takes_entry(true, false, true));
+        assert!(!takes_entry(true, true, false));
     }
 
     #[test]

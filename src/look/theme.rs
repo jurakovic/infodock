@@ -178,9 +178,9 @@ mod tests {
 
     #[test]
     fn modern_defaults() {
-        let t = Theme::resolve(&Settings::default(), DARK);
+        let t = Theme::resolve(&Settings::modern(), DARK);
         assert_eq!(t.bar_height, 28);
-        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.8));
+        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.5));
         assert_eq!(t.hairline, Some(Color::rgba(255, 255, 255, 0.08)));
         assert_eq!(t.material, Material::Acrylic);
         assert_eq!(t.sensor_text, hex("#FFFFFF"));
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(t.small_size, 10.0);
         assert_eq!(t.popup_background, hex("#202024").with_alpha(0.92));
         assert_eq!(t.popup_radius, 8.0);
-        assert_eq!(t.gap, 10.0);
+        assert_eq!(t.gap, 1.0);
         assert_eq!(t.accent, ACCENT);
         assert_eq!(t.inactive, Inactive::Opacity(0.78));
     }
@@ -205,7 +205,7 @@ mod tests {
         };
         let t = Theme::resolve(&s, DARK);
         assert_eq!(t.bar_height, 25);
-        assert_eq!(t.bar_background, hex("#2A2A2E").with_alpha(0.9));
+        assert_eq!(t.bar_background, hex("#2A2A2E").with_alpha(0.5));
         assert_eq!(t.sensor_font.family, "Arial");
         assert_eq!(t.sensor_font.weight, 700);
         assert_eq!(t.small_size, 9.0);
@@ -216,13 +216,13 @@ mod tests {
         assert_eq!(
             t.skin,
             Some(SkinSpec {
-                id: "gloss".into(),
+                id: "glass".into(),
                 custom_image: String::new(),
                 base: hex("#2A2A2E"),
                 tint: None,
             })
         );
-        assert_eq!(Theme::resolve(&Settings::default(), DARK).skin, None);
+        assert_eq!(Theme::resolve(&Settings::modern(), DARK).skin, None);
     }
 
     #[test]
@@ -274,29 +274,29 @@ mod tests {
 
     #[test]
     fn standard_background_ignores_the_custom_colour() {
-        let mut s = Settings::default();
+        let mut s = Settings::modern();
         s.background.color_mode = BackgroundColorMode::Standard;
         s.background.color = Some("#FF0000".into());
         assert_eq!(
             Theme::resolve(&s, DARK).bar_background,
-            hex("#1C1C1F").with_alpha(0.8)
+            hex("#1C1C1F").with_alpha(0.5)
         );
     }
 
     #[test]
     fn follows_light_mode_only_when_colours_are_not_customised() {
-        let t = Theme::resolve(&Settings::default(), LIGHT);
-        assert_eq!(t.bar_background, hex("#F3F3F3").with_alpha(0.8));
+        let t = Theme::resolve(&Settings::modern(), LIGHT);
+        assert_eq!(t.bar_background, hex("#F3F3F3").with_alpha(0.5));
         assert_eq!(t.sensor_text, hex("#1A1A1A"));
         assert_eq!(t.hairline, Some(Color::rgba(0, 0, 0, 0.08)));
 
-        let mut custom = Settings::default();
+        let mut custom = Settings::modern();
         custom.background.color = Some("#1C1C1F".into());
         let t = Theme::resolve(&custom, LIGHT);
-        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.8));
+        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.5));
         assert_eq!(t.sensor_text, hex("#FFFFFF"));
 
-        let mut text = Settings::default();
+        let mut text = Settings::modern();
         text.sensors.text_color = "#FFCC00".into();
         assert_eq!(Theme::resolve(&text, LIGHT).sensor_text, hex("#FFCC00"));
 
@@ -306,7 +306,7 @@ mod tests {
         };
         assert_eq!(
             Theme::resolve(&classic, LIGHT).bar_background,
-            hex("#2A2A2E").with_alpha(0.9)
+            hex("#2A2A2E").with_alpha(0.5)
         );
     }
 
@@ -315,17 +315,17 @@ mod tests {
         use crate::config::model::ColorScheme;
         let light = Settings {
             color_scheme: ColorScheme::Light,
-            ..Settings::default()
+            ..Settings::modern()
         };
         let t = Theme::resolve(&light, DARK);
-        assert_eq!(t.bar_background, hex("#F3F3F3").with_alpha(0.8));
+        assert_eq!(t.bar_background, hex("#F3F3F3").with_alpha(0.5));
         assert_eq!(t.sensor_text, hex("#1A1A1A"));
         let dark = Settings {
             color_scheme: ColorScheme::Dark,
-            ..Settings::default()
+            ..Settings::modern()
         };
         let t = Theme::resolve(&dark, LIGHT);
-        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.8));
+        assert_eq!(t.bar_background, hex("#1C1C1F").with_alpha(0.5));
         assert_eq!(t.sensor_text, hex("#FFFFFF"));
         assert_eq!(t.hairline, Some(Color::rgba(255, 255, 255, 0.08)));
         // `system` follows the OS.
@@ -338,7 +338,7 @@ mod tests {
         };
         assert_eq!(
             Theme::resolve(&classic, DARK).bar_background,
-            hex("#2A2A2E").with_alpha(0.9)
+            hex("#2A2A2E").with_alpha(0.5)
         );
     }
 
@@ -371,10 +371,10 @@ mod tests {
             transparency: false,
             ..DARK
         };
-        let mut s = Settings::default();
+        let mut s = Settings::modern();
         let theme = Theme::resolve(&s, os);
         assert_eq!(theme.material, Material::None);
-        assert_eq!(theme.bar_background, hex("#1C1C1F").with_alpha(0.8));
+        assert_eq!(theme.bar_background, hex("#1C1C1F").with_alpha(0.5));
         s.background.opacity = Some(40);
         assert_eq!(Theme::resolve(&s, os).bar_background.a, 0.4);
     }
