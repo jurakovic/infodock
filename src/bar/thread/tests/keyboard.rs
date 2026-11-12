@@ -22,7 +22,7 @@ fn the_hotkey_focuses_the_bar_and_tab_moves_the_ring_in_visual_order() {
     assert_eq!(ring(&mut logic), None);
     logic.focus_bar(&window);
     assert_eq!(window.focus_taken.get(), 1);
-    assert_eq!(ring_left(&mut logic), Some(1.5), "around the bar itself");
+    assert_eq!(ring(&mut logic), None, "no ring around the bar by default");
     // Left, centre, right, each zone in its order; then around again.
     let order: Vec<String> = [
         &config.layout.left,
@@ -58,6 +58,25 @@ fn the_hotkey_focuses_the_bar_and_tab_moves_the_ring_in_visual_order() {
     window.no_focus.set(true);
     logic.focus_bar(&window);
     assert_eq!(ring(&mut logic), None);
+}
+
+#[test]
+fn the_ring_goes_around_the_bar_when_the_setting_asks() {
+    let settings = Settings {
+        bar_focus_ring: true,
+        ..Settings::default()
+    };
+    let (mut logic, window, _, _) = bar(settings);
+    logic.focus_bar(&window);
+    assert_eq!(ring_left(&mut logic), Some(1.5), "around the bar itself");
+    key(&mut logic, &window, Key::Tab, false);
+    let first = logic.focused_sensor().expect("a sensor");
+    let expected = ring_left_of(&logic, &first);
+    assert_eq!(
+        ring_left(&mut logic),
+        Some(expected),
+        "then around the sensor"
+    );
 }
 
 #[test]
@@ -306,12 +325,12 @@ fn a_removed_sensors_focus_goes_to_the_one_in_its_place() {
     logic.apply_config(&window, config.clone());
     logic.sync_sensors(&window);
     assert_eq!(logic.focused_sensor(), Some(date));
-    // The bar emptied: the ring goes around the bar itself.
+    // The bar emptied: the focus is on the bar itself, which has no ring by default.
     config.layout = Layout::default();
     logic.apply_config(&window, config);
     logic.sync_sensors(&window);
     assert_eq!(logic.focused_sensor(), None);
-    assert_eq!(ring_left(&mut logic), Some(1.5));
+    assert_eq!(ring(&mut logic), None);
     key(&mut logic, &window, Key::Tab, false);
     assert_eq!(logic.focused_sensor(), None, "nothing to move to");
 }

@@ -162,6 +162,7 @@ export global SettingsState {
     // Why the hotkey could not be registered or recorded; empty when it works.
     in property <string> hotkey-error;
     in-out property <int> hotkey-action;
+    in-out property <bool> bar-focus-ring;
     in-out property <bool> show-tray-icon;
     in-out property <bool> locked;
     in-out property <bool> popups-enabled;
@@ -591,6 +592,18 @@ component GeneralPage inherits VerticalLayout {
             accessible-label: I18n.tr("settings.general.hotkeyAction");
             selected => {
                 SettingsState.set-choice("hotkeyAction", self.current-index);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.general.barFocusRing");
+        help: I18n.tr("settings.general.barFocusRing.help");
+        OnOffSwitch {
+            checked <=> SettingsState.bar-focus-ring;
+            label: I18n.tr("settings.general.barFocusRing");
+            toggled => {
+                SettingsState.set-flag("barFocusRing", self.checked);
             }
         }
     }

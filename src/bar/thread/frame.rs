@@ -141,12 +141,15 @@ impl BarLogic {
                 self.theme.accent,
             );
         }
-        // The focus ring in the accent colour, while the bar has the keyboard (SPEC §14.4).
-        if let Some(keys) = self.keys.as_ref().filter(|k| k.focused) {
-            let place = keys
-                .sensor
+        // The focus ring in the accent colour, while the bar has the keyboard (SPEC §14.4):
+        // around the focused sensor, and around the bar itself only when the setting asks.
+        let keys = self.keys.as_ref().filter(|k| k.focused);
+        let place = keys.map(|keys| {
+            keys.sensor
                 .as_deref()
-                .and_then(|id| self.sensors.place_of(id));
+                .and_then(|id| self.sensors.place_of(id))
+        });
+        if let Some(place) = place.filter(|p| p.is_some() || self.settings.bar_focus_ring) {
             let rect = focus::ring(place, size, self.theme.gap);
             canvas.stroke(
                 &Shape::RoundedRect {

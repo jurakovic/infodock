@@ -96,6 +96,8 @@ pub struct Settings {
     /// Accelerator, e.g. `Ctrl+Alt+Shift+I`.
     pub hotkey: String,
     pub hotkey_action: HotkeyAction,
+    /// A focus ring around the whole bar while it has the keyboard and no sensor is focused.
+    pub bar_focus_ring: bool,
     pub locked: bool,
     pub popups_enabled: bool,
     pub clicks_when_locked: ClicksWhenLocked,
@@ -129,6 +131,7 @@ impl Default for Settings {
             show_tray_icon: true,
             hotkey: "Ctrl+Alt+Shift+I".into(),
             hotkey_action: HotkeyAction::BringToFront,
+            bar_focus_ring: false,
             locked: false,
             popups_enabled: true,
             clicks_when_locked: ClicksWhenLocked::Always,
@@ -705,6 +708,7 @@ mod tests {
     fn defaults_match_the_spec() {
         let s = Settings::default();
         assert!(s.autostart);
+        assert!(!s.bar_focus_ring);
         assert_eq!(s.sensor_spacing, 1);
         assert_eq!(s.new_sensor_menu, NewSensorMenu::Submenu);
         assert!(!s.bar.reserve_space);

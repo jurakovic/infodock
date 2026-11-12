@@ -37,6 +37,8 @@
   "settings.general.autostart": "Start with Windows",
   "settings.general.autostart.help": "Starts Infodock when you sign in.",
   "settings.general.autostart.error": "Could not change whether Infodock starts at sign-in: {error}",
+  "settings.general.barFocusRing": "Ring around the bar while it has the keyboard",
+  "settings.general.barFocusRing.help": "The hotkey gives the bar the keyboard. Tab and the arrow keys ring the sensor they move to either way.",
   "settings.general.showTrayIcon": "Show the tray icon",
   "settings.general.locked": "Lock the bar",
   "settings.general.locked.help": "Prevents rearranging sensors.",

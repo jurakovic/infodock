@@ -577,9 +577,9 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 
 **Keyboard on the bar** (since M5 S6)
 
-- [ ] With Notepad focused, press the hotkey: a ring in the accent colour goes around the whole bar and typing no longer reaches Notepad. Tab moves the ring to the first sensor of the left zone, then on through the centre and right zones, and from the last back to the first; Shift+Tab goes backwards, the arrows too, Home and End to the ends. A Spacer is never ringed. After the show delay the ringed sensor's hint appears.
+- [ ] With Notepad focused, press the hotkey: typing no longer reaches Notepad, and no ring shows. With Settings ▸ General ▸ *Ring around the bar while it has the keyboard* on, the hotkey puts a ring in the accent colour around the whole bar. Either way, Tab moves the ring to the first sensor of the left zone, then on through the centre and right zones, and from the last back to the first; Shift+Tab goes backwards, the arrows too, Home and End to the ends. A Spacer is never ringed. After the show delay the ringed sensor's hint appears.
 - [ ] Enter (or Space) on a Shortcut starts it; on a Folder Menu its list opens with the keyboard in it (the arrows move in the list); Esc closes the list and the ring is back on the Folder Menu. Choosing an item closes the list as well, the ring back on the bar until the started program takes the focus.
-- [ ] Shift+F10 (or the Menu key) on a sensor opens its menu beside it, above the bar at the bottom and below it at the top; with the ring around the whole bar, the bar menu. *Remove sensor* from the keyboard: after the confirmation the ring is on the sensor that took its place.
+- [ ] Shift+F10 (or the Menu key) on a sensor opens its menu beside it, above the bar at the bottom and below it at the top; with no sensor ringed, the bar menu. *Remove sensor* from the keyboard: after the confirmation the ring is on the sensor that took its place.
 - [ ] Esc: the ring goes and Notepad has the focus again (typing reaches it). Press the hotkey, then click into Notepad: the ring goes. Alt+F4 on the focused bar does nothing. With *Hotkey action* on *Toggle visibility*, the hotkey that shows the bar focuses it and the one that hides it gives the focus back to Notepad.
 - [ ] Locked with *Clicks when locked* on *Alt only*: Enter still clicks the ringed sensor.
 

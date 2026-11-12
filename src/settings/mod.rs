@@ -461,6 +461,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_hotkey(settings.hotkey.as_str().into());
     state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
     state.set_hotkey_action(choice("hotkeyAction"));
+    state.set_bar_focus_ring(settings.bar_focus_ring);
     state.set_show_tray_icon(settings.show_tray_icon);
     state.set_locked(settings.locked);
     state.set_popups_enabled(settings.popups_enabled);
