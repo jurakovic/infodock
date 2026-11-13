@@ -31,7 +31,7 @@ Exit criteria: the bar reserves space correctly on 1–2 monitors at 100/150 % D
 - [ ] *Height* slider: the bar's height changes and maximised windows follow. *Use theme default* returns to 28.
 - [ ] *Reserve screen space* off: maximised windows extend under the bar (the bar stays on top). On again: they stop at the bar.
 - [ ] *Stacking* → *Like other windows*: clicking another window brings it in front of the bar where they overlap. → *Always behind other windows*: windows always cover the bar, but on an empty desktop the bar is still visible above the wallpaper; the hotkey (Ctrl+Alt+Shift+I) brings it forward until you click elsewhere. Back to *Always on top*.
-- [ ] *Always behind other windows* with a window open: press Win+D (Show desktop): the bar stays visible over the desktop; click a window on the taskbar: it covers the bar again (since M5 S14o).
+- [ ] *Always behind other windows* with a window open: press Win+D (Show desktop): the bar stays visible over the desktop, also on Windows 11 build 26300 and later; click a window on the taskbar: it covers the bar again, and a window dragged over the bar stays above it (since M5 S14o, again in S14w).
 - [ ] *Floating* with *Always on top*: quit and start Infodock: the bar is above other windows at once (a window dragged over it stays below), without choosing the setting again (since M5 S14o).
 - [ ] Full-screen: play a video full-screen (or press F11 in a browser) on the bar's monitor: the bar steps behind it. Leave full-screen: the bar is back on top. With *Step back for full-screen apps* off, the bar stays on top.
 
@@ -688,9 +688,10 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] With an app that registers a global hotkey running (e.g. ShareX's Ctrl+Shift+PrintScreen, or AutoHotkey with `^!k::MsgBox`), Settings ▸ General ▸ *Hotkey*, press that combination: recording ends with *Another app already uses Ctrl+Alt+K. Choose a different combination.*, the button shows the previous hotkey, which still works, and the other app did not react. A free combination is recorded as before.
 
-**Z-order: floating start and "Always behind"** (since M5 S14o)
+**Z-order: floating start and "Always behind"** (since M5 S14o; Show desktop again in S14w)
 
 - [ ] The checks are in M0 ▸ *Settings ▸ Bar*: *Always behind other windows* with Win+D, and *Floating* with *Always on top* after a restart.
+- [ ] *Always behind other windows*, Win+D, then Win+D again (the windows come back): they cover the bar; the hotkey still brings it forward until you click elsewhere, and it goes behind the windows again.
 
 **Acrylic and the material** (since M5 S14n; CI's runner draws no material, so this is the check)
 

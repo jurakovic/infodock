@@ -279,7 +279,11 @@ impl Shared {
             req.edge
         };
 
-        let insert_after = insert_after(req, self.stacking());
+        let now = self.stacking();
+        let insert_after = insert_after(req, now);
+        if leaves_topmost_first(insert_after, now) {
+            self.set_z(HWND_NOTOPMOST);
+        }
         let (changed, offset) = self.ui(|u| {
             let changed = u
                 .applied
@@ -455,8 +459,18 @@ impl Shared {
         let Some(req) = lock(&self.request).clone() else {
             return;
         };
+        let now = self.stacking();
+        let insert_after = insert_after(&req, now);
+        if leaves_topmost_first(insert_after, now) {
+            self.set_z(HWND_NOTOPMOST);
+        }
+        self.set_z(insert_after);
+    }
+
+    /// Changes only the bar's place in the z-order.
+    fn set_z(&self, insert_after: HWND) {
         self.set_window_pos(
-            insert_after(&req, self.stacking()),
+            insert_after,
             Rect::default(),
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
@@ -621,21 +635,34 @@ struct Stacking {
 }
 
 /// Where the bar goes in the z-order (SPEC §5.3). `HWND_NOTOPMOST` only has an effect on a
-/// topmost window, so a non-topmost bar that should behave like a normal window is brought up
-/// with `HWND_TOP` instead (e.g. after a full-screen app sent it to the bottom). A bar kept
-/// behind other windows comes up over the desktop while that is in front, as after Show
-/// desktop, which raises it over every normal window.
+/// topmost window, so a non-topmost bar that should be in front of the normal windows (one
+/// that behaves like them, or one kept behind them that the hotkey raised) is brought up with
+/// `HWND_TOP` instead (e.g. after a full-screen app sent it to the bottom).
+///
+/// A bar kept behind other windows comes up over the desktop while that is in front, as after
+/// Show desktop, which raises it over every normal window. It is topmost for that time: while
+/// Show desktop is on, `HWND_TOP` returns true and changes nothing (Windows 11 build 26300).
 fn insert_after(req: &DockRequest, now: Stacking) -> HWND {
     if now.fullscreen && req.hide_on_fullscreen {
         return HWND_BOTTOM;
     }
-    match req.z_order {
-        ZOrder::Topmost => HWND_TOPMOST,
-        ZOrder::Normal if now.topmost_now => HWND_NOTOPMOST,
-        ZOrder::Normal => HWND_TOP,
-        ZOrder::Bottom if now.raised || now.desktop => HWND_TOP,
-        ZOrder::Bottom => HWND_BOTTOM,
+    let in_front = match req.z_order {
+        ZOrder::Topmost => return HWND_TOPMOST,
+        ZOrder::Bottom if now.desktop => return HWND_TOPMOST,
+        ZOrder::Normal => true,
+        ZOrder::Bottom => now.raised,
+    };
+    match (in_front, now.topmost_now) {
+        (true, true) => HWND_NOTOPMOST,
+        (true, false) => HWND_TOP,
+        (false, _) => HWND_BOTTOM,
     }
+}
+
+/// A topmost bar goes behind the other windows in two steps, `HWND_NOTOPMOST` and then
+/// `HWND_BOTTOM`: the second alone left the bar over the windows after Show desktop.
+fn leaves_topmost_first(insert_after: HWND, now: Stacking) -> bool {
+    insert_after == HWND_BOTTOM && now.topmost_now
 }
 
 /// `hwnd` has `WS_EX_TOPMOST`.
@@ -795,6 +822,7 @@ mod tests {
         assert_eq!(top(ZOrder::Normal, true, false, false, false), HWND_TOP);
         assert_eq!(top(ZOrder::Bottom, true, false, false, false), HWND_BOTTOM);
         assert_eq!(top(ZOrder::Bottom, true, false, true, false), HWND_TOP);
+        assert_eq!(top(ZOrder::Bottom, true, false, true, true), HWND_NOTOPMOST);
         assert_eq!(top(ZOrder::Topmost, true, true, false, true), HWND_BOTTOM);
         assert_eq!(top(ZOrder::Topmost, false, true, false, true), HWND_TOPMOST);
     }
@@ -827,18 +855,36 @@ mod tests {
             desktop: true,
             ..Stacking::default()
         };
-        assert_eq!(insert_after(&behind, desktop), HWND_TOP);
+        // Topmost while the desktop is in front, also when the hotkey raised it.
+        assert_eq!(insert_after(&behind, desktop), HWND_TOPMOST);
+        let raised = Stacking {
+            raised: true,
+            topmost_now: true,
+            ..desktop
+        };
+        assert_eq!(insert_after(&behind, raised), HWND_TOPMOST);
+        assert!(!leaves_topmost_first(HWND_TOPMOST, raised));
+        // Another window in front: back behind the windows, leaving the topmost layer first.
+        let left = Stacking {
+            topmost_now: true,
+            ..Stacking::default()
+        };
+        assert_eq!(insert_after(&behind, left), HWND_BOTTOM);
+        assert!(leaves_topmost_first(HWND_BOTTOM, left));
         assert_eq!(insert_after(&behind, Stacking::default()), HWND_BOTTOM);
+        assert!(!leaves_topmost_first(HWND_BOTTOM, Stacking::default()));
         // The other choices are as they were; a full-screen app still sends it down.
         assert_eq!(
             insert_after(&req(ZOrder::Topmost, true), desktop),
             HWND_TOPMOST
         );
+        assert_eq!(insert_after(&req(ZOrder::Normal, true), desktop), HWND_TOP);
         let fullscreen = Stacking {
             fullscreen: true,
             ..desktop
         };
         assert_eq!(insert_after(&behind, fullscreen), HWND_BOTTOM);
+        assert!(!leaves_topmost_first(HWND_BOTTOM, fullscreen));
         assert!(is_desktop_class("WorkerW") && is_desktop_class("Progman"));
         assert!(!is_desktop_class("Shell_TrayWnd") && !is_desktop_class("Notepad"));
     }
