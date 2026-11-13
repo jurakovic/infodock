@@ -159,6 +159,9 @@ export global SettingsState {
     // Set while the hotkey button waits for a combination; Rust reads the keys (they are
     // physical keys, which Slint's key events do not carry) and clears it.
     in-out property <bool> recording-hotkey;
+    // Raised by Rust when Windows may have dropped the window's pixels (SPEC §10.7): the
+    // window's background depends on it, so the whole window is painted again.
+    in property <int> repaint;
     // Why the hotkey could not be registered or recorded; empty when it works.
     in property <string> hotkey-error;
     in-out property <int> hotkey-action;
@@ -2664,7 +2667,9 @@ export component SettingsWindow inherits Window {
     changed width => {
         Look.narrow = self.width < 720px;
     }
-    background: Look.window;
+    // Both branches are the same: the condition only makes the background, and with it the
+    // whole window, depend on `repaint`.
+    background: SettingsState.repaint >= 0 ? Look.window : Look.window;
     // Windows 11's UI font at WinUI's Body size, 14 px (Slint would take the system's message
     // font, 12 px); help text stays at Caption, 12 px. Where the font is missing (Windows 10)
     // Slint falls back to Segoe UI.

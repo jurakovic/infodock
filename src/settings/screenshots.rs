@@ -118,6 +118,43 @@ fn render_settings_pages() {
         state.set_page(index as i32);
         render(&format!("settings-{page}"));
     }
+
+    // As in the app, the renderer keeps its frame and paints only what changed. Raising
+    // `repaint` paints the whole window, as after a restore (SPEC §10.7).
+    state.set_page(0);
+    render("settings-general");
+    let dirty = |raise: bool| {
+        if raise {
+            state.set_repaint(state.get_repaint() + 1);
+        }
+        window.request_redraw();
+        let mut pixels = vec![PremultipliedRgbaColor::default(); (width * height) as usize];
+        let mut painted = None;
+        window.draw_if_needed(|renderer| {
+            renderer.set_repaint_buffer_type(RepaintBufferType::ReusedBuffer);
+            let region = renderer.render(&mut pixels, width as usize);
+            painted = Some((region.bounding_box_origin(), region.bounding_box_size()));
+        });
+        painted.expect("drawn")
+    };
+    dirty(false);
+    let (_, unchanged) = dirty(false);
+    assert_eq!(
+        (unchanged.width, unchanged.height),
+        (0, 0),
+        "nothing changed"
+    );
+    let (origin, size) = dirty(true);
+    assert_eq!((origin.x, origin.y), (0, 0));
+    assert_eq!(
+        (size.width, size.height),
+        (width, height),
+        "the whole window"
+    );
+    window.request_redraw();
+    window.draw_if_needed(|renderer| {
+        renderer.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
+    });
     // The whole Help and About pages: the tips; the licence, the crates and Slint's
     // attribution.
     for page in ["help", "about"] {

@@ -673,6 +673,7 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 - [ ] Settings ▸ Bar ▸ *Space above and below sensors* 3 px: the CPU and network graphs, the memory meter and the logo get shorter, with space above and below them; the text of Date and Time keeps its size. 6 px on a 22 px bar: the sensors keep 12 px. Back to 0: as before. CI renders 3 px as `bar-first-run-padding*.png`.
 - [ ] On General, change *Space between sensors* and *Lock the bar*, scroll to the end, *Restore defaults…*: the question shows in the card; *Cancel* keeps the changes; *Restore defaults…* → *Restore*: both are back (1 px, unlocked) and the bar follows. On Appearance, *Restore* brings back Classic with Glass at 50 %. Then open Bar: it shows from its top, not scrolled.
 - [ ] Settings open on any page: in Windows, turn *Transparency effects* off and on again, then switch apps between light and dark mode and back. The window stays drawn the whole time, never blank or see-through, and shows each colour scheme at once without hovering over its controls.
+- [ ] Minimize Settings, then change something from the tray menu (*Lock*, then again to unlock) so the page refills while it is minimized; restore it from the taskbar: the whole page shows at once, not black with controls appearing under the pointer. The same after Settings stayed minimized for an hour, and after locking and unlocking the PC meanwhile.
 
 **Wi-Fi and location access** (since M5 S14r; Windows 11 24H2 or later, a laptop with Wi-Fi)
 

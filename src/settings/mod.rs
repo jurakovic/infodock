@@ -696,6 +696,7 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     let app = Arc::clone(app);
     let weak = window.as_weak();
     let mut modifiers = ModifiersState::empty();
+    let mut restore = Restore::default();
     let watch: Rc<RefCell<Option<crate::platform::HotkeyWatch>>> = Rc::default();
     // The button starts recording: the watch starts with it, before the keys come.
     window.global::<ui::SettingsState>().on_recording_toggled({
@@ -714,6 +715,9 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
         // Recording also starts and ends without the button (a page change, focus lost, keys);
         // each event brings the watch in line before and after it is handled.
         follow_recording(&watch, &window, &app);
+        if restore.repaints_all(event) {
+            state.set_repaint(state.get_repaint().wrapping_add(1));
+        }
         let mut result = EventResult::Propagate;
         let stop = || {
             state.set_recording_hotkey(false);
@@ -783,6 +787,33 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
         follow_recording(&watch, &window, &app);
         result
     });
+}
+
+/// When Settings paints its whole window again (SPEC §10.7). Slint's software renderer paints
+/// and shows only what changed, and believes the window still shows the rest. Windows drops a
+/// minimized window's pixels, and a frame drawn meanwhile (any change of the page) leaves
+/// nothing to paint on the restore: the window came back black, its controls showing one by one
+/// under the pointer. So the window is painted again whenever it is restored or gets the focus.
+#[derive(Default)]
+struct Restore {
+    minimized: bool,
+}
+
+impl Restore {
+    /// `event` may follow Windows dropping the window's pixels: the window came back from
+    /// minimized (Windows sizes a minimized window to zero), or got the focus.
+    fn repaints_all(&mut self, event: &slint::winit_030::winit::event::WindowEvent) -> bool {
+        use slint::winit_030::winit::event::WindowEvent;
+        match event {
+            WindowEvent::Resized(size) if size.width == 0 || size.height == 0 => {
+                self.minimized = true;
+                false
+            }
+            WindowEvent::Resized(_) => std::mem::take(&mut self.minimized),
+            WindowEvent::Focused(focused) => *focused,
+            _ => false,
+        }
+    }
 }
 
 /// Starts or ends the watch for combinations other apps hold (SPEC §6.5), so that it runs
@@ -874,4 +905,27 @@ fn focus(window: &ui::SettingsWindow) {
         w.set_minimized(false);
         w.focus_window();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use slint::winit_030::winit::dpi::PhysicalSize;
+    use slint::winit_030::winit::event::WindowEvent;
+
+    use super::Restore;
+
+    #[test]
+    fn the_window_is_painted_again_after_a_restore_and_on_focus() {
+        let mut restore = Restore::default();
+        let resized = |width, height| WindowEvent::Resized(PhysicalSize::new(width, height));
+        assert!(!restore.repaints_all(&resized(760, 560)), "a plain resize");
+        assert!(!restore.repaints_all(&resized(0, 0)), "minimized");
+        assert!(restore.repaints_all(&resized(760, 560)), "restored");
+        assert!(
+            !restore.repaints_all(&resized(800, 560)),
+            "once per restore"
+        );
+        assert!(restore.repaints_all(&WindowEvent::Focused(true)));
+        assert!(!restore.repaints_all(&WindowEvent::Focused(false)));
+    }
 }
