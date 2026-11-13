@@ -684,9 +684,12 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] A floating bar with a Network Graph (rates shown) on the left, an icon sensor (e.g. the Recycle Bin) in the centre and a Text sensor on the right: narrow it slowly from its end. The centre moves towards the right while the text is whole, then the text gives way with "…", and only once it is down to a few characters does anything overlap. With the zones swapped it moves left.
 
-**Hotkey taken by another app** (since M5 S14p)
+**Hotkey taken by another app** (since M5 S14p, again in S14x; with physical keys, not injected ones)
 
 - [ ] With an app that registers a global hotkey running (e.g. ShareX's Ctrl+Shift+PrintScreen, or AutoHotkey with `^!k::MsgBox`), Settings ▸ General ▸ *Hotkey*, press that combination: recording ends with *Another app already uses Ctrl+Alt+K. Choose a different combination.*, the button shows the previous hotkey, which still works, and the other app did not react. A free combination is recorded as before.
+- [ ] Started with `RUST_LOG=infodock_lib=debug`, the log has `watching for hotkeys other apps hold` when the button is clicked, `Ctrl+Alt+K is taken` for the combination, and `no longer watching` once recording ends.
+- [ ] While recording, press Infodock's own hotkey: the bar does not react, and the button shows that hotkey again.
+- [ ] Start recording, then click another window and press the other app's combination there: the other app reacts (the keys are not kept from it once recording ended).
 
 **Z-order: topmost at start and "Always behind"** (since M5 S14o; again in S14w and S14w2)
 

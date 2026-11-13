@@ -22,7 +22,8 @@ mod screenshots;
 mod welcome;
 mod window;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -675,9 +676,9 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
 /// with its modifiers becomes the hotkey (SPEC §6.5); Esc, leaving the window or the General
 /// page cancels. The keys are read from winit as physical keys, so the keyboard layout does not
 /// matter (Ctrl+Alt is AltGr on many layouts). A combination another app holds never reaches
-/// the window, so the platform watches for those meanwhile ([`taken_hotkey`]). When the OS
-/// switches between light and dark, what follows it shows it (the Fluent palette follows by
-/// itself, SPEC §10.3).
+/// the window, so the platform watches for those meanwhile ([`taken_hotkey`],
+/// [`follow_recording`]). When the OS switches between light and dark, what follows it shows it
+/// (the Fluent palette follows by itself, SPEC §10.3).
 fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     use slint::winit_030::winit::event::{ElementState, WindowEvent};
     use slint::winit_030::winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -686,25 +687,25 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     let app = Arc::clone(app);
     let weak = window.as_weak();
     let mut modifiers = ModifiersState::empty();
-    let mut watch: Option<crate::platform::HotkeyWatch> = None;
+    let watch: Rc<RefCell<Option<crate::platform::HotkeyWatch>>> = Rc::default();
+    // The button starts recording: the watch starts with it, before the keys come.
+    window.global::<ui::SettingsState>().on_recording_toggled({
+        let (app, weak, watch) = (Arc::clone(&app), weak.clone(), Rc::clone(&watch));
+        move || {
+            if let Some(window) = weak.upgrade() {
+                follow_recording(&watch, &window, &app);
+            }
+        }
+    });
     window.window().on_winit_window_event(move |_, event| {
         let Some(window) = weak.upgrade() else {
             return EventResult::Propagate;
         };
         let state = window.global::<ui::SettingsState>();
-        // The watch runs exactly while recording; the window's events come often enough (the
-        // modifiers' own presses among them) to start it before a combination is complete.
-        let recording = state.get_recording_hotkey() && state.get_page() == GENERAL_PAGE;
-        if recording != watch.is_some() {
-            watch = if recording {
-                let (app, weak) = (Arc::clone(&app), weak.clone());
-                crate::platform::watch_taken_hotkeys(Box::new(move |combo| {
-                    taken_hotkey(&app, &weak, combo);
-                }))
-            } else {
-                None
-            };
-        }
+        // Recording also starts and ends without the button (a page change, focus lost, keys);
+        // each event brings the watch in line before and after it is handled.
+        follow_recording(&watch, &window, &app);
+        let mut result = EventResult::Propagate;
         let stop = || {
             state.set_recording_hotkey(false);
             state.set_hotkey_error(hotkey::error().unwrap_or_default().into());
@@ -766,12 +767,39 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
                     PhysicalKey::Unidentified(_) => {}
                 }
                 // Keys pressed while recording are not typing or navigation.
-                return EventResult::PreventDefault;
+                result = EventResult::PreventDefault;
             }
             _ => {}
         }
-        EventResult::Propagate
+        follow_recording(&watch, &window, &app);
+        result
     });
+}
+
+/// Starts or ends the watch for combinations other apps hold (SPEC §6.5), so that it runs
+/// exactly while a hotkey is recorded on the General page. Started late, it misses a
+/// combination pressed before it: that one goes to the app that holds it.
+fn follow_recording(
+    watch: &RefCell<Option<crate::platform::HotkeyWatch>>,
+    window: &ui::SettingsWindow,
+    app: &Arc<App>,
+) {
+    let state = window.global::<ui::SettingsState>();
+    let recording = state.get_recording_hotkey() && state.get_page() == GENERAL_PAGE;
+    let Ok(mut watch) = watch.try_borrow_mut() else {
+        return;
+    };
+    if recording == watch.is_some() {
+        return;
+    }
+    *watch = if recording {
+        let (app, weak) = (Arc::clone(app), window.as_weak());
+        crate::platform::watch_taken_hotkeys(Box::new(move |combo| {
+            taken_hotkey(&app, &weak, combo);
+        }))
+    } else {
+        None
+    };
 }
 
 /// A combination someone holds was pressed while recording (SPEC §6.5): it ends the recording
@@ -800,6 +828,7 @@ fn taken_hotkey(
         };
         match hotkey::accelerator(held, combo.code) {
             Ok(accelerator) => {
+                tracing::info!("{accelerator} is taken (by another app, or Infodock's hotkey)");
                 state.set_recording_hotkey(false);
                 apply_hotkey(&app, &accelerator);
             }

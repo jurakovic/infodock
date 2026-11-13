@@ -40,6 +40,7 @@ impl Drop for Hook {
         // SAFETY: the hook was installed by `watch` on this thread and is removed once.
         let _ = unsafe { UnhookWindowsHookEx(self.0) };
         TAKEN.with(|t| *t.borrow_mut() = None);
+        tracing::debug!("no longer watching for hotkeys other apps hold");
     }
 }
 
@@ -54,6 +55,7 @@ pub(crate) fn watch(taken: Taken) -> Option<Hook> {
     match hook {
         Ok(hook) => {
             TAKEN.with(|t| *t.borrow_mut() = Some(taken));
+            tracing::debug!("watching for hotkeys other apps hold");
             Some(Hook(hook))
         }
         Err(e) => {

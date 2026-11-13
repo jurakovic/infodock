@@ -304,6 +304,8 @@ export global SettingsState {
     callback reset(path: string);
     // Puts the settings of the page (`Pages`) back to their defaults.
     callback restore-defaults(page: int);
+    // The hotkey button started or ended recording.
+    callback recording-toggled();
     // Windows' colour dialog opened on the colour `text`: the colour chosen as `#RRGGBB`, or ""
     // for Cancel.
     callback pick-color(text: string) -> string;
@@ -665,6 +667,7 @@ component GeneralPage inherits VerticalLayout {
             accessible-label: I18n.tr("settings.general.hotkey");
             clicked => {
                 SettingsState.recording-hotkey = !SettingsState.recording-hotkey;
+                SettingsState.recording-toggled();
             }
         }
     }
