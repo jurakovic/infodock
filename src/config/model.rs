@@ -155,7 +155,7 @@ impl Default for Settings {
 pub struct BarSettings {
     pub edge: Edge,
     pub mode: BarMode,
-    /// `"primary"` or a monitor device name such as `\\.\DISPLAY2`.
+    /// `"primary"` or a monitor key, `<device>|<friendly name>|<width>x<height>` (SPEC §10.2).
     pub monitor: String,
     pub reserve_space: bool,
     pub z_order: ZOrder,

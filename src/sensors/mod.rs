@@ -399,8 +399,9 @@ impl std::fmt::Debug for ClickResult {
 
 /// A placed sensor. Lives on the bar thread; re-created when its props change (SPEC §8.1).
 pub trait Sensor {
-    /// Width in logical px; the height is the bar's. Called after creation and whenever the
-    /// sensor or the theme changed, so text layouts and bitmaps are built (and kept) here.
+    /// Width in logical px; the height is the strip the sensors draw in (`Theme::sensor_height`,
+    /// SPEC §10.2). Called after creation and whenever the sensor or the theme changed, so text
+    /// layouts and bitmaps are built (and kept) here.
     fn measure(&mut self, cx: &LayoutCtx) -> f32;
     /// How narrow it can be drawn when the zones do not fit the bar (SPEC §5.4), logical px,
     /// for sensors whose text can end in an ellipsis; `None` (the default) keeps the measured
