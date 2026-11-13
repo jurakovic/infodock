@@ -166,6 +166,15 @@ pub fn batteries_changed(names: Vec<String>) {
     }
 }
 
+/// The OS appearance changed (bar thread): the Appearance page shows whether a material can be
+/// chosen now (SPEC §10.3). A switch between light and dark also reaches the window itself.
+pub fn appearance_changed(appearance: crate::platform::OsAppearance) {
+    let queued = slint::invoke_from_event_loop(move || appearance::os_changed(appearance));
+    if queued.is_err() {
+        tracing::debug!("an appearance change arrived after the event loop ended");
+    }
+}
+
 /// Refreshes the open window whenever the config changes (from any thread).
 pub fn watch(app: &Arc<App>) {
     let a = Arc::clone(app);

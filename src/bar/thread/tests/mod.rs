@@ -249,6 +249,12 @@ impl BarHost for FakeHost {
     fn export_layout(&self) {
         self.log("export".into());
     }
+    fn appearance_changed(&self, appearance: crate::platform::OsAppearance) {
+        self.log(format!(
+            "appearance transparency {}",
+            appearance.transparency
+        ));
+    }
 }
 
 const WIDTH: f32 = 1200.0;

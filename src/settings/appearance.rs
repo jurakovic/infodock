@@ -19,7 +19,7 @@ use crate::i18n::{t, t_args};
 use crate::look::skins::pack::{self, PackEntry};
 use crate::look::skins::{self, BuiltIn, CUSTOM};
 use crate::look::theme::Theme;
-use crate::platform::Bitmap;
+use crate::platform::{Bitmap, OsAppearance};
 use crate::ui;
 
 /// The page index of Appearance in the window.
@@ -363,6 +363,15 @@ fn browse(app: &Arc<App>) {
     if let Some(path) = picked {
         save(app, model::patch("classic.customSkin", Value::String(path)));
     }
+}
+
+/// The OS appearance changed while Settings may be open: *Material* follows transparency
+/// effects at once, as the bar does, without waiting for the page to be shown again.
+pub(super) fn os_changed(appearance: OsAppearance) {
+    with_open(|open| {
+        let state = open.window.global::<ui::SettingsState>();
+        state.set_material_available(appearance.transparency);
+    });
 }
 
 /// The skins folder changed: the bar draws its skin again, the page lists the folder again.

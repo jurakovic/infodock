@@ -29,7 +29,9 @@ use crate::config::ConfigStore;
 use crate::config::exchange::ImportFormat;
 use crate::config::model::{SensorInstance, Settings, Zone};
 use crate::look::anim::slides_out;
-use crate::platform::{self, AppBar, DockRequest, Platform, PlatformError, TrayIcon, UiWaker};
+use crate::platform::{
+    self, AppBar, DockRequest, OsAppearance, Platform, PlatformError, TrayIcon, UiWaker,
+};
 use crate::sampler::{Change, Delivery, TopicRequest};
 use thread::BarLogic;
 
@@ -94,6 +96,9 @@ pub trait BarHost: Send + Sync {
     fn import_layout(&self, format: ImportFormat);
     /// Exports the layout or the whole config to a file the user picks (SPEC §11.3).
     fn export_layout(&self);
+    /// The OS appearance changed (light or dark, accent colour, transparency effects): Settings
+    /// shows what depends on it, e.g. whether a material can be chosen (SPEC §10.3).
+    fn appearance_changed(&self, appearance: OsAppearance);
 }
 
 /// Work for the bar thread, queued by [`BarController`].

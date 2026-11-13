@@ -282,3 +282,29 @@ fn the_material_takes_the_bars_light_or_dark_look() {
         Some(&(Material::None, true))
     );
 }
+
+#[test]
+fn settings_hear_when_transparency_effects_change() {
+    let (mut logic, window, host, _) = bar(Settings::modern());
+    let os = Arc::new(FakePlatform::default());
+    logic.platform = Arc::clone(&os) as Arc<dyn Platform>;
+    logic.appearance = crate::platform::OsAppearance::default();
+    // The bar hears of a change that is none: Settings is not told.
+    logic.on_event(&window, UiEvent::AppearanceChanged);
+    assert!(host.calls().is_empty());
+    // Transparency effects off, then on again: Settings hears of each (SPEC §10.3).
+    os.set_appearance(crate::platform::OsAppearance {
+        transparency: false,
+        ..Default::default()
+    });
+    logic.on_event(&window, UiEvent::AppearanceChanged);
+    os.set_appearance(crate::platform::OsAppearance::default());
+    logic.on_event(&window, UiEvent::AppearanceChanged);
+    assert_eq!(
+        host.calls(),
+        [
+            "appearance transparency false",
+            "appearance transparency true"
+        ]
+    );
+}

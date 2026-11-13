@@ -605,6 +605,7 @@ impl BarHandler for BarLogic {
                     tracing::info!("OS appearance changed: {appearance:?}");
                     self.appearance = appearance;
                     self.refresh_theme(window);
+                    self.host.appearance_changed(appearance);
                 }
             }
             UiEvent::Placed(geometry) => {

@@ -416,6 +416,10 @@ impl BarHost for AppHost {
         });
     }
 
+    fn appearance_changed(&self, appearance: crate::platform::OsAppearance) {
+        settings::appearance_changed(appearance);
+    }
+
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State) {
         let result = self.0.store.update(|c| {
             // A sensor removed meanwhile keeps no state.

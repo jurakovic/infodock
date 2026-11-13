@@ -72,8 +72,8 @@ pub fn en_us() -> &'static Locale {
     &EN_US
 }
 
-/// One platform for the tests (SPEC §16), the same on every OS: no monitors, the default
-/// appearance, no uptime, a settable locale (en-US) and clock (2026-10-13, a Tuesday). It
+/// One platform for the tests (SPEC §16), the same on every OS: no monitors, a settable
+/// appearance (the default), no uptime, a settable locale (en-US) and clock (2026-10-13, a Tuesday). It
 /// answers with what a test gave it (capabilities, volumes, connections, shell icons, …) and
 /// records what it is asked to do in [`FakePlatform::log`] instead of doing it, so tests that
 /// click, drop or eject run on Windows too.
@@ -92,6 +92,8 @@ pub struct FakePlatform {
     time: Mutex<Option<LocalTime>>,
     /// The locale for every `DateLocale`; en-US until set.
     locale: Mutex<Option<Locale>>,
+    /// The OS appearance; the default until set.
+    appearance: Mutex<Option<OsAppearance>>,
     log: Mutex<Vec<String>>,
 }
 
@@ -127,6 +129,7 @@ impl FakePlatform {
             no_volumes: false,
             time: Mutex::new(None),
             locale: Mutex::new(None),
+            appearance: Mutex::new(None),
             log: Mutex::new(Vec::new()),
         }
     }
@@ -190,6 +193,11 @@ impl FakePlatform {
         *lock(&self.locale) = Some(locale);
     }
 
+    /// From now on the OS appearance is `appearance`, as when the user changes it.
+    pub fn set_appearance(&self, appearance: OsAppearance) {
+        *lock(&self.appearance) = Some(appearance);
+    }
+
     /// What it was asked to do, in order.
     pub fn log(&self) -> Vec<String> {
         lock(&self.log).clone()
@@ -215,7 +223,7 @@ impl Platform for FakePlatform {
         Vec::new()
     }
     fn appearance(&self) -> OsAppearance {
-        OsAppearance::default()
+        lock(&self.appearance).unwrap_or_default()
     }
     fn uptime(&self) -> Duration {
         Duration::ZERO
