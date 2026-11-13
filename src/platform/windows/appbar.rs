@@ -298,8 +298,7 @@ impl Shared {
         let shown = shifted(rect, offset);
         self.set_window_pos(insert_after, shown, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         if insert_after == HWND_TOPMOST && !self.is_topmost() {
-            tracing::warn!("the bar did not become topmost; trying again");
-            self.restack();
+            self.take_topmost();
         }
         self.ui(|u| u.applied = Some((req.clone(), rect)));
         if changed {
@@ -467,6 +466,20 @@ impl Shared {
         self.set_z(insert_after);
     }
 
+    /// Makes the bar topmost again after `HWND_TOPMOST` did not. Some starts leave it stuck:
+    /// its owned `Default IME` window is topmost and the bar is not, and `HWND_TOPMOST` has no
+    /// effect until `HWND_NOTOPMOST` has unstuck it (D96).
+    fn take_topmost(&self) {
+        tracing::warn!("the bar did not become topmost; trying again from not topmost");
+        self.set_z(HWND_NOTOPMOST);
+        self.set_z(HWND_TOPMOST);
+        if self.is_topmost() {
+            tracing::info!("the bar is topmost now");
+        } else {
+            tracing::warn!("the bar is still not topmost");
+        }
+    }
+
     /// Changes only the bar's place in the z-order.
     fn set_z(&self, insert_after: HWND) {
         self.set_window_pos(
@@ -488,7 +501,8 @@ impl Shared {
     }
 
     /// The bar's place in the z-order changed from outside: a bar that should be topmost and
-    /// is not any more takes its place back, at most once a second (SPEC §5.3).
+    /// is not any more takes its place back, at most once a second (SPEC §5.3). The placement
+    /// that does it unsticks the bar if `HWND_TOPMOST` alone does not take ([`Self::take_topmost`]).
     fn on_pos_changed(&self) {
         let Some(req) = lock(&self.request).clone() else {
             return;
