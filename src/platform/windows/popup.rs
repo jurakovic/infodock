@@ -23,8 +23,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetWindowLongPtrW, HTCLIENT,
-    HWND_TOPMOST, IDC_ARROW, IDC_SIZENS, IDC_SIZEWE, LoadCursorW, RegisterClassExW, SC_KEYMENU,
-    SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_NOMOVE, SWP_NOSIZE,
+    HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZENS, IDC_SIZEWE, LoadCursorW, RegisterClassExW,
+    SC_KEYMENU, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_NOMOVE, SWP_NOSIZE,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetCursor, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, ShowWindow, SystemParametersInfoW, ULW_ALPHA, UpdateLayeredWindow, WA_INACTIVE,
     WM_ACTIVATE, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_GETOBJECT, WM_KEYDOWN, WM_LBUTTONDOWN,
@@ -224,6 +224,7 @@ pub(super) fn set_cursor(cursor: PopupCursor) {
         PopupCursor::Arrow => IDC_ARROW,
         PopupCursor::ResizeWidth => IDC_SIZEWE,
         PopupCursor::ResizeHeight => IDC_SIZENS,
+        PopupCursor::Hand => IDC_HAND,
     };
     // SAFETY: loads and sets a system cursor.
     unsafe {

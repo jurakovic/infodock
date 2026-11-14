@@ -317,3 +317,41 @@ fn a_locked_bar_does_not_drag() {
     ));
     assert!(host.calls().is_empty());
 }
+
+#[test]
+fn the_hand_shows_over_sensors_a_click_reaches() {
+    let (mut logic, window, _, _) = bar(Settings::default());
+    let (x, width) = logic.sensors.spans()[0][0];
+    let cpu = PointF::new(x + width / 2.0, 14.0);
+    hover(&mut logic, &window, cpu);
+    assert_eq!(
+        window.cursor.get(),
+        PopupCursor::Hand,
+        "the CPU Graph opens Task Manager"
+    );
+    // The logo is an Image, which does nothing on a click.
+    hover(&mut logic, &window, LOGO);
+    assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+    // Pressed, still the hand; once the press becomes a reorder drag, the arrow.
+    hover(&mut logic, &window, cpu);
+    press(&mut logic, &window, cpu, false);
+    assert_eq!(window.cursor.get(), PopupCursor::Hand);
+    logic.on_event(
+        &window,
+        UiEvent::PointerMove(PointF::new(cpu.x + 6.0, cpu.y)),
+    );
+    assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+    release(&mut logic, &window, PointF::new(cpu.x + 6.0, cpu.y));
+    logic.on_event(&window, UiEvent::PointerLeave);
+    assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+
+    // Locked with clicks only while Alt is held: no hand, as no "Click to …" line (SPEC §6.1).
+    let settings = Settings {
+        locked: true,
+        clicks_when_locked: ClicksWhenLocked::AltOnly,
+        ..Settings::default()
+    };
+    let (mut logic, window, _, _) = bar(settings);
+    hover(&mut logic, &window, cpu);
+    assert_eq!(window.cursor.get(), PopupCursor::Arrow);
+}

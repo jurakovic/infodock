@@ -407,6 +407,10 @@ impl Sensor for DateSensor {
         ))))
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         let app = cx.settings.apps.calendar.trim();
         let target = if app.is_empty() {

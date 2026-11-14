@@ -344,6 +344,10 @@ impl Sensor for NetworkGraph {
         ))
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         cx.platform.open(NETWORK_CONNECTIONS);
         ClickResult::Handled

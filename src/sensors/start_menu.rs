@@ -166,6 +166,10 @@ impl Sensor for StartMenu {
     }
 
     /// Opens the `folder-browser` popup on the merged program folders (SPEC §9.20).
+    fn clickable(&self, cx: &SensorCtx) -> bool {
+        !Self::folders(cx.platform).is_empty()
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         let folders = Self::folders(cx.platform);
         if folders.is_empty() {

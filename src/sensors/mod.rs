@@ -477,6 +477,12 @@ pub trait Sensor {
     fn has_popup(&self) -> bool {
         false
     }
+    /// Whether a click does something now (SPEC §6.1), for the hand cursor. It must agree with
+    /// [`Sensor::click`]: `true` exactly when that would not return [`ClickResult::None`].
+    /// Asked when the pointer comes onto the sensor, not on every move.
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        false
+    }
     /// The pointer entered (`true`) or left the sensor, e.g. to fade something in. A sensor
     /// that animates asks for frames through [`Sensor::wake_at`].
     fn on_hover(&mut self, _hovered: bool, _now: Instant, _cx: &SensorCtx) -> Dirty {
@@ -525,3 +531,44 @@ pub trait Sensor {
 
 #[cfg(test)]
 pub(crate) mod test_support;
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::registry::registry;
+    use super::test_support::{Harness, resolved};
+    use super::*;
+
+    /// The hand cursor follows `clickable`, so it must say what a click does (SPEC §6.1).
+    #[test]
+    fn clickable_agrees_with_click() {
+        let h = Harness::new();
+        let more = [
+            ("shortcut", json!({ "target": "C:\\Tools\\app.exe" })),
+            ("shortcut", json!({ "url": "https://example.com" })),
+            ("folder-menu", json!({ "folder": "C:\\Data" })),
+        ];
+        let defaults = registry().types().iter().map(|ty| (ty.id(), json!({})));
+        let mut clickable_types = 0;
+        for (id, stored) in defaults.chain(more) {
+            let ty = registry().get(id).expect("a type");
+            let mut sensor = ty
+                .create(&resolved(ty.schema(), stored.clone()), &State::new())
+                .expect("created");
+            let clickable = sensor.clickable(&h.ctx());
+            let clicked = sensor.click(&h.ctx()) != ClickResult::None;
+            assert_eq!(clickable, clicked, "{id} {stored}");
+            clickable_types += usize::from(clickable);
+        }
+        assert!(clickable_types > 10, "most types are clickable");
+        // Text, Image, Uptime and the Spacer do nothing on a click.
+        for id in ["text", "image", "uptime", "spacer"] {
+            let ty = registry().get(id).expect("a type");
+            let sensor = ty
+                .create(&resolved(ty.schema(), json!({})), &State::new())
+                .expect("created");
+            assert!(!sensor.clickable(&h.ctx()), "{id}");
+        }
+    }
+}

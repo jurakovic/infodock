@@ -1350,6 +1350,8 @@ pub enum PopupCursor {
     ResizeWidth,
     /// Over a grip that changes the height.
     ResizeHeight,
+    /// Over a bar sensor a click reaches (SPEC §6.1).
+    Hand,
 }
 
 /// The bar logic's timers; each runs independently.

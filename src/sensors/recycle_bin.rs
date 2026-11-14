@@ -225,6 +225,10 @@ impl Sensor for Bin {
         ))
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         cx.platform.open(FOLDER);
         ClickResult::Handled

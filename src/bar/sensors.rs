@@ -540,6 +540,15 @@ impl BarSensors {
         result
     }
 
+    /// Whether a click on sensor `id` does something now (SPEC §6.1).
+    pub fn clickable(&self, id: &str, env: &Env) -> bool {
+        self.zones
+            .iter()
+            .flatten()
+            .find(|p| p.entry.id == id)
+            .is_some_and(|p| p.sensor.clickable(&env.ctx()))
+    }
+
     /// Sensor `id`'s own menu items (SPEC §6.4).
     pub fn menu(&self, id: &str, env: &Env) -> Vec<MenuItem> {
         self.zones

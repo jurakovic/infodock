@@ -485,6 +485,7 @@ right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s,
   * `altOnly`: clicks only work while Alt is held. This makes the bar a passive display.
 * While locked, a press dims the sensor only when a click would reach it (`always`, or Alt held with `altOnly`); otherwise the press does nothing.
 * Hint texts end with a "Click to …" line only when a click would actually do something in the current mode.
+* The pointer shows the hand over a sensor whose click does something (`Sensor::clickable`, asked as the pointer comes onto it) when a plain click would reach it, by the same rule as the "Click to …" line: so not on a locked bar with `altOnly`. It stays while the sensor is pressed and turns to the arrow once a reorder drag starts; the arrow shows elsewhere, over sensors that do nothing on a click (Text, Image, Uptime, the Spacer), and the resize cursor at a floating bar's ends (§5.1) comes first.
 * Double-click and middle-click have no default action (reserved).
 
 ### 6.2 Reordering by drag
@@ -683,6 +684,7 @@ pub trait Sensor {
     fn click(&mut self, cx: &SensorCtx) -> ClickResult;   // None, Handled, Confirm(Question) or Popup(Box<dyn Popup>)
     fn confirmed(&mut self, cx: &SensorCtx) -> Dirty;     // the user agreed to its Confirm question
     fn has_popup(&self) -> bool;                          // true exactly when click can return Popup
+    fn clickable(&self, cx: &SensorCtx) -> bool;          // true exactly when click does something now (the hand, §6.1)
     fn menu(&self, cx: &SensorCtx) -> Vec<MenuItem>;      // sensor-specific items (§6.4)
     fn on_menu(&mut self, item: MenuId, cx: &SensorCtx) -> Dirty;
     fn drop_action(&self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) -> Option<DropAction>;

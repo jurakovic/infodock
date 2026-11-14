@@ -286,6 +286,10 @@ impl Sensor for CpuMeter {
         shared_hint(self.sample.as_ref(), cx)
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         open_task_manager(cx)
     }
@@ -393,6 +397,10 @@ impl Sensor for CpuGraph {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         shared_hint(self.sample.as_ref(), cx)
+    }
+
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
@@ -530,6 +538,10 @@ impl Sensor for CpuDual {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         shared_hint(self.sample.as_ref(), cx)
+    }
+
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {

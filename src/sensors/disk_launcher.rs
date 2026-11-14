@@ -201,6 +201,10 @@ impl Sensor for Disk {
         Some(HintContent::Text(text))
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        !self.absent()
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         if self.absent() {
             return ClickResult::None;

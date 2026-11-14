@@ -165,6 +165,10 @@ impl Sensor for Power {
     }
 
     /// Nothing, for a mode this computer lacks (a config from another machine).
+    fn clickable(&self, cx: &SensorCtx) -> bool {
+        self.offered(cx)
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         if !self.offered(cx) {
             return ClickResult::None;

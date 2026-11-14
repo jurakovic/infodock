@@ -327,6 +327,10 @@ impl Sensor for Wifi {
     }
 
     /// Opens the Wi-Fi settings, or the location settings while they withhold the name.
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         cx.platform.open(if self.location_denied() {
             LOCATION_SETTINGS

@@ -207,6 +207,9 @@ pub(super) struct BarLogic {
     inside: bool,
     /// The sensor under the pointer, told when the pointer enters and leaves it.
     hovered: Option<String>,
+    /// A click on `hovered` does something (the hand cursor, SPEC §6.1); asked as the pointer
+    /// comes onto it.
+    hovered_clickable: bool,
     /// The keyboard on the bar (SPEC §14.4); `None` unless the hotkey focused it.
     keys: Option<KeyFocus>,
     /// The size of the last frame, logical px.
@@ -313,6 +316,7 @@ impl BarLogic {
             numbers,
             inside: false,
             hovered: None,
+            hovered_clickable: false,
             keys: None,
             painted: SizeF::new(0.0, 0.0),
             probe_since: None,

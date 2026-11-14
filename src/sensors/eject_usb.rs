@@ -117,6 +117,10 @@ impl Sensor for EjectUsb {
     }
 
     /// Opens the `eject-list` popup (SPEC §9.22).
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         ClickResult::Popup(Box::new(EjectList::new(
             Arc::clone(&self.drives),

@@ -514,6 +514,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Turn it off, then add the `Run` value by hand and restart Infodock (not a first run): the value is removed.
 - [ ] Settings ▸ *Applications*: type `outlookcal:` (or any program) in *Calendar*; a click on a Date sensor opens it. *Browse…* lists programs first; a picked shortcut gives its target. Clear the box: a click opens the date and time settings again.
 - [ ] Settings ▸ *Applications* ▸ *Task manager* ▸ *Browse…*: pick Process Explorer (`procexp64.exe`; *Replace Task Manager* off in Process Explorer): hovering the CPU or RAM sensor ends with *Click to open 'procexp64'*, and a click opens Process Explorer. Clear the box: *Click to open Task Manager*, and Task Manager opens (since D117).
+- [ ] The pointer over the bar: a hand over the CPU, RAM, Date and Time sensors and over launchers; the arrow over a Text or Uptime sensor, the logo image and the empty bar; *Lock* with *Clicks while locked* → *Only while Alt is held*: the arrow over every sensor (since D118).
 
 **First-run welcome** (since M4 S14)
 

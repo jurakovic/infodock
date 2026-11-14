@@ -673,6 +673,11 @@ impl Sensor for BatterySensor {
     }
 
     /// Switches between the percentage and the time for the current state and saves it.
+    /// While a battery is there; a click toggles what it shows (SPEC §9.14).
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        !matches!(self.status(), None | Some(Status::NoBattery))
+    }
+
     fn click(&mut self, _cx: &SensorCtx) -> ClickResult {
         let (key, show) = match self.status() {
             None | Some(Status::NoBattery) => return ClickResult::None,

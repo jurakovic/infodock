@@ -300,6 +300,10 @@ impl Sensor for Shortcut {
         Some(HintContent::Text(text))
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        self.has_url() || !self.props.target.is_empty()
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         let props = &self.props;
         if self.has_url() {

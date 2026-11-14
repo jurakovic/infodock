@@ -83,12 +83,7 @@ impl BarLogic {
         }
         let pressed = self.moving.is_some() || self.drag.is_some() || self.press.is_some();
         let resizes = self.resizing.is_some() || (!pressed && self.resize_end(at).is_some());
-        let cursor = if resizes {
-            PopupCursor::ResizeWidth
-        } else {
-            PopupCursor::Arrow
-        };
-        self.set_cursor(window, cursor);
+        self.set_cursor(window, self.pointer_cursor(resizes));
         if let Some(resizing) = &mut self.resizing {
             // The dragged end follows the pointer, in screen px since the window moves with
             // the left end.
@@ -159,6 +154,7 @@ impl BarLogic {
         }
         let over = self.sensors.hit(at.x).map(|h| h.entry.id);
         self.set_hovered(window, over.clone());
+        self.set_cursor(window, self.pointer_cursor(resizes));
         // No hints over an open popup; the hover state waits, so the sensor whose popup closes
         // stays without its hint while the pointer remains over it (SPEC §7.1).
         if self.popups.open.is_some() {
@@ -170,6 +166,24 @@ impl BarLogic {
             .hover
             .over(over.as_deref(), popups.show_delay(), popups.hide_delay());
         self.apply_hint(window, step);
+    }
+
+    /// The pointer's look over the bar: the resize cursor at a floating bar's ends (SPEC §5.1),
+    /// the hand over a sensor a plain click reaches (§6.1; the rule of the hint's "Click to …"
+    /// line), also while it is pressed, and the arrow elsewhere and while dragging.
+    fn pointer_cursor(&self, resizes: bool) -> PopupCursor {
+        let hand = self.moving.is_none()
+            && self.drag.is_none()
+            && self.hovered.is_some()
+            && self.hovered_clickable
+            && self.settings.clicks_allowed(false);
+        if resizes {
+            PopupCursor::ResizeWidth
+        } else if hand {
+            PopupCursor::Hand
+        } else {
+            PopupCursor::Arrow
+        }
     }
 
     /// Starts dragging `id` from `source`; the sensor stays dimmed in place and a placer shows
@@ -227,6 +241,9 @@ impl BarLogic {
         if let Some(new) = &id {
             dirty |= self.sensors.on_hover(new, true, now, &env);
         }
+        self.hovered_clickable = id
+            .as_deref()
+            .is_some_and(|id| self.sensors.clickable(id, &env));
         self.hovered = id;
         if dirty {
             window.invalidate();

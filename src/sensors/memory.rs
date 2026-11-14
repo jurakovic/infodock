@@ -311,6 +311,10 @@ impl Sensor for UsageMeter {
         hint(self.kind, self.reading.as_ref(), cx)
     }
 
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
+    }
+
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
         open_task_manager(cx)
     }
@@ -466,6 +470,10 @@ impl Sensor for UsageGraph {
 
     fn hint(&self, cx: &SensorCtx) -> Option<HintContent> {
         hint(self.kind, self.reading.as_ref(), cx)
+    }
+
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        true
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {

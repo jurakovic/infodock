@@ -233,6 +233,10 @@ impl Sensor for FolderMenu {
     }
 
     /// Opens the `folder-browser` popup (SPEC §9.19).
+    fn clickable(&self, _cx: &SensorCtx) -> bool {
+        !self.unset()
+    }
+
     fn click(&mut self, _cx: &SensorCtx) -> ClickResult {
         if self.unset() {
             return ClickResult::None;
