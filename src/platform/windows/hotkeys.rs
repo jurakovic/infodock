@@ -253,10 +253,13 @@ pub(crate) fn held_elsewhere(combo: &KeyCombo, vk: u32) -> bool {
 mod tests {
     use std::time::Duration;
 
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F24, keybd_event,
+        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F21, VK_F24, keybd_event,
     };
-    use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GetForegroundWindow, SetForegroundWindow, TranslateMessage, WM_HOTKEY,
+    };
 
     use super::*;
 
@@ -279,9 +282,14 @@ mod tests {
             let _ = ready.send(unsafe { GetCurrentThreadId() });
             let mut hotkeys = 0;
             // SAFETY: a plain message loop for this thread.
-            while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
+            while unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 > 0 {
                 if msg.message == WM_HOTKEY {
                     hotkeys += 1;
+                }
+                // SAFETY: dispatching to this thread's windows, if it has any.
+                unsafe {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
                 }
             }
             hotkeys
@@ -305,22 +313,24 @@ mod tests {
         unsafe { keybd_event(vk.0 as u8, 0, flags, 0) };
     }
 
-    #[test]
-    #[ignore = "registers a hotkey and injects keys on this machine"]
-    fn a_held_combination_pressed_while_watching_is_reported_and_kept_from_its_holder() {
-        // Watched from this test's thread, which pumps no messages: the watch has its own.
+    /// Holds Ctrl+Alt+Shift+`vk` on another thread, as another app would, watches, and injects
+    /// it: the watch must report it and the holder must never get it. With `foreground`, a
+    /// window of this process has the foreground first, as Settings has while it records.
+    fn held_combination_is_reported_and_kept(
+        vk: VIRTUAL_KEY,
+        code: &'static str,
+        foreground: bool,
+    ) {
         // Logging as in the app, which the hook does (S14x2).
         let _ = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
             .with_test_writer()
             .try_init();
-        // Ctrl+Alt+Shift+F24 is held by another thread, as by another app (F23 is the other
-        // test's, which may run at the same time).
-        let (holder, registered, holder_thread) = with_message_loop(|| {
+        let (holder, registered, holder_thread) = with_message_loop(move || {
             let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0);
             // SAFETY: a thread hotkey for the test; it goes with the thread.
             (
-                unsafe { RegisterHotKey(None, 1, modifiers, u32::from(VK_F24.0)) }.is_ok(),
+                unsafe { RegisterHotKey(None, 1, modifiers, u32::from(vk.0)) }.is_ok(),
                 (),
             )
         });
@@ -328,21 +338,47 @@ mod tests {
             registered.recv().expect("registered"),
             "the holder holds it"
         );
+        let window_thread = foreground.then(|| {
+            let (thread, window, handle) = with_message_loop(|| {
+                let window = test_window();
+                (window.0 as isize, window)
+            });
+            let window = HWND(window.recv().expect("a window") as *mut _);
+            // The last input was this process's, so it may take the foreground; Alt first, as
+            // Windows lets a process that just had a key press do so.
+            key(VK_MENU, false);
+            key(VK_MENU, true);
+            // SAFETY: plain calls on the test's own window.
+            unsafe {
+                let _ = SetForegroundWindow(window);
+                std::thread::sleep(Duration::from_millis(200));
+                assert_eq!(
+                    GetForegroundWindow(),
+                    window,
+                    "the test window has the foreground"
+                );
+            }
+            (thread, handle)
+        });
         let (combos, reports) = mpsc::channel();
         let watching = watch(Box::new(move |combo| {
             let _ = combos.send(combo);
         }))
         .expect("the hook is installed");
 
-        for vk in [VK_CONTROL, VK_MENU, VK_SHIFT, VK_F24] {
+        for vk in [VK_CONTROL, VK_MENU, VK_SHIFT, vk] {
             key(vk, false);
         }
-        for vk in [VK_F24, VK_SHIFT, VK_MENU, VK_CONTROL] {
+        for vk in [vk, VK_SHIFT, VK_MENU, VK_CONTROL] {
             key(vk, true);
         }
         let reported = reports.recv_timeout(Duration::from_secs(2));
 
         drop(watching);
+        if let Some((thread, handle)) = window_thread {
+            quit(thread);
+            let _ = handle.join();
+        }
         quit(holder);
         let hotkeys = holder_thread.join().expect("holder");
         assert_eq!(
@@ -352,11 +388,66 @@ mod tests {
                 alt: true,
                 shift: true,
                 win: false,
-                code: "F24",
+                code,
             }),
             "the hook reports the combination"
         );
         assert_eq!(hotkeys, 0, "the holder never gets it");
+    }
+
+    /// A plain visible window on this thread, for the foreground.
+    fn test_window() -> HWND {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DefWindowProcW, RegisterClassExW, WINDOW_EX_STYLE, WNDCLASSEXW,
+            WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+        };
+        unsafe extern "system" fn proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+            // SAFETY: default processing for the test window.
+            unsafe { DefWindowProcW(hwnd, msg, w, l) }
+        }
+        let class = windows::core::w!("InfodockHotkeyTest");
+        // SAFETY: plain class registration and window creation for the test.
+        unsafe {
+            let instance = GetModuleHandleW(None).expect("module");
+            let wc = WNDCLASSEXW {
+                cbSize: size_of::<WNDCLASSEXW>() as u32,
+                lpfnWndProc: Some(proc),
+                hInstance: instance.into(),
+                lpszClassName: class,
+                ..Default::default()
+            };
+            RegisterClassExW(&wc);
+            CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                class,
+                windows::core::w!("Infodock hotkey test"),
+                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                100,
+                100,
+                400,
+                300,
+                None,
+                None,
+                Some(instance.into()),
+                None,
+            )
+            .expect("the test window")
+        }
+    }
+
+    #[test]
+    #[ignore = "registers a hotkey and injects keys on this machine"]
+    fn a_held_combination_pressed_while_watching_is_reported_and_kept_from_its_holder() {
+        // Watched from this test's thread, which pumps no messages: the watch has its own. F24:
+        // the other tests take F23 and F21, and may run at the same time.
+        held_combination_is_reported_and_kept(VK_F24, "F24", false);
+    }
+
+    #[test]
+    #[ignore = "registers a hotkey, injects keys and takes the foreground on this machine"]
+    fn a_held_combination_is_reported_while_this_process_has_the_foreground() {
+        // As in Settings, which has the foreground while it records (S14x2).
+        held_combination_is_reported_and_kept(VK_F21, "F21", true);
     }
 
     #[test]

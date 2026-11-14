@@ -203,7 +203,7 @@ function Measure-Hooked([string] $Label) {
 
 # Clicks the hotkey button, which starts recording, and presses $Keys; $true when Settings found
 # the combination $Name taken.
-function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys) {
+function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys, [switch] $HookAhead) {
     $button = Get-HotkeyButton $Window
     if (-not $button) { Write-Warning 'The hotkey button was not found'; return $false }
     $rect = $button.Current.BoundingRectangle
@@ -212,14 +212,16 @@ function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys) {
     if (-not (Wait-ForLine $before 'watching for hotkeys other apps hold')) {
         Write-Warning "The click on the hotkey button at $rect did not start the watch"
     }
-    # A second hook, installed after Infodock's, is called before it.
-    $first = [Spy]::new()
+    # With -HookAhead, a second hook installed after Infodock's, which Windows calls first.
+    $first = if ($HookAhead) { [Spy]::new() }
     $spied = $spy.Keys
     [Desktop]::Press($Keys)
     $taken = Wait-ForLine $before ([regex]::Escape("$Name is taken"))
     $script:seen["$Name, keys this script's hook saw (of $($Keys.Count))"] = $spy.Keys - $spied
-    $script:seen["$Name, keys a hook installed after Infodock's saw (of $($Keys.Count))"] = $first.Keys
-    $first.Stop()
+    if ($first) {
+        $script:seen["$Name, keys a hook installed after Infodock's saw (of $($Keys.Count))"] = $first.Keys
+        $first.Stop()
+    }
     $script:seen["$Name, Infodock's hook called"] = [bool](Get-NewLines $before | Select-String -Pattern 'the keyboard hook saw its first key' -Quiet)
     # Still recording if it was not found: Esc ends it.
     if (-not $taken) { [Desktop]::Press([byte[]]@(0x1B)) }
@@ -260,7 +262,9 @@ try {
     $hotkeysBefore = $holder.Hotkeys
     $results['Ctrl+Alt+J, held by another app, found taken'] = Test-Taken $window 'Ctrl+Alt+J' @(0x11, 0x12, 0x4A)
     $results['Ctrl+Alt+J kept from the app that holds it'] = $holder.Hotkeys -eq $hotkeysBefore
-    $results["Infodock's own hotkey found taken"] = Test-Taken $window 'Ctrl+Alt+Shift+I' @(0x11, 0x12, 0x10, 0x49)
+    # S14x2's diagnostic: the second combination with a hook ahead of Infodock's, the first
+    # without, as for a user.
+    $results["Infodock's own hotkey found taken (a hook ahead of Infodock's)"] = Test-Taken $window 'Ctrl+Alt+Shift+I' @(0x11, 0x12, 0x10, 0x49) -HookAhead
 
     Measure-Hooked 'After recording'
     [Desktop]::PostMessageW($window, 0x0010 <# WM_CLOSE #>, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
