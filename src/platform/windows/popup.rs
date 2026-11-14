@@ -195,11 +195,11 @@ impl Shared {
             // Alt alone does not start menu mode in a window without a menu.
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => {}
             // A UI Automation client asks for the popup (SPEC §14.4): from now on it is
-            // described with each frame, so a shown one is described now.
+            // described with its frames while clients listen, so a shown one whose description
+            // is missing or stale is described now.
             WM_GETOBJECT if lparam.0 as i32 == UiaRootObjectId => {
-                let first = self.uia.get().is_none();
                 let uia = self.uia.get_or_init(|| PopupUia::new(hwnd));
-                if first && self.visible.get() {
+                if uia.asked() && self.visible.get() {
                     (self.sink)(UiEvent::Accessible(AccessibleAction::DescribePopup));
                 }
                 return Some(uia.answer(wparam, lparam));
@@ -430,7 +430,7 @@ impl PopupWindow {
             }
         }
         if let Some(uia) = self.shared.uia.get() {
-            uia.update(describe(), scale, appearing);
+            uia.update(describe, scale, appearing);
         }
         Ok(appearing)
     }

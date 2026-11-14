@@ -4,7 +4,7 @@
 //! back to the bar logic ([`AccessibleAction`]). An open popup is described the same way, as a
 //! list of its rows, after each of its frames (`windows/uia_popup.rs`, [`popup_events`]).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use super::RectF;
@@ -176,8 +176,10 @@ pub enum PopupEvent {
 /// mark are announced.
 pub fn popup_events(old: Option<&AccessiblePopup>, new: &AccessiblePopup) -> Vec<PopupEvent> {
     let mut events = Vec::new();
-    let ids = |popup: &AccessiblePopup| popup.rows.iter().map(|r| r.id.clone()).collect::<Vec<_>>();
-    if old.is_none_or(|old| ids(old) != ids(new)) {
+    fn ids(popup: &AccessiblePopup) -> impl Iterator<Item = &str> {
+        popup.rows.iter().map(|r| r.id.as_str())
+    }
+    if old.is_none_or(|old| ids(old).ne(ids(new))) {
         events.push(PopupEvent::Structure);
     }
     if let Some(old) = old
@@ -197,6 +199,39 @@ pub fn popup_events(old: Option<&AccessiblePopup>, new: &AccessiblePopup) -> Vec
     events
 }
 
+/// Numbers for a popup's rows, which their UI Automation runtime ids carry (SPEC §14.4): a row
+/// gets one when it is first seen and keeps it while it shows. A number is never given twice, so
+/// a row that went keeps its number to itself.
+#[derive(Debug, Default)]
+pub struct RowNumbers {
+    numbers: HashMap<String, i32>,
+    last: i32,
+}
+
+impl RowNumbers {
+    /// Numbers the rows shown now (`None`: the popup is hidden) and forgets those that went;
+    /// linear in the rows, as a folder can hold thousands.
+    pub fn number(&mut self, rows: Option<&[AccessibleRow]>) {
+        let Some(rows) = rows else {
+            self.numbers.clear();
+            return;
+        };
+        let shown: HashSet<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        self.numbers.retain(|id, _| shown.contains(id.as_str()));
+        for row in rows {
+            if !self.numbers.contains_key(&row.id) {
+                self.last = self.last.checked_add(1).unwrap_or(1);
+                self.numbers.insert(row.id.clone(), self.last);
+            }
+        }
+    }
+
+    /// The number of the shown row `id`.
+    pub fn get(&self, id: &str) -> Option<i32> {
+        self.numbers.get(id).copied()
+    }
+}
+
 /// Which values were last announced and when, so each sensor's are announced at most once per
 /// [`VALUE_EVENTS`].
 #[derive(Debug, Default)]
@@ -213,8 +248,10 @@ pub fn events(
     now: Instant,
 ) -> Vec<AccessibleEvent> {
     let mut events = Vec::new();
-    let ids = |bar: &AccessibleBar| bar.items.iter().map(|i| i.id.clone()).collect::<Vec<_>>();
-    if ids(old) != ids(new) {
+    fn ids(bar: &AccessibleBar) -> impl Iterator<Item = &str> {
+        bar.items.iter().map(|i| i.id.as_str())
+    }
+    if ids(old).ne(ids(new)) {
         events.push(AccessibleEvent::Structure);
     }
     announced.0.retain(|id, _| new.item(id).is_some());
@@ -436,6 +473,58 @@ mod tests {
             Some(RectF::new(10.0, 30.0, 110.0, 50.0))
         );
         assert_eq!(shifted.rows[2].rect, None);
+    }
+
+    #[test]
+    fn rows_keep_their_numbers_while_they_show_and_numbers_are_never_given_twice() {
+        let mut numbers = RowNumbers::default();
+        let folder = popup("C:\\", &["a", "b", "c"], None);
+        numbers.number(Some(&folder.rows));
+        let first = ["a", "b", "c"].map(|id| numbers.get(id));
+        assert_eq!(first, [Some(1), Some(2), Some(3)]);
+        // Unchanged: the same numbers.
+        numbers.number(Some(&folder.rows));
+        assert_eq!(["a", "b", "c"].map(|id| numbers.get(id)), first);
+        // A row added keeps the others' numbers and gets a new one.
+        let added = popup("C:\\", &["a", "b", "x", "c"], None);
+        numbers.number(Some(&added.rows));
+        assert_eq!(
+            ["a", "b", "x", "c"].map(|id| numbers.get(id)),
+            [Some(1), Some(2), Some(4), Some(3)]
+        );
+        // A row gone is forgotten; coming back, it gets a new number.
+        let gone = popup("C:\\", &["a", "x", "c"], None);
+        numbers.number(Some(&gone.rows));
+        assert_eq!(numbers.get("b"), None);
+        numbers.number(Some(&added.rows));
+        assert_eq!(numbers.get("b"), Some(5));
+        // Another folder: its rows are new; hidden, none are left.
+        let other = popup("D:\\", &["d", "e"], None);
+        numbers.number(Some(&other.rows));
+        assert_eq!(
+            ["a", "d", "e"].map(|id| numbers.get(id)),
+            [None, Some(6), Some(7)]
+        );
+        numbers.number(None);
+        assert_eq!(numbers.get("d"), None);
+    }
+
+    #[test]
+    fn a_popups_structure_is_compared_by_its_rows_ids_in_order() {
+        let folder = popup("C:\\", &["a", "b"], None);
+        let changed = |new: &AccessiblePopup| {
+            popup_events(Some(&folder), new).contains(&PopupEvent::Structure)
+        };
+        let mut renamed_rows = folder.clone();
+        renamed_rows.rows[0].name = "Another name".into();
+        assert!(!changed(&renamed_rows), "the same rows, read again");
+        assert!(
+            changed(&popup("C:\\", &["a", "b", "c"], None)),
+            "a row added"
+        );
+        assert!(changed(&popup("C:\\", &["a"], None)), "a row gone");
+        assert!(changed(&popup("C:\\", &["b", "a"], None)), "rows moved");
+        assert!(changed(&popup("D:\\", &["c", "d"], None)), "another folder");
     }
 
     #[test]

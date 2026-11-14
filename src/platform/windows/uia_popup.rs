@@ -1,16 +1,19 @@
 //! The popup window as a UI Automation provider (SPEC §14.4): a list whose items are the open
 //! popup's rows (the Folder Menu's items, the Eject USB list's drives). As for the bar
-//! (`uia.rs`), the providers answer from the description the bar logic hands over with each of
-//! the popup's frames ([`AccessiblePopup`]), and comparing each description with the last
-//! raises the events screen readers follow: the mark moving (selection and focus), rows coming
-//! and going (structure), another folder (name). A row a screen reader selects is queued as
+//! (`uia.rs`), the providers answer from the description the bar logic hands over with the
+//! popup's frames ([`AccessiblePopup`]), and comparing each description with the last raises
+//! the events screen readers follow: the mark moving (selection and focus), rows coming and
+//! going (structure), another folder (name). A row a screen reader selects is queued as
 //! [`AccessibleAction::SelectRow`] and the window is told with [`WM_UIA`].
+//!
+//! A folder's description lists every item, so it is built only while a client listens for
+//! events: a frame drawn meanwhile only marks it stale, and the next provider asked has the bar
+//! logic describe the popup again ([`AccessibleAction::DescribePopup`]).
 
 // The Win32 constants keep their names, also as match patterns.
 #![allow(non_upper_case_globals)]
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use windows::Win32::Foundation::{E_OUTOFMEMORY, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -39,7 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect
 use windows::core::{BOOL, Error, HRESULT, IUnknown, IUnknownImpl, Interface, Result, implement};
 
 use super::uia::{HWND_RUNTIME_ID, Owned, WM_UIA, boolean, gone, int, none, runtime_array, text};
-use crate::platform::accessible::{self, PopupEvent};
+use crate::platform::accessible::{self, PopupEvent, RowNumbers};
 use crate::platform::{AccessibleAction, AccessiblePopup, AccessibleRow, RectF};
 
 /// The popup list's automation id; its rows have none (they come and go with folders).
@@ -53,15 +56,26 @@ struct Tree {
     popup: Option<AccessiblePopup>,
     /// Physical px per logical px of the shown content.
     scale: f64,
-    /// The shown rows' runtime ids, given when a row is first seen and kept while it shows.
-    runtime: HashMap<String, i32>,
-    /// The next runtime id: never given twice, so a row that went keeps its id to itself.
-    next: i32,
+    /// The numbers in the shown rows' runtime ids.
+    numbers: RowNumbers,
+    /// The popup was drawn since `popup` was described: no client listened.
+    stale: bool,
+    /// A provider was asked while the description was stale: the next frame describes the popup
+    /// whether or not a client listens.
+    wanted: Cell<bool>,
+    /// `wanted` is to be passed to the bar logic with the next [`WM_UIA`].
+    describe: Cell<bool>,
     actions: Vec<AccessibleAction>,
 }
 
 impl Tree {
+    /// The shown popup as last described; asked while that is stale, it has the bar logic
+    /// describe it again, which the next answers see.
     fn popup(&self) -> Result<&AccessiblePopup> {
+        if self.stale && !self.wanted.replace(true) {
+            self.describe.set(true);
+            self.post();
+        }
         self.popup.as_ref().ok_or_else(gone)
     }
 
@@ -71,27 +85,22 @@ impl Tree {
 
     /// Queues `action` for the bar logic and tells the window.
     fn ask(&mut self, action: AccessibleAction) {
-        if self.actions.is_empty() {
-            // SAFETY: posting to the popup window, which lives as long as the process.
-            let _ = unsafe { PostMessageW(Some(self.hwnd), WM_UIA, WPARAM(0), LPARAM(0)) };
+        if self.actions.is_empty() && !self.describe.get() {
+            self.post();
         }
         self.actions.push(action);
     }
 
+    /// Tells the window that the bar logic has actions to take ([`WM_UIA`]).
+    fn post(&self) {
+        // SAFETY: posting to the popup window, which lives as long as the process.
+        let _ = unsafe { PostMessageW(Some(self.hwnd), WM_UIA, WPARAM(0), LPARAM(0)) };
+    }
+
     /// Gives the shown rows runtime ids and forgets those of rows that went.
     fn number(&mut self) {
-        let Some(popup) = &self.popup else {
-            self.runtime.clear();
-            return;
-        };
-        self.runtime
-            .retain(|id, _| popup.rows.iter().any(|r| r.id == *id));
-        for row in &popup.rows {
-            if !self.runtime.contains_key(&row.id) {
-                self.next = self.next.checked_add(1).unwrap_or(1);
-                self.runtime.insert(row.id.clone(), self.next);
-            }
-        }
+        let rows = self.popup.as_ref().map(|p| p.rows.as_slice());
+        self.numbers.number(rows);
     }
 
     /// The window's top-left corner, physical screen px.
@@ -133,8 +142,11 @@ impl PopupUia {
             hwnd,
             popup: None,
             scale: 1.0,
-            runtime: HashMap::new(),
-            next: 0,
+            numbers: RowNumbers::default(),
+            // The client that just asked for the window is answered from the first frame.
+            stale: false,
+            wanted: Cell::new(true),
+            describe: Cell::new(false),
             actions: Vec::new(),
         }));
         let root = list(&tree).into();
@@ -148,20 +160,40 @@ impl PopupUia {
         unsafe { UiaReturnRawElementProvider(hwnd, wparam, lparam, &self.root) }
     }
 
-    /// Takes the description of the popup as just drawn at `scale` (`appeared`: it was hidden)
-    /// and raises the events that tell listening screen readers what changed.
-    pub(super) fn update(&self, popup: AccessiblePopup, scale: f32, appeared: bool) {
+    /// The popup was just drawn at `scale` (`appeared`: it was hidden). While a client
+    /// listens, or a provider asked since the last description, takes what `describe` says it
+    /// shows and raises the events that tell screen readers what changed; otherwise only notes
+    /// that the description is stale.
+    pub(super) fn update(
+        &self,
+        describe: &dyn Fn() -> AccessiblePopup,
+        scale: f32,
+        appeared: bool,
+    ) {
+        // SAFETY: plain query.
+        let listening = unsafe { UiaClientsAreListening() }.as_bool();
         let events = {
             let mut tree = self.tree.borrow_mut();
-            let old = if appeared { None } else { tree.popup.take() };
+            tree.scale = f64::from(scale.max(0.1));
+            if appeared {
+                // The rows of the popup that was shown before are gone.
+                tree.popup = None;
+                tree.number();
+            }
+            if !listening && !tree.wanted.get() {
+                tree.stale = true;
+                return;
+            }
+            let popup = describe();
+            let old = tree.popup.take();
             let events = accessible::popup_events(old.as_ref(), &popup);
             tree.popup = Some(popup);
-            tree.scale = f64::from(scale.max(0.1));
             tree.number();
+            tree.stale = false;
+            tree.wanted.set(false);
             events
         };
-        // SAFETY: plain query.
-        if events.is_empty() || !unsafe { UiaClientsAreListening() }.as_bool() {
+        if events.is_empty() || !listening {
             return;
         }
         // Raised with the description released: in-process clients may ask at once.
@@ -172,10 +204,20 @@ impl PopupUia {
         }
     }
 
+    /// A client asked for the window: whether its description is missing or stale, which the
+    /// next frame then builds.
+    pub(super) fn asked(&self) -> bool {
+        let tree = self.tree.borrow();
+        let wanted = tree.stale || tree.wanted.get();
+        tree.wanted.set(wanted);
+        wanted
+    }
+
     /// The window was hidden: its rows are gone.
     pub(super) fn clear(&self) {
         let mut tree = self.tree.borrow_mut();
         tree.popup = None;
+        tree.stale = false;
         tree.number();
     }
 
@@ -228,7 +270,12 @@ impl PopupUia {
 
     /// What screen readers asked since the last call.
     pub(super) fn take_actions(&self) -> Vec<AccessibleAction> {
-        std::mem::take(&mut self.tree.borrow_mut().actions)
+        let mut tree = self.tree.borrow_mut();
+        let mut actions = std::mem::take(&mut tree.actions);
+        if tree.describe.take() {
+            actions.insert(0, AccessibleAction::DescribePopup);
+        }
+        actions
     }
 }
 
@@ -485,7 +532,7 @@ impl IRawElementProviderFragment_Impl for RowProvider_Impl {
         let n = {
             let tree = self.tree.borrow();
             tree.row(&self.id)?;
-            *tree.runtime.get(&self.id).ok_or_else(gone)?
+            tree.numbers.get(&self.id).ok_or_else(gone)?
         };
         runtime_array(n)
     }
@@ -543,5 +590,98 @@ impl ISelectionItemProvider_Impl for RowProvider_Impl {
     fn SelectionContainer(&self) -> Result<IRawElementProviderSimple> {
         self.tree.borrow().popup()?;
         Ok(list(&self.tree).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+    use crate::config::model::{Edge, Settings};
+    use crate::look::theme::Theme;
+    use crate::platform::{OsAppearance, SizeF, UiWaker, text_engine};
+    use crate::sensors::common::folder_browser::{FolderBrowser, Options};
+    use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
+    use crate::sensors::{Fetched, IconSource};
+    use crate::test_util::{median, record_budget};
+
+    /// The bar's icon loader before it has any of them.
+    struct Loading;
+    impl IconSource for Loading {
+        fn shell_icon(&self, _path: &str, _px: u32) -> Fetched {
+            Fetched::Loading
+        }
+        fn forget(&self, _path: &str) {}
+    }
+
+    /// One frame's accessibility work for an open Folder Menu of 5,000 items while a client
+    /// listens (`review-code.md` R2): the description built (`Popup::accessible`), compared with
+    /// the last and numbered, as with each frame of a scroll or of the pointer crossing rows.
+    /// Held to the Folder Menu's budget (SPEC §14.1). CI's budget check reads the median.
+    #[test]
+    #[ignore = "measures a budget; run with --ignored"]
+    fn budget_folder_menu_described() {
+        const RUNS: usize = 20;
+        let dir = tempfile::tempdir().expect("temp dir");
+        for i in 0..5000 {
+            std::fs::write(dir.path().join(format!("photo_{i:05}.jpg")), b"x").expect("file");
+        }
+        let theme = Theme::resolve(&Settings::default(), OsAppearance::default());
+        let platform = crate::platform::current();
+        let text = text_engine();
+        let waker = UiWaker::new(|| {});
+        let cx = PopupCtx {
+            theme: &theme,
+            text: text.as_ref(),
+            scale: 1.0,
+            platform: &platform,
+            icons: &Loading,
+            waker: &waker,
+            room: SizeF::new(1880.0, 1000.0),
+            monitor_height: 1080.0,
+            edge: Edge::Bottom,
+            free_left: false,
+            animate: false,
+            numbers: Default::default(),
+            now: Instant::now(),
+        };
+        let mut browser = FolderBrowser::new(Options {
+            folders: vec![dir.path().to_string_lossy().into_owned()],
+            title: "Budget".into(),
+            show_hidden: false,
+            width: 240.0,
+            height: 320.0,
+        });
+        browser.layout(&cx);
+        while !browser.listed() {
+            std::thread::sleep(Duration::from_millis(1));
+            if browser.poll(&cx) == PopupReply::Relayout {
+                browser.layout(&cx);
+            }
+        }
+        let described = || browser.accessible();
+        assert!(described().rows.len() >= 5000, "every item is described");
+
+        // The provider attached, as once a client asked for the window; the first frame
+        // describes the popup that appeared.
+        let uia = PopupUia::new(HWND::default());
+        uia.update(&described, 1.0, true);
+        let mut times = Vec::with_capacity(RUNS);
+        for _ in 0..RUNS {
+            // As while a client listens: each frame is described.
+            uia.tree.borrow().wanted.set(true);
+            let began = Instant::now();
+            uia.update(&described, 1.0, false);
+            times.push(began.elapsed());
+        }
+        assert!(!uia.tree.borrow().stale);
+        record_budget(
+            "folder-menu-described",
+            "Folder Menu frame, 5,000 items, described for UI Automation",
+            median(&mut times),
+            Duration::from_millis(200),
+            RUNS,
+        );
     }
 }
