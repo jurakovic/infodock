@@ -919,15 +919,15 @@ pub fn current() -> Arc<dyn Platform> {
 /// that never come. Dropping it ends the watch.
 pub struct HotkeyWatch {
     #[cfg(windows)]
-    _hook: windows::hotkeys::Hook,
+    _watch: windows::hotkeys::Watch,
 }
 
-/// Watches the keyboard on this thread, Settings' (main) thread, while a hotkey is recorded:
-/// `taken` hears of each combination someone holds, which is kept from them meanwhile. `None`
+/// Watches the keyboard while a hotkey is recorded: `taken` hears of each combination someone
+/// holds, which is kept from them meanwhile. It is called on the watch's own thread. `None`
 /// where nothing needs watching or the keyboard cannot be watched.
-pub fn watch_taken_hotkeys(taken: Box<dyn Fn(keys::KeyCombo)>) -> Option<HotkeyWatch> {
+pub fn watch_taken_hotkeys(taken: Box<dyn Fn(keys::KeyCombo) + Send>) -> Option<HotkeyWatch> {
     #[cfg(windows)]
-    return windows::hotkeys::watch(taken).map(|hook| HotkeyWatch { _hook: hook });
+    return windows::hotkeys::watch(taken).map(|watch| HotkeyWatch { _watch: watch });
     #[cfg(not(windows))]
     {
         let _ = taken;

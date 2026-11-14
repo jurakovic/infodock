@@ -5,8 +5,14 @@
 //! records, a low-level keyboard hook (which sees keys before Windows routes hotkeys) tries to
 //! register each combination pressed: when that fails, someone holds it, and the hook reports it
 //! and keeps the keys from that app. Other keys go on to the window as usual.
+//!
+//! The hook runs on a thread of its own with a plain message loop. Installed from Settings'
+//! thread, whose loop is winit's, it was never called (S14x2: CI's hotkey check logged no call
+//! from it, while the same hook on a plain thread saw every key).
 
 use std::cell::RefCell;
+use std::sync::mpsc;
+use std::thread::JoinHandle;
 
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -16,8 +22,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey, UnregisterHotKey, VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_INJECTED, SetWindowsHookExW,
-    UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+    CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, PM_NOREMOVE,
+    PeekMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL,
+    WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
 };
 
 use crate::platform::keys::{KeyCombo, code_of_vk};
@@ -25,44 +32,82 @@ use crate::platform::keys::{KeyCombo, code_of_vk};
 /// The id of the test registration; thread hotkeys take ids up to 0xBFFF.
 const PROBE_ID: i32 = 0xB1F0;
 
-/// Told of each combination someone holds.
-type Taken = Box<dyn Fn(KeyCombo)>;
+/// Told of each combination someone holds, on the watch's thread.
+type Taken = Box<dyn Fn(KeyCombo) + Send>;
 
 thread_local! {
-    /// The listener while a hook is installed on this thread.
+    /// The listener, on the watch's thread while its hook is installed.
     static TAKEN: RefCell<Option<Taken>> = const { RefCell::new(None) };
 }
 
-/// The installed hook; dropping it removes it.
-pub(crate) struct Hook(HHOOK);
+/// The running watch; dropping it removes the hook and ends its thread.
+pub(crate) struct Watch {
+    thread: u32,
+    handle: Option<JoinHandle<()>>,
+}
 
-impl Drop for Hook {
+impl Drop for Watch {
     fn drop(&mut self) {
-        // SAFETY: the hook was installed by `watch` on this thread and is removed once.
-        let _ = unsafe { UnhookWindowsHookEx(self.0) };
-        TAKEN.with(|t| *t.borrow_mut() = None);
+        // SAFETY: posts to the watch's thread, whose message queue exists (`watch`).
+        let _ = unsafe { PostThreadMessageW(self.thread, WM_QUIT, WPARAM(0), LPARAM(0)) };
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
         tracing::debug!("no longer watching for hotkeys other apps hold");
     }
 }
 
-/// Watches the keyboard on this thread (Settings', which pumps messages) until the hook is
-/// dropped; `taken` hears of each combination someone holds.
-pub(crate) fn watch(taken: Taken) -> Option<Hook> {
-    // SAFETY: a low-level hook with a static procedure; this module is its instance.
-    let hook = unsafe {
-        let instance = GetModuleHandleW(None).ok()?;
-        SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), Some(instance.into()), 0)
-    };
-    match hook {
-        Ok(hook) => {
+/// Watches the keyboard from a thread of its own until the watch is dropped; `taken` hears of
+/// each combination someone holds, on that thread. Returns once the hook is installed, so keys
+/// pressed from then on are seen.
+pub(crate) fn watch(taken: Taken) -> Option<Watch> {
+    let (ready, installed) = mpsc::channel();
+    let spawned = std::thread::Builder::new()
+        .name("hotkey-watch".into())
+        .spawn(move || {
+            let mut msg = MSG::default();
+            // SAFETY: creates this thread's message queue, so the WM_QUIT that ends it is kept.
+            let _ = unsafe { PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE) };
+            // SAFETY: a low-level hook with a static procedure; this module is its instance.
+            let hook = unsafe {
+                GetModuleHandleW(None).and_then(|instance| {
+                    SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), Some(instance.into()), 0)
+                })
+            };
+            let hook = match hook {
+                Ok(hook) => hook,
+                Err(e) => {
+                    tracing::warn!("cannot watch for hotkeys other apps hold: {e}");
+                    let _ = ready.send(None);
+                    return;
+                }
+            };
             TAKEN.with(|t| *t.borrow_mut() = Some(taken));
-            // SAFETY: a plain query; the hook procedure runs on this thread.
+            // SAFETY: a plain query.
             let thread = unsafe { GetCurrentThreadId() };
+            let _ = ready.send(Some(thread));
             tracing::debug!("watching for hotkeys other apps hold (thread {thread})");
-            Some(Hook(hook))
-        }
+            // The hook is called while this thread waits for messages; WM_QUIT ends the wait.
+            // SAFETY: a plain message loop for a thread without windows.
+            while unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 > 0 {}
+            // SAFETY: the hook was installed above, on this thread, and is removed once.
+            let _ = unsafe { UnhookWindowsHookEx(hook) };
+            TAKEN.with(|t| *t.borrow_mut() = None);
+        });
+    let handle = match spawned {
+        Ok(handle) => handle,
         Err(e) => {
             tracing::warn!("cannot watch for hotkeys other apps hold: {e}");
+            return None;
+        }
+    };
+    match installed.recv() {
+        Ok(Some(thread)) => Some(Watch {
+            thread,
+            handle: Some(handle),
+        }),
+        _ => {
+            let _ = handle.join();
             None
         }
     }
@@ -154,15 +199,12 @@ pub(crate) fn held_elsewhere(combo: &KeyCombo, vk: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
     use std::time::Duration;
 
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F23, keybd_event,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetMessageW, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, WM_HOTKEY, WM_QUIT,
-    };
+    use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 
     use super::*;
 
@@ -214,6 +256,7 @@ mod tests {
     #[test]
     #[ignore = "registers a hotkey and injects keys on this machine"]
     fn a_held_combination_pressed_while_watching_is_reported_and_kept_from_its_holder() {
+        // Watched from this test's thread, which pumps no messages: the watch has its own.
         // Ctrl+Alt+Shift+F23 is held by another thread, as by another app.
         let (holder, registered, holder_thread) = with_message_loop(|| {
             let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0);
@@ -228,13 +271,10 @@ mod tests {
             "the holder holds it"
         );
         let (combos, reports) = mpsc::channel();
-        let (watcher, hook, watcher_thread) = with_message_loop(move || {
-            let hook = watch(Box::new(move |combo| {
-                let _ = combos.send(combo);
-            }));
-            (hook.is_some(), hook)
-        });
-        assert!(hook.recv().expect("watching"), "the hook is installed");
+        let watching = watch(Box::new(move |combo| {
+            let _ = combos.send(combo);
+        }))
+        .expect("the hook is installed");
 
         for vk in [VK_CONTROL, VK_MENU, VK_SHIFT, VK_F23] {
             key(vk, false);
@@ -244,8 +284,7 @@ mod tests {
         }
         let reported = reports.recv_timeout(Duration::from_secs(2));
 
-        quit(watcher);
-        let _ = watcher_thread.join();
+        drop(watching);
         quit(holder);
         let hotkeys = holder_thread.join().expect("holder");
         assert_eq!(

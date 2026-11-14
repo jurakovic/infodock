@@ -847,15 +847,15 @@ fn follow_recording(
 
 /// A combination someone holds was pressed while recording (SPEC §6.5): it ends the recording
 /// as a combination the window saw would, so registering it fails with *Another app already
-/// uses …* and the previous hotkey stays (or, for Infodock's own hotkey, it is kept). Runs
-/// from the keyboard hook, so the work waits for the event loop.
+/// uses …* and the previous hotkey stays (or, for Infodock's own hotkey, it is kept). Runs on
+/// the keyboard watch's thread, so the work goes to the event loop.
 fn taken_hotkey(
     app: &Arc<App>,
     window: &slint::Weak<ui::SettingsWindow>,
     combo: crate::platform::keys::KeyCombo,
 ) {
     let (app, window) = (Arc::clone(app), window.clone());
-    slint::Timer::single_shot(Duration::ZERO, move || {
+    let posted = slint::invoke_from_event_loop(move || {
         let Some(window) = window.upgrade() else {
             return;
         };
@@ -878,6 +878,9 @@ fn taken_hotkey(
             Err(e) => state.set_hotkey_error(e.into()),
         }
     });
+    if posted.is_err() {
+        tracing::debug!("a taken hotkey arrived after the event loop ended");
+    }
 }
 
 /// Registers a recorded hotkey, then saves it; if it cannot be registered, nothing is saved and
