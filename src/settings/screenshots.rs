@@ -567,6 +567,9 @@ fn render_settings_pages() {
     nav(applications);
     retype(&t("settings.apps.calendar"), "outlookcal:");
     assert_eq!(app.store.get().settings.apps.calendar, "outlookcal:");
+    // So is the task manager.
+    retype(&t("settings.apps.taskManager"), "procexp64.exe");
+    assert_eq!(app.store.get().settings.apps.task_manager, "procexp64.exe");
 
     // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
     super::properties::open_form(&app, &logo, false);

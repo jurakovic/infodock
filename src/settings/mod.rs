@@ -597,6 +597,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
 
     // Applications (SPEC §10.6)
     state.set_calendar_app(settings.apps.calendar.as_str().into());
+    state.set_task_manager_app(settings.apps.task_manager.as_str().into());
 
     appearance::fill(open, app, settings);
     welcome::fill(open, app, settings);

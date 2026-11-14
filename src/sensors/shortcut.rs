@@ -15,7 +15,7 @@ use super::{
     State, typed,
 };
 use crate::i18n::{t, t_args};
-use crate::platform::{Canvas, Launch, PathKind, file_name};
+use crate::platform::{Canvas, Launch, PathKind, file_name, without_extension};
 use crate::sampler::{Sample, Topic, TopicRequest};
 
 /// The icon for web addresses (Appendix C).
@@ -180,14 +180,6 @@ struct ShortcutProps {
     /// Its image empty: the target's icon.
     #[serde(flatten)]
     icon: IconStyle,
-}
-
-/// `name` without its extension (`app.exe` → `app`); a leading dot is no extension.
-fn without_extension(name: &str) -> &str {
-    match name.rfind('.') {
-        Some(dot) if dot > 0 => &name[..dot],
-        _ => name,
-    }
 }
 
 /// `text` with its middle cut out when it is longer than twice `keep` characters: the first and

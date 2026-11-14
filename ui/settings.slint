@@ -261,6 +261,7 @@ export global SettingsState {
 
     // Applications (SPEC §10.6)
     in-out property <string> calendar-app;
+    in-out property <string> task-manager-app;
 
     // The welcome page (SPEC §11.5): Modern and Classic with a preview of the bar.
     in property <[SkinTile]> welcome-themes;
@@ -330,6 +331,7 @@ export global SettingsState {
     callback remove-skin(id: string);
     callback open-skins-folder();
     callback browse-calendar-app();
+    callback browse-task-manager-app();
 
     // About (SPEC §10.7)
     in property <string> version;
@@ -1794,8 +1796,35 @@ component ApplicationsPage inherits VerticalLayout {
             }
             Button {
                 text: I18n.tr("settings.props.browse");
+                // Named apart from the other row's Browse… for screen readers.
+                accessible-label: I18n.tr("settings.apps.calendar.pick");
                 clicked => {
                     SettingsState.browse-calendar-app();
+                }
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.apps.taskManager");
+        help: I18n.tr("settings.apps.taskManager.help");
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                width: Look.path-width;
+                text <=> SettingsState.task-manager-app;
+                placeholder-text: "taskmgr.exe";
+                accessible-label: I18n.tr("settings.apps.taskManager");
+                edited(text) => {
+                    SettingsState.set-text("apps.taskManager", text);
+                }
+            }
+            Button {
+                text: I18n.tr("settings.props.browse");
+                // Named apart from the other row's Browse… for screen readers.
+                accessible-label: I18n.tr("settings.apps.taskManager.pick");
+                clicked => {
+                    SettingsState.browse-task-manager-app();
                 }
             }
         }

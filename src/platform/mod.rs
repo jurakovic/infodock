@@ -427,6 +427,14 @@ pub fn file_name(path: &str) -> &str {
     }
 }
 
+/// `name` without its extension (`app.exe` → `app`); a leading dot is no extension.
+pub fn without_extension(name: &str) -> &str {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => &name[..dot],
+        _ => name,
+    }
+}
+
 /// The root of `path` by its form: `C:\` for `C:\Data`, `\\server\share\` for a UNC path.
 pub fn path_root(path: &str) -> Option<String> {
     let bytes = path.as_bytes();

@@ -513,6 +513,7 @@ The M0–M3 checks above still apply. CI renders the classic bar with every buil
 - [ ] Turn it on, quit, delete `config.json`, start again (first run): the switch is on (the entry was taken into the setting). With the entry removed by hand before a first run, the switch is off.
 - [ ] Turn it off, then add the `Run` value by hand and restart Infodock (not a first run): the value is removed.
 - [ ] Settings ▸ *Applications*: type `outlookcal:` (or any program) in *Calendar*; a click on a Date sensor opens it. *Browse…* lists programs first; a picked shortcut gives its target. Clear the box: a click opens the date and time settings again.
+- [ ] Settings ▸ *Applications* ▸ *Task manager* ▸ *Browse…*: pick Process Explorer (`procexp64.exe`; *Replace Task Manager* off in Process Explorer): hovering the CPU or RAM sensor ends with *Click to open 'procexp64'*, and a click opens Process Explorer. Clear the box: *Click to open Task Manager*, and Task Manager opens (since D117).
 
 **First-run welcome** (since M4 S14)
 

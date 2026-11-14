@@ -316,7 +316,7 @@ pub fn page_paths(page: usize) -> &'static [&'static str] {
             "popups.showDelayMs",
             "popups.hideDelayMs",
         ],
-        5 => &["apps.calendar"],
+        5 => &["apps.calendar", "apps.taskManager"],
         _ => &[],
     }
 }
@@ -704,7 +704,7 @@ mod tests {
             "classic": { "skin": "carbon", "customSkin": "C:\\a.png" },
             "sensors": { "textColor": "#FFCC00", "font": "Consolas", "inactiveOpacity": 40 },
             "popups": { "background": "#000000", "fontSize": 14, "shadow": false },
-            "apps": { "calendar": "outlookcal:" },
+            "apps": { "calendar": "outlookcal:", "taskManager": "procexp64.exe" },
         });
         let mut settings = apply_settings_patch(&Settings::default(), &changed).expect("valid");
         settings.language = "de".into();

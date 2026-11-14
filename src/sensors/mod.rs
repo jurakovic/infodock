@@ -286,10 +286,15 @@ impl SensorCtx<'_> {
     }
 
     /// `text` with the "Click to …" line `key` when a click would reach the sensor.
-    pub fn with_click_line(&self, mut text: String, key: MsgKey) -> String {
+    pub fn with_click_line(&self, text: String, key: MsgKey) -> String {
+        self.with_click(text, || crate::i18n::t(key))
+    }
+
+    /// `text` with the "Click to …" line `line` gives when a click would reach the sensor.
+    pub fn with_click(&self, mut text: String, line: impl FnOnce() -> String) -> String {
         if self.clicks() {
             text.push('\n');
-            text.push_str(&crate::i18n::t(key));
+            text.push_str(&line());
         }
         text
     }

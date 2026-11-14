@@ -336,6 +336,8 @@ impl Default for PopupSettings {
 pub struct AppSettings {
     /// File path or URI; empty = `ms-settings:dateandtime`.
     pub calendar: String,
+    /// What a click on a CPU or Memory sensor opens: a file path or URI; empty = `taskmgr.exe`.
+    pub task_manager: String,
 }
 
 macro_rules! string_enum {

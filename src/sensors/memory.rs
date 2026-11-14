@@ -1,6 +1,7 @@
 //! `memory-meter` / `memory-graph` and `swap-meter` / `swap-graph` — physical memory and the
 //! page files in use (SPEC §9.10–9.11) on the `memory` and `swap` topics, as a meter of the
-//! load or a graph showing the used bytes or the load; a click opens Task Manager. Without a
+//! load or a graph showing the used bytes or the load; a click opens Task Manager (or the app
+//! Settings ▸ Applications names instead, as the CPU sensors do). Without a
 //! page file the swap sensors show `n/a` and are inactive.
 
 use std::time::Duration;
@@ -10,7 +11,7 @@ use serde::Deserialize;
 use super::common::graph::{self, Columns, GraphStyle, GraphText, Growth};
 use super::common::history::History;
 use super::common::meter::Meter;
-use super::cpu::TASK_MANAGER;
+use super::cpu::{open_task_manager, task_manager_line};
 use super::format::{self, Numbers, percent};
 use super::legacy::LegacyKey;
 use super::schema::{FieldKind, Lit, PropField, SelectOption};
@@ -189,7 +190,7 @@ fn hint(kind: Kind, reading: Option<&Reading>, cx: &SensorCtx) -> Option<HintCon
         if kind == Kind::Swap && reading.absent() {
             text
         } else {
-            cx.with_click_line(text, "sensor.cpu.hint.click")
+            cx.with_click(text, || task_manager_line(cx))
         },
     ))
 }
@@ -311,8 +312,7 @@ impl Sensor for UsageMeter {
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
-        cx.platform.open(TASK_MANAGER);
-        ClickResult::Handled
+        open_task_manager(cx)
     }
 
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
@@ -469,8 +469,7 @@ impl Sensor for UsageGraph {
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
-        cx.platform.open(TASK_MANAGER);
-        ClickResult::Handled
+        open_task_manager(cx)
     }
 
     fn accessible_value(&self, cx: &SensorCtx) -> String {
@@ -620,6 +619,19 @@ mod tests {
         );
         assert_eq!(meter.click(&h.ctx()), ClickResult::Handled);
         assert_eq!(h.platform.log(), ["open taskmgr.exe"]);
+        // Another task manager set in Settings ▸ Applications (SPEC §10.6).
+        let mut h = h;
+        h.settings.apps.task_manager = r"C:\Tools\procexp64.exe".into();
+        let Some(HintContent::Text(text)) = meter.hint(&h.ctx()) else {
+            panic!("a hint");
+        };
+        assert!(text.ends_with("\nClick to open 'procexp64'"), "{text}");
+        let mut graph = created(&SWAP_GRAPH, json!({}));
+        assert_eq!(graph.click(&h.ctx()), ClickResult::Handled);
+        assert_eq!(
+            h.platform.log(),
+            ["open taskmgr.exe", r"open C:\Tools\procexp64.exe"]
+        );
     }
 
     #[test]

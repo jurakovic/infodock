@@ -1,6 +1,6 @@
 //! `cpu-meter`, `cpu-graph` and `cpu-graph-dual` — the processors' load (SPEC §9.7–9.9) on the
 //! `cpu` topic, as a meter or a graph of one or two series, with the hint all CPU sensors
-//! share; a click opens Task Manager.
+//! share; a click opens Task Manager, or the app Settings ▸ Applications names instead.
 
 use std::time::Duration;
 
@@ -17,12 +17,36 @@ use super::{
     Category, ClickResult, ColorChoice, DefaultsCtx, DrawCtx, HintContent, LayoutCtx, Props,
     Sensor, SensorCtx, SensorType, State, color, typed,
 };
-use crate::i18n::{t, t_count};
-use crate::platform::{Canvas, Capability};
+use crate::i18n::{t, t_args, t_count};
+use crate::platform::{Canvas, Capability, file_name, without_extension};
 use crate::sampler::{CpuSample, Sample, Topic, TopicRequest};
 
-/// Task Manager, opened by a click (SPEC §9.7).
-pub(super) const TASK_MANAGER: &str = "taskmgr.exe";
+/// Task Manager, opened by a click unless `apps.taskManager` names another app (SPEC §9.7,
+/// §10.6).
+const TASK_MANAGER: &str = "taskmgr.exe";
+
+/// The app a click on a CPU or Memory sensor opens: `apps.taskManager`, or Task Manager.
+fn task_manager<'a>(cx: &'a SensorCtx) -> Option<&'a str> {
+    Some(cx.settings.apps.task_manager.trim()).filter(|app| !app.is_empty())
+}
+
+/// The click of the CPU and Memory sensors.
+pub(super) fn open_task_manager(cx: &SensorCtx) -> ClickResult {
+    cx.platform.open(task_manager(cx).unwrap_or(TASK_MANAGER));
+    ClickResult::Handled
+}
+
+/// The hint's "Click to …" line for [`open_task_manager`]: Task Manager, or the app set in its
+/// place by its file name without the extension, as a Shortcut names its target (§9.17).
+pub(super) fn task_manager_line(cx: &SensorCtx) -> String {
+    match task_manager(cx) {
+        None => t("sensor.cpu.hint.click"),
+        Some(app) => t_args(
+            "sensor.cpu.hint.clickApp",
+            &[("app", without_extension(file_name(app)))],
+        ),
+    }
+}
 
 const METER_SCHEMA: &[PropField] = &[
     graph::INTERVAL,
@@ -171,7 +195,7 @@ fn shared_hint(sample: Option<&CpuSample>, cx: &SensorCtx) -> Option<HintContent
     let numbers = cx.numbers;
     let text = hint(sample?, numbers);
     Some(HintContent::Text(
-        cx.with_click_line(text, "sensor.cpu.hint.click"),
+        cx.with_click(text, || task_manager_line(cx)),
     ))
 }
 
@@ -263,8 +287,7 @@ impl Sensor for CpuMeter {
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
-        cx.platform.open(TASK_MANAGER);
-        ClickResult::Handled
+        open_task_manager(cx)
     }
 
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
@@ -373,8 +396,7 @@ impl Sensor for CpuGraph {
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
-        cx.platform.open(TASK_MANAGER);
-        ClickResult::Handled
+        open_task_manager(cx)
     }
 
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
@@ -511,8 +533,7 @@ impl Sensor for CpuDual {
     }
 
     fn click(&mut self, cx: &SensorCtx) -> ClickResult {
-        cx.platform.open(TASK_MANAGER);
-        ClickResult::Handled
+        open_task_manager(cx)
     }
 
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
@@ -673,5 +694,28 @@ mod tests {
             panic!("a hint");
         };
         assert!(locked.ends_with("idle:\t63.0%"), "{locked}");
+    }
+
+    #[test]
+    fn another_task_manager_is_opened_and_named() {
+        let mut h = Harness::new();
+        h.settings.apps.task_manager = r"  C:\Tools\procexp64.exe ".into();
+        for kind in [
+            &CpuMeterType as &dyn SensorType,
+            &CpuGraphType,
+            &CpuDualType,
+        ] {
+            let mut sensor = created(kind, json!({}));
+            sensor.on_sample(&Topic::Cpu, &cpu(37.0), &h.ctx());
+            let Some(HintContent::Text(text)) = sensor.hint(&h.ctx()) else {
+                panic!("a hint");
+            };
+            assert!(text.ends_with("\nClick to open 'procexp64'"), "{text}");
+            assert_eq!(sensor.click(&h.ctx()), ClickResult::Handled);
+        }
+        assert_eq!(h.platform.log(), [r"open C:\Tools\procexp64.exe"; 3]);
+        // An address is named as it is.
+        h.settings.apps.task_manager = "ms-settings:".into();
+        assert_eq!(task_manager_line(&h.ctx()), "Click to open 'ms-settings:'");
     }
 }

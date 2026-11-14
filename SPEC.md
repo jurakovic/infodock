@@ -931,7 +931,7 @@ Topic `cpu`. View: Meter, label "CPU", value `{total}%`.
 Click to open Task Manager
 ```
 One decimal. User and system are clamped so that their sum does not exceed 100.
-**Click**: launch `taskmgr.exe`.
+**Click**: launch `apps.taskManager` if set (§10.6, e.g. Process Explorer), otherwise `taskmgr.exe`. With it set, the hint's last line names it as a Shortcut names its target (§9.17): `Click to open 'procexp64'`.
 
 ### 9.8 `cpu-graph` — CPU Graph  (System; `DockCPUGraph`)
 
@@ -983,7 +983,7 @@ Available Physical: 18.2 GB
 Memory Load: 43%
 Click to open Task Manager
 ```
-Click: Task Manager.
+Click: as the CPU sensors' (§9.7): `apps.taskManager`, or Task Manager, named in the hint's last line.
 
 Implementation (`sensors/memory.rs`, `providers/memory.rs`, `platform/windows/memory.rs`): the meter and the graph are written for any "used of total" topic, so swap (§9.11) shares them. The graph always plots the load; `display` changes only the value line (bytes: the used size). Before the first sample the value line is empty and there is no hint; a sample that changes nothing does not redraw the meter.
 
@@ -1358,8 +1358,9 @@ Stored under `settings.bar` (e.g. `settings.bar.edge`); the other sections use t
 | Key | Type | Default |
 |---|---|---|
 | apps.calendar | file or URI | "" (→ `ms-settings:dateandtime`) |
+| apps.taskManager | file or URI | "" (→ `taskmgr.exe`); what a click on a CPU, Memory or Swap sensor opens (§9.7, §9.10) |
 
-Implementation (`settings/applications.rs`): the page's *Calendar* row holds the text, saved as it is typed (as the custom skin's path, §10.7), and *Browse…*, whose picker offers programs (`.exe`) first.
+Implementation (`settings/applications.rs`): the page's *Calendar* and *Task manager* rows each hold the text, saved as it is typed (as the custom skin's path, §10.7), and *Browse…*, whose picker offers programs (`.exe`) first.
 
 ### 10.7 Settings window
 
