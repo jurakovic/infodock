@@ -172,7 +172,7 @@ impl PopupUia {
     ) {
         // SAFETY: plain query.
         let listening = unsafe { UiaClientsAreListening() }.as_bool();
-        let events = {
+        {
             let mut tree = self.tree.borrow_mut();
             tree.scale = f64::from(scale.max(0.1));
             if appeared {
@@ -184,7 +184,11 @@ impl PopupUia {
                 tree.stale = true;
                 return;
             }
-            let popup = describe();
+        }
+        // Described with the tree released, as providers may be asked meanwhile.
+        let popup = describe();
+        let events = {
+            let mut tree = self.tree.borrow_mut();
             let old = tree.popup.take();
             let events = accessible::popup_events(old.as_ref(), &popup);
             tree.popup = Some(popup);
