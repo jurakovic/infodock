@@ -5,7 +5,9 @@
 # never get it. Then Infodock's own hotkey (the default, Ctrl+Alt+Shift+I), pressed while
 # recording, should be found taken too. The app runs with the keyboard hook's trace (RUST_LOG);
 # the lines it logged are printed. Runs after the memory check, whose first run ended the
-# welcome page, and before the installer check, which removes the config.
+# welcome page, and before the installer check, which removes the config. A keyboard hook of
+# this script's own (Spy) counts the keys it sees meanwhile, so the report tells whether hooks
+# outside Infodock see them.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -92,6 +94,57 @@ public sealed class Holder {
         thread.Join(5000);
     }
 }
+
+// A low-level keyboard hook on a thread of its own, as Infodock's, counting the keys pressed.
+public sealed class Spy {
+    [StructLayout(LayoutKind.Sequential)]
+    struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int x; public int y; }
+    delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern IntPtr SetWindowsHookExW(int id, HookProc proc, IntPtr module, uint thread);
+    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
+    [DllImport("user32.dll")] static extern bool PeekMessageW(out MSG msg, IntPtr hwnd, uint min, uint max, uint remove);
+    [DllImport("user32.dll")] static extern int GetMessageW(out MSG msg, IntPtr hwnd, uint min, uint max);
+    [DllImport("user32.dll")] static extern bool PostThreadMessageW(uint thread, uint msg, IntPtr w, IntPtr l);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+    readonly HookProc proc; // kept alive while the hook is installed
+    readonly Thread thread;
+    readonly ManualResetEventSlim ready = new ManualResetEventSlim();
+    uint id;
+    volatile int keys;
+    public bool Installed;
+    public int Keys { get { return keys; } }
+
+    public Spy() {
+        proc = Hook;
+        thread = new Thread(() => {
+            MSG msg;
+            PeekMessageW(out msg, IntPtr.Zero, 0, 0, 0);
+            id = GetCurrentThreadId();
+            IntPtr hook = SetWindowsHookExW(13 /* WH_KEYBOARD_LL */, proc, GetModuleHandleW(null), 0);
+            Installed = hook != IntPtr.Zero;
+            ready.Set();
+            while (GetMessageW(out msg, IntPtr.Zero, 0, 0) > 0) { }
+            if (Installed) UnhookWindowsHookEx(hook);
+        });
+        thread.IsBackground = true;
+        thread.Start();
+        ready.Wait();
+    }
+
+    IntPtr Hook(int code, IntPtr wParam, IntPtr lParam) {
+        long message = wParam.ToInt64();
+        if (code == 0 && (message == 0x0100 || message == 0x0104)) keys++;
+        return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+    }
+
+    public void Stop() {
+        PostThreadMessageW(id, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+        thread.Join(5000);
+    }
+}
 '@
 
 $LogDir = Join-Path $env:LOCALAPPDATA 'app.infodock.desktop\logs'
@@ -132,8 +185,11 @@ function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys) {
     if (-not (Wait-ForLine $before 'watching for hotkeys other apps hold')) {
         Write-Warning "The click on the hotkey button at $rect did not start the watch"
     }
+    $spied = $spy.Keys
     [Desktop]::Press($Keys)
     $taken = Wait-ForLine $before ([regex]::Escape("$Name is taken"))
+    $script:seen["$Name, keys this script's hook saw (of $($Keys.Count))"] = $spy.Keys - $spied
+    $script:seen["$Name, Infodock's hook called"] = [bool](Get-NewLines $before | Select-String -Pattern 'the keyboard hook saw its first key' -Quiet)
     # Still recording if it was not found: Esc ends it.
     if (-not $taken) { [Desktop]::Press([byte[]]@(0x1B)) }
     Start-Sleep -Milliseconds 300
@@ -141,7 +197,11 @@ function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys) {
 }
 
 $results = [ordered]@{}
+# What was seen, reported beside the checks.
+$seen = [ordered]@{}
 $start = Get-LogLines
+$spy = [Spy]::new()
+if (-not $spy.Installed) { Write-Warning "This script's keyboard hook could not be installed" }
 $holder = [Holder]::new(0x3 <# MOD_ALT | MOD_CONTROL #>, 0x4A <# J #>)
 if (-not $holder.Held) { Write-Warning 'Ctrl+Alt+J was already held on the runner; the check uses that holder' }
 $filter = $env:RUST_LOG
@@ -179,6 +239,7 @@ try {
         if (-not $app.WaitForExit(10000)) { & taskkill.exe /f /t /pid $app.Id | Out-Null }
     }
     $holder.Stop()
+    $spy.Stop()
     $lines = Get-NewLines $start
     $lines | Set-Content (Join-Path $OutDir 'hotkey-check.log')
     Write-Host '== What the app logged'
@@ -187,6 +248,8 @@ try {
 
 $summary = @('### Hotkey held by another app (SPEC §6.5)', '', '| Check | Result |', '|---|---|')
 $summary += $results.GetEnumerator() | ForEach-Object { "| $($_.Key) | $(if ($_.Value) { 'passed' } else { '**failed**' }) |" }
+$summary += @('', '| Seen | |', '|---|---|')
+$summary += $seen.GetEnumerator() | ForEach-Object { "| $($_.Key) | $($_.Value) |" }
 if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
 $summary -join "`n" | Write-Host
 

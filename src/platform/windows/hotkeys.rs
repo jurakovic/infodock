@@ -10,7 +10,7 @@
 //! thread, whose loop is winit's, it was never called (S14x2: CI's hotkey check logged no call
 //! from it, while the same hook on a plain thread saw every key).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
@@ -39,6 +39,8 @@ type Taken = Box<dyn Fn(KeyCombo) + Send>;
 thread_local! {
     /// The listener, on the watch's thread while its hook is installed.
     static TAKEN: RefCell<Option<Taken>> = const { RefCell::new(None) };
+    /// The hook was called since the watch started (its first call is logged).
+    static CALLED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// The running watch; dropping it removes the hook and ends its thread.
@@ -84,6 +86,7 @@ pub(crate) fn watch(taken: Taken) -> Option<Watch> {
                 }
             };
             TAKEN.with(|t| *t.borrow_mut() = Some(taken));
+            CALLED.set(false);
             // SAFETY: a plain query.
             let thread = unsafe { GetCurrentThreadId() };
             let _ = ready.send(Some(thread));
@@ -141,6 +144,9 @@ unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) ->
 fn keep(vk: u32, injected: bool) -> bool {
     // SAFETY: a plain query; the hook runs on the thread that installed it.
     let thread = unsafe { GetCurrentThreadId() };
+    if !CALLED.replace(true) {
+        tracing::debug!("the keyboard hook saw its first key since the watch started (vk {vk})");
+    }
     let Some(combo) = combo(vk).filter(|c| c.could_be_hotkey()) else {
         tracing::trace!(vk, injected, thread, "hook: not a hotkey combination");
         return false;
