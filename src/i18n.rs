@@ -42,9 +42,7 @@ pub fn t_args(key: &str, args: &[(&str, &str)]) -> String {
             key
         }
     };
-    args.iter().fold(template.to_owned(), |s, (name, value)| {
-        s.replace(&format!("{{{name}}}"), value)
-    })
+    fill(template, args)
 }
 
 /// Like [`t_args`] for a message that depends on `count`: its plural form is chosen by the UI
@@ -57,13 +55,40 @@ pub fn t_count(key: &str, count: u64, args: &[(&str, &str)]) -> String {
     args.push(("count", &count));
     match CATALOG.get(key) {
         Some(Value::Object(forms)) => match forms.get(form).and_then(Value::as_str) {
-            Some(template) => args.iter().fold(template.to_owned(), |s, (name, value)| {
-                s.replace(&format!("{{{name}}}"), value)
-            }),
+            Some(template) => fill(template, &args),
             None => t_args(key, &args),
         },
         _ => t_args(key, &args),
     }
+}
+
+/// `template` with each `{name}` that `args` names replaced by its value, in one pass: a value
+/// is copied as it is, so one holding `{…}` (a file name, an imported sensor's text) is never
+/// filled in itself. An unknown `{name}` stays as it is.
+fn fill(template: &str, args: &[(&str, &str)]) -> String {
+    let mut filled = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        filled.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let value = after.find('}').and_then(|close| {
+            let name = &after[..close];
+            let value = args.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)?;
+            Some((close, value))
+        });
+        match value {
+            Some((close, value)) => {
+                filled.push_str(value);
+                rest = &after[close + 1..];
+            }
+            None => {
+                filled.push('{');
+                rest = after;
+            }
+        }
+    }
+    filled.push_str(rest);
+    filled
 }
 
 /// Whether the catalog has `key`, for tests of code that names keys.
@@ -80,6 +105,39 @@ mod tests {
     fn looks_up_and_formats() {
         assert_eq!(t("tray.quit"), "Quit Infodock");
         assert_eq!(t_args("common.items", &[("count", "3")]), "3 items");
+    }
+
+    #[test]
+    fn placeholders_are_filled_in_one_pass() {
+        let args = [("file", "{error}.json"), ("error", "denied")];
+        assert_eq!(
+            fill("Could not read {file}: {error}", &args),
+            "Could not read {error}.json: denied",
+            "a value is not filled in itself"
+        );
+        assert_eq!(
+            fill("{file}", &[("file", "{count} items")]),
+            "{count} items"
+        );
+        assert_eq!(
+            t_count("common.items", 2, &[]),
+            "2 items",
+            "the count from t_count"
+        );
+        assert_eq!(
+            fill("{unknown} and {error}", &args),
+            "{unknown} and denied",
+            "an unknown name stays"
+        );
+        assert_eq!(
+            fill("{error} at the start, the end: {error}", &args),
+            "denied at the start, the end: denied"
+        );
+        assert_eq!(fill("{", &args), "{");
+        assert_eq!(fill("}{", &args), "}{");
+        assert_eq!(fill("open { brace {error", &args), "open { brace {error");
+        assert_eq!(fill("{{error}}", &args), "{denied}");
+        assert_eq!(fill("", &args), "");
     }
 
     #[test]

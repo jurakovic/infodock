@@ -106,6 +106,23 @@ impl Pending {
     }
 }
 
+/// Of the topics nobody subscribes to any more, those whose reader can go: no topic still
+/// subscribed shares it (`providers::share_reader`), as one battery's topic shares the power
+/// reader with the others and Settings' battery list.
+fn forgettable<'a>(
+    removed: Vec<Topic>,
+    subscribed: impl Iterator<Item = &'a Topic> + Clone,
+) -> Vec<Topic> {
+    removed
+        .into_iter()
+        .filter(|topic| {
+            !subscribed
+                .clone()
+                .any(|other| crate::providers::share_reader(topic, other))
+        })
+        .collect()
+}
+
 fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Delivery)) {
     let mut scheduler: Scheduler<Topic, Arc<Sample>, Subscriber> = Scheduler::default();
     // What changed since the last readings: the topics they concern are read now, pushed.
@@ -133,7 +150,8 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                         pushed: false,
                     });
                 }
-                for topic in scheduler.take_removed() {
+                let removed = scheduler.take_removed();
+                for topic in forgettable(removed, scheduler.topics()) {
                     providers.forget(&topic);
                 }
             }
@@ -187,6 +205,33 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn a_battery_topic_left_keeps_the_power_reader_while_another_is_subscribed() {
+        let mut scheduler: Scheduler<Topic, Arc<Sample>, &str> = Scheduler::default();
+        let now = Instant::now();
+        let every = Duration::from_secs(10);
+        scheduler.subscribe("sensor", &[(Topic::Battery(0), every)], now);
+        scheduler.subscribe("settings", &[(Topic::Batteries, every)], now);
+        scheduler.subscribe("disk", &[(Topic::Disk("C:\\".into()), every)], now);
+
+        // One Battery sensor goes; Settings' battery list still reads the batteries.
+        scheduler.subscribe("sensor", &[], now);
+        let removed = scheduler.take_removed();
+        assert_eq!(removed, [Topic::Battery(0)]);
+        assert!(forgettable(removed, scheduler.topics()).is_empty());
+        // The last battery topic goes: so does the reader.
+        scheduler.subscribe("settings", &[], now);
+        let removed = scheduler.take_removed();
+        assert_eq!(forgettable(removed, scheduler.topics()), [Topic::Batteries]);
+        // Other topics keep their own readers.
+        scheduler.subscribe("disk", &[(Topic::Disk("D:\\".into()), every)], now);
+        let removed = scheduler.take_removed();
+        assert_eq!(
+            forgettable(removed, scheduler.topics()),
+            [Topic::Disk("C:\\".into())]
+        );
+    }
 
     #[test]
     fn delivers_samples_to_subscribers_until_shut_down() {

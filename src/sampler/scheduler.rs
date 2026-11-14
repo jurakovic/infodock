@@ -127,6 +127,11 @@ impl<K: Clone + Eq + Hash, S: Clone + PartialEq, U: Eq + Hash> Scheduler<K, S, U
         catch_up
     }
 
+    /// The topics someone subscribes to.
+    pub fn topics(&self) -> impl Iterator<Item = &K> + Clone {
+        self.topics.keys()
+    }
+
     /// The topics nobody subscribes to any more since the last call, so their providers can
     /// drop what they keep between readings.
     pub fn take_removed(&mut self) -> Vec<K> {

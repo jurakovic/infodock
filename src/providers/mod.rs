@@ -43,6 +43,14 @@ pub struct Providers {
     net: net::Net,
 }
 
+/// Whether topics `a` and `b` are read through one reader, which [`Providers::forget`] drops for
+/// either: every battery topic shares the power reader. Other topics have readers of their own,
+/// or one keyed by the topic (a drive, a path, an interface).
+pub fn share_reader(a: &Topic, b: &Topic) -> bool {
+    let power = |t: &Topic| matches!(t, Topic::Battery(_) | Topic::Batteries);
+    a == b || power(a) && power(b)
+}
+
 impl Providers {
     pub fn new(platform: Arc<dyn Platform>) -> Self {
         Self {
@@ -76,7 +84,9 @@ impl Providers {
     }
 
     /// Nobody subscribes to `topic` any more: what is kept for it goes, so a later subscriber
-    /// starts from a fresh baseline (the first CPU reading is discarded again).
+    /// starts from a fresh baseline (the first CPU reading is discarded again). Topics that
+    /// [`share_reader`] lose it with any of them, so only forget one when none of the others is
+    /// still subscribed.
     pub fn forget(&mut self, topic: &Topic) {
         match topic {
             Topic::Cpu => {
