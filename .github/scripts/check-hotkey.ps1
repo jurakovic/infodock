@@ -34,6 +34,22 @@ public static class Desktop {
     static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")]
     static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetWindowTextW(IntPtr hwnd, System.Text.StringBuilder text, int max);
+
+    // The foreground window's title and process id.
+    public static string Foreground() {
+        IntPtr hwnd = GetForegroundWindow();
+        uint process;
+        GetWindowThreadProcessId(hwnd, out process);
+        var title = new System.Text.StringBuilder(256);
+        GetWindowTextW(hwnd, title, title.Capacity);
+        return "'" + title + "' (process " + process + ")";
+    }
 
     // Presses the keys in order, then releases them in reverse, as a user does.
     public static void Press(params byte[] keys) {
@@ -174,6 +190,17 @@ function Get-HotkeyButton([IntPtr] $Window) {
     $auto::FromHandle($Window).FindFirst([System.Windows.Automation.TreeScope]::Descendants, $both)
 }
 
+# Presses Shift twice and notes how many of the presses this script's hook saw, and what had
+# the foreground, as $Label: when hooks stop seeing keys.
+function Measure-Hooked([string] $Label) {
+    $before = $spy.Keys
+    $foreground = [Desktop]::Foreground()
+    [Desktop]::Press([byte[]]@(0x10))
+    [Desktop]::Press([byte[]]@(0x10))
+    Start-Sleep -Milliseconds 300
+    $script:seen["${Label}: Shift presses this script's hook saw (of 2), foreground $foreground"] = $spy.Keys - $before
+}
+
 # Clicks the hotkey button, which starts recording, and presses $Keys; $true when Settings found
 # the combination $Name taken.
 function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys) {
@@ -204,6 +231,7 @@ $spy = [Spy]::new()
 if (-not $spy.Installed) { Write-Warning "This script's keyboard hook could not be installed" }
 $holder = [Holder]::new(0x3 <# MOD_ALT | MOD_CONTROL #>, 0x4A <# J #>)
 if (-not $holder.Held) { Write-Warning 'Ctrl+Alt+J was already held on the runner; the check uses that holder' }
+Measure-Hooked 'Before Infodock started'
 $filter = $env:RUST_LOG
 $env:RUST_LOG = 'info,infodock_lib::platform::windows::hotkeys=trace,infodock_lib::settings=debug'
 $app = Start-Process -FilePath $Exe -PassThru
@@ -211,6 +239,7 @@ $env:RUST_LOG = $filter
 try {
     Start-Sleep -Seconds 8
     if ($app.HasExited) { throw "Infodock exited during start-up (code $($app.ExitCode))" }
+    Measure-Hooked 'The bar running'
     # A second launch opens Settings on General (SPEC §4.1).
     $second = Start-Process -FilePath $Exe -PassThru
     if (-not $second.WaitForExit(15000)) { Write-Warning 'The second instance did not exit' }
@@ -222,14 +251,17 @@ try {
     }
     if ($window -eq [IntPtr]::Zero) { throw 'Settings did not open' }
     Start-Sleep -Seconds 2
+    Measure-Hooked 'Settings open'
 
     $hotkeysBefore = $holder.Hotkeys
     $results['Ctrl+Alt+J, held by another app, found taken'] = Test-Taken $window 'Ctrl+Alt+J' @(0x11, 0x12, 0x4A)
     $results['Ctrl+Alt+J kept from the app that holds it'] = $holder.Hotkeys -eq $hotkeysBefore
     $results["Infodock's own hotkey found taken"] = Test-Taken $window 'Ctrl+Alt+Shift+I' @(0x11, 0x12, 0x10, 0x49)
 
+    Measure-Hooked 'After recording'
     [Desktop]::PostMessageW($window, 0x0010 <# WM_CLOSE #>, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     Start-Sleep -Seconds 1
+    Measure-Hooked 'Settings closed'
 } catch {
     Write-Warning "The hotkey check could not run: $_"
     $results['The check ran'] = $false
@@ -238,6 +270,7 @@ try {
         & taskkill.exe /pid $app.Id | Out-Null
         if (-not $app.WaitForExit(10000)) { & taskkill.exe /f /t /pid $app.Id | Out-Null }
     }
+    Measure-Hooked 'After Infodock quit'
     $holder.Stop()
     $spy.Stop()
     $lines = Get-NewLines $start
