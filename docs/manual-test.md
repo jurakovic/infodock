@@ -696,6 +696,7 @@ Failed readings are hard to provoke on a healthy machine; the unit tests cover t
 
 - [ ] The checks are in M0 ▸ *Settings ▸ Bar*: *Always behind other windows* with Win+D, and *Always on top* after a restart, docked and floating.
 - [ ] *Always behind other windows*, Win+D, then Win+D again (the windows come back): they cover the bar; the hotkey still brings it forward until you click elsewhere, and it goes behind the windows again.
+- [ ] *Always behind other windows*, Win+D, then right-click the bar: the bar stays visible while its menu is open, and after Esc. Win+D again (windows back), Win+D, then left-click an Uptime or Text sensor: the bar does not flash; left-click the CPU sensor: Task Manager opens over the bar, which goes behind it without a flash (since D116). If it still hides or flashes, start Infodock with `RUST_LOG=infodock_lib=debug` and send the log: its `foreground:` lines name the window that came to the front.
 
 **Acrylic and the material** (since M5 S14n; CI's runner draws no material, so this is the check)
 

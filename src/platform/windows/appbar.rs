@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::Shell::{
@@ -31,12 +32,12 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     ChangeWindowMessageFilterEx, DefWindowProcW, EVENT_SYSTEM_FOREGROUND, GA_ROOT, GWL_EXSTYLE,
     GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, HWND_BOTTOM,
-    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, MSGFLT_ALLOW, PostMessageW, RegisterWindowMessageW,
-    SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetWindowPos, ShowWindow,
-    WA_INACTIVE, WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED,
-    WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED,
-    WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
+    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsIconic, IsWindowVisible, MSGFLT_ALLOW, PostMessageW,
+    RegisterWindowMessageW, SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow,
+    SetWindowPos, ShowWindow, WA_INACTIVE, WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE,
+    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND,
+    WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
 };
 use windows::core::w;
 
@@ -50,8 +51,8 @@ use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest}
 
 /// `wParam` of the private "reposition" message when it asks to raise the bar instead.
 const RAISE: usize = 1;
-/// `wParam` of the private "reposition" message when another window became the foreground one;
-/// `lParam` is 1 when it is the desktop.
+/// `wParam` of the private "reposition" message when the foreground window changed; the bar
+/// thread reads which one it is when it handles the message.
 const FOREGROUND: usize = 2;
 /// How often at most the bar takes back a topmost place it lost to other code.
 const RESTORE_TOPMOST_EVERY: Duration = Duration::from_secs(1);
@@ -104,7 +105,8 @@ struct UiState {
     fullscreen: bool,
     /// Brought to the front by the hotkey; cleared when the bar loses focus.
     raised: bool,
-    /// The desktop is the foreground window (Show desktop, or a click on it).
+    /// The desktop is in front (Show desktop, or a click on it): the last foreground window that
+    /// counts ([`in_front`]) was the desktop.
     desktop: bool,
     /// When the bar last took back a topmost place it lost.
     restored: Option<Instant>,
@@ -460,6 +462,7 @@ impl Shared {
         };
         let now = self.stacking();
         let insert_after = insert_after(&req, now);
+        tracing::debug!("z-order: {} ({now:?})", z_name(insert_after));
         if leaves_topmost_first(insert_after, now) {
             self.set_z(HWND_NOTOPMOST);
         }
@@ -489,8 +492,19 @@ impl Shared {
         );
     }
 
-    /// Another window became the foreground one; `desktop`: it is the desktop.
-    fn on_foreground(&self, desktop: bool) {
+    /// The foreground window changed. Read now rather than taken from the hook, so a window
+    /// that was in front only for a moment, gone by the time the bar thread looks, changes
+    /// nothing (SPEC §5.3).
+    fn on_foreground(&self) {
+        // SAFETY: plain query.
+        let window = foreground(unsafe { GetForegroundWindow() });
+        let kind = in_front(window.as_ref());
+        tracing::debug!("foreground: {window:?}, {kind:?}");
+        let desktop = match kind {
+            InFront::Desktop => true,
+            InFront::Other => false,
+            InFront::Unchanged => return,
+        };
         let changed = self.ui(|u| std::mem::replace(&mut u.desktop, desktop)) != desktop;
         let behind = lock(&self.request)
             .as_ref()
@@ -686,26 +700,102 @@ pub(super) fn is_topmost(hwnd: HWND) -> bool {
     ex_style & WS_EX_TOPMOST.0 as isize != 0
 }
 
+/// For the log: where [`insert_after`] puts the bar.
+fn z_name(insert_after: HWND) -> &'static str {
+    match insert_after {
+        h if h == HWND_TOPMOST => "topmost",
+        h if h == HWND_NOTOPMOST => "not topmost",
+        h if h == HWND_TOP => "top",
+        h if h == HWND_BOTTOM => "bottom",
+        _ => "after a window",
+    }
+}
+
 /// The desktop's top-level windows: `Progman`, and the `WorkerW` that Show desktop puts in
 /// front of every normal window.
 fn is_desktop_class(class: &str) -> bool {
     matches!(class, "Progman" | "WorkerW")
 }
 
-/// The foreground hook: tells the bar window whether the desktop came to the front.
+/// The taskbars, on the main monitor and the others.
+fn is_taskbar_class(class: &str) -> bool {
+    matches!(class, "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
+}
+
+/// The foreground window, as far as the z-order cares (SPEC §5.3).
+#[derive(Debug)]
+struct Foreground {
+    /// The class of its top-level window.
+    class: String,
+    /// One of the bar thread's own windows: the bar, its menus, popup and hint.
+    ours: bool,
+    /// Shown: visible, not minimised and not cloaked.
+    shown: bool,
+}
+
+/// What a new foreground window means for a bar kept behind the windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InFront {
+    /// The desktop: the bar comes up over it.
+    Desktop,
+    /// A window that can cover the bar: the bar goes back behind the windows.
+    Other,
+    /// Nothing that changes where the bar belongs: no window, one of the bar's own (it takes
+    /// the foreground for its menus), the taskbar, or a window that is not shown. A click on
+    /// the bar after Show desktop made it flash, though the bar takes no foreground on a click:
+    /// most likely Windows hands it to such a window for a moment as Show desktop ends.
+    Unchanged,
+}
+
+fn in_front(window: Option<&Foreground>) -> InFront {
+    match window {
+        None => InFront::Unchanged,
+        Some(w) if w.ours => InFront::Unchanged,
+        Some(w) if is_desktop_class(&w.class) => InFront::Desktop,
+        Some(w) if is_taskbar_class(&w.class) || !w.shown => InFront::Unchanged,
+        Some(_) => InFront::Other,
+    }
+}
+
+/// Describes `hwnd`'s top-level window; `None` for no window. Bar thread only.
+fn foreground(hwnd: HWND) -> Option<Foreground> {
+    if hwnd.is_invalid() {
+        return None;
+    }
+    let mut class = [0u16; 64];
+    let mut cloaked = 0u32;
+    // SAFETY: plain queries; the buffers' sizes are passed with them. A window that closed
+    // meanwhile gives an empty class and is not shown.
+    unsafe {
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let root = if root.is_invalid() { hwnd } else { root };
+        let length = GetClassNameW(root, &mut class);
+        let is_cloaked = DwmGetWindowAttribute(
+            root,
+            DWMWA_CLOAKED,
+            (&raw mut cloaked).cast(),
+            size_of::<u32>() as u32,
+        )
+        .is_ok()
+            && cloaked != 0;
+        Some(Foreground {
+            class: String::from_utf16_lossy(&class[..length.max(0) as usize]),
+            ours: super::window::on_this_thread(root),
+            shown: IsWindowVisible(root).as_bool() && !IsIconic(root).as_bool() && !is_cloaked,
+        })
+    }
+}
+
+/// The foreground hook: tells the bar window that the foreground window changed.
 unsafe extern "system" fn foreground_changed(
     _hook: HWINEVENTHOOK,
     _event: u32,
-    hwnd: HWND,
+    _hwnd: HWND,
     _object: i32,
     _child: i32,
     _thread: u32,
     _time: u32,
 ) {
-    let mut class = [0u16; 32];
-    // SAFETY: plain queries; the buffer's length is passed with it.
-    let length = unsafe { GetClassNameW(GetAncestor(hwnd, GA_ROOT), &mut class) };
-    let class = String::from_utf16_lossy(&class[..length.max(0) as usize]);
     let bar = HWND(HOOKED_BAR.load(Ordering::SeqCst) as *mut c_void);
     // SAFETY: posting to the bar window, which outlives the hook.
     let _ = unsafe {
@@ -713,7 +803,7 @@ unsafe extern "system" fn foreground_changed(
             Some(bar),
             messages().reposition,
             WPARAM(FOREGROUND),
-            LPARAM(isize::from(is_desktop_class(&class))),
+            LPARAM(0),
         )
     };
 }
@@ -726,7 +816,7 @@ impl Shared {
         if msg == m.reposition {
             match wparam.0 {
                 RAISE => self.raise_now(),
-                FOREGROUND => self.on_foreground(lparam.0 != 0),
+                FOREGROUND => self.on_foreground(),
                 _ => self.reposition(),
             }
             return Some(LRESULT(0));
@@ -901,5 +991,86 @@ mod tests {
         assert!(!leaves_topmost_first(HWND_BOTTOM, fullscreen));
         assert!(is_desktop_class("WorkerW") && is_desktop_class("Progman"));
         assert!(!is_desktop_class("Shell_TrayWnd") && !is_desktop_class("Notepad"));
+    }
+
+    #[test]
+    fn only_the_desktop_and_shown_windows_move_the_bar() {
+        let window = |class: &str, ours, shown| Foreground {
+            class: class.into(),
+            ours,
+            shown,
+        };
+        assert_eq!(
+            in_front(Some(&window("WorkerW", false, true))),
+            InFront::Desktop
+        );
+        assert_eq!(
+            in_front(Some(&window("Progman", false, true))),
+            InFront::Desktop
+        );
+        assert_eq!(
+            in_front(Some(&window("Notepad", false, true))),
+            InFront::Other
+        );
+        // The bar's own windows (it takes the foreground for a menu), the taskbars, a window
+        // that is not shown and no window at all leave the bar where it is.
+        assert_eq!(
+            in_front(Some(&window("Infodock.Bar", true, true))),
+            InFront::Unchanged
+        );
+        assert_eq!(
+            in_front(Some(&window("#32768", true, true))),
+            InFront::Unchanged
+        );
+        assert_eq!(
+            in_front(Some(&window("Shell_TrayWnd", false, true))),
+            InFront::Unchanged
+        );
+        assert_eq!(
+            in_front(Some(&window("Shell_SecondaryTrayWnd", false, true))),
+            InFront::Unchanged
+        );
+        assert_eq!(
+            in_front(Some(&window("Notepad", false, false))),
+            InFront::Unchanged
+        );
+        assert_eq!(in_front(None), InFront::Unchanged);
+        // The desktop counts even when it is not shown as a normal window is.
+        assert_eq!(
+            in_front(Some(&window("Progman", false, false))),
+            InFront::Desktop
+        );
+        assert!(foreground(HWND::default()).is_none());
+    }
+
+    #[test]
+    fn a_window_of_this_thread_is_ours() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_POPUP,
+        };
+        // SAFETY: a hidden window of a system class, destroyed below.
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                None,
+                WS_POPUP,
+                0,
+                0,
+                10,
+                10,
+                None,
+                None,
+                None,
+                None,
+            )
+        }
+        .expect("a window");
+        let described = foreground(hwnd).expect("described");
+        // SAFETY: our own window, created above.
+        let _ = unsafe { DestroyWindow(hwnd) };
+        assert!(described.ours, "created on this thread");
+        assert!(!described.shown, "never shown");
+        assert!(described.class.eq_ignore_ascii_case("static"));
     }
 }
