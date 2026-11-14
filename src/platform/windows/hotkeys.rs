@@ -254,7 +254,7 @@ mod tests {
     use std::time::Duration;
 
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F23, keybd_event,
+        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_F24, keybd_event,
     };
     use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 
@@ -314,12 +314,13 @@ mod tests {
             .with_max_level(tracing::Level::TRACE)
             .with_test_writer()
             .try_init();
-        // Ctrl+Alt+Shift+F23 is held by another thread, as by another app.
+        // Ctrl+Alt+Shift+F24 is held by another thread, as by another app (F23 is the other
+        // test's, which may run at the same time).
         let (holder, registered, holder_thread) = with_message_loop(|| {
             let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0);
             // SAFETY: a thread hotkey for the test; it goes with the thread.
             (
-                unsafe { RegisterHotKey(None, 1, modifiers, u32::from(VK_F23.0)) }.is_ok(),
+                unsafe { RegisterHotKey(None, 1, modifiers, u32::from(VK_F24.0)) }.is_ok(),
                 (),
             )
         });
@@ -333,10 +334,10 @@ mod tests {
         }))
         .expect("the hook is installed");
 
-        for vk in [VK_CONTROL, VK_MENU, VK_SHIFT, VK_F23] {
+        for vk in [VK_CONTROL, VK_MENU, VK_SHIFT, VK_F24] {
             key(vk, false);
         }
-        for vk in [VK_F23, VK_SHIFT, VK_MENU, VK_CONTROL] {
+        for vk in [VK_F24, VK_SHIFT, VK_MENU, VK_CONTROL] {
             key(vk, true);
         }
         let reported = reports.recv_timeout(Duration::from_secs(2));
@@ -351,7 +352,7 @@ mod tests {
                 alt: true,
                 shift: true,
                 win: false,
-                code: "F23",
+                code: "F24",
             }),
             "the hook reports the combination"
         );

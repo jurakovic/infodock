@@ -212,10 +212,14 @@ function Test-Taken([IntPtr] $Window, [string] $Name, [byte[]] $Keys) {
     if (-not (Wait-ForLine $before 'watching for hotkeys other apps hold')) {
         Write-Warning "The click on the hotkey button at $rect did not start the watch"
     }
+    # A second hook, installed after Infodock's, is called before it.
+    $first = [Spy]::new()
     $spied = $spy.Keys
     [Desktop]::Press($Keys)
     $taken = Wait-ForLine $before ([regex]::Escape("$Name is taken"))
     $script:seen["$Name, keys this script's hook saw (of $($Keys.Count))"] = $spy.Keys - $spied
+    $script:seen["$Name, keys a hook installed after Infodock's saw (of $($Keys.Count))"] = $first.Keys
+    $first.Stop()
     $script:seen["$Name, Infodock's hook called"] = [bool](Get-NewLines $before | Select-String -Pattern 'the keyboard hook saw its first key' -Quiet)
     # Still recording if it was not found: Esc ends it.
     if (-not $taken) { [Desktop]::Press([byte[]]@(0x1B)) }

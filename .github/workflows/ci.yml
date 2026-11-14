@@ -168,7 +168,7 @@ jobs:
       # S14x2's diagnostic, removed with its fix: the hook's test in a release build.
       - name: Hotkey hook test, release build
         continue-on-error: true
-        run: cargo test --release --lib platform::windows::hotkeys -- --ignored --nocapture
+        run: cargo test --release --lib platform::windows::hotkeys -- --ignored --nocapture --test-threads=1
       # The installer per user without admin rights (SPEC §15.3): installed silently, checked,
       # started and uninstalled. After the memory check, whose config it removes.
       - name: Installer check
