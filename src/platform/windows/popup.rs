@@ -8,7 +8,6 @@
 use std::cell::{Cell, OnceCell, RefCell};
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
@@ -38,6 +37,7 @@ use super::hint::FADE;
 use super::render::Renderer;
 use super::uia::WM_UIA;
 use super::uia_popup::PopupUia;
+use crate::platform::guard::guard;
 use crate::platform::{
     AccessibleAction, AccessiblePopup, Canvas, Key, Modifiers, PointF, PointerButton, PopupCursor,
     PopupInput, Rect, UiEvent,
@@ -298,12 +298,11 @@ unsafe extern "system" fn popup_proc(
     // SAFETY: GWLP_USERDATA is 0 or the leaked `Shared`, which is never freed.
     let shared = unsafe { (GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const Shared).as_ref() };
     let handled = shared.and_then(|shared| {
-        // A panic must not cross the FFI boundary; the panic hook has logged it.
-        catch_unwind(AssertUnwindSafe(|| {
-            shared.handle(hwnd, msg, wparam, lparam)
-        }))
-        .ok()
-        .flatten()
+        guard(
+            "the popup window's procedure",
+            || None,
+            || shared.handle(hwnd, msg, wparam, lparam),
+        )
     });
     // SAFETY: default processing for our own window.
     handled.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) })

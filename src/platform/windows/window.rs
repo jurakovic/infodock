@@ -15,7 +15,6 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::Duration;
@@ -68,6 +67,7 @@ use super::tray::{Tray, WM_TRAY, taskbar_created};
 use super::uia::{Uia, WM_UIA};
 use crate::config::model::Material;
 use crate::i18n::t;
+use crate::platform::guard::guard;
 use crate::platform::{
     AppBarEvent, Band, BarHandler, BarThread, BarWindow, Canvas, DragEvent, DropEffect,
     HandlerFactory, Key, MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect, SizeF,
@@ -878,12 +878,12 @@ unsafe extern "system" fn window_proc(
     }
     // SAFETY: the state is never freed while the window exists.
     let state = unsafe { &*state };
-    // A panic must not cross the FFI boundary (it would abort); the panic hook has logged it.
-    match catch_unwind(AssertUnwindSafe(|| state.handle(msg, wparam, lparam))) {
-        Ok(result) => result,
+    guard(
+        "the bar window's procedure",
         // SAFETY: default processing for the message whose handling panicked.
-        Err(_) => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
-    }
+        || unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+        || state.handle(msg, wparam, lparam),
+    )
 }
 
 /// Logs how long after the process was created its first bar frame reached the window, and

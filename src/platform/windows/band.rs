@@ -21,6 +21,7 @@ use windows::core::{PCWSTR, Result, w};
 
 use super::render::BitmapDc;
 use crate::platform::Band;
+use crate::platform::guard::guard;
 
 const CLASS_NAME: PCWSTR = w!("Infodock.Band");
 
@@ -31,8 +32,12 @@ unsafe extern "system" fn band_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // SAFETY: default processing for our own window.
-    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    guard(
+        "the band window's procedure",
+        || LRESULT(0),
+        // SAFETY: default processing for our own window.
+        || unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    )
 }
 
 pub(super) struct BandWindow {

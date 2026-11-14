@@ -27,6 +27,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
 };
 
+use crate::platform::guard::guard;
 use crate::platform::keys::{KeyCombo, code_of_vk};
 
 /// The id of the test registration; thread hotkeys take ids up to 0xBFFF.
@@ -114,14 +115,22 @@ pub(crate) fn watch(taken: Taken) -> Option<Watch> {
 }
 
 unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code == HC_ACTION as i32 && lparam.0 != 0 {
-        // SAFETY: for a low-level keyboard hook lParam points to a KBDLLHOOKSTRUCT.
-        let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
-        if down && keep(event.vkCode, event.flags.0 & LLKHF_INJECTED.0 != 0) {
-            // Kept from the app that holds it: the user is choosing a hotkey.
-            return LRESULT(1);
-        }
+    let kept = guard(
+        "the keyboard hook",
+        || false,
+        || {
+            if code != HC_ACTION as i32 || lparam.0 == 0 {
+                return false;
+            }
+            // SAFETY: for a low-level keyboard hook lParam points to a KBDLLHOOKSTRUCT.
+            let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+            let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+            down && keep(event.vkCode, event.flags.0 & LLKHF_INJECTED.0 != 0)
+        },
+    );
+    if kept {
+        // Kept from the app that holds it: the user is choosing a hotkey.
+        return LRESULT(1);
     }
     // SAFETY: passes the event on, as every hook must.
     unsafe { CallNextHookEx(None, code, wparam, lparam) }

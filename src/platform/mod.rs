@@ -12,6 +12,7 @@ pub mod bitmap;
 pub mod canvas;
 pub mod drag;
 pub mod geometry;
+pub mod guard;
 pub mod keys;
 pub mod locale;
 pub mod notify;

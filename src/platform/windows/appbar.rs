@@ -47,6 +47,7 @@ use crate::platform::geometry::{
     DEFAULT_FLOATING_WIDTH, Rect, dock_strip, floating_rect, keep_height, nearer_edge,
     select_monitor, to_physical,
 };
+use crate::platform::guard::guard;
 use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest};
 
 /// `wParam` of the private "reposition" message when it asks to raise the bar instead.
@@ -796,16 +797,22 @@ unsafe extern "system" fn foreground_changed(
     _thread: u32,
     _time: u32,
 ) {
-    let bar = HWND(HOOKED_BAR.load(Ordering::SeqCst) as *mut c_void);
-    // SAFETY: posting to the bar window, which outlives the hook.
-    let _ = unsafe {
-        PostMessageW(
-            Some(bar),
-            messages().reposition,
-            WPARAM(FOREGROUND),
-            LPARAM(0),
-        )
-    };
+    guard(
+        "the foreground hook",
+        || (),
+        || {
+            let bar = HWND(HOOKED_BAR.load(Ordering::SeqCst) as *mut c_void);
+            // SAFETY: posting to the bar window, which outlives the hook.
+            let _ = unsafe {
+                PostMessageW(
+                    Some(bar),
+                    messages().reposition,
+                    WPARAM(FOREGROUND),
+                    LPARAM(0),
+                )
+            };
+        },
+    );
 }
 
 impl Shared {

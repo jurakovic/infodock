@@ -33,6 +33,7 @@ use windows::Win32::System::LibraryLoader::{
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 use windows::core::{GUID, HSTRING, PCSTR, PCWSTR, s, w};
 
+use crate::platform::guard::guard;
 use crate::platform::{WifiReader, WifiStatus};
 
 type OpenHandle = unsafe extern "system" fn(u32, *const c_void, *mut u32, *mut HANDLE) -> u32;
@@ -519,33 +520,39 @@ impl Drop for WinWifi {
 
 /// Connecting, disconnecting, roaming and radio switches reach the sampler at once.
 unsafe extern "system" fn on_notification(data: *mut L2_NOTIFICATION_DATA, context: *mut c_void) {
-    // SAFETY: Windows passes the notification and our context, valid during the call.
-    let (Some(data), Some(changed)) = (unsafe { data.as_ref() }, unsafe {
-        context.cast::<Changed>().as_ref()
-    }) else {
-        return;
-    };
-    let code = data.NotificationCode as i32;
-    let relevant = match data.NotificationSource {
-        source if source == WLAN_NOTIFICATION_SOURCE_ACM => [
-            wlan_notification_acm_connection_complete.0,
-            wlan_notification_acm_disconnected.0,
-            wlan_notification_acm_interface_arrival.0,
-            wlan_notification_acm_interface_removal.0,
-        ]
-        .contains(&code),
-        source if source == WLAN_NOTIFICATION_SOURCE_MSM => [
-            wlan_notification_msm_connected.0,
-            wlan_notification_msm_disconnected.0,
-            wlan_notification_msm_roaming_end.0,
-            wlan_notification_msm_radio_state_change.0,
-        ]
-        .contains(&code),
-        _ => false,
-    };
-    if relevant {
-        changed();
-    }
+    guard(
+        "the Wi-Fi notification",
+        || (),
+        || {
+            // SAFETY: Windows passes the notification and our context, valid during the call.
+            let (Some(data), Some(changed)) = (unsafe { data.as_ref() }, unsafe {
+                context.cast::<Changed>().as_ref()
+            }) else {
+                return;
+            };
+            let code = data.NotificationCode as i32;
+            let relevant = match data.NotificationSource {
+                source if source == WLAN_NOTIFICATION_SOURCE_ACM => [
+                    wlan_notification_acm_connection_complete.0,
+                    wlan_notification_acm_disconnected.0,
+                    wlan_notification_acm_interface_arrival.0,
+                    wlan_notification_acm_interface_removal.0,
+                ]
+                .contains(&code),
+                source if source == WLAN_NOTIFICATION_SOURCE_MSM => [
+                    wlan_notification_msm_connected.0,
+                    wlan_notification_msm_disconnected.0,
+                    wlan_notification_msm_roaming_end.0,
+                    wlan_notification_msm_radio_state_change.0,
+                ]
+                .contains(&code),
+                _ => false,
+            };
+            if relevant {
+                changed();
+            }
+        },
+    );
 }
 
 /// The 802.11 standard of a PHY type.

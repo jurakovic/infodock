@@ -30,6 +30,7 @@ use windows::Win32::UI::Shell::{
 use windows::core::{PCWSTR, Ref, implement, w};
 
 use crate::platform::drag::{self, DragEvent, DragItem, DropEffect, DropEffects};
+use crate::platform::guard::guard;
 use crate::platform::{Modifiers, PointF};
 
 /// Where the bar logic gets the drag events, on the bar thread.
@@ -106,24 +107,30 @@ impl IDropTarget_Impl for BarDropTarget_Impl {
         pt: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> windows::core::Result<()> {
-        // SAFETY: OLE passes a valid in/out pointer (checked for null all the same).
-        let allowed = unsafe { effect.as_ref() }
-            .copied()
-            .unwrap_or(DROPEFFECT_NONE);
-        let items = data.ok().map(read_items).unwrap_or_default();
-        let event = DragEvent::Enter {
-            items,
-            at: self.point(pt),
-            modifiers: modifiers(keys),
-            allowed: from_dropeffect(allowed),
-        };
-        let answer = self.answer(event, allowed, effect);
-        if let (Some(helper), Ok(data)) = (self.helper(), data.ok()) {
-            let point = POINT { x: pt.x, y: pt.y };
-            // SAFETY: the helper draws the drag image; arguments are valid for the call.
-            let _ = unsafe { helper.DragEnter(self.hwnd, data, &point, answer) };
-        }
-        Ok(())
+        guard(
+            "the drop target's DragEnter",
+            || refuse(effect),
+            || {
+                // SAFETY: OLE passes a valid in/out pointer (checked for null all the same).
+                let allowed = unsafe { effect.as_ref() }
+                    .copied()
+                    .unwrap_or(DROPEFFECT_NONE);
+                let items = data.ok().map(read_items).unwrap_or_default();
+                let event = DragEvent::Enter {
+                    items,
+                    at: self.point(pt),
+                    modifiers: modifiers(keys),
+                    allowed: from_dropeffect(allowed),
+                };
+                let answer = self.answer(event, allowed, effect);
+                if let (Some(helper), Ok(data)) = (self.helper(), data.ok()) {
+                    let point = POINT { x: pt.x, y: pt.y };
+                    // SAFETY: the helper draws the drag image; arguments are valid for the call.
+                    let _ = unsafe { helper.DragEnter(self.hwnd, data, &point, answer) };
+                }
+                Ok(())
+            },
+        )
     }
 
     fn DragOver(
@@ -132,31 +139,43 @@ impl IDropTarget_Impl for BarDropTarget_Impl {
         pt: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> windows::core::Result<()> {
-        // SAFETY: as in DragEnter.
-        let allowed = unsafe { effect.as_ref() }
-            .copied()
-            .unwrap_or(DROPEFFECT_NONE);
-        let event = DragEvent::Over {
-            at: self.point(pt),
-            modifiers: modifiers(keys),
-            allowed: from_dropeffect(allowed),
-        };
-        let answer = self.answer(event, allowed, effect);
-        if let Some(helper) = self.helper.get().and_then(Option::as_ref) {
-            let point = POINT { x: pt.x, y: pt.y };
-            // SAFETY: as in DragEnter.
-            let _ = unsafe { helper.DragOver(&point, answer) };
-        }
-        Ok(())
+        guard(
+            "the drop target's DragOver",
+            || refuse(effect),
+            || {
+                // SAFETY: as in DragEnter.
+                let allowed = unsafe { effect.as_ref() }
+                    .copied()
+                    .unwrap_or(DROPEFFECT_NONE);
+                let event = DragEvent::Over {
+                    at: self.point(pt),
+                    modifiers: modifiers(keys),
+                    allowed: from_dropeffect(allowed),
+                };
+                let answer = self.answer(event, allowed, effect);
+                if let Some(helper) = self.helper.get().and_then(Option::as_ref) {
+                    let point = POINT { x: pt.x, y: pt.y };
+                    // SAFETY: as in DragEnter.
+                    let _ = unsafe { helper.DragOver(&point, answer) };
+                }
+                Ok(())
+            },
+        )
     }
 
     fn DragLeave(&self) -> windows::core::Result<()> {
-        (self.sink)(DragEvent::Leave);
-        if let Some(helper) = self.helper.get().and_then(Option::as_ref) {
-            // SAFETY: ends what DragEnter started.
-            let _ = unsafe { helper.DragLeave() };
-        }
-        Ok(())
+        guard(
+            "the drop target's DragLeave",
+            || Ok(()),
+            || {
+                (self.sink)(DragEvent::Leave);
+                if let Some(helper) = self.helper.get().and_then(Option::as_ref) {
+                    // SAFETY: ends what DragEnter started.
+                    let _ = unsafe { helper.DragLeave() };
+                }
+                Ok(())
+            },
+        )
     }
 
     fn Drop(
@@ -166,34 +185,49 @@ impl IDropTarget_Impl for BarDropTarget_Impl {
         pt: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> windows::core::Result<()> {
-        // SAFETY: as in DragEnter.
-        let allowed = unsafe { effect.as_ref() }
-            .copied()
-            .unwrap_or(DROPEFFECT_NONE);
-        // The helper first: the drop may open a dialog, which should not show the drag image.
-        if let (Some(helper), Ok(data)) = (self.helper(), data.ok()) {
-            let point = POINT { x: pt.x, y: pt.y };
-            // SAFETY: as in DragEnter.
-            let _ = unsafe { helper.Drop(data, &point, allowed) };
-        }
-        let event = DragEvent::Drop {
-            at: self.point(pt),
-            modifiers: modifiers(keys),
-            allowed: from_dropeffect(allowed),
-        };
-        if self.answer(event, allowed, effect) == DROPEFFECT_MOVE {
-            // The bar moves the items itself (a Folder Menu, the Recycle Bin): an optimized
-            // move, so the source must not delete them as well.
-            if let Ok(data) = data.ok() {
-                report_optimized_move(data);
-            }
-            // SAFETY: as in DragEnter.
-            if let Some(effect) = unsafe { effect.as_mut() } {
-                *effect = DROPEFFECT_NONE;
-            }
-        }
-        Ok(())
+        guard(
+            "the drop target's Drop",
+            || refuse(effect),
+            || {
+                // SAFETY: as in DragEnter.
+                let allowed = unsafe { effect.as_ref() }
+                    .copied()
+                    .unwrap_or(DROPEFFECT_NONE);
+                // The helper first: the drop may open a dialog, which should not show the drag image.
+                if let (Some(helper), Ok(data)) = (self.helper(), data.ok()) {
+                    let point = POINT { x: pt.x, y: pt.y };
+                    // SAFETY: as in DragEnter.
+                    let _ = unsafe { helper.Drop(data, &point, allowed) };
+                }
+                let event = DragEvent::Drop {
+                    at: self.point(pt),
+                    modifiers: modifiers(keys),
+                    allowed: from_dropeffect(allowed),
+                };
+                if self.answer(event, allowed, effect) == DROPEFFECT_MOVE {
+                    // The bar moves the items itself (a Folder Menu, the Recycle Bin): an optimized
+                    // move, so the source must not delete them as well.
+                    if let Ok(data) = data.ok() {
+                        report_optimized_move(data);
+                    }
+                    // SAFETY: as in DragEnter.
+                    if let Some(effect) = unsafe { effect.as_mut() } {
+                        *effect = DROPEFFECT_NONE;
+                    }
+                }
+                Ok(())
+            },
+        )
     }
+}
+
+/// The answer after a caught panic (SPEC §14.2): nothing is dropped.
+fn refuse(effect: *mut DROPEFFECT) -> windows::core::Result<()> {
+    // SAFETY: OLE passes a valid in/out pointer (checked for null all the same).
+    if let Some(effect) = unsafe { effect.as_mut() } {
+        *effect = DROPEFFECT_NONE;
+    }
+    Ok(())
 }
 
 fn modifiers(keys: MODIFIERKEYS_FLAGS) -> Modifiers {
