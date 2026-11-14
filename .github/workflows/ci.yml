@@ -165,6 +165,10 @@ jobs:
       - name: Hotkey check
         shell: pwsh
         run: .github/scripts/check-hotkey.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/hotkey-check"
+      # S14x2's diagnostic, removed with its fix: the hook's test in a release build.
+      - name: Hotkey hook test, release build
+        continue-on-error: true
+        run: cargo test --release --lib platform::windows::hotkeys -- --ignored --nocapture
       # The installer per user without admin rights (SPEC §15.3): installed silently, checked,
       # started and uninstalled. After the memory check, whose config it removes.
       - name: Installer check

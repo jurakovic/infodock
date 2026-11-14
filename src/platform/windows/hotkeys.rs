@@ -11,6 +11,7 @@
 //! from it, while the same hook on a plain thread saw every key).
 
 use std::cell::{Cell, RefCell};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
@@ -41,6 +42,16 @@ thread_local! {
     static TAKEN: RefCell<Option<Taken>> = const { RefCell::new(None) };
     /// The hook was called since the watch started (its first call is logged).
     static CALLED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Diagnostics for S14x2, removed with its fix: how often the hook was called since the watch
+/// started and the step its last call reached, logged when the watch ends. Kept in atomics, as
+/// whether logging inside the hook works is one of the questions.
+static CALLS: AtomicU32 = AtomicU32::new(0);
+static STEP: AtomicU32 = AtomicU32::new(0);
+
+fn step(n: u32) {
+    STEP.store(n, Ordering::SeqCst);
 }
 
 /// The running watch; dropping it removes the hook and ends its thread.
@@ -87,6 +98,8 @@ pub(crate) fn watch(taken: Taken) -> Option<Watch> {
             };
             TAKEN.with(|t| *t.borrow_mut() = Some(taken));
             CALLED.set(false);
+            CALLS.store(0, Ordering::SeqCst);
+            step(0);
             // SAFETY: a plain query.
             let thread = unsafe { GetCurrentThreadId() };
             let _ = ready.send(Some(thread));
@@ -94,6 +107,11 @@ pub(crate) fn watch(taken: Taken) -> Option<Watch> {
             // The hook is called while this thread waits for messages; WM_QUIT ends the wait.
             // SAFETY: a plain message loop for a thread without windows.
             while unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 > 0 {}
+            tracing::debug!(
+                "the keyboard hook was called {} times; its last call reached step {}",
+                CALLS.load(Ordering::SeqCst),
+                STEP.load(Ordering::SeqCst)
+            );
             // SAFETY: the hook was installed above, on this thread, and is removed once.
             let _ = unsafe { UnhookWindowsHookEx(hook) };
             TAKEN.with(|t| *t.borrow_mut() = None);
@@ -118,40 +136,56 @@ pub(crate) fn watch(taken: Taken) -> Option<Watch> {
 }
 
 unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    CALLS.fetch_add(1, Ordering::SeqCst);
+    step(1);
     let kept = guard(
         "the keyboard hook",
         || false,
         || {
+            step(2);
             if code != HC_ACTION as i32 || lparam.0 == 0 {
                 return false;
             }
             // SAFETY: for a low-level keyboard hook lParam points to a KBDLLHOOKSTRUCT.
             let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
             let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+            step(3);
             down && keep(event.vkCode, event.flags.0 & LLKHF_INJECTED.0 != 0)
         },
     );
+    step(20);
     if kept {
         // Kept from the app that holds it: the user is choosing a hotkey.
         return LRESULT(1);
     }
     // SAFETY: passes the event on, as every hook must.
-    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    let next = unsafe { CallNextHookEx(None, code, wparam, lparam) };
+    step(21);
+    next
 }
 
 /// Whether the key `vk` just pressed makes a combination someone holds, which is then reported
 /// and kept from them. Each step is logged (trace), as the hook is hard to watch otherwise.
 fn keep(vk: u32, injected: bool) -> bool {
+    step(4);
     // SAFETY: a plain query; the hook runs on the thread that installed it.
     let thread = unsafe { GetCurrentThreadId() };
-    if !CALLED.replace(true) {
+    let first = !CALLED.replace(true);
+    step(5);
+    if first {
         tracing::debug!("the keyboard hook saw its first key since the watch started (vk {vk})");
     }
-    let Some(combo) = combo(vk).filter(|c| c.could_be_hotkey()) else {
+    step(6);
+    let combo = combo(vk);
+    step(7);
+    let Some(combo) = combo.filter(|c| c.could_be_hotkey()) else {
         tracing::trace!(vk, injected, thread, "hook: not a hotkey combination");
+        step(8);
         return false;
     };
+    step(9);
     let held = held_elsewhere(&combo, vk);
+    step(10);
     let listening = TAKEN.with(|t| t.try_borrow().map(|t| t.is_some()).unwrap_or(false));
     tracing::trace!(
         vk,
@@ -162,16 +196,19 @@ fn keep(vk: u32, injected: bool) -> bool {
         listening,
         "hook: a combination"
     );
+    step(11);
     if !held {
         return false;
     }
-    TAKEN
+    let reported = TAKEN
         .with(|t| {
             t.try_borrow()
                 .ok()
                 .and_then(|t| t.as_ref().map(|taken| taken(combo)))
         })
-        .is_some()
+        .is_some();
+    step(12);
+    reported
 }
 
 /// The key `vk` with the modifiers held now.
@@ -272,6 +309,11 @@ mod tests {
     #[ignore = "registers a hotkey and injects keys on this machine"]
     fn a_held_combination_pressed_while_watching_is_reported_and_kept_from_its_holder() {
         // Watched from this test's thread, which pumps no messages: the watch has its own.
+        // Logging as in the app, which the hook does (S14x2).
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_test_writer()
+            .try_init();
         // Ctrl+Alt+Shift+F23 is held by another thread, as by another app.
         let (holder, registered, holder_thread) = with_message_loop(|| {
             let modifiers = HOT_KEY_MODIFIERS(MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0);
