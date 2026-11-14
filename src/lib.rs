@@ -102,6 +102,7 @@ pub fn run() {
         .backend_name("winit".into())
         .renderer_name("software".into())
         .with_winit_window_attributes_hook(|attributes| attributes.with_transparent(false))
+        .with_winit_custom_application_handler(NoDeviceEvents)
         .select()
     {
         tracing::error!("the UI toolkit could not start: {e}");
@@ -144,6 +145,23 @@ pub fn run() {
     }
     settings::quitting(&app);
     app.shutdown();
+}
+
+/// Turns winit's device events off once its event loop runs. Slint uses none of them, and on
+/// Windows winit asks for them with a raw input registration for the keyboard, which keeps
+/// Windows from calling the low-level keyboard hook that notices a hotkey another app holds
+/// (SPEC §6.5): while the newest such hook is a process's that reads the keyboard's raw input,
+/// Windows calls none (S14x2, D120).
+struct NoDeviceEvents;
+
+impl slint::winit_030::CustomApplicationHandler for NoDeviceEvents {
+    fn resumed(
+        &mut self,
+        event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+    ) -> slint::winit_030::EventResult {
+        event_loop.listen_device_events(slint::winit_030::winit::event_loop::DeviceEvents::Never);
+        slint::winit_030::EventResult::Propagate
+    }
 }
 
 /// Stores the machine-derived props that sensors lack, e.g. after first run or an import

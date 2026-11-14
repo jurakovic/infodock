@@ -160,11 +160,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       # A hotkey another app holds, pressed while Settings records one (SPEC §6.5), with the
-      # keyboard hook's trace printed. After the memory check, whose first run ended the welcome
-      # page. Reported, not enforced, until S14x2's fix.
+      # keyboard hook's trace printed; enforced. After the memory check, whose first run ended
+      # the welcome page.
       - name: Hotkey check
         shell: pwsh
-        run: .github/scripts/check-hotkey.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/hotkey-check"
+        run: .github/scripts/check-hotkey.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/hotkey-check" -Enforce
       # The installer per user without admin rights (SPEC §15.3): installed silently, checked,
       # started and uninstalled. After the memory check, whose config it removes.
       - name: Installer check
