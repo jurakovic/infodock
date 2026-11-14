@@ -4,6 +4,8 @@
   "sensor.error": "Could not read the data: {error}",
   "notify.configRestored.backup": "Your settings could not be read, so the last good copy was restored. The unreadable file is kept as {file}.",
   "notify.configRestored.defaults": "Your settings could not be read, so Infodock started with its default settings. The unreadable file is kept as {file}.",
+  "notify.configRestored.backupInPlace": "Your settings could not be read, so the last good copy was restored. The unreadable file could not be moved aside and will be replaced.",
+  "notify.configRestored.defaultsInPlace": "Your settings could not be read, so Infodock started with its default settings. The unreadable file could not be moved aside and will be replaced.",
   "common.items": {
     "one": "{count} item",
     "other": "{count} items"

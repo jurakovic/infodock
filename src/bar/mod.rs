@@ -20,14 +20,15 @@ mod tray;
 pub use paint::skin_preview;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::Config;
 use crate::config::ConfigStore;
 use crate::config::exchange::ImportFormat;
 use crate::config::model::{SensorInstance, Settings, Zone};
+use crate::config::store::{Newest, Revision};
 use crate::look::anim::slides_out;
 use crate::platform::{
     self, AppBar, DockRequest, OsAppearance, Platform, PlatformError, TrayIcon, UiWaker,
@@ -103,8 +104,8 @@ pub trait BarHost: Send + Sync {
 
 /// Work for the bar thread, queued by [`BarController`].
 enum Command {
-    /// The config changed: settings, layout or sensor state.
-    Config(Box<Config>),
+    /// The config changed: settings, layout or sensor state. One older than the bar's is dropped.
+    Config(Revision, Box<Config>),
     /// Show a sensor with other props until the preview ends (SPEC §6.7).
     Preview(Box<SensorInstance>),
     EndPreview(String),
@@ -126,7 +127,7 @@ pub struct BarController {
     commands: Sender<Command>,
     visible: AtomicBool,
     /// The latest settings, for re-docking when visibility changes.
-    settings: Mutex<Settings>,
+    settings: Newest<Settings>,
 }
 
 impl BarController {
@@ -138,11 +139,18 @@ impl BarController {
         host: Arc<dyn BarHost>,
         skins: PathBuf,
     ) -> Result<Arc<Self>, PlatformError> {
-        let config = store.get();
+        let (config, revision) = store.get_revised();
         let settings = config.settings.clone();
         let (commands, queue) = mpsc::channel();
         let thread = platform::start_bar_thread(Box::new(move |waker| {
-            Box::new(BarLogic::new(config, platform, queue, host, waker, skins))
+            Box::new(BarLogic::new(
+                (config, revision),
+                platform,
+                queue,
+                host,
+                waker,
+                skins,
+            ))
         }))?;
 
         let controller = Arc::new(Self {
@@ -151,23 +159,27 @@ impl BarController {
             waker: thread.waker,
             commands,
             visible: AtomicBool::new(true),
-            settings: Mutex::new(settings.clone()),
+            settings: Newest::new(settings.clone(), revision),
         });
         controller.apply(&settings);
 
         let weak = Arc::downgrade(&controller);
-        store.on_change(Box::new(move |old, new| {
+        store.on_change(Box::new(move |_, new, revision| {
             let Some(c) = weak.upgrade() else {
                 return;
             };
-            *c.settings.lock().unwrap_or_else(PoisonError::into_inner) = new.settings.clone();
-            // A docked bar slides out before it changes edges; the bar thread redocks it then.
-            if !slides_out(&old.settings.bar, &new.settings.bar)
-                && dock_request(&old.settings, true) != dock_request(&new.settings, true)
-            {
-                c.apply(&new.settings);
-            }
-            c.send(Command::Config(Box::new(new.clone())));
+            // Against the settings applied last, which a change notified late is older than.
+            c.settings
+                .offer(revision, new.settings.clone(), |old, settings| {
+                    // A docked bar slides out before it changes edges; the bar thread redocks it
+                    // then.
+                    if !slides_out(&old.bar, &settings.bar)
+                        && dock_request(old, true) != dock_request(settings, true)
+                    {
+                        c.apply(settings);
+                    }
+                    c.send(Command::Config(revision, Box::new(new.clone())));
+                });
         }));
 
         let appbar = Arc::clone(&controller.appbar);
@@ -193,12 +205,7 @@ impl BarController {
     /// Shows or hides the bar; a hidden bar reserves no space.
     pub fn set_visible(&self, visible: bool) {
         if self.visible.swap(visible, Ordering::SeqCst) != visible {
-            let settings = self
-                .settings
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            self.apply(&settings);
+            self.apply(&self.settings.get());
             if !visible {
                 self.send(Command::Hidden);
             }
@@ -243,12 +250,7 @@ impl BarController {
 
     /// Docks the bar as the latest settings say.
     pub fn redock(&self) {
-        let settings = self
-            .settings
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        self.apply(&settings);
+        self.apply(&self.settings.get());
     }
 
     /// Releases the reserved screen space. Call on exit.

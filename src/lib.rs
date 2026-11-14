@@ -164,17 +164,30 @@ fn fill_machine_defaults(store: &ConfigStore, platform: &dyn platform::Platform)
 
 /// Tells the user their unreadable config was put aside (SPEC §11.2).
 fn notify_recovery(recovery: &config::store::Recovery, platform: &dyn platform::Platform) {
-    let file = recovery
-        .broken_file
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let key = if recovery.from_backup {
-        "notify.configRestored.backup"
+    platform.notify(&i18n::t("app.name"), &recovery_message(recovery));
+}
+
+/// What the toast for a recovered config says: where the settings came from, and where the
+/// unreadable file is, or that it could not be moved.
+fn recovery_message(recovery: &config::store::Recovery) -> String {
+    let source = if recovery.from_backup {
+        "backup"
     } else {
-        "notify.configRestored.defaults"
+        "defaults"
     };
-    platform.notify(&i18n::t("app.name"), &i18n::t_args(key, &[("file", &file)]));
+    match &recovery.broken_file {
+        Some(path) => {
+            let file = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            i18n::t_args(
+                &format!("notify.configRestored.{source}"),
+                &[("file", &file)],
+            )
+        }
+        None => i18n::t(&format!("notify.configRestored.{source}InPlace")),
+    }
 }
 
 fn log_load_report(report: &config::store::LoadReport) {
@@ -188,11 +201,44 @@ fn log_load_report(report: &config::store::LoadReport) {
         tracing::warn!("config was written by a newer Infodock; loaded best-effort");
     }
     if let Some(r) = &report.recovery {
+        let moved = r.broken_file.as_ref().map_or_else(
+            || "left in place".to_owned(),
+            |path| format!("moved to {}", path.display()),
+        );
         tracing::warn!(
-            "config was unreadable ({}); moved to {}; restored from {}",
+            "config was unreadable ({}); {moved}; restored from {}",
             r.error,
-            r.broken_file.display(),
             if r.from_backup { "backup" } else { "defaults" }
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::recovery_message;
+    use crate::config::store::Recovery;
+
+    #[test]
+    fn the_recovery_toast_names_the_file_kept_or_says_it_could_not_be_moved() {
+        let moved = Recovery {
+            broken_file: Some(PathBuf::from("/c/config.broken-17.json")),
+            error: "expected value".into(),
+            from_backup: true,
+        };
+        assert!(recovery_message(&moved).ends_with("is kept as config.broken-17.json."));
+        let in_place = Recovery {
+            broken_file: None,
+            ..moved
+        };
+        let message = recovery_message(&in_place);
+        assert!(message.contains("last good copy"), "{message}");
+        assert!(message.contains("could not be moved aside"), "{message}");
+        let defaults = Recovery {
+            from_backup: false,
+            ..in_place
+        };
+        assert!(recovery_message(&defaults).contains("default settings"));
     }
 }

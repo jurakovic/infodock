@@ -2,12 +2,17 @@
 //!
 //! * Writes are debounced (500 ms after the last change, at most 2 s after the first) and
 //!   atomic: write `config.json.tmp`, sync, copy the current file to `config.json.bak`, rename.
+//!   The current file is copied only while it is known good, so a broken one never becomes the
+//!   backup.
 //! * A file that fails to parse is renamed to `config.broken-<unix ms>.json`; the `.bak` (or the
 //!   first-run defaults) is loaded instead and the caller is told so it can notify the user.
+//! * Each change has a [`Revision`]. Listeners run on the thread that made the change, so two
+//!   threads' changes can reach them in the opposite order; they keep the newest ([`Newest`]).
 
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
@@ -24,9 +29,12 @@ const DEBOUNCE: Duration = Duration::from_millis(500);
 const MAX_DELAY: Duration = Duration::from_secs(2);
 const RETRY_AFTER_ERROR: Duration = Duration::from_secs(5);
 
-/// Called after every change with the old and the new config.
-pub type Listener = Box<dyn Fn(&Config, &Config) + Send + Sync>;
-type SharedListener = Arc<dyn Fn(&Config, &Config) + Send + Sync>;
+/// Counts the config's changes: each swap gets the next one, under the store's lock.
+pub type Revision = u64;
+
+/// Called after every change with the old and the new config and the new one's revision.
+pub type Listener = Box<dyn Fn(&Config, &Config, Revision) + Send + Sync>;
+type SharedListener = Arc<dyn Fn(&Config, &Config, Revision) + Send + Sync>;
 
 /// What happened while loading, for logging and user notification.
 #[derive(Debug, Default)]
@@ -42,7 +50,9 @@ pub struct LoadReport {
 
 #[derive(Debug)]
 pub struct Recovery {
-    pub broken_file: PathBuf,
+    /// Where the unreadable file was moved; `None` when it could not be moved (another program
+    /// may hold it open) and is still `config.json`, until a write replaces it.
+    pub broken_file: Option<PathBuf>,
     pub error: String,
     /// `true` if the backup was loaded, `false` if defaults were used.
     pub from_backup: bool,
@@ -57,7 +67,16 @@ pub struct ConfigStore {
 
 struct Shared {
     dir: PathBuf,
-    config: Mutex<Config>,
+    config: Mutex<Current>,
+    /// `config.json` on disk was loaded or written by this store, so it may become the backup.
+    /// Not after a recovery: the file is gone or still the broken one, and the backup just
+    /// loaded is the previous good version.
+    on_disk_good: AtomicBool,
+}
+
+struct Current {
+    config: Config,
+    revision: Revision,
 }
 
 enum Msg {
@@ -74,15 +93,27 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl ConfigStore {
     /// Loads (or creates) the config in `dir` and starts the background writer.
     pub fn open(dir: impl Into<PathBuf>, app_version: &str) -> (Self, LoadReport) {
-        let dir = dir.into();
-        let (mut config, report) = load(&dir, app_version);
+        Self::open_with(dir.into(), app_version, |from, to| fs::rename(from, to))
+    }
+
+    /// [`open`](Self::open), with `move_aside` renaming a broken file (a seam for tests).
+    fn open_with(
+        dir: PathBuf,
+        app_version: &str,
+        move_aside: impl Fn(&Path, &Path) -> std::io::Result<()>,
+    ) -> (Self, LoadReport) {
+        let (mut config, report) = load(&dir, app_version, move_aside);
         config.meta.last_written_with = app_version.to_owned();
         let must_write =
             report.first_run || report.recovery.is_some() || report.migrated_from.is_some();
 
         let shared = Arc::new(Shared {
             dir,
-            config: Mutex::new(config),
+            config: Mutex::new(Current {
+                config,
+                revision: 0,
+            }),
+            on_disk_good: AtomicBool::new(report.recovery.is_none()),
         });
         if must_write && let Err(e) = write_now(&shared) {
             tracing::error!("could not write config: {e}");
@@ -106,11 +137,18 @@ impl ConfigStore {
 
     /// A snapshot of the current config.
     pub fn get(&self) -> Config {
-        lock(&self.shared.config).clone()
+        lock(&self.shared.config).config.clone()
+    }
+
+    /// A snapshot of the current config with its revision, for a listener's [`Newest`].
+    pub fn get_revised(&self) -> (Config, Revision) {
+        let current = lock(&self.shared.config);
+        (current.config.clone(), current.revision)
     }
 
     /// Registers a listener that runs after every change, on the thread that made it, with no
-    /// store lock held.
+    /// store lock held. Two threads' changes can reach it in the opposite order of their
+    /// revisions: what it keeps should be the newest ([`Newest`]).
     pub fn on_change(&self, listener: Listener) {
         lock(&self.listeners).push(Arc::from(listener));
     }
@@ -121,21 +159,22 @@ impl ConfigStore {
         &self,
         f: impl FnOnce(&mut Config) -> Result<R, ConfigError>,
     ) -> Result<(R, Config), ConfigError> {
-        let (old, new, result) = {
-            let mut guard = lock(&self.shared.config);
-            let mut next = guard.clone();
+        let (old, new, revision, result) = {
+            let mut current = lock(&self.shared.config);
+            let mut next = current.config.clone();
             let result = f(&mut next)?;
-            let old = std::mem::replace(&mut *guard, next.clone());
-            (old, next, result)
-        };
-        if old != new {
-            let _ = self.tx.send(Msg::Dirty);
-            // Run outside the lock: listeners may block on the main thread (tray updates), which
-            // may itself be waiting to update the config.
-            let listeners: Vec<SharedListener> = lock(&self.listeners).clone();
-            for listener in &listeners {
-                listener(&old, &new);
+            if next == current.config {
+                return Ok((result, next));
             }
+            current.revision += 1;
+            let old = std::mem::replace(&mut current.config, next.clone());
+            (old, next, current.revision, result)
+        };
+        let _ = self.tx.send(Msg::Dirty);
+        // Outside the lock, so a listener may read or change the config.
+        let listeners: Vec<SharedListener> = lock(&self.listeners).clone();
+        for listener in &listeners {
+            listener(&old, &new, revision);
         }
         Ok((result, new))
     }
@@ -155,6 +194,44 @@ impl ConfigStore {
         if let Some(handle) = lock(&self.writer).take() {
             let _ = handle.join();
         }
+    }
+}
+
+/// What a listener keeps of the config: the newest of the changes it was handed. Two threads'
+/// changes can reach it in the opposite order of their revisions (each runs the listeners on its
+/// own thread, after the store's lock), so one older than what it holds is dropped.
+pub struct Newest<T> {
+    held: Mutex<(Revision, T)>,
+}
+
+impl<T> Newest<T> {
+    /// Holds `value`, of `revision` (from [`ConfigStore::get_revised`]).
+    pub fn new(value: T, revision: Revision) -> Self {
+        Self {
+            held: Mutex::new((revision, value)),
+        }
+    }
+
+    /// Takes `value` if `revision` is newer than what is held, once `apply` ran with the held
+    /// value and `value`. `apply` runs under the holder's lock, so what it does happens in the
+    /// order of the revisions. `false` when `value` is older and was dropped.
+    pub fn offer(&self, revision: Revision, value: T, apply: impl FnOnce(&T, &T)) -> bool {
+        let mut held = lock(&self.held);
+        if revision <= held.0 {
+            tracing::debug!("config revision {revision} dropped: {} is newer", held.0);
+            return false;
+        }
+        apply(&held.1, &value);
+        *held = (revision, value);
+        true
+    }
+
+    /// A copy of the held value.
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
+        lock(&self.held).1.clone()
     }
 }
 
@@ -203,14 +280,20 @@ fn write_or_retry(shared: &Shared) -> Option<(Instant, Instant)> {
 
 fn write_now(shared: &Shared) -> Result<(), ConfigError> {
     let json = {
-        let config = lock(&shared.config);
-        serde_json::to_string_pretty(&*config)?
+        let current = lock(&shared.config);
+        serde_json::to_string_pretty(&current.config)?
     };
-    write_atomic(&shared.dir, &json)?;
+    write_atomic(
+        &shared.dir,
+        &json,
+        shared.on_disk_good.load(Ordering::SeqCst),
+    )?;
+    shared.on_disk_good.store(true, Ordering::SeqCst);
     Ok(())
 }
 
-fn write_atomic(dir: &Path, json: &str) -> std::io::Result<()> {
+/// Writes `json` as the config; the file it replaces becomes the backup if it is `good`.
+fn write_atomic(dir: &Path, json: &str, good: bool) -> std::io::Result<()> {
     fs::create_dir_all(dir)?;
     let tmp = dir.join(TMP);
     {
@@ -220,14 +303,18 @@ fn write_atomic(dir: &Path, json: &str) -> std::io::Result<()> {
         f.sync_all()?;
     }
     let main = dir.join(FILE);
-    if main.exists() {
+    if good && main.exists() {
         // Copy rather than rename, so a crash between the two steps never leaves no config.
         fs::copy(&main, dir.join(BAK))?;
     }
     fs::rename(&tmp, &main)
 }
 
-fn load(dir: &Path, app_version: &str) -> (Config, LoadReport) {
+fn load(
+    dir: &Path,
+    app_version: &str,
+    move_aside: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> (Config, LoadReport) {
     let main = dir.join(FILE);
     let bak = dir.join(BAK);
     let mut report = LoadReport::default();
@@ -241,12 +328,16 @@ fn load(dir: &Path, app_version: &str) -> (Config, LoadReport) {
         }
         Some(Err(e)) => {
             let broken = dir.join(format!("config.broken-{}.json", unix_ms()));
-            if let Err(re) = fs::rename(&main, &broken) {
-                tracing::error!("could not move broken config aside: {re}");
-            }
+            let moved = match move_aside(&main, &broken) {
+                Ok(()) => true,
+                Err(re) => {
+                    tracing::error!("could not move broken config aside: {re}");
+                    false
+                }
+            };
             let from_backup = bak.exists().then(|| parse_file(&bak)).and_then(Result::ok);
             report.recovery = Some(Recovery {
-                broken_file: broken,
+                broken_file: moved.then_some(broken),
                 error: e.to_string(),
                 from_backup: from_backup.is_some(),
             });
@@ -383,11 +474,8 @@ mod tests {
         let (store, report) = ConfigStore::open(dir.path(), "1.0.0");
         let recovery = report.recovery.expect("recovery reported");
         assert!(recovery.from_backup);
-        assert!(recovery.broken_file.exists());
-        assert_eq!(
-            fs::read_to_string(&recovery.broken_file).unwrap(),
-            "{ not json"
-        );
+        let broken = recovery.broken_file.expect("moved aside");
+        assert_eq!(fs::read_to_string(&broken).unwrap(), "{ not json");
         assert!(store.get().settings.locked);
         assert!(
             read(dir.path(), FILE).settings.locked,
@@ -426,7 +514,7 @@ mod tests {
         let (store, _) = ConfigStore::open(dir.path(), "1.0.0");
         let calls = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&calls);
-        store.on_change(Box::new(move |old, new| {
+        store.on_change(Box::new(move |old, new, _| {
             assert_ne!(old, new);
             c.fetch_add(1, Ordering::SeqCst);
         }));
@@ -437,6 +525,102 @@ mod tests {
     }
 
     #[test]
+    fn each_change_has_the_next_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = ConfigStore::open(dir.path(), "1.0.0");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let s = Arc::clone(&seen);
+        store.on_change(Box::new(move |_, _, revision| lock(&s).push(revision)));
+        let start = store.get_revised().1;
+        set_edge_top(&store);
+        set_edge_top(&store); // no change, no revision
+        store
+            .update(|c| {
+                c.settings.locked = true;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(*lock(&seen), [start + 1, start + 2]);
+        assert_eq!(store.get_revised().1, start + 2);
+        store.shutdown();
+    }
+
+    #[test]
+    fn a_listener_keeps_the_newest_of_two_threads_changes() {
+        // Thread A's change is notified only after thread B's (its listeners run late, as on a
+        // busy thread): what the listener keeps must still be the store's config.
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = ConfigStore::open(dir.path(), "1.0.0");
+        let store = Arc::new(store);
+        let (a_parked, parked) = mpsc::channel::<()>();
+        let (release, a_released) = mpsc::channel::<()>();
+        let a_released = Mutex::new(a_released);
+        store.on_change(Box::new(move |_, new, _| {
+            // A's change (the bar locked) waits until B's was notified.
+            if new.settings.locked && new.settings.bar.edge == Edge::Bottom {
+                let _ = a_parked.send(());
+                let _ = lock(&a_released).recv();
+            }
+        }));
+        let (config, revision) = store.get_revised();
+        let kept = Arc::new(Newest::new(config, revision));
+        let applied = Arc::new(Mutex::new(Vec::new()));
+        let (k, a) = (Arc::clone(&kept), Arc::clone(&applied));
+        store.on_change(Box::new(move |_, new, revision| {
+            k.offer(revision, new.clone(), |_, new| lock(&a).push(new.clone()));
+        }));
+
+        let a = {
+            let store = Arc::clone(&store);
+            std::thread::spawn(move || {
+                store
+                    .update(|c| {
+                        c.settings.locked = true;
+                        Ok(())
+                    })
+                    .unwrap();
+            })
+        };
+        parked.recv().unwrap();
+        set_edge_top(&store); // B, while A's listeners wait
+        release.send(()).unwrap();
+        a.join().unwrap();
+
+        assert_eq!(kept.get(), store.get());
+        assert_eq!(
+            *lock(&applied),
+            [store.get()],
+            "A's older change was dropped"
+        );
+        store.shutdown();
+    }
+
+    #[test]
+    fn a_broken_file_that_cannot_be_moved_aside_never_becomes_the_backup() {
+        // On Windows another program can hold the file open; the rename fails there.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(FILE), "{ broken").unwrap();
+        let good = r#"{ "settings": { "locked": true } }"#;
+        fs::write(dir.path().join(BAK), good).unwrap();
+        let (store, report) = ConfigStore::open_with(dir.path().to_path_buf(), "1.0.0", |_, _| {
+            Err(std::io::Error::other("held open"))
+        });
+        let recovery = report.recovery.unwrap();
+        assert!(recovery.from_backup);
+        assert_eq!(recovery.broken_file, None, "no file was moved aside");
+        assert!(store.get().settings.locked);
+        // The first write, at once, replaced the broken file and kept the good backup rather
+        // than a copy of the broken file.
+        assert_eq!(fs::read_to_string(dir.path().join(BAK)).unwrap(), good);
+        // The file it wrote is good: the next write backs it up.
+        set_edge_top(&store);
+        store.shutdown();
+        let (backup, main) = (read(dir.path(), BAK), read(dir.path(), FILE));
+        assert!(backup.settings.locked && backup.settings.bar.edge == Edge::Bottom);
+        assert_eq!(main.settings.bar.edge, Edge::Top);
+    }
+
+    #[test]
     fn listeners_run_without_the_lock_held() {
         // A listener that updates the store (as the tray does via the main thread) must not
         // deadlock on the listener list.
@@ -444,7 +628,7 @@ mod tests {
         let (store, _) = ConfigStore::open(dir.path(), "1.0.0");
         let store = Arc::new(store);
         let weak = Arc::downgrade(&store);
-        store.on_change(Box::new(move |_, new| {
+        store.on_change(Box::new(move |_, new, _| {
             if !new.settings.locked
                 && let Some(s) = weak.upgrade()
             {

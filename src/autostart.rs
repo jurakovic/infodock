@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::config::ConfigStore;
+use crate::config::store::Newest;
 use crate::i18n::t_args;
 use crate::platform::{AutostartChange, Platform};
 
@@ -48,16 +49,19 @@ pub fn init(store: &ConfigStore, platform: Arc<dyn Platform>) {
     if let Some(change) = at_start(enabled, entry.as_deref(), &command, named_exists) {
         apply(platform.as_ref(), &change);
     }
-    store.on_change(Box::new(move |old, new| {
-        let enabled = new.settings.autostart;
-        if enabled != old.settings.autostart {
-            let change = if enabled {
-                AutostartChange::Enable(&command)
-            } else {
-                AutostartChange::Remove
-            };
-            apply(platform.as_ref(), &change);
-        }
+    // Against the setting applied last, which a change notified late is older than.
+    let applied = Newest::new(enabled, store.get_revised().1);
+    store.on_change(Box::new(move |_, new, revision| {
+        applied.offer(revision, new.settings.autostart, |was, &enabled| {
+            if enabled != *was {
+                let change = if enabled {
+                    AutostartChange::Enable(&command)
+                } else {
+                    AutostartChange::Remove
+                };
+                apply(platform.as_ref(), &change);
+            }
+        });
     }));
 }
 

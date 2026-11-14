@@ -10,6 +10,7 @@ use crate::platform::recording::RecordingCanvas;
 use crate::platform::{Capabilities, MenuEntry, PointerButton};
 use crate::test_util::FakePlatform;
 
+mod config;
 mod external_drop;
 mod frame;
 mod hover;
@@ -278,7 +279,7 @@ fn rising_bar(settings: Settings) -> (BarLogic, FakeWindow, Arc<FakeHost>, Confi
     let host = Arc::new(FakeHost::default());
     let (_tx, rx) = mpsc::channel();
     let mut logic = BarLogic::new(
-        config.clone(),
+        (config.clone(), 0),
         crate::platform::current(),
         rx,
         Arc::clone(&host) as Arc<dyn BarHost>,

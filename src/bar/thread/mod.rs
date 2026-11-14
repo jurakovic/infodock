@@ -38,6 +38,7 @@ use crate::config::model::Zone;
 use crate::config::model::{
     BarMode, Edge, FloatingRect, Layout, Material, SensorInstance, Settings,
 };
+use crate::config::store::Revision;
 use crate::i18n::{t, t_args};
 use crate::look::anim::{self, Easing, Fade};
 use crate::look::skins::{self, SkinCache};
@@ -151,6 +152,8 @@ fn zone_id(zone: Zone) -> &'static str {
 }
 
 pub(super) struct BarLogic {
+    /// The revision of the config below; an older one that arrives later is dropped.
+    revision: Revision,
     settings: Settings,
     layout: Layout,
     state: BTreeMap<String, State>,
@@ -274,7 +277,7 @@ fn subscription_changes(
 
 impl BarLogic {
     pub(super) fn new(
-        config: Config,
+        (config, revision): (Config, Revision),
         platform: Arc<dyn Platform>,
         commands: Receiver<Command>,
         host: Arc<dyn BarHost>,
@@ -287,6 +290,7 @@ impl BarLogic {
         let numbers = Numbers::from(&locale);
         Self {
             theme: Theme::resolve(&config.settings, appearance),
+            revision,
             settings: config.settings,
             layout: config.layout,
             state: config.state,
@@ -411,7 +415,12 @@ impl BarLogic {
         let mut configured = false;
         while let Ok(command) = self.commands.try_recv() {
             match command {
-                Command::Config(config) => {
+                Command::Config(revision, config) => {
+                    if revision <= self.revision {
+                        tracing::debug!("config revision {revision} dropped on the bar thread");
+                        continue;
+                    }
+                    self.revision = revision;
                     configured = true;
                     layout_changed |= self.apply_config(window, *config);
                 }

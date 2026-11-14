@@ -175,16 +175,18 @@ pub fn appearance_changed(appearance: crate::platform::OsAppearance) {
     }
 }
 
-/// Refreshes the open window whenever the config changes (from any thread).
+/// Refreshes the open window whenever the config changes (from any thread). The refill reads
+/// the config when it runs: two threads' changes can be notified in the opposite order, and the
+/// last refill must show the store's config.
 pub fn watch(app: &Arc<App>) {
     let a = Arc::clone(app);
-    app.store.on_change(Box::new(move |_, new| {
-        let (settings, sensors) = (new.settings.clone(), new.layout.clone());
+    app.store.on_change(Box::new(move |_, _, _| {
         let a = Arc::clone(&a);
         let _ = slint::invoke_from_event_loop(move || {
             with_open_mut(|open| {
-                fill(open, &a, &settings);
-                layout::fill(open, &a, &sensors);
+                let config = a.store.get();
+                fill(open, &a, &config.settings);
+                layout::fill(open, &a, &config.layout);
             });
         });
     }));
