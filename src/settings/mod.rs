@@ -524,6 +524,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_reserve_space(settings.bar.reserve_space);
     state.set_z_order(choice("bar.zOrder"));
     state.set_hide_on_fullscreen(settings.bar.hide_on_fullscreen);
+    state.set_over_desktop(settings.bar.over_desktop);
     state.set_highlight_on_hover(settings.bar.highlight_on_hover);
     state.set_shadow(settings.bar.shadow);
     state.set_animations(choice("bar.animations"));

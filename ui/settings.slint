@@ -185,6 +185,7 @@ export global SettingsState {
     in-out property <bool> reserve-space;
     in-out property <int> z-order;
     in-out property <bool> hide-on-fullscreen;
+    in-out property <bool> over-desktop;
     in-out property <bool> highlight-on-hover;
     in-out property <bool> shadow;
     // 0 = like Windows, 1 = on, 2 = off.
@@ -884,6 +885,18 @@ component BarPage inherits VerticalLayout {
             label: I18n.tr("settings.bar.hideOnFullscreen");
             toggled => {
                 SettingsState.set-flag("bar.hideOnFullscreen", self.checked);
+            }
+        }
+    }
+
+    Row {
+        label: I18n.tr("settings.bar.overDesktop");
+        help: I18n.tr("settings.bar.overDesktop.help");
+        OnOffSwitch {
+            checked <=> SettingsState.over-desktop;
+            label: I18n.tr("settings.bar.overDesktop");
+            toggled => {
+                SettingsState.set-flag("bar.overDesktop", self.checked);
             }
         }
     }

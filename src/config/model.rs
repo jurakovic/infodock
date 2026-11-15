@@ -160,6 +160,8 @@ pub struct BarSettings {
     pub reserve_space: bool,
     pub z_order: ZOrder,
     pub hide_on_fullscreen: bool,
+    /// Stays visible when Show desktop or Peek clears the windows away (SPEC §5.3).
+    pub over_desktop: bool,
     /// Logical px, 22–40; `None` = theme default.
     pub height: Option<u32>,
     /// Space above and below the sensors, logical px, 0–6 (SPEC §10.2).
@@ -179,6 +181,7 @@ impl Default for BarSettings {
             reserve_space: false,
             z_order: ZOrder::Bottom,
             hide_on_fullscreen: true,
+            over_desktop: true,
             height: None,
             sensor_padding: 0,
             floating: None,
@@ -719,6 +722,7 @@ mod tests {
         assert_eq!(s.new_sensor_menu, NewSensorMenu::Submenu);
         assert!(!s.bar.reserve_space);
         assert_eq!(s.bar.z_order, ZOrder::Bottom);
+        assert!(s.bar.over_desktop);
         assert_eq!(s.bar.sensor_padding, 0);
         assert_eq!(s.theme, ThemeId::Classic);
         assert_eq!(s.background.opacity, None);
@@ -733,6 +737,7 @@ mod tests {
         let v = serde_json::to_value(&c).unwrap();
         assert_eq!(v["settings"]["bar"]["reserveSpace"], false);
         assert_eq!(v["settings"]["bar"]["zOrder"], "bottom");
+        assert_eq!(v["settings"]["bar"]["overDesktop"], true);
         assert_eq!(v["settings"]["hotkeyAction"], "bringToFront");
         assert_eq!(v["settings"]["sensors"]["fontStyle"], Value::Null);
         assert_eq!(v["layout"]["left"][0]["type"], "cpu-graph");

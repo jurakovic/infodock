@@ -50,6 +50,8 @@ pub(super) struct BandWindow {
     /// Where the window was last put (screen px), so a frame that moves nothing moves nothing.
     at: Cell<Option<(i32, i32)>>,
     visible: Cell<bool>,
+    /// Whether Peek leaves the band shown, as last set: as it does the bar.
+    peek: Cell<Option<bool>>,
 }
 
 impl BandWindow {
@@ -89,6 +91,7 @@ impl BandWindow {
                 drawn: Cell::new(false),
                 at: Cell::new(None),
                 visible: Cell::new(false),
+                peek: Cell::new(None),
             })
         }
     }
@@ -122,6 +125,12 @@ impl BandWindow {
             self.hide();
             return;
         };
+        let over_desktop = super::appbar::over_desktop();
+        if self.peek.replace(Some(over_desktop)) != Some(over_desktop)
+            && let Err(e) = super::appbar::exclude_from_peek(self.hwnd, over_desktop)
+        {
+            tracing::warn!("cannot set whether Peek leaves the shadow shown: {e}");
+        }
         let height = band.bitmap.height() as i32;
         let at = POINT {
             x: bar.left,

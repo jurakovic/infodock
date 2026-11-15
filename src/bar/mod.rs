@@ -47,6 +47,7 @@ fn dock_request(s: &Settings, visible: bool) -> DockRequest {
         reserve_space: s.bar.reserve_space,
         z_order: s.bar.z_order,
         hide_on_fullscreen: s.bar.hide_on_fullscreen,
+        over_desktop: s.bar.over_desktop,
         floating: s.bar.floating,
     }
 }

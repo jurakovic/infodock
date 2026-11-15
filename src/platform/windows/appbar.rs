@@ -21,7 +21,9 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_CLOAKED, DWMWA_EXCLUDED_FROM_PEEK, DwmGetWindowAttribute, DwmSetWindowAttribute,
+};
 use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::Shell::{
@@ -40,7 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_TIMER,
     WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
 };
-use windows::core::w;
+use windows::core::{BOOL, w};
 
 use super::monitors::{self, to_rect, to_win_rect};
 use super::window::DESKTOP_TIMER;
@@ -64,15 +66,18 @@ const MINIMISED: usize = 3;
 const RESTORED: usize = 4;
 /// How often at most the bar takes back a topmost place it lost to other code.
 const RESTORE_TOPMOST_EVERY: Duration = Duration::from_secs(1);
-/// How often a bar kept behind looks at the foreground window again, for [`LOOK_AFTER_CHANGE`]
-/// after the foreground changed or a window was restored (SPEC §5.3).
+/// How often a bar that comes up over the desktop looks at the foreground window again, for
+/// [`LOOK_AFTER_CHANGE`] after the foreground changed or a window was restored (SPEC §5.3).
 const LOOK_EVERY_MS: u32 = 250;
-/// How long a bar kept behind looks again after the foreground changed: in case a window that
+/// How long such a bar looks again after the foreground changed: in case a window that
 /// was not shown when it got the foreground is shown with no event the bar hears.
 const LOOK_AFTER_CHANGE: Duration = Duration::from_secs(2);
 
 /// The bar window, for the foreground hook; 0 before it is installed.
 static HOOKED_BAR: AtomicIsize = AtomicIsize::new(0);
+/// The bar stays visible over the desktop ([`DockRequest::over_desktop`]), for the shadow band,
+/// which Peek leaves shown with the bar ([`over_desktop`]).
+static OVER_DESKTOP: AtomicBool = AtomicBool::new(true);
 
 struct Messages {
     /// AppBar notifications (ABN_*).
@@ -124,7 +129,7 @@ struct UiState {
     desktop: bool,
     /// When the bar last took back a topmost place it lost.
     restored: Option<Instant>,
-    /// Until when a bar kept behind looks at the foreground window again after it changed.
+    /// Until when the bar looks at the foreground window again after it changed.
     look_until: Option<Instant>,
     /// The timer that looks at the foreground window is set ([`DESKTOP_TIMER`]).
     looking: bool,
@@ -139,6 +144,8 @@ struct UiState {
     /// How far the window is shown below its place (above: negative) while it rises or slides
     /// out (SPEC §5.5). A placement that changes nothing keeps it; a new one starts in place.
     offset: i32,
+    /// Whether Peek leaves the bar shown, as last set ([`exclude_from_peek`]).
+    peek: Option<bool>,
 }
 
 /// `rect` moved down by `dy` px.
@@ -161,8 +168,8 @@ impl Shared {
             let _ = ChangeWindowMessageFilterEx(hwnd, m.callback, MSGFLT_ALLOW, None);
         }
         // Show desktop (Win+D) raises the desktop over every normal window: a bar kept behind
-        // them comes up while the desktop is in front (SPEC §5.3). The hook calls back on this
-        // thread, the bar thread, from its message loop.
+        // them or among them comes up while the desktop is in front, if it should (SPEC §5.3).
+        // The hook calls back on this thread, the bar thread, from its message loop.
         HOOKED_BAR.store(hwnd.0 as isize, Ordering::SeqCst);
         // SAFETY: a plain hook with a static callback; it lasts as long as the process.
         let hook = unsafe {
@@ -178,7 +185,7 @@ impl Shared {
         };
         if hook.is_invalid() {
             tracing::warn!(
-                "the foreground hook is not available; Show desktop covers a bar kept behind"
+                "the foreground hook is not available; Show desktop covers a bar not on top"
             );
         }
         // A window brought back from the taskbar gets the foreground while it is still minimised;
@@ -281,6 +288,7 @@ impl Shared {
             self.ui(|u| u.positioning = false);
             return;
         }
+        self.follow_peek(req.over_desktop);
         let floating = req.mode == BarMode::Floating;
         let reserve = req.reserve_space && !floating;
         if !reserve {
@@ -347,6 +355,19 @@ impl Shared {
                 monitor: monitor.clone(),
                 scale: monitor.scale,
             }));
+        }
+    }
+
+    /// Peek, which shows the desktop while the pointer is on the taskbar's far corner, leaves
+    /// the bar shown when it should stay visible over the desktop (SPEC §5.3).
+    fn follow_peek(&self, over_desktop: bool) {
+        if self.ui(|u| u.peek.replace(over_desktop)) == Some(over_desktop) {
+            return;
+        }
+        OVER_DESKTOP.store(over_desktop, Ordering::Relaxed);
+        match exclude_from_peek(self.hwnd(), over_desktop) {
+            Ok(()) => tracing::debug!("Peek leaves the bar shown: {over_desktop}"),
+            Err(e) => tracing::warn!("cannot set whether Peek leaves the bar shown: {e}"),
         }
     }
 
@@ -532,14 +553,16 @@ impl Shared {
         self.look(true);
     }
 
-    /// Where a bar kept behind belongs, from the foreground window: over the desktop while that
-    /// is in front, behind the windows once one that can cover the bar is (SPEC §5.3). Read
-    /// now rather than taken from the hook, so a window that was in front only for a moment
-    /// changes nothing. A window brought back from the taskbar gets the foreground while it is
-    /// still minimised, which changes nothing either; the bar looks again when it is restored.
+    /// Where a bar kept behind or among the windows belongs, from the foreground window: over
+    /// the desktop while that is in front, behind the windows once one that can cover the bar
+    /// is (SPEC §5.3). Read now rather than taken from the hook, so a window that was in front
+    /// only for a moment changes nothing. A window brought back from the taskbar gets the
+    /// foreground while it is still minimised, which changes nothing either; the bar looks
+    /// again when it is restored.
     fn look(&self, log: bool) {
         // SAFETY: plain query.
-        let window = foreground(unsafe { GetForegroundWindow() });
+        let hwnd = unsafe { GetForegroundWindow() };
+        let window = foreground(hwnd);
         let kind = in_front(window.as_ref());
         let desktop = match kind {
             InFront::Desktop => Some(true),
@@ -549,23 +572,32 @@ impl Shared {
         let changed = desktop.is_some_and(|desktop| {
             self.ui(|u| std::mem::replace(&mut u.desktop, desktop)) != desktop
         });
-        let behind = lock(&self.request)
-            .as_ref()
-            .is_some_and(|r| r.visible && r.z_order == ZOrder::Bottom);
-        if log || (changed && behind) {
+        let request = lock(&self.request).clone();
+        let follows = request.as_ref().is_some_and(follows_desktop);
+        if log || (changed && follows) {
             tracing::debug!("foreground now: {window:?}, {kind:?}");
         }
-        if changed && behind {
+        if changed && follows {
             self.restack();
+            // A bar among the windows goes back right behind the window now in front, which is
+            // where it would be had it stayed among them; not behind a topmost one, which
+            // would make it topmost too.
+            if kind == InFront::Other && request.is_some_and(|r| r.z_order == ZOrder::Normal) {
+                // SAFETY: plain query.
+                let front = unsafe { GetAncestor(hwnd, GA_ROOT) };
+                if !front.is_invalid() && !is_topmost(front) {
+                    self.set_z(front);
+                }
+            }
         }
-        self.keep_looking(behind);
+        self.keep_looking(follows);
     }
 
     /// Sets or ends the timer that looks at the foreground window.
-    fn keep_looking(&self, behind: bool) {
+    fn keep_looking(&self, follows: bool) {
         let now = Instant::now();
         let (wanted, was) = self.ui(|u| {
-            let wanted = behind && u.look_until.is_some_and(|until| now < until);
+            let wanted = follows && u.look_until.is_some_and(|until| now < until);
             (wanted, std::mem::replace(&mut u.looking, wanted))
         });
         // SAFETY: plain calls on our own window.
@@ -681,7 +713,7 @@ impl Shared {
         drop(ui);
         pin_geometry(pos, rect);
         let keep_low = (fullscreen && req.hide_on_fullscreen)
-            || (req.z_order == ZOrder::Bottom && !raised && !desktop);
+            || (req.z_order == ZOrder::Bottom && !raised && !(desktop && req.over_desktop));
         if keep_low && !pos.flags.contains(SWP_NOZORDER) {
             pos.hwndInsertAfter = HWND_BOTTOM;
         }
@@ -731,16 +763,19 @@ struct Stacking {
 /// that behaves like them, or one kept behind them that the hotkey raised) is brought up with
 /// `HWND_TOP` instead (e.g. after a full-screen app sent it to the bottom).
 ///
-/// A bar kept behind other windows comes up over the desktop while that is in front, as after
-/// Show desktop, which raises it over every normal window. It is topmost for that time: while
-/// Show desktop is on, `HWND_TOP` returns true and changes nothing (Windows 11 build 26300).
+/// A bar kept behind other windows or among them comes up over the desktop while that is in
+/// front, as after Show desktop, which raises it over every normal window, unless it should not
+/// stay visible over the desktop ([`DockRequest::over_desktop`]). It is topmost for that time:
+/// while Show desktop is on, `HWND_TOP` returns true and changes nothing (Windows 11 build 26300).
 fn insert_after(req: &DockRequest, now: Stacking) -> HWND {
     if now.fullscreen && req.hide_on_fullscreen {
         return HWND_BOTTOM;
     }
+    if follows_desktop(req) && now.desktop {
+        return HWND_TOPMOST;
+    }
     let in_front = match req.z_order {
         ZOrder::Topmost => return HWND_TOPMOST,
-        ZOrder::Bottom if now.desktop => return HWND_TOPMOST,
         ZOrder::Normal => true,
         ZOrder::Bottom => now.raised,
     };
@@ -751,10 +786,37 @@ fn insert_after(req: &DockRequest, now: Stacking) -> HWND {
     }
 }
 
+/// Whether the bar comes up over the desktop when that comes to the front (SPEC §5.3): one that
+/// should stay visible there and is not on top anyway.
+fn follows_desktop(req: &DockRequest) -> bool {
+    req.visible && req.over_desktop && req.z_order != ZOrder::Topmost
+}
+
 /// A topmost bar goes behind the other windows in two steps, `HWND_NOTOPMOST` and then
 /// `HWND_BOTTOM`: the second alone left the bar over the windows after Show desktop.
 fn leaves_topmost_first(insert_after: HWND, now: Stacking) -> bool {
     insert_after == HWND_BOTTOM && now.topmost_now
+}
+
+/// Whether the bar stays visible over the desktop, for its shadow band.
+pub(super) fn over_desktop() -> bool {
+    OVER_DESKTOP.load(Ordering::Relaxed)
+}
+
+/// Leaves `hwnd` shown while Peek shows the desktop (`excluded`), or lets Peek clear it away as
+/// it does other windows (DWM's default).
+pub(super) fn exclude_from_peek(hwnd: HWND, excluded: bool) -> Result<(), String> {
+    let value = BOOL::from(excluded);
+    // SAFETY: the attribute takes a BOOL, passed with its size.
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_EXCLUDED_FROM_PEEK,
+            (&raw const value).cast(),
+            size_of::<BOOL>() as u32,
+        )
+    }
+    .map_err(|e| e.message())
 }
 
 /// `hwnd` has `WS_EX_TOPMOST`.
@@ -807,7 +869,7 @@ impl Foreground {
     }
 }
 
-/// What a new foreground window means for a bar kept behind the windows.
+/// What a new foreground window means for a bar that comes up over the desktop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InFront {
     /// The desktop: the bar comes up over it.
@@ -997,6 +1059,7 @@ mod tests {
             reserve_space: true,
             z_order,
             hide_on_fullscreen,
+            over_desktop: true,
             floating: None,
         }
     }
@@ -1079,7 +1142,6 @@ mod tests {
             insert_after(&req(ZOrder::Topmost, true), desktop),
             HWND_TOPMOST
         );
-        assert_eq!(insert_after(&req(ZOrder::Normal, true), desktop), HWND_TOP);
         let fullscreen = Stacking {
             fullscreen: true,
             ..desktop
@@ -1088,6 +1150,47 @@ mod tests {
         assert!(!leaves_topmost_first(HWND_BOTTOM, fullscreen));
         assert!(is_desktop_class("WorkerW") && is_desktop_class("Progman"));
         assert!(!is_desktop_class("Shell_TrayWnd") && !is_desktop_class("Notepad"));
+    }
+
+    #[test]
+    fn a_bar_among_the_windows_comes_up_over_the_desktop_too() {
+        let among = req(ZOrder::Normal, true);
+        let desktop = Stacking {
+            desktop: true,
+            ..Stacking::default()
+        };
+        assert_eq!(insert_after(&among, desktop), HWND_TOPMOST);
+        // Another window in front: back among the windows (and behind that one, `look`).
+        let left = Stacking {
+            topmost_now: true,
+            ..Stacking::default()
+        };
+        assert_eq!(insert_after(&among, left), HWND_NOTOPMOST);
+        assert!(follows_desktop(&among));
+        assert!(!follows_desktop(&req(ZOrder::Topmost, true)));
+    }
+
+    #[test]
+    fn a_bar_that_should_not_stay_over_the_desktop_does_not() {
+        let not = |z| DockRequest {
+            over_desktop: false,
+            ..req(z, true)
+        };
+        let desktop = Stacking {
+            desktop: true,
+            ..Stacking::default()
+        };
+        assert_eq!(insert_after(&not(ZOrder::Bottom), desktop), HWND_BOTTOM);
+        assert_eq!(insert_after(&not(ZOrder::Normal), desktop), HWND_TOP);
+        assert_eq!(insert_after(&not(ZOrder::Topmost), desktop), HWND_TOPMOST);
+        assert!(!follows_desktop(&not(ZOrder::Bottom)));
+        assert!(!follows_desktop(&not(ZOrder::Normal)));
+        // Nor does a hidden bar.
+        let hidden = DockRequest {
+            visible: false,
+            ..req(ZOrder::Bottom, true)
+        };
+        assert!(!follows_desktop(&hidden));
     }
 
     #[test]

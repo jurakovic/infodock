@@ -74,6 +74,8 @@
   "settings.bar.zOrder.bottom": "Always behind other windows",
   "settings.bar.zOrder.help": "With “Always behind”, the hotkey brings the bar forward until you click elsewhere.",
   "settings.bar.hideOnFullscreen": "Step back for full-screen apps",
+  "settings.bar.overDesktop": "Stay visible over the desktop",
+  "settings.bar.overDesktop.help": "When Show desktop (Win+D or the taskbar's far corner) or Peek clears the windows away.",
   "settings.bar.height": "Height",
   "settings.bar.height.help": "The theme default is {height} px.",
   "settings.bar.sensorPadding": "Space above and below sensors",

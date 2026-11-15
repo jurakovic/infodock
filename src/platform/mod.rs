@@ -860,6 +860,8 @@ pub struct DockRequest {
     pub reserve_space: bool,
     pub z_order: ZOrder,
     pub hide_on_fullscreen: bool,
+    /// Stays visible over the desktop that Show desktop or Peek shows (SPEC §5.3).
+    pub over_desktop: bool,
     /// Where a floating bar is (SPEC §5.1); `None` until it was moved or sized.
     pub floating: Option<FloatingRect>,
 }
