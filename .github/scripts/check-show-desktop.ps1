@@ -6,7 +6,8 @@
 # z-order), the bar's topmost flag, the foreground window, and a screenshot. The app runs with the
 # appbar's debug log, whose `foreground:` and `z-order:` lines are printed. Runs after the memory
 # check, whose first run ended the welcome page, and before the installer check, which removes
-# the config.
+# the config. It found D121: a window brought back from the taskbar gets the foreground while it
+# is still minimised, which left the bar on top of it.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
