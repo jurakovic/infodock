@@ -30,14 +30,15 @@ use windows::Win32::UI::Shell::{
     SHAppBarMessage,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChangeWindowMessageFilterEx, DefWindowProcW, EVENT_SYSTEM_FOREGROUND, GA_ROOT, GWL_EXSTYLE,
-    GetAncestor, GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, HWND_BOTTOM,
-    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IsIconic, IsWindowVisible, MSGFLT_ALLOW, PostMessageW,
-    RegisterWindowMessageW, SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow,
-    SetWindowPos, ShowWindow, WA_INACTIVE, WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE,
-    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND,
-    WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
+    ChangeWindowMessageFilterEx, DefWindowProcW, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_SYSTEM_MINIMIZESTART, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW,
+    GetForegroundWindow, GetWindowLongPtrW, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
+    IsIconic, IsWindowVisible, MSGFLT_ALLOW, PostMessageW, RegisterWindowMessageW, SC_CLOSE,
+    SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetWindowPos, ShowWindow, WA_INACTIVE,
+    WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCACTIVATE,
+    WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+    WS_EX_TOPMOST,
 };
 use windows::core::w;
 
@@ -53,8 +54,13 @@ use crate::platform::{AppBar, AppBarEvent, AppBarSink, BarGeometry, DockRequest}
 /// `wParam` of the private "reposition" message when it asks to raise the bar instead.
 const RAISE: usize = 1;
 /// `wParam` of the private "reposition" message when the foreground window changed; the bar
-/// thread reads which one it is when it handles the message.
+/// thread reads which one it is when it handles the message. `lParam` is the window the hook
+/// reported, for the log.
 const FOREGROUND: usize = 2;
+/// `wParam` of the private "reposition" message when a window was minimised (`lParam`) or
+/// restored from minimised; for the log.
+const MINIMISED: usize = 3;
+const RESTORED: usize = 4;
 /// How often at most the bar takes back a topmost place it lost to other code.
 const RESTORE_TOPMOST_EVERY: Duration = Duration::from_secs(1);
 
@@ -164,6 +170,18 @@ impl Shared {
                 "the foreground hook is not available; Show desktop covers a bar kept behind"
             );
         }
+        // SAFETY: as above.
+        let _ = unsafe {
+            SetWinEventHook(
+                EVENT_SYSTEM_MINIMIZESTART,
+                EVENT_SYSTEM_MINIMIZEEND,
+                None,
+                Some(foreground_changed),
+                0,
+                0,
+                WINEVENT_OUTOFCONTEXT,
+            )
+        };
         Arc::new(Self {
             hwnd: hwnd.0 as isize,
             registered: AtomicBool::new(false),
@@ -496,11 +514,14 @@ impl Shared {
     /// The foreground window changed. Read now rather than taken from the hook, so a window
     /// that was in front only for a moment, gone by the time the bar thread looks, changes
     /// nothing (SPEC §5.3).
-    fn on_foreground(&self) {
+    fn on_foreground(&self, reported: HWND) {
         // SAFETY: plain query.
         let window = foreground(unsafe { GetForegroundWindow() });
         let kind = in_front(window.as_ref());
-        tracing::debug!("foreground: {window:?}, {kind:?}");
+        tracing::debug!(
+            "foreground: {window:?}, {kind:?}; the hook reported {:?}",
+            foreground(reported)
+        );
         let desktop = match kind {
             InFront::Desktop => true,
             InFront::Other => false,
@@ -730,8 +751,18 @@ struct Foreground {
     class: String,
     /// One of the bar thread's own windows: the bar, its menus, popup and hint.
     ours: bool,
+    /// `WS_VISIBLE`.
+    visible: bool,
+    minimised: bool,
+    /// Hidden by DWM (`DWMWA_CLOAKED`), as a window on another virtual desktop is.
+    cloaked: bool,
+}
+
+impl Foreground {
     /// Shown: visible, not minimised and not cloaked.
-    shown: bool,
+    fn shown(&self) -> bool {
+        self.visible && !self.minimised && !self.cloaked
+    }
 }
 
 /// What a new foreground window means for a bar kept behind the windows.
@@ -753,7 +784,7 @@ fn in_front(window: Option<&Foreground>) -> InFront {
         None => InFront::Unchanged,
         Some(w) if w.ours => InFront::Unchanged,
         Some(w) if is_desktop_class(&w.class) => InFront::Desktop,
-        Some(w) if is_taskbar_class(&w.class) || !w.shown => InFront::Unchanged,
+        Some(w) if is_taskbar_class(&w.class) || !w.shown() => InFront::Unchanged,
         Some(_) => InFront::Other,
     }
 }
@@ -782,16 +813,19 @@ fn foreground(hwnd: HWND) -> Option<Foreground> {
         Some(Foreground {
             class: String::from_utf16_lossy(&class[..length.max(0) as usize]),
             ours: super::window::on_this_thread(root),
-            shown: IsWindowVisible(root).as_bool() && !IsIconic(root).as_bool() && !is_cloaked,
+            visible: IsWindowVisible(root).as_bool(),
+            minimised: IsIconic(root).as_bool(),
+            cloaked: is_cloaked,
         })
     }
 }
 
-/// The foreground hook: tells the bar window that the foreground window changed.
+/// The foreground hook: tells the bar window that the foreground window changed, or that a
+/// window was minimised or restored.
 unsafe extern "system" fn foreground_changed(
     _hook: HWINEVENTHOOK,
-    _event: u32,
-    _hwnd: HWND,
+    event: u32,
+    hwnd: HWND,
     _object: i32,
     _child: i32,
     _thread: u32,
@@ -801,14 +835,20 @@ unsafe extern "system" fn foreground_changed(
         "the foreground hook",
         || (),
         || {
+            let what = match event {
+                EVENT_SYSTEM_FOREGROUND => FOREGROUND,
+                EVENT_SYSTEM_MINIMIZESTART => MINIMISED,
+                EVENT_SYSTEM_MINIMIZEEND => RESTORED,
+                _ => return,
+            };
             let bar = HWND(HOOKED_BAR.load(Ordering::SeqCst) as *mut c_void);
             // SAFETY: posting to the bar window, which outlives the hook.
             let _ = unsafe {
                 PostMessageW(
                     Some(bar),
                     messages().reposition,
-                    WPARAM(FOREGROUND),
-                    LPARAM(0),
+                    WPARAM(what),
+                    LPARAM(hwnd.0 as isize),
                 )
             };
         },
@@ -823,7 +863,15 @@ impl Shared {
         if msg == m.reposition {
             match wparam.0 {
                 RAISE => self.raise_now(),
-                FOREGROUND => self.on_foreground(),
+                FOREGROUND => self.on_foreground(HWND(lparam.0 as *mut c_void)),
+                MINIMISED | RESTORED => {
+                    let what = if wparam.0 == MINIMISED {
+                        "minimised"
+                    } else {
+                        "restored"
+                    };
+                    tracing::debug!("{what}: {:?}", foreground(HWND(lparam.0 as *mut c_void)));
+                }
                 _ => self.reposition(),
             }
             return Some(LRESULT(0));
@@ -1005,7 +1053,9 @@ mod tests {
         let window = |class: &str, ours, shown| Foreground {
             class: class.into(),
             ours,
-            shown,
+            visible: shown,
+            minimised: false,
+            cloaked: false,
         };
         assert_eq!(
             in_front(Some(&window("WorkerW", false, true))),
@@ -1077,7 +1127,7 @@ mod tests {
         // SAFETY: our own window, created above.
         let _ = unsafe { DestroyWindow(hwnd) };
         assert!(described.ours, "created on this thread");
-        assert!(!described.shown, "never shown");
+        assert!(!described.shown(), "never shown");
         assert!(described.class.eq_ignore_ascii_case("static"));
     }
 }
