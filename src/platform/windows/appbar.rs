@@ -33,16 +33,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ChangeWindowMessageFilterEx, DefWindowProcW, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW,
     GetForegroundWindow, GetWindowLongPtrW, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST,
-    IsIconic, IsWindowVisible, MSGFLT_ALLOW, PostMessageW, RegisterWindowMessageW, SC_CLOSE,
-    SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetWindowPos, ShowWindow, WA_INACTIVE,
-    WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NCACTIVATE,
-    WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
-    WS_EX_TOPMOST,
+    IsIconic, IsWindowVisible, KillTimer, MSGFLT_ALLOW, PostMessageW, RegisterWindowMessageW,
+    SC_CLOSE, SET_WINDOW_POS_FLAGS, SPI_SETWORKAREA, SW_HIDE, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetTimer, SetWindowPos,
+    ShowWindow, WA_INACTIVE, WINDOWPOS, WINEVENT_OUTOFCONTEXT, WM_ACTIVATE, WM_DISPLAYCHANGE,
+    WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_SYSCOMMAND, WM_TIMER,
+    WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
 };
 use windows::core::w;
 
 use super::monitors::{self, to_rect, to_win_rect};
+use super::window::DESKTOP_TIMER;
 use crate::config::model::{BarMode, Edge, FloatingRect, ZOrder};
 use crate::platform::geometry::{
     DEFAULT_FLOATING_WIDTH, Rect, dock_strip, floating_rect, keep_height, nearer_edge,
@@ -57,12 +58,18 @@ const RAISE: usize = 1;
 /// thread reads which one it is when it handles the message. `lParam` is the window the hook
 /// reported, for the log.
 const FOREGROUND: usize = 2;
-/// `wParam` of the private "reposition" message when a window was minimised (`lParam`) or
-/// restored from minimised; for the log.
+/// `wParam` of the private "reposition" message when a window (`lParam`) was minimised, for the
+/// log, or restored from minimised, which the bar treats as a foreground change.
 const MINIMISED: usize = 3;
 const RESTORED: usize = 4;
 /// How often at most the bar takes back a topmost place it lost to other code.
 const RESTORE_TOPMOST_EVERY: Duration = Duration::from_secs(1);
+/// How often a bar kept behind looks at the foreground window again, for [`LOOK_AFTER_CHANGE`]
+/// after the foreground changed or a window was restored (SPEC §5.3).
+const LOOK_EVERY_MS: u32 = 250;
+/// How long a bar kept behind looks again after the foreground changed: in case a window that
+/// was not shown when it got the foreground is shown with no event the bar hears.
+const LOOK_AFTER_CHANGE: Duration = Duration::from_secs(2);
 
 /// The bar window, for the foreground hook; 0 before it is installed.
 static HOOKED_BAR: AtomicIsize = AtomicIsize::new(0);
@@ -117,6 +124,10 @@ struct UiState {
     desktop: bool,
     /// When the bar last took back a topmost place it lost.
     restored: Option<Instant>,
+    /// Until when a bar kept behind looks at the foreground window again after it changed.
+    look_until: Option<Instant>,
+    /// The timer that looks at the foreground window is set ([`DESKTOP_TIMER`]).
+    looking: bool,
     /// Our own `SetWindowPos`/`ShowWindow` is in progress: `WM_WINDOWPOSCHANGING` leaves the
     /// z-order and visibility alone.
     positioning: bool,
@@ -170,6 +181,8 @@ impl Shared {
                 "the foreground hook is not available; Show desktop covers a bar kept behind"
             );
         }
+        // A window brought back from the taskbar gets the foreground while it is still minimised;
+        // the bar looks again when it is restored.
         // SAFETY: as above.
         let _ = unsafe {
             SetWinEventHook(
@@ -511,28 +524,57 @@ impl Shared {
         );
     }
 
-    /// The foreground window changed. Read now rather than taken from the hook, so a window
-    /// that was in front only for a moment, gone by the time the bar thread looks, changes
-    /// nothing (SPEC §5.3).
-    fn on_foreground(&self, reported: HWND) {
+    /// The foreground window changed, or a window was restored from minimised (`event`, the
+    /// window the hook reported): the bar looks now, and again for a while.
+    fn on_foreground(&self, event: &str, reported: HWND) {
+        tracing::debug!("{event}: {:?}", foreground(reported));
+        self.ui(|u| u.look_until = Some(Instant::now() + LOOK_AFTER_CHANGE));
+        self.look(true);
+    }
+
+    /// Where a bar kept behind belongs, from the foreground window: over the desktop while that
+    /// is in front, behind the windows once one that can cover the bar is (SPEC §5.3). Read
+    /// now rather than taken from the hook, so a window that was in front only for a moment
+    /// changes nothing. A window brought back from the taskbar gets the foreground while it is
+    /// still minimised, which changes nothing either; the bar looks again when it is restored.
+    fn look(&self, log: bool) {
         // SAFETY: plain query.
         let window = foreground(unsafe { GetForegroundWindow() });
         let kind = in_front(window.as_ref());
-        tracing::debug!(
-            "foreground: {window:?}, {kind:?}; the hook reported {:?}",
-            foreground(reported)
-        );
         let desktop = match kind {
-            InFront::Desktop => true,
-            InFront::Other => false,
-            InFront::Unchanged => return,
+            InFront::Desktop => Some(true),
+            InFront::Other => Some(false),
+            InFront::Unchanged => None,
         };
-        let changed = self.ui(|u| std::mem::replace(&mut u.desktop, desktop)) != desktop;
+        let changed = desktop.is_some_and(|desktop| {
+            self.ui(|u| std::mem::replace(&mut u.desktop, desktop)) != desktop
+        });
         let behind = lock(&self.request)
             .as_ref()
             .is_some_and(|r| r.visible && r.z_order == ZOrder::Bottom);
+        if log || (changed && behind) {
+            tracing::debug!("foreground now: {window:?}, {kind:?}");
+        }
         if changed && behind {
             self.restack();
+        }
+        self.keep_looking(behind);
+    }
+
+    /// Sets or ends the timer that looks at the foreground window.
+    fn keep_looking(&self, behind: bool) {
+        let now = Instant::now();
+        let (wanted, was) = self.ui(|u| {
+            let wanted = behind && u.look_until.is_some_and(|until| now < until);
+            (wanted, std::mem::replace(&mut u.looking, wanted))
+        });
+        // SAFETY: plain calls on our own window.
+        unsafe {
+            if wanted && !was {
+                SetTimer(Some(self.hwnd()), DESKTOP_TIMER, LOOK_EVERY_MS, None);
+            } else if was && !wanted {
+                let _ = KillTimer(Some(self.hwnd()), DESKTOP_TIMER);
+            }
         }
     }
 
@@ -863,14 +905,10 @@ impl Shared {
         if msg == m.reposition {
             match wparam.0 {
                 RAISE => self.raise_now(),
-                FOREGROUND => self.on_foreground(HWND(lparam.0 as *mut c_void)),
-                MINIMISED | RESTORED => {
-                    let what = if wparam.0 == MINIMISED {
-                        "minimised"
-                    } else {
-                        "restored"
-                    };
-                    tracing::debug!("{what}: {:?}", foreground(HWND(lparam.0 as *mut c_void)));
+                FOREGROUND => self.on_foreground("foreground", HWND(lparam.0 as *mut c_void)),
+                RESTORED => self.on_foreground("restored", HWND(lparam.0 as *mut c_void)),
+                MINIMISED => {
+                    tracing::debug!("minimised: {:?}", foreground(HWND(lparam.0 as *mut c_void)));
                 }
                 _ => self.reposition(),
             }
@@ -890,6 +928,10 @@ impl Shared {
             return Some(LRESULT(0));
         }
         match msg {
+            WM_TIMER if wparam.0 == DESKTOP_TIMER => {
+                self.look(false);
+                return Some(LRESULT(0));
+            }
             WM_ACTIVATE => {
                 self.appbar_notify(ABM_ACTIVATE);
                 if (wparam.0 & 0xFFFF) as u32 == WA_INACTIVE {
@@ -1092,6 +1134,23 @@ mod tests {
             InFront::Unchanged
         );
         assert_eq!(in_front(None), InFront::Unchanged);
+        // A window brought back from the taskbar gets the foreground while still minimised: no
+        // change until it is restored, when the bar looks again (a cloaked window alike).
+        let minimised = Foreground {
+            minimised: true,
+            ..window("Notepad", false, true)
+        };
+        assert_eq!(in_front(Some(&minimised)), InFront::Unchanged);
+        let restored = Foreground {
+            minimised: false,
+            ..minimised
+        };
+        assert_eq!(in_front(Some(&restored)), InFront::Other);
+        let cloaked = Foreground {
+            cloaked: true,
+            ..window("ApplicationFrameWindow", false, true)
+        };
+        assert_eq!(in_front(Some(&cloaked)), InFront::Unchanged);
         // The desktop counts even when it is not shown as a normal window is.
         assert_eq!(
             in_front(Some(&window("Progman", false, false))),

@@ -88,6 +88,8 @@ const RETRY_TIMER: usize = 6;
 const POPUP_TIMER: usize = 7;
 const POPUP_FADE_TIMER: usize = 8;
 const PROBE_TIMER: usize = 9;
+/// The appbar's: a bar kept behind looks at the foreground window (`appbar.rs`).
+pub(super) const DESKTOP_TIMER: usize = 10;
 /// A failed frame (e.g. a lost render target) is drawn again after this long: soon, but not at
 /// once, so a failure that persists does not keep the bar thread busy.
 const RETRY_MS: u32 = 250;

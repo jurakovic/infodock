@@ -1,8 +1,8 @@
 # Checks a bar kept behind the windows (the default z-order, SPEC §5.3) around Show desktop, with
 # the release exe on the runner's desktop: a maximised Notepad covers the bar; Win+D and the
-# taskbar's far corner show the desktop, and the bar comes up over it; a right-click on the bar
-# keeps it there; a window restored from the taskbar (also one that was minimised) covers the bar
-# again. Each step records what is at the bar (WindowFromPoint, the windows above it in the
+# taskbar's far corner show the desktop, and the bar comes up over it; a right-click or a left
+# click on the bar keeps it there, without a flash; a window restored from the taskbar (also one
+# that was minimised) covers the bar again. Each step records what is at the bar (WindowFromPoint, the windows above it in the
 # z-order), the bar's topmost flag, the foreground window, and a screenshot. The app runs with the
 # appbar's debug log, whose `foreground:` and `z-order:` lines are printed. Runs after the memory
 # check, whose first run ended the welcome page, and before the installer check, which removes
@@ -181,6 +181,16 @@ function Test-Bar([string] $Name, [string] $Expected, [int] $Wait = 1200, [doubl
     $results.Add([pscustomobject]@{ Name = $Name; Expected = $Expected; Passed = $passed })
 }
 
+# Whether the bar's z-order stayed as it was since $Before was read: the app logs each change
+# (`z-order: …`), so a flash shows even when it is over before a screenshot.
+function Test-Kept([object[]] $Before, [string] $Name) {
+    $moved = @(Get-LogLines | Select-Object -Skip $Before.Count | Select-String -SimpleMatch 'z-order: ')
+    $line = "   $Name -> $(if ($moved) { "moved: $(($moved | ForEach-Object { $_.Line }) -join ' | ')" } else { 'kept' })"
+    Write-Host $line
+    $records.Add($line)
+    $results.Add([pscustomobject]@{ Name = $Name; Expected = 'kept'; Passed = $moved.Count -eq 0 })
+}
+
 $start = Get-LogLines
 $filter = $env:RUST_LOG
 $env:RUST_LOG = 'info,infodock_lib::platform::windows::appbar=debug'
@@ -211,10 +221,18 @@ try {
 
     $rect = [Win+RECT]::new()
     [Win]::GetWindowRect($script:bar, [ref] $rect) | Out-Null
-    [Win]::Click([int]($rect.Left + ($rect.Right - $rect.Left) * 0.75), [int](($rect.Top + $rect.Bottom) / 2), $true)
+    $middle = [int](($rect.Top + $rect.Bottom) / 2)
+    $before = Get-LogLines
+    [Win]::Click([int]($rect.Left + ($rect.Right - $rect.Left) * 0.75), $middle, $true)
     Test-Bar 'Win+D, a right-click on the bar: the bar while its menu is open' 'bar' -Wait 800 -Along 0.25
     [Win]::Press([byte[]]@(0x1B)) # Esc
     Test-Bar 'Win+D, the menu closed with Esc: the bar' 'bar' -Wait 800
+    Test-Kept $before 'Win+D, the menu: the bar never left its place'
+    # Between the network rates and the logo of the default bar: a click that opens nothing.
+    $before = Get-LogLines
+    [Win]::Click([int]($rect.Left + ($rect.Right - $rect.Left) * 0.33), $middle, $false)
+    Test-Bar 'Win+D, a left click on the bar: the bar' 'bar'
+    Test-Kept $before 'Win+D, the left click: the bar never left its place (no flash)'
 
     Invoke-TaskbarButton '*Notepad*'
     Test-Bar 'After Win+D, the window brought back from the taskbar covers the bar' 'covered'
