@@ -1,4 +1,4 @@
-//! Config changes reaching the bar keep the newest (SPEC §4.4): two threads' changes can be
+//! Config changes reaching the bar keep the newest: two threads' changes can be
 //! notified in the opposite order of their revisions.
 
 use std::sync::Arc;
@@ -44,7 +44,7 @@ fn the_bar_thread_drops_a_config_older_than_its_own() {
 #[test]
 fn the_controller_keeps_the_newest_settings_of_two_threads_changes() {
     // Thread A's change reaches the controller only after thread B's, as when A's listeners
-    // run late (the review's reproduction, `review-code.md` R1).
+    // run late.
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = ConfigStore::open(dir.path(), "1.0.0");
     let store = Arc::new(store);

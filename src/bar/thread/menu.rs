@@ -1,12 +1,12 @@
-//! The bar and sensor menus (SPEC §6.4) and what their commands do.
+//! The bar and sensor menus and what their commands do.
 
 use super::*;
 
 impl BarLogic {
-    /// The bar or sensor menu at `at` (SPEC §6.4), and what its command does.
+    /// The bar or sensor menu at `at`, and what its command does.
     pub(super) fn context_menu(&mut self, window: &dyn BarWindow, at: PointF) {
         let hit = self.sensors.hit(at.x);
-        // New sensors go after the sensor, or to the zone under the pointer (SPEC §6.6).
+        // New sensors go after the sensor, or to the zone under the pointer.
         let place = match &hit {
             Some(h) => (h.zone, h.index + 1),
             None => {
@@ -21,7 +21,7 @@ impl BarLogic {
     }
 
     /// The sensor menu of `hit`, or the bar menu with new sensors going to `place` (zone and
-    /// index), shown at the pointer or beside `near` (SPEC §6.4); and what its command does.
+    /// index), shown at the pointer or beside `near`; and what its command does.
     pub(super) fn menu(
         &mut self,
         window: &dyn BarWindow,

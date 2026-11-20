@@ -1,5 +1,5 @@
 //! `power` — locks, signs out, switches user, sleeps, hibernates, shuts down or restarts the
-//! computer (SPEC §9.21). The bar shows the mode's icon; a click asks first (unless the
+//! computer. The bar shows the mode's icon; a click asks first (unless the
 //! confirmation is off) and then hands the action to the platform.
 
 use serde::Deserialize;
@@ -46,7 +46,7 @@ const SCHEMA: &[PropField] = &[
     icon::OPACITY,
 ];
 
-/// The built-in icon of `action` (Appendix C).
+/// The built-in icon of `action`.
 fn svg(action: PowerAction) -> &'static [u8] {
     match action {
         PowerAction::Lock => include_bytes!("../../assets/icons/power-lock.svg"),
@@ -64,7 +64,7 @@ fn name(action: PowerAction) -> String {
     t(&format!("sensor.power.mode.{}", action.id()))
 }
 
-/// SPEC §9.21: Infodock runs the power action itself, so the legacy `path` goes.
+/// The Power's legacy XML keys: Infodock runs the power action itself, so the legacy `path` goes.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::options(
         "mode",
@@ -193,7 +193,7 @@ impl Sensor for Power {
 }
 
 impl Power {
-    /// Whether this computer offers the mode (`capabilities.power_modes`, SPEC §9.21).
+    /// Whether this computer offers the mode (`capabilities.power_modes`).
     fn offered(&self, cx: &SensorCtx) -> bool {
         let id = self.action.id();
         cx.platform

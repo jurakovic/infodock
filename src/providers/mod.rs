@@ -1,5 +1,5 @@
-//! Providers read the system data behind the topics (SPEC §4.4, Appendix A). They run on the
-//! sampler thread and reach the OS only through [`Platform`].
+//! Providers read the system data behind the topics (INTERNALS.md, Windows data sources). They run
+//! on the sampler thread and reach the OS only through [`Platform`].
 
 mod battery;
 mod cpu;
@@ -74,8 +74,8 @@ impl Providers {
     }
 
     /// The system resumed from sleep: providers that read deltas start from a new baseline
-    /// (the first CPU reading after resume is discarded, network rates start at 0; Appendix
-    /// A).
+    /// (the first CPU reading after resume is discarded, network rates start
+    /// at 0).
     pub fn resume(&mut self) {
         if let Some(Some(cpu)) = &mut self.cpu {
             cpu.resume();
@@ -128,7 +128,7 @@ impl Providers {
 
     /// Reads `topic` now: `None` while there is nothing to show yet (a first CPU reading, which
     /// only sets the baseline; a slow reading not answered yet), the platform's message when it
-    /// cannot be read (SPEC §14.2).
+    /// cannot be read.
     pub fn sample(&mut self, topic: &Topic) -> Result<Option<Sample>, String> {
         Ok(Some(match topic {
             Topic::Uptime => Sample::Uptime(uptime::sample(

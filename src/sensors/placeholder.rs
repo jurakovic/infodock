@@ -1,7 +1,7 @@
-//! Placeholders (SPEC §4.6) for layout entries that cannot run here: a type this version does
-//! not know (kept in the config unchanged, e.g. from a newer version or a type that arrives in
-//! a later milestone), or a type whose capabilities this system lacks. They draw a dimmed,
-//! outlined label and explain themselves in their hint.
+//! Placeholders for layout entries that cannot run here: a type this version does
+//! not know (kept in the config unchanged, e.g. from a newer version), or a type whose
+//! capabilities this system lacks. They draw a dimmed, outlined label and explain themselves in
+//! their hint.
 
 use super::{DrawCtx, HintContent, LayoutCtx, Sensor, SensorCtx};
 use crate::i18n::{t, t_args};

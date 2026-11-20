@@ -1,8 +1,8 @@
-//! Icons on the bar (SPEC §8.3, §8.4, §8.5): the one building block for every sensor that
+//! Icons on the bar: the one building block for every sensor that
 //! shows one. The fields a type offers for it (the user's own image, the colour that tints it,
 //! its opacity) and their legacy keys; how tall each kind of icon is; and [`BarIcon`], which
 //! reads the user's image or the sensor's own (a shell icon or a built-in SVG) at its physical
-//! size, tints it (Custom colour, §8.4), fades it while inactive and draws it at the sensor's
+//! size, tints it (Custom colour), fades it while inactive and draws it at the sensor's
 //! left, centred vertically.
 
 use serde::Deserialize;
@@ -13,7 +13,7 @@ use crate::sensors::legacy::LegacyKey;
 use crate::sensors::schema::{FieldKind, Lit, PropField};
 use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx, Fetched, IconSource, LayoutCtx, MsgKey};
 
-/// The formats of a user's own icon (SPEC §8.4).
+/// The formats of a user's own icon.
 pub const IMAGES: &[&str] = &["ico", "png", "gif", "jpg", "jpeg", "svg"];
 
 /// The user's own icon, for a type's schema; `help` says what shows without one.
@@ -27,7 +27,7 @@ pub const fn image(help: MsgKey) -> PropField {
     .describe(help)
 }
 
-/// The colour that tints the icon (SPEC §8.4: Standard or Custom).
+/// The colour that tints the icon (Standard or Custom).
 pub const COLOR: PropField = PropField::new(
     "color",
     FieldKind::ColorMode { dynamic: false },
@@ -44,7 +44,7 @@ pub const OPACITY: PropField = PropField::new(
     Lit::Int(100),
 );
 
-/// The XML keys of those fields (SPEC §11.4).
+/// The XML keys of those fields.
 pub const LEGACY_IMAGE: LegacyKey = LegacyKey::new("image", "image");
 pub const LEGACY_COLOR: LegacyKey = LegacyKey::new("colorize", "color");
 pub const LEGACY_OPACITY: LegacyKey = LegacyKey::new("opacity", "opacity");
@@ -55,7 +55,7 @@ pub const LEGACY_OPACITY: LegacyKey = LegacyKey::new("opacity", "opacity");
 pub struct IconStyle {
     /// Empty: the sensor's own icon.
     pub image: String,
-    /// Custom tints the icon (SPEC §8.4).
+    /// Custom tints the icon.
     pub color: ColorChoice,
     /// Percent.
     pub opacity: u32,
@@ -75,27 +75,26 @@ impl IconStyle {
     }
 }
 
-/// How tall a sensor's icon is: the one place for every icon on the bar (SPEC §9). "Bar height"
+/// How tall a sensor's icon is: the one place for every icon on the bar. "Bar height"
 /// is the strip the sensors draw in, the bar's height less the space above and below them
-/// (`Theme::sensor_height`, SPEC §10.2).
+/// (`Theme::sensor_height`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IconSize {
-    /// Shortcut, Disk and Recycle Bin: bar height − 4 (SPEC §9.16–§9.18).
+    /// Shortcut, Disk and Recycle Bin: bar height − 4.
     Launcher,
-    /// Folder Menu, Start Menu, Power and Eject USB: 21 px, less in a lower strip (SPEC
-    /// §9.19–§9.22).
+    /// Folder Menu, Start Menu, Power and Eject USB: 21 px, less in a lower strip.
     Small,
-    /// Image: bar height − 1 (SPEC §9.2).
+    /// Image: bar height − 1.
     Picture,
-    /// Wi-Fi: bar height − 8, at least 12 px (SPEC §9.15).
+    /// Wi-Fi: bar height − 8, at least 12 px.
     Signal,
-    /// Battery: 23 px, less in a bar lower than 25 px (SPEC §9.14).
+    /// Battery: 23 px, less in a bar lower than 25 px.
     Battery,
 }
 
 impl IconSize {
     /// The height in logical px in the strip `theme`'s sensors draw in: the bar's height, less
-    /// the space above and below the sensors (SPEC §10.2).
+    /// the space above and below the sensors.
     pub fn logical(self, theme: &Theme) -> f32 {
         let height = theme.sensor_height;
         let less = |px: u32| height.saturating_sub(px).max(1) as f32;
@@ -116,7 +115,7 @@ impl IconSize {
 
 /// The icon a sensor shows when the user has no image of their own.
 pub enum Own<'a> {
-    /// A built-in SVG, monochrome white (Appendix C).
+    /// A built-in SVG, monochrome white.
     Svg(&'static [u8]),
     /// The shell icon of `path`; `svg` when the shell has none. While `refresh` is set, the
     /// icon is read again (and `refresh` cleared) the next time the shell is asked for it.
@@ -137,7 +136,7 @@ pub struct Look<'a> {
     pub color: Option<&'a ColorChoice>,
     /// Percent.
     pub opacity: u32,
-    /// Drawn as inactive (SPEC §8.5).
+    /// Drawn as inactive.
     pub inactive: bool,
 }
 
@@ -239,7 +238,7 @@ fn own_icon(own: Own, px: u32, icons: &dyn IconSource) -> Option<(Bitmap, bool)>
     }
 }
 
-/// The colour an icon is tinted with (SPEC §8.4): Custom tints any icon. Standard leaves shell
+/// The colour an icon is tinted with: Custom tints any icon. Standard leaves shell
 /// icons and the user's own images as they are, and gives Infodock's built-in icons, which are
 /// monochrome white, the sensor text colour, so they read on a light bar too.
 pub fn tint(choice: &ColorChoice, built_in: bool, theme: &Theme) -> Option<Color> {
@@ -254,8 +253,8 @@ pub fn physical(logical: f32, scale: f32) -> u32 {
     (logical * scale).round().max(1.0) as u32
 }
 
-/// A user's image file (an `image` prop), `px` physical px tall, from the bar's reader (SPEC
-/// §9.2): [`Fetched::None`] when `path` is empty or the file cannot be read (logged), so the
+/// A user's image file (an `image` prop), `px` physical px tall, from the bar's reader:
+/// [`Fetched::None`] when `path` is empty or the file cannot be read (logged), so the
 /// sensor shows its built-in icon; [`Fetched::Loading`] while it is read.
 fn custom_image(path: &str, px: u32, icons: &dyn IconSource) -> Fetched {
     if path.is_empty() {

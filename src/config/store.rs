@@ -1,4 +1,4 @@
-//! Loading and saving `config.json` (SPEC §11.1–11.2).
+//! Loading and saving `config.json` (INTERNALS.md, Config).
 //!
 //! * Writes are debounced (500 ms after the last change, at most 2 s after the first) and
 //!   atomic: write `config.json.tmp`, sync, copy the current file to `config.json.bak`, rename.

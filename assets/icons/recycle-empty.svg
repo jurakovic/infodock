@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Placeholder (SPEC Appendix C): the Recycle Bin when it is empty; monochrome white, so the
+  <!-- Placeholder: the Recycle Bin when it is empty; monochrome white, so the
        sensor text colour or a Custom colour tints it. -->
   <rect x="4" y="5" width="16" height="2" rx="1" fill="#FFFFFF"/>
   <rect x="9.5" y="3" width="5" height="2.4" rx="1" fill="none" stroke="#FFFFFF" stroke-width="1.2"/>

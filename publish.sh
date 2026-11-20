@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Builds, packages and releases Infodock (SPEC §15.3). Run by the Publish
+# Builds, packages and releases Infodock. Run by the Publish
 # workflow, see .github/workflows/publish.yml, by CI for its builds, see
 # .github/workflows/ci.yml, and can be run locally as well (Git Bash on
 # Windows), see help(). Building needs cargo and cargo-packager (0.11.8, the
@@ -129,7 +129,7 @@ function package() {
   cp "$setup" "$release_path/$setup_name"
   if [[ ! $? -eq 0 ]]; then exit 1; fi
 
-  # The portable build (SPEC §15.3); only the file name is stored, not its folder
+  # The portable build; only the file name is stored, not its folder
   if command -v zip > /dev/null; then
     zip -9 -j "$release_path/$zip_name" "$WIN_EXE"
   elif command -v 7z > /dev/null; then

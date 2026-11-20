@@ -1,4 +1,4 @@
-//! `disk-meter` — how full a drive is (SPEC §9.12) on the `disk/<X:\>` topic: a meter of the
+//! `disk-meter` — how full a drive is on the `disk/<X:\>` topic: a meter of the
 //! used fraction with the used or free share or size as its value. A click opens the drive in
 //! Explorer; a drive that is missing (or has no medium) shows `n/a` and is inactive.
 
@@ -75,7 +75,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.12.
+/// The Disk Meter's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("title", "title"),
     LegacyKey::new("disk", "drive"),
@@ -93,7 +93,7 @@ const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("colorize", "color"),
 ];
 
-/// How a volume is named in lists and on the Disk launcher (SPEC §9.12, §9.18): its label, or
+/// How a volume is named in lists and on the Disk launcher: its label, or
 /// else its kind, with the letter: `Local Disk (C:)`, `Data (D:)`. Labels are read only from
 /// local drives, so naming never waits for a server or a disc.
 pub fn volume_name(volume: &Volume) -> String {
@@ -113,7 +113,7 @@ pub fn volume_name(volume: &Volume) -> String {
     t_args("volume.entry", &[("name", &name), ("drive", letter)])
 }
 
-/// The first fixed drive (SPEC §9.12), the machine-derived default.
+/// The first fixed drive, the machine-derived default.
 fn first_fixed(volumes: &[Volume]) -> Option<&str> {
     volumes
         .iter()
@@ -223,7 +223,7 @@ impl DiskMeter {
         self.sample.is_some_and(|s| !s.present)
     }
 
-    /// The value line (SPEC §9.12): the used or free share or size; `n/a` for an absent
+    /// The value line: the used or free share or size; `n/a` for an absent
     /// drive, nothing before the first sample.
     fn value(&self, numbers: Numbers) -> String {
         let Some(s) = self.sample else {
@@ -256,7 +256,7 @@ impl DiskMeter {
 impl Sensor for DiskMeter {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
         let value = self.value(cx.numbers);
-        // In the byte modes the value sits under the label (SPEC §9.12).
+        // In the byte modes the value sits under the label.
         let meter = Meter::new(cx.text, cx.theme, &self.label(), &value, !self.bytes_mode());
         let width = meter.width();
         self.meter = Some(meter);

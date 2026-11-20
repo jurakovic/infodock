@@ -1,5 +1,5 @@
-//! The legacy XML import on the sensor side (SPEC §11.4): each type turns a legacy sensor's
-//! properties into its props (`SensorType::convert_legacy`), mostly by naming its XML keys
+//! The legacy XML import on the sensor side (INTERNALS.md, Config): each type turns a legacy
+//! sensor's properties into its props (`SensorType::convert_legacy`), mostly by naming its XML keys
 //! ([`LegacyKey`]), whose values are read by the encoding of the field they set
 //! (`config/legacy.rs`); [`incoming`] turns a parsed file into what the import adds.
 
@@ -142,7 +142,7 @@ impl LegacyCtx<'_> {
 
 /// The props `raw` sets through `keys`, each value read by the encoding of its field in
 /// `schema`; a property `keys` does not name and a value that cannot be read are reported. Props
-/// are not yet in their stored form: the import checks them against the type (§11.2).
+/// are not yet in their stored form: the import checks them against the type.
 pub fn convert(
     schema: &[PropField],
     keys: &[LegacyKey],
@@ -199,7 +199,7 @@ fn by_field(field: &PropField, value: &str) -> Option<Value> {
         FieldKind::Bool => legacy::bool(value).map(Value::Bool),
         FieldKind::ColorMode { .. } => {
             let (mode, color) = legacy::color_mode(value)?;
-            // Standard keeps the field's default colour (SPEC §11.4).
+            // Standard keeps the field's default colour.
             let color = match (color, field.default) {
                 (Some(color), _) => color,
                 (None, Lit::ColorMode(_, default)) => default.to_owned(),
@@ -249,7 +249,7 @@ fn by_field(field: &PropField, value: &str) -> Option<Value> {
     }
 }
 
-/// What a parsed legacy file brings (SPEC §11.4): each sensor of a known type converted by
+/// What a parsed legacy file brings: each sensor of a known type converted by
 /// its type, unsupported types kept for later (any property whose name contains `password`
 /// dropped), unknown types and sensors without a side skipped.
 pub fn incoming(registry: &Registry, ctx: &DefaultsCtx, sensors: Vec<LegacySensor>) -> Incoming {
@@ -498,7 +498,7 @@ mod tests {
             read(&[("mode", "restart")]),
             (json!({ "power": "restart" }), vec![])
         );
-        // Power modes ignoring case, as selects (review M4).
+        // Power modes ignoring case, as selects.
         assert_eq!(
             read(&[("mode", "LOCK")]),
             (json!({ "power": "lock" }), vec![])

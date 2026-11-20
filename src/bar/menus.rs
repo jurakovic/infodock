@@ -1,4 +1,4 @@
-//! The bar's context menus (SPEC §6.4), built from the current state each time they open, with
+//! The bar's context menus, built from the current state each time they open, with
 //! a sensor's own items in its menu.
 
 use crate::config::model::{NewSensorMenu, Settings};
@@ -25,7 +25,7 @@ pub enum MenuCommand {
     ToggleLock,
     TogglePopups,
     Quit,
-    /// One of the sensor's own items (SPEC §6.4).
+    /// One of the sensor's own items.
     Sensor(MenuId),
 }
 
@@ -70,7 +70,7 @@ impl MenuCommand {
     }
 }
 
-/// The types offered for adding, in picker order (SPEC §6.6): available ones only.
+/// The types offered for adding, in picker order: available ones only.
 pub fn addable_types(registry: &Registry, caps: &Capabilities) -> Vec<&'static dyn SensorType> {
     let mut types: Vec<_> = registry
         .types()
@@ -136,7 +136,7 @@ fn toggles(settings: &Settings) -> [MenuEntry; 2] {
     ]
 }
 
-/// The menu of the bar's background (SPEC §6.4).
+/// The menu of the bar's background.
 pub fn bar_menu(settings: &Settings, registry: &Registry, caps: &Capabilities) -> Vec<MenuEntry> {
     let mut entries = vec![new_sensor(settings, registry, caps), MenuEntry::Separator];
     entries.extend([tools(), item(MenuCommand::Settings, "tray.settings")]);
@@ -146,7 +146,7 @@ pub fn bar_menu(settings: &Settings, registry: &Registry, caps: &Capabilities) -
     entries
 }
 
-/// The menu of a sensor (SPEC §6.4). `editable`: its type has properties to show; `own`: the
+/// The menu of a sensor. `editable`: its type has properties to show; `own`: the
 /// sensor's own items, between *Remove sensor* and *Tools*.
 pub fn sensor_menu(
     settings: &Settings,

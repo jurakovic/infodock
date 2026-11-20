@@ -1,4 +1,4 @@
-//! A canvas that records draw calls, and a text engine with fixed metrics (SPEC §4.6, §16).
+//! A canvas that records draw calls, and a text engine with fixed metrics (INTERNALS.md, Testing).
 //! Drawing code is tested against them on every OS; the stub platform uses them as its
 //! renderer.
 //!

@@ -1,11 +1,11 @@
-//! Topic ids and sample payloads (SPEC §4.4, Appendix A).
+//! Topic ids and sample payloads (INTERNALS.md, Windows data sources).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::platform::{BatteryState, PathKind, RecycleBin, Volume, WifiStatus};
 
-/// System data a sensor can subscribe to. More topics arrive with their providers (M2, M3).
+/// System data a sensor can subscribe to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Topic {
     Uptime,
@@ -17,22 +17,22 @@ pub enum Topic {
     /// `net/<id|auto>`: one network interface by id, or `None` for the one carrying the
     /// default route.
     Net(Option<String>),
-    /// `path/<path>`: whether a file or folder exists, e.g. a Shortcut's target (SPEC §9.17).
+    /// `path/<path>`: whether a file or folder exists, e.g. a Shortcut's target.
     Path(String),
-    /// `volumes`: the drives; also pushed when one arrives or goes (SPEC §4.4, Appendix A).
+    /// `volumes`: the drives; also pushed when one arrives or goes.
     Volumes,
-    /// `recycle-bin`: what the Recycle Bin holds on all drives (SPEC §9.16).
+    /// `recycle-bin`: what the Recycle Bin holds on all drives.
     RecycleBin,
-    /// `battery/<i>`: one battery by its place in the driver's list (SPEC §9.14).
+    /// `battery/<i>`: one battery by its place in the driver's list.
     Battery(u32),
-    /// `batteries`: the batteries' names, for Settings' battery lists (SPEC §8.2).
+    /// `batteries`: the batteries' names, for Settings' battery lists.
     Batteries,
-    /// `wifi`: the Wi-Fi connection (SPEC §9.15).
+    /// `wifi`: the Wi-Fi connection.
     Wifi,
 }
 
 /// Something that changed before the topics it concerns are due again: an OS notification or
-/// an action of a sensor. The sampler reads those topics at once (SPEC §4.4).
+/// an action of a sensor. The sampler reads those topics at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Change {
     /// A drive arrived or went, or a medium was inserted or removed.
@@ -43,12 +43,12 @@ pub enum Change {
     Power,
     /// Wi-Fi connected, disconnected, roamed, or its radio was switched.
     Wifi,
-    /// A slow reading came after the sampler stopped waiting for it (SPEC §4.4): the topics it
+    /// A slow reading came after the sampler stopped waiting for it: the topics it
     /// belongs to are read again at once and take it.
     Answered(Slow),
 }
 
-/// The readings done on worker threads, because they can stall (SPEC §4.4).
+/// The readings done on worker threads, because they can stall.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slow {
     Disks,
@@ -78,9 +78,9 @@ impl Topic {
     }
 }
 
-/// The drive list is read this often besides when drives arrive or go (SPEC §4.4).
+/// The drive list is read this often besides when drives arrive or go.
 pub const VOLUMES_EVERY: Duration = Duration::from_secs(60);
-/// Batteries are read this often besides when the power status changes (SPEC §9.14).
+/// Batteries are read this often besides when the power status changes.
 pub const BATTERY_EVERY: Duration = Duration::from_secs(10);
 
 /// A sensor's wish to receive `topic` at least every `interval`.
@@ -108,12 +108,12 @@ pub enum Sample {
     /// read.
     Batteries(Vec<String>),
     Wifi(WifiStatus),
-    /// `{ error }`: the topic failed to read a few times in a row; the platform's message
-    /// (SPEC §14.2). Sensors draw inactive and show it in their hint until a reading succeeds.
+    /// `{ error }`: the topic failed to read a few times in a row; the platform's message.
+    /// Sensors draw inactive and show it in their hint until a reading succeeds.
     Error(String),
 }
 
-/// `battery/<i>`: one battery and the power line (SPEC §9.14).
+/// `battery/<i>`: one battery and the power line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BatterySample {
     /// The battery exists; otherwise only `ac_online` means something.
@@ -136,7 +136,7 @@ pub struct PathSample {
     pub kind: PathKind,
 }
 
-/// `cpu`: the processors' load, each 0–100 (SPEC Appendix A).
+/// `cpu`: the processors' load, each 0–100.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CpuSample {
     /// The busy share, as Task Manager shows it.
@@ -151,7 +151,7 @@ pub struct CpuSample {
     pub logical: u32,
 }
 
-/// `memory`: physical memory, bytes (SPEC Appendix A).
+/// `memory`: physical memory, bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct MemorySample {
     pub total: u64,
@@ -162,7 +162,7 @@ pub struct MemorySample {
     pub load: f32,
 }
 
-/// `swap`: all page files together, bytes (SPEC Appendix A); a `total` of 0 means there is
+/// `swap`: all page files together, bytes; a `total` of 0 means there is
 /// no page file.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SwapSample {
@@ -172,7 +172,7 @@ pub struct SwapSample {
     pub load: f32,
 }
 
-/// `disk/<X:\>`: a volume's size and free space, bytes (SPEC Appendix A).
+/// `disk/<X:\>`: a volume's size and free space, bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DiskSample {
     /// The drive exists and has a medium; otherwise the sizes are 0.
@@ -181,7 +181,7 @@ pub struct DiskSample {
     pub free: u64,
 }
 
-/// `net/<id|auto>`: a network interface's traffic (SPEC Appendix A).
+/// `net/<id|auto>`: a network interface's traffic.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct NetSample {
     /// The interface exists (for Automatic: something carries the default route); otherwise
@@ -207,7 +207,7 @@ pub struct NetSample {
 pub struct UptimeSample {
     pub boot_unix_ms: i64,
     pub uptime_secs: u64,
-    /// When it was read: a subscriber may get it later, as a catch-up (SPEC §4.4).
+    /// When it was read: a subscriber may get it later, as a catch-up.
     pub read_at: Instant,
 }
 

@@ -1,4 +1,4 @@
-//! Drops (SPEC §6.3, §9.16, §9.19): the dragged items as the bar classified them, the sensor a
+//! Drops: the dragged items as the bar classified them, the sensor a
 //! drop onto the bar creates for each, what a sensor would do with them, and the wording of
 //! the floating drop hint.
 
@@ -17,7 +17,7 @@ pub enum Dropped {
     /// A drive root, `E:\`.
     Drive(String),
     /// A file or folder; which one is asked only when a drop makes a sensor for it, so a drag
-    /// touches no drive (SPEC §6.3).
+    /// touches no drive.
     Path(String),
     /// An `http`, `https` or `ftp` address, with the link's text.
     Url { url: String, title: Option<String> },
@@ -33,7 +33,7 @@ impl Dropped {
     }
 }
 
-/// The sensor a drop on the bar creates for `dropped` (SPEC §6.3): its type and props; `kind`
+/// The sensor a drop on the bar creates for `dropped`: its type and props; `kind`
 /// says what a path names, and a missing one makes nothing. The props are the types' own keys,
 /// which a test checks through `ops::add`.
 pub fn new_sensor(
@@ -84,7 +84,7 @@ impl DropAction {
     };
 }
 
-/// The longest source text a drop hint shows (SPEC §9.19).
+/// The longest source text a drop hint shows.
 const LABEL_MAX: usize = 100;
 
 /// What a hint calls `item`: a file or folder by its name, a link by its address, at most 100
@@ -103,7 +103,7 @@ pub fn label(item: &Dropped) -> String {
     }
 }
 
-/// The floating hint for `items` (SPEC §9.19): `Move 'report.pdf' to 'Downloads'`, `Copy 3
+/// The floating hint for `items`: `Move 'report.pdf' to 'Downloads'`, `Copy 3
 /// items to 'Downloads'`, `Delete 2 items`; `key` names the message (`drop.move` …), whose
 /// `one` form names the item.
 pub fn hint(key: &str, items: &[Dropped], folder: &str) -> String {
@@ -115,7 +115,7 @@ pub fn hint(key: &str, items: &[Dropped], folder: &str) -> String {
     )
 }
 
-/// The file operation for a drop into a folder (SPEC §9.19, as Explorer does it): Alt makes
+/// The file operation for a drop into a folder (as Explorer does it): Alt makes
 /// shortcuts, Ctrl copies, Shift moves; otherwise items on the folder's volume move and others
 /// are copied. What the source does not allow is not done; `None` when nothing is allowed.
 pub fn file_op(modifiers: Modifiers, same_volume: bool, allowed: DropEffects) -> Option<FileOp> {
@@ -134,7 +134,7 @@ pub fn file_op(modifiers: Modifiers, same_volume: bool, allowed: DropEffects) ->
     preferred.into_iter().find(|&op| allows(op))
 }
 
-/// The file name of an Internet shortcut for `url` (SPEC §9.19): the page's title, or else the
+/// The file name of an Internet shortcut for `url`: the page's title, or else the
 /// address with `:/\&+?*=.` replaced by `-`; characters Windows does not allow in names are
 /// replaced too. Without `.url`.
 pub fn url_file_stem(url: &str, title: Option<&str>) -> String {

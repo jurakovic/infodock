@@ -1,4 +1,4 @@
-//! Toast notifications (SPEC §7.4) through WinRT's `ToastNotificationManager`, as the app's
+//! Toast notifications through WinRT's `ToastNotificationManager`, as the app's
 //! AppUserModelID. The installer's Start Menu shortcut carries the id; for the portable build
 //! the id is also registered under `HKCU\Software\Classes\AppUserModelId`, which is what lets an
 //! app without a shortcut show toasts.

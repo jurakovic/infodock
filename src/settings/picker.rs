@@ -1,4 +1,4 @@
-//! The sensor picker (SPEC §6.6), opened on `new?zone=…&index=…` or `new?target=<id>`: the
+//! The sensor picker, opened on `new?zone=…&index=…` or `new?target=<id>`: the
 //! sensor types that can run here, grouped by category and sorted by name, a search box, and
 //! for a target sensor an Insert Before / After choice. Adding a sensor opens its properties;
 //! cancelling those removes it again (`properties.rs`).
@@ -28,7 +28,7 @@ pub struct Entry {
     pub description: String,
 }
 
-/// The types that can run on `platform`, by category and then name (SPEC §6.6), with any
+/// The types that can run on `platform`, by category and then name, with any
 /// note a type adds to its description on this machine.
 pub fn entries(registry: &Registry, platform: &dyn Platform) -> Vec<Entry> {
     let caps = platform.capabilities();
@@ -111,7 +111,7 @@ pub fn stepped(lines: &[i32], selected: i32, up: bool) -> i32 {
 }
 
 /// Where a `new?zone=…&index=…&target=…` route inserts. Without a target or index: the end of
-/// the left or center zone, the start of the right one (SPEC §6.6).
+/// the left or center zone, the start of the right one.
 pub fn place(
     layout: &Layout,
     zone: Option<Zone>,

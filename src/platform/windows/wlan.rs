@@ -1,4 +1,4 @@
-//! Wi-Fi through the WLAN API (SPEC §9.15, Appendix A). `wlanapi.dll` is loaded only when it is
+//! Wi-Fi through the WLAN API. `wlanapi.dll` is loaded only when it is
 //! used: it is missing on Windows editions without the wireless LAN feature, and a static import
 //! would keep Infodock from starting there. Only its types come from the `windows` crate; its
 //! functions are looked up in the loaded library.
@@ -112,7 +112,7 @@ impl Drop for Library {
 }
 
 /// Whether the WLAN service runs and knows at least one wireless interface (the `wifi`
-/// capability, SPEC §4.6).
+/// capability).
 pub fn has_interface() -> bool {
     let Some(lib) = Library::load() else {
         return false;
@@ -439,7 +439,7 @@ impl WinWifi {
     }
 }
 
-/// Whether Windows lets this app read the network name without asking (SPEC §9.15): always
+/// Whether Windows lets this app read the network name without asking: always
 /// before 24H2; then when location access is allowed, as `AppCapability` says without asking,
 /// or where it cannot tell, as the privacy settings' answers say.
 fn location_allowed() -> bool {

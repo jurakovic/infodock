@@ -1,4 +1,4 @@
-//! Windows implementation of the platform layer (SPEC §4.6, Appendix A).
+//! Windows implementation of the platform layer (INTERNALS.md, Platform layer).
 
 pub mod appbar;
 mod autostart;
@@ -325,7 +325,7 @@ impl Platform for WindowsPlatform {
     }
 }
 
-/// The accent colour from Windows' colour API (SPEC §12.1), which has it where the DWM's
+/// The accent colour from Windows' colour API, which has it where the DWM's
 /// registry value may not (seen 0 with the default blue on Windows 11).
 fn accent() -> Option<Color> {
     use windows::UI::ViewManagement::{UIColorType, UISettings};

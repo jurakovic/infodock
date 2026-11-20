@@ -1,4 +1,4 @@
-//! The Settings window (SPEC §10.7), a Slint window on the main thread. It is created when opened
+//! The Settings window, a Slint window on the main thread. It is created when opened
 //! and dropped when closed, so a closed Settings window costs no memory.
 //!
 //! Controls bind two-way to the `SettingsState` global. Each change is saved as a settings patch
@@ -42,7 +42,7 @@ use window::{pick, with_open, with_open_mut};
 /// The page with the hotkey.
 const GENERAL_PAGE: i32 = 0;
 /// How long after Settings opens or closes the app logs its memory: as long as CI's memory
-/// check waits before it measures (SPEC §14.1).
+/// check waits before it measures.
 const MEMORY_LOG_DELAY: Duration = Duration::from_secs(10);
 
 thread_local! {
@@ -66,20 +66,20 @@ struct Open {
     picker: Option<picker::PickerState>,
     /// The skin gallery on the Appearance page.
     gallery: appearance::Gallery,
-    /// The colour scheme the native window was given (SPEC §10.3).
+    /// The colour scheme the native window was given.
     scheme: Option<crate::config::model::ColorScheme>,
-    /// The welcome page (SPEC §11.5).
+    /// The welcome page.
     welcome: welcome::Welcome,
-    /// Where the window is when neither maximized nor minimized, kept as it moves (SPEC §10.7).
+    /// Where the window is when neither maximized nor minimized, kept as it moves.
     place: Option<WindowPlace>,
     /// Why *Restore defaults* could not take the default hotkey (another app holds it), shown
-    /// under the hotkey until the page changes or a hotkey is chosen (SPEC §10.7).
+    /// under the hotkey until the page changes or a hotkey is chosen.
     hotkey_refused: Option<String>,
 }
 
 /// Why a change was not saved.
 enum SaveError {
-    /// The hotkey could not be registered; nothing was saved (SPEC §6.5).
+    /// The hotkey could not be registered; nothing was saved.
     Hotkey(String),
     Config(ConfigError),
 }
@@ -133,9 +133,9 @@ pub fn open(app: &Arc<App>, route: &str) {
     focus(&window);
 }
 
-/// A second launch (SPEC §4.1): brings an open Settings window to the front on the page it shows,
+/// A second launch: brings an open Settings window to the front on the page it shows,
 /// or opens Settings on General. Leaving the page would end a first run shown on the welcome
-/// page (§11.5). Main thread only.
+/// page. Main thread only.
 pub fn activate(app: &Arc<App>) {
     match window::handle() {
         Some(window) => {
@@ -167,7 +167,7 @@ pub fn batteries_changed(names: Vec<String>) {
 }
 
 /// The OS appearance changed (bar thread): the Appearance page shows whether a material can be
-/// chosen now (SPEC §10.3). A switch between light and dark also reaches the window itself.
+/// chosen now. A switch between light and dark also reaches the window itself.
 pub fn appearance_changed(appearance: crate::platform::OsAppearance) {
     let queued = slint::invoke_from_event_loop(move || appearance::os_changed(appearance));
     if queued.is_err() {
@@ -229,7 +229,7 @@ fn create(app: &Arc<App>) -> Result<ui::SettingsWindow, slint::PlatformError> {
     Ok(window)
 }
 
-/// Puts a new window where Settings was closed (SPEC §10.7), before it is first shown: its size
+/// Puts a new window where Settings was closed, before it is first shown: its size
 /// and maximized state, and its place while a monitor still shows its title bar.
 fn restore_place(
     window: &ui::SettingsWindow,
@@ -247,7 +247,7 @@ fn restore_place(
     w.set_maximized(place.maximized);
 }
 
-/// The window's place while it is neither maximized nor minimized (SPEC §10.7).
+/// The window's place while it is neither maximized nor minimized.
 fn normal_place(w: &slint::winit_030::winit::window::Window) -> Option<WindowPlace> {
     if w.is_maximized() || w.is_minimized().unwrap_or(false) {
         return None;
@@ -263,7 +263,7 @@ fn normal_place(w: &slint::winit_030::winit::window::Window) -> Option<WindowPla
     })
 }
 
-/// Saves where the open window is (SPEC §10.7): the place it has, or last had, when neither
+/// Saves where the open window is: the place it has, or last had, when neither
 /// maximized nor minimized, and whether it is maximized (as it was before being minimized).
 fn remember_place(app: &Arc<App>) {
     use slint::winit_030::WinitWindowAccessor;
@@ -292,8 +292,8 @@ pub fn quitting(app: &Arc<App>) {
     remember_place(app);
 }
 
-/// Closing saves where the window is (SPEC §10.7), drops an open properties form (§6.7) and
-/// leaves the welcome page (§11.5), then drops the window once it is hidden, which frees what
+/// Closing saves where the window is, drops an open properties form and
+/// leaves the welcome page, then drops the window once it is hidden, which frees what
 /// it allocated.
 fn closing(app: &Arc<App>) {
     remember_place(app);
@@ -306,7 +306,7 @@ fn closing(app: &Arc<App>) {
 }
 
 /// Logs the process's memory [`MEMORY_LOG_DELAY`] after Settings opened (`opened`) or closed,
-/// unless it was closed or opened again meanwhile (SPEC §14.1): a log from real hardware shows
+/// unless it was closed or opened again meanwhile: a log from real hardware shows
 /// what Settings costs there, and whether closing it gives the memory back.
 fn log_memory_later(app: &Arc<App>, opened: bool) {
     let planned = OPENED_OR_CLOSED.with(|count| {
@@ -547,7 +547,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
             .unwrap_or_default()
     };
 
-    // Sensors (SPEC §10.4)
+    // Sensors
     let sensors = &settings.sensors;
     state.set_sensor_text_color(sensors.text_color.as_str().into());
     // Both font settings share one list; a configured family that is not installed is added.
@@ -574,7 +574,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_inactive_color(sensors.inactive_color.as_str().into());
     state.set_inactive_opacity(sensors.inactive_opacity as f32);
 
-    // Popups (SPEC §10.5)
+    // Popups
     let popups = &settings.popups;
     let background = popups
         .background
@@ -598,7 +598,7 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_show_delay(popups.show_delay_ms as f32);
     state.set_hide_delay(popups.hide_delay_ms as f32);
 
-    // Applications (SPEC §10.6)
+    // Applications
     state.set_calendar_app(settings.apps.calendar.as_str().into());
     state.set_task_manager_app(settings.apps.task_manager.as_str().into());
 
@@ -607,13 +607,13 @@ fn fill(open: &mut Open, app: &App, settings: &Settings) {
 }
 
 /// Saves a settings patch and shows the outcome. A changed hotkey is registered first; if that
-/// fails, nothing is saved (SPEC §6.5).
+/// fails, nothing is saved.
 fn save(app: &Arc<App>, patch: Value) {
     let result = apply(app, &patch);
     report(app, &result);
 }
 
-/// Puts `page`'s settings back to their defaults (SPEC §10.7). When the default hotkey cannot
+/// Puts `page`'s settings back to their defaults. When the default hotkey cannot
 /// be registered (another app holds it), the current one stays, with the reason under it until
 /// the page changes, and the page's other settings are restored all the same.
 fn restore_defaults(app: &Arc<App>, page: usize) {
@@ -656,7 +656,7 @@ fn report(app: &Arc<App>, result: &Result<Config, SaveError>) {
 }
 
 /// Saves `value` at `path` if that changes what is in effect, so a colour box losing the focus
-/// or a slider clicked without moving leaves a theme default `null` (SPEC §11.2).
+/// or a slider clicked without moving leaves a theme default `null`.
 fn save_change(app: &Arc<App>, path: &str, value: Value) {
     let os_dark = app.platform.appearance().dark;
     if model::changes(&app.store.get().settings, os_dark, path, &value) {
@@ -686,12 +686,12 @@ fn apply(app: &App, patch: &Value) -> Result<Config, SaveError> {
 }
 
 /// Handles the native window's events: while `recording-hotkey` is set, the next key pressed
-/// with its modifiers becomes the hotkey (SPEC §6.5); Esc, leaving the window or the General
+/// with its modifiers becomes the hotkey; Esc, leaving the window or the General
 /// page cancels. The keys are read from winit as physical keys, so the keyboard layout does not
 /// matter (Ctrl+Alt is AltGr on many layouts). A combination another app holds never reaches
 /// the window, so the platform watches for those meanwhile ([`taken_hotkey`],
 /// [`follow_recording`]). When the OS switches between light and dark, what follows it shows it
-/// (the Fluent palette follows by itself, SPEC §10.3).
+/// (the Fluent palette follows by itself).
 fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     use slint::winit_030::winit::event::{ElementState, WindowEvent};
     use slint::winit_030::winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -734,7 +734,7 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
                     fill(open, &app, &settings);
                 });
             }
-            // The window's place is kept for when it closes (SPEC §10.7); a maximized or
+            // The window's place is kept for when it closes; a maximized or
             // minimized window keeps the one it had before.
             WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
                 let place = window.window().with_winit_window(normal_place).flatten();
@@ -793,7 +793,7 @@ fn watch_window_events(window: &ui::SettingsWindow, app: &Arc<App>) {
     });
 }
 
-/// When Settings paints its whole window again (SPEC §10.7). Slint's software renderer paints
+/// When Settings paints its whole window again. Slint's software renderer paints
 /// and shows only what changed, and believes the window still shows the rest. Windows drops a
 /// minimized window's pixels, and a frame drawn meanwhile (any change of the page) leaves
 /// nothing to paint on the restore: the window came back black, its controls showing one by one
@@ -820,7 +820,7 @@ impl Restore {
     }
 }
 
-/// Starts or ends the watch for combinations other apps hold (SPEC §6.5), so that it runs
+/// Starts or ends the watch for combinations other apps hold, so that it runs
 /// exactly while a hotkey is recorded on the General page. Started late, it misses a
 /// combination pressed before it: that one goes to the app that holds it.
 fn follow_recording(
@@ -846,7 +846,7 @@ fn follow_recording(
     };
 }
 
-/// A combination someone holds was pressed while recording (SPEC §6.5): it ends the recording
+/// A combination someone holds was pressed while recording: it ends the recording
 /// as a combination the window saw would, so registering it fails with *Another app already
 /// uses …* and the previous hotkey stays (or, for Infodock's own hotkey, it is kept). Runs on
 /// the keyboard watch's thread, so the work goes to the event loop.
@@ -885,7 +885,7 @@ fn taken_hotkey(
 }
 
 /// Registers a recorded hotkey, then saves it; if it cannot be registered, nothing is saved and
-/// the previous hotkey stays (SPEC §6.5). Registering first also retries a saved hotkey that
+/// the previous hotkey stays. Registering first also retries a saved hotkey that
 /// failed at start-up.
 fn apply_hotkey(app: &Arc<App>, accelerator: &str) {
     with_open_mut(|open| open.hotkey_refused = None);

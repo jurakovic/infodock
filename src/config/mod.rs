@@ -1,5 +1,5 @@
 //! Configuration: typed model, persistence, migrations, settings patches, exchange files and
-//! the legacy XML format (SPEC §10–11).
+//! the legacy XML format.
 
 pub mod exchange;
 pub mod legacy;
@@ -13,7 +13,7 @@ pub use store::ConfigStore;
 
 use crate::i18n::{t, t_args};
 
-/// Why a config operation failed (SPEC §4.5): a stable [`code`](Self::code) and a message for
+/// Why a config operation failed: a stable [`code`](Self::code) and a message for
 /// the user in the UI's language; the `Display` text is English, for the log.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -41,7 +41,7 @@ pub enum ConfigError {
 }
 
 impl ConfigError {
-    /// The stable code (SPEC §4.5): `io`, `json`, `notFound`, `unknownType`,
+    /// The stable code: `io`, `json`, `notFound`, `unknownType`,
     /// `unknownSettings` or `invalid`.
     pub fn code(&self) -> &'static str {
         match self {
@@ -54,7 +54,7 @@ impl ConfigError {
         }
     }
 
-    /// What went wrong, for the user (SPEC §13).
+    /// What went wrong, for the user.
     pub fn message(&self) -> String {
         match self {
             Self::Io(e) => t_args("config.error.io", &[("reason", &e.to_string())]),

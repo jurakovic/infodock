@@ -1,6 +1,6 @@
-//! SPEC §14.4: every control on every Settings page has an accessible name that tells it apart,
-//! and Tab reaches each one in reading order. The test walks the window's elements with Slint's
-//! testing API and follows the keyboard focus as Tab moves it.
+//! Every control on every Settings page has an accessible name that tells it apart,
+//! and Tab reaches each one in reading order (INTERNALS.md, Accessibility). The test walks the
+//! window's elements with Slint's testing API and follows the keyboard focus as Tab moves it.
 
 use std::sync::Arc;
 
@@ -269,7 +269,7 @@ fn every_control_has_a_name_and_tab_reaches_it_in_reading_order() {
         problems.extend(found);
         assert!(stops.len() > 2, "{route}: Tab stops at {stops:?}");
 
-        // Lists of choices say which one is chosen, and items their place (SPEC §14.4).
+        // Lists of choices say which one is chosen, and items their place.
         let t = crate::i18n::t;
         if route == "sensors" {
             let cpu = element(&window, AccessibleRole::ListItem, "CPU Graph");

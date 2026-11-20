@@ -1,5 +1,5 @@
-//! Dates written with the locale's date patterns, for the Date and Time sensors (SPEC §8.6,
-//! §9.4–9.5). Pure; the dates themselves are the platform's (`platform::time`).
+//! Dates written with the locale's date patterns, for the Date and Time sensors.
+//! Pure; the dates themselves are the platform's (`platform::time`).
 
 use crate::platform::Locale;
 use crate::platform::time::Date;
@@ -63,7 +63,7 @@ fn genitive(pieces: &[Piece], at: usize) -> bool {
         || pieces[at + 1..].iter().find_map(day) == Some(true)
 }
 
-/// `date` written with `pattern`, a date pattern in the Windows picture format (SPEC §8.6):
+/// `date` written with `pattern`, a date pattern in the Windows picture format:
 /// `d`/`dd` the day, `ddd`/`dddd` the weekday's short or long name, `M`/`MM` the month,
 /// `MMM`/`MMMM` its short or long name (declined next to a day number, see [`genitive`]),
 /// `y`/`yy` the year's last two digits, `yyy`/`yyyy` the full year, `'…'` literal text (`''` a

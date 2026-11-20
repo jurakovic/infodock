@@ -1,6 +1,6 @@
-//! The locale from Windows NLS (SPEC §8.6): `GetLocaleInfoEx` for names, date patterns, the hour
+//! The locale from Windows NLS: `GetLocaleInfoEx` for names, date patterns, the hour
 //! cycle, the first day of the week and the decimal separator; and text in ANSI code pages for
-//! the legacy import (§11.4).
+//! the legacy import.
 
 use windows::Win32::Globalization::{
     CP_ACP, GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK, LOCALE_RETURN_GENITIVE_NAMES, LOCALE_S1159,
@@ -34,7 +34,7 @@ pub fn decode(bytes: &[u8], code_page: Option<u32>) -> Option<String> {
 }
 
 /// Reads `which` from Windows: the user's regional format for `System`, English (United
-/// States) for `Ui` (the only UI language in v1). Values it cannot read stay as in en-US.
+/// States) for `Ui` (the only UI language). Values it cannot read stay as in en-US.
 pub fn read(which: DateLocale) -> Locale {
     match which {
         // LOCALE_NAME_USER_DEFAULT
@@ -69,7 +69,7 @@ fn read_named(name: PCWSTR) -> Locale {
     fill(&mut locale.weekdays_short, LOCALE_SABBREVDAYNAME1);
     fill(&mut locale.months, LOCALE_SMONTHNAME1);
     fill(&mut locale.months_short, LOCALE_SABBREVMONTHNAME1);
-    // Languages without declined names answer with the plain ones (SPEC §8.6).
+    // Languages without declined names answer with the plain ones.
     locale.months_genitive = locale.months.clone();
     locale.months_short_genitive = locale.months_short.clone();
     fill(
@@ -105,7 +105,7 @@ fn read_named(name: PCWSTR) -> Locale {
     locale
 }
 
-/// Compares two names as Explorer sorts them (SPEC §9.19): in the user's locale, ignoring case,
+/// Compares two names as Explorer sorts them: in the user's locale, ignoring case,
 /// digits by their value. Falls back to the platform-neutral order if Windows cannot compare.
 pub fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
@@ -172,7 +172,7 @@ mod tests {
         String::from_utf16_lossy(&buffer[..len - 1])
     }
 
-    /// Month names decline where `GetDateFormatEx` declines them (SPEC §8.6): next to a day
+    /// Month names decline where `GetDateFormatEx` declines them: next to a day
     /// number, in long and short form, and stay as they are named elsewhere.
     #[test]
     fn dates_are_written_as_windows_writes_them() {
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn decodes_ansi_code_pages() {
-        // A Croatian title in Windows-1250 (SPEC §11.4).
+        // A Croatian title in Windows-1250.
         assert_eq!(
             decode(b"Ra\xE8unalo \x9A\xF0", Some(1250)).as_deref(),
             Some("Računalo šđ")

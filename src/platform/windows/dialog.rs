@@ -1,6 +1,6 @@
-//! Native dialogs (SPEC §6.4): confirmations, questions and messages with `TaskDialogIndirect`
+//! Native dialogs: confirmations, questions and messages with `TaskDialogIndirect`
 //! (common controls 6, enabled by the application manifest), and the colour dialog
-//! (`ChooseColorW`, §10.7).
+//! (`ChooseColorW`).
 
 use std::mem::size_of;
 use std::sync::{Mutex, PoisonError};

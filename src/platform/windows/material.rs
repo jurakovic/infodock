@@ -1,9 +1,9 @@
-//! The material behind the bar's translucent pixels (SPEC §12.2).
+//! The material behind the bar's translucent pixels.
 //!
 //! Acrylic is the accent policy (`SetWindowCompositionAttribute` with
 //! `ACCENT_ENABLE_ACRYLICBLURBEHIND`, Windows 10 1803 and later), as taskbars use it. Windows
 //! 11's system backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`) draws its solid fallback while its window
-//! is inactive, and the bar never activates (§5.3), so its Acrylic showed as an opaque grey.
+//! is inactive, and the bar never activates, so its Acrylic showed as an opaque grey.
 //! Mica exists only as a system backdrop (Windows 11 22H2 and later): the bar's window
 //! procedure draws its frame as active whenever asked (`WM_NCACTIVATE`, `appbar.rs`), and
 //! applying Mica asks once, since a window that never activates is never asked. Mica is the
@@ -28,7 +28,7 @@ use crate::platform::Material;
 const ACCENT_POLICY: u32 = 19;
 const ACCENT_DISABLED: u32 = 0;
 const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
-/// The acrylic's tint, `0xAABBGGRR`: next to none, as the bar draws its own (§12.2); a zero
+/// The acrylic's tint, `0xAABBGGRR`: next to none, as the bar draws its own; a zero
 /// alpha turns the acrylic off on some builds.
 const UNTINTED: u32 = 0x0100_0000;
 

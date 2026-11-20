@@ -1,4 +1,4 @@
-//! The tray menu (SPEC §4.1, §6.5): Show/Hide bar · Lock · Popups · Settings… · Quit. Built from
+//! The tray menu: Show/Hide bar · Lock · Popups · Settings… · Quit. Built from
 //! the current state each time it opens, so labels and check marks are always current.
 
 use crate::config::model::Settings;

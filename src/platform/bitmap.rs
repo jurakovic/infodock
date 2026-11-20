@@ -1,4 +1,4 @@
-//! Bitmaps (SPEC §4.6): decoded images as premultiplied RGBA in memory. They are plain data, so
+//! Bitmaps: decoded images as premultiplied RGBA in memory. They are plain data, so
 //! worker threads can decode them (icons, images) and hand them to the bar thread. Raster files
 //! are decoded by the platform (WIC on Windows); SVG is rasterised with `resvg` on every OS.
 
@@ -63,7 +63,7 @@ impl Bitmap {
         Self::from_premultiplied(width, height, rgba)
     }
 
-    /// Wraps the BGRA pixels of a shell icon (SPEC §4.6 `Icons`). The shell hands out
+    /// Wraps the BGRA pixels of a shell icon (`Platform::shell_icon`). The shell hands out
     /// premultiplied alpha, but some icons come straight (a colour above its alpha gives them
     /// away) and old ones without alpha (all 0), which are opaque.
     pub fn from_shell_bgra(width: u32, height: u32, mut bgra: Vec<u8>) -> Option<Self> {
@@ -119,7 +119,7 @@ impl Bitmap {
         rgba
     }
 
-    /// The bitmap tinted with `tint` (SPEC §12.3): each pixel becomes its luminance
+    /// The bitmap tinted with `tint`: each pixel becomes its luminance
     /// `L = (0.299 R + 0.587 G + 0.114 B) / 255` times the tint colour; alpha is kept. Because
     /// the formula is linear in R, G and B, it applies to premultiplied pixels unchanged.
     pub fn tinted(&self, tint: Color) -> Self {
@@ -145,7 +145,7 @@ impl fmt::Debug for Bitmap {
     }
 }
 
-/// The image formats Infodock reads (SPEC §4.6, §9.2).
+/// The image formats Infodock reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
     Png,

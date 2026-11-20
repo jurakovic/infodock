@@ -1,11 +1,11 @@
-//! The pointer on the bar (SPEC §5.1, §6.1–6.2): presses and clicks, the reorder drag,
+//! The pointer on the bar: presses and clicks, the reorder drag,
 //! moving and resizing a floating bar, and which sensor the pointer is over.
 
 use super::*;
 
 impl BarLogic {
     /// A press on the bar. A left press on a sensor dims it until release, if it can lead to a
-    /// click or a drag (SPEC §6.1); the right button's menu comes on release, and middle clicks
+    /// click or a drag; the right button's menu comes on release, and middle clicks
     /// are reserved.
     pub(super) fn pointer_down(
         &mut self,
@@ -22,8 +22,8 @@ impl BarLogic {
         if button != PointerButton::Left {
             return;
         }
-        // Any click closes the hint (SPEC §7.1) and an open popup, which keeps the focus since
-        // the bar never takes it (§7.2).
+        // Any click closes the hint and an open popup, which keeps the focus since
+        // the bar never takes it.
         self.dismiss_hint(window);
         let had_popup = self.popups.owner().map(str::to_owned);
         self.close_popup(window);
@@ -60,7 +60,7 @@ impl BarLogic {
         });
     }
 
-    /// The end of a floating, unlocked bar under `at`, by which it is resized (SPEC §5.1).
+    /// The end of a floating, unlocked bar under `at`, by which it is resized.
     pub(super) fn resize_end(&self, at: PointF) -> Option<resize::End> {
         if self.settings.bar.mode != BarMode::Floating || self.settings.locked {
             return None;
@@ -156,7 +156,7 @@ impl BarLogic {
         self.set_hovered(window, over.clone());
         self.set_cursor(window, self.pointer_cursor(resizes));
         // No hints over an open popup; the hover state waits, so the sensor whose popup closes
-        // stays without its hint while the pointer remains over it (SPEC §7.1).
+        // stays without its hint while the pointer remains over it.
         if self.popups.open.is_some() {
             return;
         }
@@ -168,8 +168,8 @@ impl BarLogic {
         self.apply_hint(window, step);
     }
 
-    /// The pointer's look over the bar: the resize cursor at a floating bar's ends (SPEC §5.1),
-    /// the hand over a sensor a plain click reaches (§6.1; the rule of the hint's "Click to …"
+    /// The pointer's look over the bar: the resize cursor at a floating bar's ends,
+    /// the hand over a sensor a plain click reaches (the rule of the hint's "Click to …"
     /// line), also while it is pressed, and the arrow elsewhere and while dragging.
     fn pointer_cursor(&self, resizes: bool) -> PopupCursor {
         let hand = self.moving.is_none()
@@ -187,7 +187,7 @@ impl BarLogic {
     }
 
     /// Starts dragging `id` from `source`; the sensor stays dimmed in place and a placer shows
-    /// where it would go (SPEC §6.2). Hints stay closed meanwhile.
+    /// where it would go. Hints stay closed meanwhile.
     pub(super) fn start_drag(
         &mut self,
         window: &dyn BarWindow,
@@ -251,7 +251,7 @@ impl BarLogic {
         self.arm_timer(window);
     }
 
-    /// Stores where a moved floating bar is now (SPEC §5.1).
+    /// Stores where a moved floating bar is now.
     pub(super) fn end_moving(&mut self, window: &dyn BarWindow) {
         let Some(moving) = self.moving.take() else {
             return;
@@ -269,7 +269,7 @@ impl BarLogic {
         }
     }
 
-    /// Stores the width and place of a resized floating bar (SPEC §5.1); the *Width* setting
+    /// Stores the width and place of a resized floating bar; the *Width* setting
     /// follows.
     pub(super) fn end_resizing(&mut self, window: &dyn BarWindow) {
         let Some(resizing) = self.resizing.take() else {
@@ -327,20 +327,20 @@ impl BarLogic {
             return;
         }
         // The press that closed this sensor's popup does not open it again, nor does a click
-        // right after its popup closed by losing the focus (SPEC §7.2).
+        // right after its popup closed by losing the focus.
         if press.closed_popup || self.popups.guarded(&press.id, Instant::now()) {
             return;
         }
         self.click(window, &press.id, modifiers.alt);
     }
 
-    /// Clicks sensor `id`, with the pointer or the keyboard (SPEC §6.1, §14.4).
+    /// Clicks sensor `id`, with the pointer or the keyboard.
     pub(super) fn click(&mut self, window: &dyn BarWindow, id: &str, alt: bool) {
         let env = sensor_env!(self, alt);
         match self.sensors.click(id, &env) {
             ClickResult::None => {}
             ClickResult::Handled => window.invalidate(),
-            // Asked first (SPEC §9.21); the sensor acts only if the user agrees.
+            // Asked first; the sensor acts only if the user agrees.
             ClickResult::Confirm(question) => {
                 if window.confirm(&question.message, &question.action)
                     && self.sensors.confirmed(id, &env)
@@ -350,7 +350,7 @@ impl BarLogic {
             }
             ClickResult::Popup(popup) => self.open_popup(window, id, popup),
         }
-        // A click may change what a sensor shows for good (SPEC §9.14).
+        // A click may change what a sensor shows for good.
         self.store_states();
     }
 }

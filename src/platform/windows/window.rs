@@ -1,10 +1,10 @@
-//! The bar thread and the native bar window (SPEC §4.1, §4.6): window class, window procedure,
+//! The bar thread and the native bar window: window class, window procedure,
 //! message loop, painting and material. The bar logic sees the window through [`BarWindow`] and
 //! receives its events through [`BarHandler`].
 //!
 //! Transparency: the window keeps its redirection surface and enables per-pixel alpha with
-//! `DwmEnableBlurBehindWindow` and an empty blur region (the same setup the M0 webview bar had
-//! through tao), so the material (`material.rs`) shows through wherever the bar is drawn
+//! `DwmEnableBlurBehindWindow` and an empty blur region, so
+//! the material (`material.rs`) shows through wherever the bar is drawn
 //! translucent.
 //!
 //! Re-entrancy: Win32 calls made by the handler can dispatch messages to this window again
@@ -124,7 +124,7 @@ struct WindowState {
     /// Rendering failed once; later failures are logged at debug level.
     render_failed: Cell<bool>,
     /// A frame reached the window; the first one is logged with the time since the process
-    /// started, which CI checks against the start budget (SPEC §14.1).
+    /// started, which CI checks against the start budget.
     presented: Cell<bool>,
     /// `TrackMouseEvent` asked for `WM_MOUSELEAVE`.
     tracking_leave: Cell<bool>,
@@ -136,12 +136,12 @@ struct WindowState {
     popup: OnceCell<std::result::Result<PopupWindow, ()>>,
     /// The shadow band window; created when a band is first shown.
     band: OnceCell<std::result::Result<BandWindow, ()>>,
-    /// The UI Automation provider (SPEC §14.4); created when a client first asks for it.
+    /// The UI Automation provider; created when a client first asks for it.
     uia: OnceCell<Uia>,
 }
 
-/// The window of another app that had the foreground before the bar took it for the keyboard
-/// (SPEC §14.4); 0 for none. Bar thread only.
+/// The window of another app that had the foreground before the bar took it for the keyboard;
+/// 0 for none. Bar thread only.
 static PREVIOUS: AtomicIsize = AtomicIsize::new(0);
 
 /// Remembers the foreground window before the bar takes it (the hotkey's raise, then its
@@ -202,12 +202,12 @@ impl WindowState {
                 return LRESULT(0);
             }
             WM_ERASEBKGND => return LRESULT(1),
-            // Handled, so the class cursor does not replace a resize cursor (SPEC §5.1).
+            // Handled, so the class cursor does not replace a resize cursor.
             WM_SETCURSOR if (lparam.0 & 0xFFFF) as u32 == HTCLIENT => {
                 popup::set_cursor(self.cursor.get());
                 return LRESULT(1);
             }
-            // Clicks must not take focus from the user's window (SPEC §5.3).
+            // Clicks must not take focus from the user's window.
             WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
             WM_WAKE => {
                 self.wake_queued.store(false, Ordering::SeqCst);
@@ -218,7 +218,7 @@ impl WindowState {
                 self.dispatch(UiEvent::CloseRequested);
                 return LRESULT(0);
             }
-            // The keyboard on the focused bar (SPEC §14.4); F10 comes as a system key.
+            // The keyboard on the focused bar; F10 comes as a system key.
             WM_KEYDOWN | WM_SYSKEYDOWN => {
                 if let Some(key) = bar_key(VIRTUAL_KEY(wparam.0 as u16)) {
                     let modifiers = modifiers();
@@ -228,7 +228,7 @@ impl WindowState {
             }
             // Alt alone starts no menu mode in a window without a menu (Alt+F4 is the AppBar's).
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => return LRESULT(0),
-            // A UI Automation client asks for the bar (SPEC §14.4).
+            // A UI Automation client asks for the bar.
             WM_GETOBJECT if lparam.0 as i32 == UiaRootObjectId => {
                 let uia = self.uia.get_or_init(|| Uia::new(hwnd));
                 // Described now when the bar logic is free, else after the next frame.
@@ -242,7 +242,7 @@ impl WindowState {
                 }
                 return uia.answer(wparam, lparam);
             }
-            // Screen readers asked something of sensors (SPEC §14.4).
+            // Screen readers asked something of sensors.
             WM_UIA => {
                 if let Some(uia) = self.uia.get() {
                     for action in uia.take_actions() {
@@ -335,7 +335,7 @@ impl WindowState {
             WM_POWERBROADCAST if wparam.0 == PBT_APMRESUMEAUTOMATIC as usize => {
                 self.dispatch(UiEvent::Resumed);
             }
-            // AC plugged in or out, or the charge moved (SPEC §9.14).
+            // AC plugged in or out, or the charge moved.
             WM_POWERBROADCAST if wparam.0 == PBT_APMPOWERSTATUSCHANGE as usize => {
                 self.dispatch(UiEvent::PowerChanged);
             }
@@ -372,7 +372,7 @@ impl WindowState {
                 self.follow_band(hiding);
             }
             WM_SETTINGCHANGE if is_appearance_change(wparam, lparam) => {
-                // The tray icon follows the taskbar's theme on its own (Appendix C).
+                // The tray icon follows the taskbar's theme on its own.
                 if let Some(tray) = self.tray.get() {
                     tray.theme_changed();
                 }
@@ -432,7 +432,7 @@ impl WindowState {
         }
     }
 
-    /// A drag from another app (SPEC §6.3): the handler answers with the effect at once; while
+    /// A drag from another app: the handler answers with the effect at once; while
     /// it is busy (a menu is open), nothing can be dropped.
     fn drag(&self, event: DragEvent) -> DropEffect {
         let Ok(mut slot) = self.handler.try_borrow_mut() else {
@@ -528,7 +528,7 @@ impl WindowState {
         }
     }
 
-    /// Shows the shadow band beside the bar, or none (SPEC §5.1).
+    /// Shows the shadow band beside the bar, or none.
     fn show_band(&self, band: Option<Band>) {
         if band.is_none() && self.band.get().is_none() {
             return;
@@ -550,7 +550,7 @@ impl WindowState {
         }
     }
 
-    /// The bar is shown off its place, rising or sliding out (SPEC §5.5); its band waits.
+    /// The bar is shown off its place, rising or sliding out; its band waits.
     fn away(&self) -> bool {
         self.appbar.get().is_some_and(|appbar| appbar.offset() != 0)
     }
@@ -789,7 +789,7 @@ fn modifiers() -> Modifiers {
     }
 }
 
-/// The keys the focused bar handles (SPEC §14.4).
+/// The keys the focused bar handles.
 fn bar_key(vk: VIRTUAL_KEY) -> Option<Key> {
     Some(match vk {
         VK_TAB => Key::Tab,
@@ -838,7 +838,7 @@ fn is_volume_change(wparam: WPARAM, lparam: LPARAM) -> bool {
 
 /// `WM_SETTINGCHANGE` for light/dark mode, accent colour or transparency effects.
 /// A `WM_SETTINGCHANGE` that can change the bar's look: the colour set (dark mode, accent,
-/// transparency) or *Animation effects*, which `animations: auto` follows (SPEC §5.5).
+/// transparency) or *Animation effects*, which `animations: auto` follows.
 fn is_appearance_change(wparam: WPARAM, lparam: LPARAM) -> bool {
     use windows::Win32::UI::WindowsAndMessaging::SPI_SETCLIENTAREAANIMATION;
     if wparam.0 == SPI_SETCLIENTAREAANIMATION.0 as usize {
@@ -890,7 +890,7 @@ unsafe extern "system" fn window_proc(
 
 /// Logs how long after the process was created its first bar frame reached the window, and
 /// when the start-up's steps were done; then the process's memory. CI reads the time from a
-/// first and a later run as the cold and warm start (SPEC §14.1).
+/// first and a later run as the cold and warm start.
 fn log_first_frame() {
     log_start_time();
     match super::memory::process() {
@@ -987,7 +987,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
     // SAFETY: creates our own window; `state` outlives it.
     let hwnd = unsafe {
         CreateWindowExW(
-            // No taskbar button or Alt+Tab entry; clicks do not activate it (SPEC §4.1).
+            // No taskbar button or Alt+Tab entry; clicks do not activate it.
             WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             CLASS_NAME,
             &title,
@@ -1039,7 +1039,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
 }
 
 fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, PlatformError>>) {
-    // A single-threaded apartment with OLE, which drag & drop needs (SPEC §4.1). Never
+    // A single-threaded apartment with OLE, which drag & drop needs. Never
     // uninitialised: the thread runs until the process ends.
     // SAFETY: first call on this thread.
     if let Err(e) = unsafe { OleInitialize(None) } {

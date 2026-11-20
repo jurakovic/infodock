@@ -1,4 +1,4 @@
-//! Raster images with WIC (SPEC §4.6): PNG, JPEG, GIF (first frame), BMP and ICO, converted to
+//! Raster images with WIC: PNG, JPEG, GIF (first frame), BMP and ICO, converted to
 //! premultiplied RGBA and, when a height is requested, scaled with high-quality filtering.
 //! Decoding may run on any thread; COM is initialised for the thread on first use.
 
@@ -113,8 +113,7 @@ pub fn decode(
     unsafe {
         let stream = factory.CreateStream().map_err(os)?;
         stream.InitializeFromMemory(bytes).map_err(os)?;
-        // The built-in decoder of the sniffed format, never a codec another program installed
-        // (SPEC §4.6).
+        // The built-in decoder of the sniffed format, never a codec another program installed.
         let container = container(format).ok_or(ImageError::Unsupported)?;
         let decoder = factory
             .CreateDecoder(&container, &GUID_VendorMicrosoftBuiltIn)

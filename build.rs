@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     // Debug builds (the tests) keep the elements' names, which Slint's testing API needs to
-    // walk the Settings window (SPEC §14.4); release builds do without.
+    // walk the Settings window; release builds do without.
     let debug = std::env::var("PROFILE").as_deref() == Ok("debug");
     let config = slint_build::CompilerConfiguration::new()
         .with_style("fluent".into())

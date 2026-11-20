@@ -1,4 +1,4 @@
-//! Installing skin packs from Settings (SPEC §12.4): a pack's folder or a `.zip` holding it is
+//! Installing skin packs from Settings: a pack's folder or a `.zip` holding it is
 //! copied into the skins folder. Only `skin.json` and the files it names are copied, and the copy
 //! is checked as the bar checks a pack before it takes the place of the pack with that name.
 

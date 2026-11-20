@@ -1,4 +1,4 @@
-//! Noticing a hotkey combination another app holds while Settings records one (SPEC §6.5).
+//! Noticing a hotkey combination another app holds while Settings records one.
 //!
 //! A combination registered with `RegisterHotKey` goes to its app as `WM_HOTKEY` and never
 //! reaches the Settings window, so recording would wait for keys that never come. While it
@@ -9,7 +9,7 @@
 //! The hook runs on a thread of its own with a plain message loop, so it answers at once while
 //! Settings' thread draws. Windows calls none of the low-level keyboard hooks while the newest is
 //! a process's that reads the keyboard's raw input, so the app turns winit's off (`lib.rs`,
-//! `NoDeviceEvents`; S14x2, D120).
+//! `NoDeviceEvents`).
 
 use std::cell::RefCell;
 use std::sync::mpsc;

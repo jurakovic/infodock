@@ -1,4 +1,4 @@
-//! The welcome page (SPEC §11.5), opened once, on first run: the theme with a preview of the
+//! The welcome page, opened once, on first run: the theme with a preview of the
 //! bar in each, the edge, starting with Windows, importing a layout and a few tips.
 //! `meta.firstRunDone` is set once the page is left (*Get started*, another page, or closing
 //! Settings), so a run that ends while it is open shows it again next time.
@@ -85,7 +85,7 @@ pub(super) fn show(open: &mut Open, app: &App) {
     open.window.global::<ui::SettingsState>().set_page(PAGE);
 }
 
-/// The page was left: it is not opened again (SPEC §11.5).
+/// The page was left: it is not opened again.
 pub(super) fn left(open: &mut Open, app: &App) {
     if !std::mem::take(&mut open.welcome.shown) {
         return;

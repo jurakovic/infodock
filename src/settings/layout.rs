@@ -1,4 +1,4 @@
-//! The Layout manager on the Sensors page (SPEC §10.7): the sensors of each zone in a list, to
+//! The Layout manager on the Sensors page: the sensors of each zone in a list, to
 //! move (by dragging or with the arrow buttons), edit, remove and add, an accessible
 //! alternative to dragging on the bar. The list follows the config, so changes made on the bar
 //! show up at once.

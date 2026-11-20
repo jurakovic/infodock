@@ -1,6 +1,6 @@
-//! The legacy XML layout format (SPEC §11.4): reading a file into its sensors, and the value
-//! encodings its properties use, as pure functions. Each sensor type turns the properties into
-//! its props (`sensors::legacy`).
+//! The legacy XML layout format (INTERNALS.md, Config): reading a file into its sensors, and the
+//! value encodings its properties use, as pure functions. Each sensor type turns the properties
+//! into its props (`sensors::legacy`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -203,7 +203,7 @@ fn windows_1252(byte: u8) -> char {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Value encodings (SPEC §11.4)
+// Value encodings
 // ---------------------------------------------------------------------------------------------
 
 /// `yes` / `no` (also `true` / `false`, `1` / `0`).

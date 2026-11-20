@@ -1,4 +1,4 @@
-//! COM for threads that call into the shell (SPEC §4.1): a single-threaded apartment, entered
+//! COM for threads that call into the shell: a single-threaded apartment, entered
 //! once per thread and left when the thread ends.
 
 use windows::Win32::System::Com::{

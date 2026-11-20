@@ -12,7 +12,7 @@ use crate::platform::{
     NetInterface, OsAppearance, Platform, PowerAction, Volume,
 };
 
-/// `target/screenshots/<name>.png`, creating the folder. CI uploads the folder (SPEC §16).
+/// `target/screenshots/<name>.png`, creating the folder. CI uploads the folder.
 pub fn screenshot_path(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/screenshots");
     std::fs::create_dir_all(&dir).expect("screenshot dir");
@@ -38,7 +38,7 @@ pub fn median(times: &mut [std::time::Duration]) -> std::time::Duration {
     times[times.len() / 2]
 }
 
-/// Records a measurement against its SPEC §14.1 budget in `target/budgets/<id>.json`. CI's
+/// Records a measurement against its budget in `target/budgets/<id>.json`. CI's
 /// budget check puts it in the job summary and fails above the budget
 /// (`.github/scripts/measure-memory.ps1`). The budget tests run on Windows only.
 #[cfg(windows)]
@@ -72,7 +72,7 @@ pub fn en_us() -> &'static Locale {
     &EN_US
 }
 
-/// One platform for the tests (SPEC §16), the same on every OS: no monitors, a settable
+/// One platform for the tests, the same on every OS: no monitors, a settable
 /// appearance (the default), no uptime, a settable locale (en-US) and clock (2026-10-13, a Tuesday). It
 /// answers with what a test gave it (capabilities, volumes, connections, shell icons, …) and
 /// records what it is asked to do in [`FakePlatform::log`] instead of doing it, so tests that
@@ -139,7 +139,7 @@ impl FakePlatform {
         self
     }
 
-    /// The capabilities are not known until [`FakePlatform::answer_probe`] (SPEC §14.1).
+    /// The capabilities are not known until [`FakePlatform::answer_probe`].
     pub fn with_slow_probe(mut self) -> Self {
         self.slow_probe = true;
         self
@@ -166,7 +166,7 @@ impl FakePlatform {
         self
     }
 
-    /// No path lies on a known volume, so drops copy rather than move (SPEC §9.19).
+    /// No path lies on a known volume, so drops copy rather than move.
     pub fn without_volumes(mut self) -> Self {
         self.no_volumes = true;
         self

@@ -1,4 +1,4 @@
-//! The sensors' life on the bar (SPEC §4.4): creating them from the layout, their
+//! The sensors' life on the bar: creating them from the layout, their
 //! subscriptions, samples, wake-ups and clock changes, and the state they want stored.
 
 use super::*;
@@ -7,7 +7,7 @@ impl BarLogic {
     /// Creates sensors for new or changed layout entries, showing previews where there are.
     /// Until the capability probe has answered, only the sensors whose type needs no
     /// capability are shown, so the first frame does not wait for it and no sensor shows as
-    /// unavailable for a moment (SPEC §14.1); the others join once it has.
+    /// unavailable for a moment; the others join once it has.
     pub(super) fn sync_sensors(&mut self, window: &dyn BarWindow) {
         let probed = self.platform.probed_capabilities();
         let waiting = probed.is_none();
@@ -31,7 +31,7 @@ impl BarLogic {
         }
         let order = self.sensors.focus_order();
         if self.sensors.sync(&shown, &self.state, &caps, registry()) {
-            // A removed sensor's focus goes to the one that took its place (SPEC §14.4).
+            // A removed sensor's focus goes to the one that took its place.
             if let Some(keys) = self.keys.as_mut()
                 && let Some(id) = keys.sensor.take()
             {
@@ -66,7 +66,7 @@ impl BarLogic {
     }
 
     /// The locale for dates and numbers may have changed (the setting, or the OS regional
-    /// format): it is read again, and every sensor measures again with it (SPEC §8.6).
+    /// format): it is read again, and every sensor measures again with it.
     pub(super) fn locale_changed(&mut self, window: &dyn BarWindow) {
         self.locale = self.platform.locale(self.settings.date_locale);
         self.numbers = Numbers::from(&self.locale);
@@ -86,7 +86,7 @@ impl BarLogic {
         self.arm_timer(window);
     }
 
-    /// Hands the state and props sensors want stored to the host (SPEC §11.2, §9.14).
+    /// Hands the state and props sensors want stored to the host.
     pub(super) fn store_states(&mut self) {
         for (id, state) in self.sensors.take_states() {
             self.host.set_sensor_state(&id, state);
@@ -96,7 +96,7 @@ impl BarLogic {
         }
     }
 
-    /// Sets the window's timer to the earliest wake-up any sensor asked for (SPEC §4.4).
+    /// Sets the window's timer to the earliest wake-up any sensor asked for.
     pub(super) fn arm_timer(&self, window: &dyn BarWindow) {
         let now = Instant::now();
         window.set_timer(

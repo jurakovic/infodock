@@ -1,9 +1,9 @@
-//! The popup window (SPEC §4.1, §7.2): layered (`UpdateLayeredWindow`, per-pixel alpha),
+//! The popup window: layered (`UpdateLayeredWindow`, per-pixel alpha),
 //! topmost, a tool window owned by the bar, and focusable, so it reads the keyboard. Created on
 //! first use and reused. Its input goes to the bar logic as [`UiEvent::Popup`]; it hides itself
 //! and says so when it loses the activation (a click elsewhere, Alt+F4). A popup that appears
 //! fades in over 120 ms, stepped by the bar window's timer. Screen readers see it as a list of
-//! the popup's rows (`uia_popup.rs`, SPEC §14.4).
+//! the popup's rows (`uia_popup.rs`).
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::ffi::c_void;
@@ -70,7 +70,7 @@ struct Shared {
     tracking_leave: Cell<bool>,
     /// The pointer's shape over the window.
     cursor: Cell<PopupCursor>,
-    /// The UI Automation provider (SPEC §14.4); created when a client first asks for it.
+    /// The UI Automation provider; created when a client first asks for it.
     uia: OnceCell<PopupUia>,
 }
 
@@ -194,7 +194,7 @@ impl Shared {
             }
             // Alt alone does not start menu mode in a window without a menu.
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) as u32 == SC_KEYMENU => {}
-            // A UI Automation client asks for the popup (SPEC §14.4): from now on it is
+            // A UI Automation client asks for the popup: from now on it is
             // described with its frames while clients listen, so a shown one whose description
             // is missing or stale is described now.
             WM_GETOBJECT if lparam.0 as i32 == UiaRootObjectId => {
@@ -245,7 +245,7 @@ fn modifiers() -> Modifiers {
     }
 }
 
-/// The keys popups use (SPEC §9.19).
+/// The keys popups use.
 fn key(vk: VIRTUAL_KEY) -> Option<Key> {
     Some(match vk {
         VK_UP => Key::Up,

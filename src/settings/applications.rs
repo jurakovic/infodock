@@ -1,4 +1,4 @@
-//! Settings ▸ Applications (SPEC §10.6): the calendar app a click on a Date sensor opens, and
+//! Settings ▸ Applications: the calendar app a click on a Date sensor opens, and
 //! the task manager a click on a CPU or Memory sensor opens.
 
 use std::sync::Arc;

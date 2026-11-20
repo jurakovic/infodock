@@ -1,4 +1,4 @@
-//! The shadow band window (SPEC §5.1, §5.5, §12.4): a skin's transparent shadow, or the bar's
+//! The shadow band window: a skin's transparent shadow, or the bar's
 //! own, beside the bar on the side facing the screen centre, outside the reserved work area.
 //! Layered (`UpdateLayeredWindow`, per-pixel alpha), click-through, never activated, and owned
 //! by the bar window, so it keeps to the bar's z-order. Created when a band is first shown; it
@@ -210,7 +210,7 @@ impl BandWindow {
 
     /// Keeps the band right above the bar in the z-order. Owned windows stay above their owner
     /// anyway; this also covers the bar turning topmost or going to the bottom (a full-screen
-    /// app, SPEC §5.3) while the band is shown. The band stays in the bar's layer: placed after
+    /// app) while the band is shown. The band stays in the bar's layer: placed after
     /// a window of the other one, it would change layers, and Windows takes a topmost owner
     /// down with an owned window that stops being topmost.
     fn restack(&self) {

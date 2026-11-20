@@ -1,4 +1,4 @@
-//! Property schemas (SPEC §8.2) and the storage rules of §11.2.
+//! Property schemas and the storage rules (INTERNALS.md, Sensors and Config).
 //!
 //! A sensor type declares its properties as a static list of [`PropField`]s. The list drives
 //! the generated Settings form, validation, and the static defaults:
@@ -59,7 +59,7 @@ pub struct SelectOption {
     pub label: MsgKey,
 }
 
-/// The field type, which picks the Settings control and the validation (SPEC §8.2).
+/// The field type, which picks the Settings control and the validation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldKind {
     /// With `empty_is_default`, an empty string means the default.
@@ -81,11 +81,11 @@ pub enum FieldKind {
         min: f64,
         max: f64,
     },
-    /// `#RRGGBB`. No v1 type has one (their colours are `colorMode`s); kept as §8.2's field
+    /// `#RRGGBB`. No type has one (their colours are `colorMode`s); kept as a field
     /// type, which validation, the legacy import and the form (a Slint row code) handle.
     #[cfg_attr(not(test), allow(dead_code))]
     Color,
-    /// `{ mode, color }`; `dynamic` allows the dynamic gradient (§8.4).
+    /// `{ mode, color }`; `dynamic` allows the dynamic gradient.
     ColorMode {
         dynamic: bool,
     },
@@ -100,7 +100,7 @@ pub enum FieldKind {
     Folder,
     /// A font family; `""` follows the global sensor font.
     Font,
-    /// One of the §8.2 font style ids.
+    /// A font style id: `normal`, `semibold`, `bold`, `italic`, `semiboldItalic`, `boldItalic`.
     FontStyle,
     /// `X:\`.
     Drive {
@@ -110,10 +110,10 @@ pub enum FieldKind {
     NetAdapter,
     /// A battery index.
     Battery,
-    /// A CPU series: `total`, `user`, `system` or `core<i>` (SPEC §9.9). Settings lists this
+    /// A CPU series: `total`, `user`, `system` or `core<i>`. Settings lists this
     /// computer's processors.
     CpuSeries,
-    /// A power mode id (`lock`, `sleep`, `shutDown` …; SPEC §9.21). Settings lists the modes
+    /// A power mode id (`lock`, `sleep`, `shutDown` …). Settings lists the modes
     /// this computer offers.
     PowerMode,
     /// Internal values; not shown, any JSON.
@@ -127,7 +127,7 @@ pub struct VisibleIf {
     pub values: &'static [Lit],
 }
 
-/// A field that means nothing while it is empty (SPEC §8.2): the Properties form says so on its
+/// A field that means nothing while it is empty: the Properties form says so on its
 /// row and does not save. Stored and imported sensors may still hold it empty.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Required {
@@ -371,7 +371,7 @@ pub fn resolve(schema: &[PropField], stored: &Props, machine: &Props) -> (Props,
     (props, ignored)
 }
 
-/// What to store for `props` (SPEC §11.2): values that differ from the static defaults and
+/// What to store for `props`: values that differ from the static defaults and
 /// all machine-derived fields. Keys of `previous` that the schema does not know are kept.
 pub fn to_stored(schema: &[PropField], props: &Props, previous: &Props) -> Props {
     let mut stored: Props = previous

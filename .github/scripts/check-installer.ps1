@@ -1,13 +1,13 @@
-# Checks the NSIS installer (SPEC §15.3, the M4 exit criterion): it asks for no elevation,
+# Checks the NSIS installer: it asks for no elevation,
 # installs silently per user (no Program Files, no HKLM), with the Start Menu shortcut carrying
 # the AppUserModelID, and starts the app after installing (/R). The app's first run takes an
-# existing sign-in entry for a missing exe into its setting and points it at the installed exe
-# (§10.1, §11.5). The uninstaller removes the app, its shortcuts, its registration (the install
+# existing sign-in entry for a missing exe into its setting and points it at the installed exe.
+# The uninstaller removes the app, its shortcuts, its registration (the install
 # location under HKCU too), the sign-in entry and Task Manager's mark for it. A second
 # silent install with /AUTOSTART writes the sign-in entry for the installed exe and clears Task
 # Manager's mark for it, without starting the app; its uninstall removes the entry again.
 # Before all that, the interactive installer's first two pages are saved as screenshots, for its
-# images (Appendix C), and it is closed there, before anything is installed.
+# images, and it is closed there, before anything is installed.
 # Runs after the memory check: it removes that run's config, so the installed app runs first.
 param(
     [Parameter(Mandatory)] [string] $Setup,

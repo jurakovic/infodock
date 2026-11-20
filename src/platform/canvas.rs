@@ -1,4 +1,4 @@
-//! Drawing types shared by the bar logic and the platform renderers (SPEC §4.6). Everything is
+//! Drawing types shared by the bar logic and the platform renderers. Everything is
 //! in logical px; renderers map it to physical px with the window's scale.
 
 use super::bitmap::Bitmap;
@@ -196,7 +196,7 @@ pub enum Shape {
     Polygon(Vec<PointF>),
 }
 
-/// Drawing operations, in logical px (SPEC §4.6). Implemented by Direct2D on Windows and by the
+/// Drawing operations, in logical px. Implemented by Direct2D on Windows and by the
 /// recording canvas in tests and on other OSes.
 pub trait Canvas {
     /// Physical px per logical px.

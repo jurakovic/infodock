@@ -1,6 +1,6 @@
-//! Readings that can stall (SPEC §4.4, §14.2): a volume or path on a network drive whose server
-//! is away can take the SMB timeout to answer, and the sampler must not stop for it. Each key (a
-//! volume root, a path) is read on a worker thread of its own, so one that stalls holds up
+//! Readings that can stall (INTERNALS.md, Data flow): a volume or path on a network drive whose
+//! server is away can take the SMB timeout to answer, and the sampler must not stop for it. Each
+//! key (a volume root, a path) is read on a worker thread of its own, so one that stalls holds up
 //! nothing else. The sampler waits [`WAIT`] for a reading it asks for; a key still being read
 //! from an earlier tick is not waited for again. A reading that comes after the wait calls the
 //! reader's `late` hook, so its topic is read again at once and takes it.

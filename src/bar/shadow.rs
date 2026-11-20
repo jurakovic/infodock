@@ -1,5 +1,5 @@
-//! The bar's shadow (SPEC §5.5): a soft band beside the bar on the side facing the screen centre,
-//! shown in the shadow band's window like a skin's band (§5.1) when the skin has none.
+//! The bar's shadow: a soft band beside the bar on the side facing the screen centre,
+//! shown in the shadow band's window like a skin's band when the skin has none.
 
 use crate::platform::Bitmap;
 

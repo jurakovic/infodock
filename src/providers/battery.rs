@@ -1,6 +1,6 @@
-//! `battery/<i>` (SPEC §9.14, Appendix A): one battery of the power status, by its place in the
+//! `battery/<i>`: one battery of the power status, by its place in the
 //! driver's list. A battery that is not there is a sample of its own (`present: false`), which
-//! the sensor shows as *No Battery*; one that cannot be read is a failed reading (§14.2), and
+//! the sensor shows as *No Battery*; one that cannot be read is a failed reading, and
 //! the batteries after it keep their places. `batteries`: their names, for Settings.
 
 use crate::platform::{BatteryState, PowerStatus};
@@ -35,7 +35,7 @@ pub fn sample(status: &PowerStatus, index: u32) -> Result<BatterySample, String>
     })
 }
 
-/// The batteries' names in their places, for Settings' battery lists (SPEC §8.2); empty for
+/// The batteries' names in their places, for Settings' battery lists; empty for
 /// one without a name or that cannot be read.
 pub fn names(status: &PowerStatus) -> Vec<String> {
     status

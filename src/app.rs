@@ -28,7 +28,7 @@ const QUIT_TIMEOUT: Duration = Duration::from_secs(5);
 pub struct App {
     pub store: ConfigStore,
     pub platform: Arc<dyn Platform>,
-    /// The skins folder (SPEC §11.1, §12.4).
+    /// The skins folder.
     pub skins: PathBuf,
     bar: OnceLock<Arc<BarController>>,
     sampler: Sampler,
@@ -55,7 +55,7 @@ impl App {
         let _ = self.bar.set(bar);
     }
 
-    /// Starts the sampler thread, which delivers to the bar (SPEC §4.4), and the drive and
+    /// Starts the sampler thread, which delivers to the bar, and the drive and
     /// battery lists to Settings while it watches them. Subscriptions made before it starts are
     /// kept.
     pub fn start_sampler(&self) {
@@ -94,8 +94,8 @@ impl App {
 
     /// Settings receives the drive list while `volumes` and the battery list while
     /// `batteries` (a form with such a field is open) from the sampler, so the main thread never
-    /// waits for a drive or a battery, and the lists follow drives that arrive or go (SPEC
-    /// §9.12). The newest sample comes at once when the topic is already read for the bar.
+    /// waits for a drive or a battery, and the lists follow drives that arrive or go.
+    /// The newest sample comes at once when the topic is already read for the bar.
     pub fn watch_lists(&self, volumes: bool, batteries: bool) {
         let mut topics = Vec::new();
         if volumes {
@@ -131,7 +131,7 @@ impl App {
         }
     }
 
-    /// Gives the bar the keyboard focus if it is shown (hotkey, SPEC §14.4).
+    /// Gives the bar the keyboard focus if it is shown (hotkey).
     pub fn focus_bar(&self) {
         if let Some(bar) = self.bar.get() {
             bar.focus();
@@ -173,7 +173,7 @@ impl App {
     }
 }
 
-/// Sensor operations (SPEC §4.5). Each saves through the config store, which updates the bar
+/// Sensor operations. Each saves through the config store, which updates the bar
 /// and Settings. What the machine says for machine-derived props is asked first, outside the
 /// store's lock, since it may list the drives.
 impl App {
@@ -221,7 +221,7 @@ impl App {
         Ok(ids)
     }
 
-    /// Where machine-derived props come from (SPEC §11.2).
+    /// Where machine-derived props come from.
     fn defaults(&self) -> DefaultsCtx<'_> {
         DefaultsCtx {
             platform: self.platform.as_ref(),
@@ -244,7 +244,7 @@ impl App {
             .map(|_| ())
     }
 
-    /// Shows sensor `id` with `changes` on the bar without saving (SPEC §6.7).
+    /// Shows sensor `id` with `changes` on the bar without saving.
     pub fn preview_sensor(&self, id: &str, changes: &Props) -> Result<(), ConfigError> {
         let config = self.store.get();
         let machine = ops::machine_props_of(&config, registry(), &self.defaults(), id, changes);
@@ -255,7 +255,7 @@ impl App {
         Ok(())
     }
 
-    /// A skin pack was installed or removed: the bar draws its skin again (SPEC §12.4).
+    /// A skin pack was installed or removed: the bar draws its skin again.
     pub fn skins_changed(&self) {
         if let Some(bar) = self.bar.get() {
             bar.skins_changed();
@@ -269,7 +269,7 @@ impl App {
         }
     }
 
-    /// Moves a sensor; `index` counts with the sensor already taken out (SPEC §6.2).
+    /// Moves a sensor; `index` counts with the sensor already taken out.
     pub fn move_sensor(&self, id: &str, zone: Zone, index: usize) -> Result<(), ConfigError> {
         self.store
             .update(|c| ops::move_to(c, id, zone, index))
@@ -283,7 +283,7 @@ impl App {
     }
 }
 
-/// Layout exchange (SPEC §11.3). An import saves through the config store, which updates the bar
+/// Layout exchange. An import saves through the config store, which updates the bar
 /// and Settings.
 impl App {
     /// The config, or its layout, as the text of an exchange file.
@@ -291,7 +291,7 @@ impl App {
         exchange::export(&self.store.get(), scope)
     }
 
-    /// What the sensors of a legacy layout bring, converted by their types (SPEC §11.4).
+    /// What the sensors of a legacy layout bring, converted by their types.
     pub fn legacy_incoming(&self, sensors: Vec<LegacySensor>) -> Incoming {
         legacy::incoming(registry(), &self.defaults(), sensors)
     }
@@ -302,7 +302,7 @@ impl App {
         incoming: Incoming,
         mode: ImportMode,
     ) -> Result<ImportReport, ConfigError> {
-        // Checked before the store is locked: the machine may be asked for props (SPEC §4.5).
+        // Checked before the store is locked: the machine may be asked for props.
         let prepared = import::prepare(registry(), &self.defaults(), incoming);
         let (report, _) = self
             .store

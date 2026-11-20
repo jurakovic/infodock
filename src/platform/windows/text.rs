@@ -1,4 +1,4 @@
-//! Text layout with DirectWrite (SPEC §4.6). Layouts are drawn by the Direct2D canvas in
+//! Text layout with DirectWrite. Layouts are drawn by the Direct2D canvas in
 //! `render.rs`, which reads the `IDWriteTextLayout` back from the [`TextLayout`].
 
 use std::cell::{Cell, RefCell};

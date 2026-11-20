@@ -1,6 +1,6 @@
-//! Message catalogs and `t()` (SPEC §13). Every user-visible string comes from here: the bar,
-//! menus and dialogs call it directly, the Slint UI through its `I18n` global. Only English exists
-//! in v1.
+//! Message catalogs and `t()` (INTERNALS.md, Localisation). Every user-visible string comes from
+//! here: the bar, menus and dialogs call it directly, the Slint UI through its `I18n` global.
+//! English is the only catalog.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex, PoisonError};
@@ -17,7 +17,7 @@ static REPORTED: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::defau
 /// The characters beyond ASCII that messages (and the Settings window's own bullet, •) may use:
 /// each is in the fonts Settings draws with, Segoe UI Variable and Segoe UI (a Windows test
 /// checks them, `platform/windows/text.rs`). Slint draws a character its font lacks as a gap,
-/// as "▸" was (SPEC §13); a new one is added here once the fonts have it.
+/// as "▸" was; a new one is added here once the fonts have it.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const NON_ASCII: &str = "×–—‘’“”…•←→›";
 
@@ -46,7 +46,7 @@ pub fn t_args(key: &str, args: &[(&str, &str)]) -> String {
 }
 
 /// Like [`t_args`] for a message that depends on `count`: its plural form is chosen by the UI
-/// language's rules (SPEC §13; English: `one` for exactly 1, else `other`), and `{count}` is
+/// language's rules (English: `one` for exactly 1, else `other`), and `{count}` is
 /// replaced by `count`.
 pub fn t_count(key: &str, count: u64, args: &[(&str, &str)]) -> String {
     let form = if count == 1 { "one" } else { "other" };

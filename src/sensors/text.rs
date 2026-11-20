@@ -1,4 +1,4 @@
-//! `text` — a line of text (SPEC §9.1).
+//! `text` — a line of text.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -48,10 +48,10 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.field.shadow.help"),
 ];
 
-/// A text the bar narrows (SPEC §5.4) keeps this many ems: a character or two and the ellipsis.
+/// A text the bar narrows keeps this many ems: a character or two and the ellipsis.
 const MIN_EMS: f32 = 2.0;
 
-/// SPEC §9.1.
+/// The Text's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("text", "text"),
     LegacyKey::new("font", "font"),
@@ -148,7 +148,7 @@ impl Text {
     }
 }
 
-/// The shadow colour for text in `color` (SPEC §9.1): black under light text, white under dark.
+/// The shadow colour for text in `color`: black under light text, white under dark.
 pub(super) fn shadow_color(color: Color) -> Color {
     let grey = 255.0 * (0.2 * color.r + 0.5 * color.g + 0.3 * color.b);
     if grey >= 128.0 {
@@ -192,7 +192,7 @@ impl Sensor for Text {
         canvas.draw_text(layout, PointF::new(r.left, y), color);
     }
 
-    /// None, unless the text is cut: then the whole text (SPEC §5.4).
+    /// None, unless the text is cut: then the whole text.
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
         self.cut
             .is_some()

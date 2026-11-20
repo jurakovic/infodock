@@ -1,4 +1,4 @@
-//! Power (SPEC §9.21, §4.6): the battery capability, the power modes this computer offers, and
+//! Power: the battery capability, the power modes this computer offers, and
 //! the power actions. Actions run on a short-lived thread: sleep returns only after the computer
 //! wakes, and the bar thread must keep answering the broadcasts that come before it sleeps.
 

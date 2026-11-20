@@ -1,4 +1,4 @@
-//! Drag & drop from other apps onto the bar (SPEC §6.3): what is dragged, the effects, and the
+//! Drag & drop from other apps onto the bar: what is dragged, the effects, and the
 //! clipboard formats it comes in, read here as plain bytes so they are tested on every OS.
 
 use super::{Modifiers, PointF};
@@ -144,7 +144,7 @@ pub fn id_list_fits(bytes: &[u8], offset: usize) -> bool {
 }
 
 /// The name of the first file a `FileGroupDescriptorW` describes, without `.url`: a browser
-/// names the link file it offers after the page (SPEC §6.3).
+/// names the link file it offers after the page.
 pub fn link_file_title(bytes: &[u8]) -> Option<String> {
     // cItems (4 bytes), then FILEDESCRIPTORW with cFileName (260 UTF-16 units) at 72.
     const NAME: usize = 4 + 72;

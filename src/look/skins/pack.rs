@@ -1,4 +1,4 @@
-//! Skin packs (SPEC §12.4): a folder in the skins folder whose `skin.json` names its tiles.
+//! Skin packs: a folder in the skins folder whose `skin.json` names its tiles.
 //! A pack is checked when listed and again when drawn: only PNG and JPEG files named in
 //! `skin.json`, each at most 1 MB and 512 px a side, as tall as the bar part and the shadow band
 //! it declares (± 1 px).

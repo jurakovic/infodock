@@ -1,4 +1,4 @@
-//! Drops from other apps onto the bar (SPEC §6.3): what each dragged item is; the sensor a
+//! Drops from other apps onto the bar: what each dragged item is; the sensor a
 //! drop creates for it is the sensors' (`sensors::drop::new_sensor`).
 
 use crate::platform::{DragItem, DropEffect, DropEffects};
@@ -12,7 +12,7 @@ fn is_drive_root(path: &str) -> bool {
     }
 }
 
-/// Whether `url` is a web or FTP address (SPEC §6.3), without control characters, which
+/// Whether `url` is a web or FTP address, without control characters, which
 /// could add lines to the `.url` file it may become.
 fn is_web(url: &str) -> bool {
     let url = url.trim();

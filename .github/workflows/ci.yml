@@ -76,7 +76,7 @@ jobs:
           # The version is computed from the tags
           fetch-depth: 0
       # <next release>-build.<run number>, e.g. 1.0.1-build.42: the version the Publish workflow
-      # would release from master next, marked as a build of it (SPEC §15.3).
+      # would release from master next, marked as a build of it.
       - name: Compute version
         shell: bash
         run: |
@@ -97,8 +97,8 @@ jobs:
       # Includes rendering the Settings pages and the bar to target/screenshots.
       - name: Windows integration tests
         run: cargo test -- --ignored --skip budget_
-      # The time budgets the app cannot log (SPEC §14.1), one test at a time so they do not
-      # compete for the processors; the memory check reads their records.
+      # The time budgets the app cannot log (INTERNALS.md, Budgets), one test at a time so they
+      # do not compete for the processors; the memory check reads their records.
       - name: Budget tests
         shell: pwsh
         run: |
@@ -114,7 +114,7 @@ jobs:
         run: |
           ./publish.sh build -v "$VERSION" -u true -t false
           echo "### Infodock $VERSION" >> "$GITHUB_STEP_SUMMARY"
-      # The artifacts are named like the release files (SPEC §15.3). cargo-packager names the
+      # The artifacts are named like the release files. cargo-packager names the
       # installer infodock_<version>_x64-setup.exe; a copy carries the release's name.
       - name: Name the installer
         shell: bash
@@ -134,7 +134,7 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
-      # Portable build (SPEC §15.3): a single self-contained exe, downloaded as
+      # Portable build: a single self-contained exe, downloaded as
       # Infodock_v<version>_win-x64.zip like the release's.
       - uses: actions/upload-artifact@v7
         with:
@@ -148,7 +148,7 @@ jobs:
           path: target/screenshots
           if-no-files-found: ignore
           retention-days: 14
-      # Memory, idle CPU and time budgets (SPEC §14.1), enforced.
+      # Memory, idle CPU and time budgets (INTERNALS.md, Budgets), enforced.
       - name: Memory, CPU and time check
         shell: pwsh
         run: .github/scripts/measure-memory.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/memory-check" -Measured target/budgets -Enforce
@@ -159,13 +159,13 @@ jobs:
           path: ${{ runner.temp }}/memory-check
           if-no-files-found: ignore
           retention-days: 14
-      # A hotkey another app holds, pressed while Settings records one (SPEC §6.5), with the
+      # A hotkey another app holds, pressed while Settings records one, with the
       # keyboard hook's trace printed; enforced. After the memory check, whose first run ended
       # the welcome page.
       - name: Hotkey check
         shell: pwsh
         run: .github/scripts/check-hotkey.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/hotkey-check" -Enforce
-      # A bar kept behind the windows around Show desktop (SPEC §5.3): Win+D, the taskbar's far
+      # A bar kept behind the windows around Show desktop: Win+D, the taskbar's far
       # corner, clicks on the bar, windows brought back from the taskbar; with screenshots and the
       # appbar's debug log; enforced.
       - name: Show desktop check
@@ -178,7 +178,7 @@ jobs:
           path: ${{ runner.temp }}/show-desktop-check
           if-no-files-found: ignore
           retention-days: 14
-      # The installer per user without admin rights (SPEC §15.3): installed silently, checked,
+      # The installer per user without admin rights: installed silently, checked,
       # started and uninstalled. After the memory check, whose config it removes.
       - name: Installer check
         shell: pwsh

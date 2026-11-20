@@ -1,4 +1,4 @@
-//! Calendar dates and the local wall-clock time (SPEC §8.6, §9.4–9.5) as plain data, as the
+//! Calendar dates and the local wall-clock time as plain data, as the
 //! platform reads them (`Platform::local_time`): days, weekdays, the day of the year and ISO
 //! 8601 week numbers. Pure; formatting with the locale's patterns is `sensors::dates`.
 
@@ -119,7 +119,7 @@ impl LocalTime {
         }
     }
 
-    /// How long until just after the next second starts (SPEC §9.5: aligned, no polling).
+    /// How long until just after the next second starts (aligned, no polling).
     pub fn until_next_second(&self) -> Duration {
         Duration::from_millis(u64::from(1000 - self.millis.min(999))) + BOUNDARY_MARGIN
     }

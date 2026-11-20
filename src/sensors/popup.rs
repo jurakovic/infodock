@@ -1,4 +1,4 @@
-//! Interactive popups (SPEC §7.2): a sensor's click can open one (Folder Menu, Start Menu,
+//! Interactive popups: a sensor's click can open one (Folder Menu, Start Menu,
 //! Eject USB). A popup lays itself out, draws itself and handles its own input inside the
 //! shared `popup` window, which the bar frames (bubble, pointer, shadow), places next to the
 //! sensor and shows; it closes on blur, Esc, a second click on its sensor, or when it asks to.
@@ -14,7 +14,7 @@ use crate::platform::{
     AccessiblePopup, Canvas, Platform, PointF, PopupCursor, PopupInput, SizeF, TextEngine, UiWaker,
 };
 
-/// How a popup lines up with its sensor (SPEC §7.3, §9.19).
+/// How a popup lines up with its sensor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PopupAlign {
     /// Centred over the sensor, as hints are.
@@ -58,12 +58,12 @@ pub struct PopupCtx<'a> {
     pub monitor_height: f32,
     /// The bar's edge: the popup is above a bottom bar and below a top one.
     pub edge: Edge,
-    /// The popup's left edge is the free one, not lined up with the sensor (its right edge is,
-    /// SPEC §9.19); otherwise its right edge is.
+    /// The popup's left edge is the free one, not lined up with the sensor (its right edge is);
+    /// otherwise its right edge is.
     pub free_left: bool,
-    /// Transitions animate (SPEC §5.5); otherwise they jump.
+    /// Transitions animate; otherwise they jump.
     pub animate: bool,
-    /// How the locale of `settings.dateLocale` writes numbers (SPEC §8.6), e.g. for sizes.
+    /// How the locale of `settings.dateLocale` writes numbers, e.g. for sizes.
     pub numbers: Numbers,
     pub now: Instant,
 }
@@ -72,7 +72,7 @@ pub struct PopupCtx<'a> {
 pub trait Popup {
     /// Its kind, e.g. `folder-browser`.
     fn kind(&self) -> &'static str;
-    /// What screen readers call its window (SPEC §14.4), e.g. the folder shown; empty for the
+    /// What screen readers call its window, e.g. the folder shown; empty for the
     /// app's name.
     fn name(&self) -> String {
         String::new()
@@ -107,12 +107,12 @@ pub trait Popup {
     fn captures(&self) -> bool {
         false
     }
-    /// Props of its sensor to save, e.g. a size the user dragged (SPEC §9.19); each change is
+    /// Props of its sensor to save, e.g. a size the user dragged; each change is
     /// taken once.
     fn take_props(&mut self) -> Option<Props> {
         None
     }
-    /// Its rows as screen readers list them (SPEC §14.4), as laid out: places in logical px
+    /// Its rows as screen readers list them, as laid out: places in logical px
     /// from the content's top-left corner, and the marked row. The bar names the list.
     fn accessible(&self) -> AccessiblePopup {
         AccessiblePopup::default()

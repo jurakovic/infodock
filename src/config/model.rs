@@ -1,4 +1,4 @@
-//! Typed configuration (SPEC §10, §11.2).
+//! Typed configuration (INTERNALS.md, Config).
 //!
 //! Settings whose default depends on the theme are `Option`s: `None` (`null` in JSON) means
 //! "use the theme default" from [`ThemeDefaults`]. Every struct uses `#[serde(default)]`, so a
@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// Current config schema version (SPEC §11.2). Bump together with a step in `migrate.rs`.
+/// Current config schema version. Bump together with a step in `migrate.rs`.
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// The config created on first run (SPEC §11.5): CPU Graph, Memory Meter and Network Graph on
+    /// The config created on first run: CPU Graph, Memory Meter and Network Graph on
     /// the left, the logo in the center, Date and Time on the right.
     ///
     /// Machine-derived props (Time `use24h`) are filled in by the sensor framework on first load.
@@ -81,13 +81,13 @@ pub struct Meta {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Settings (SPEC §10)
+// Settings
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
-    // §10.1 General
+    // General
     /// `"auto"` or a catalog id.
     pub language: String,
     pub date_locale: DateLocale,
@@ -104,20 +104,20 @@ pub struct Settings {
     /// Gap between sensors in logical px, 1–20.
     pub sensor_spacing: u32,
     pub new_sensor_menu: NewSensorMenu,
-    // §10.2
+    // Bar
     pub bar: BarSettings,
-    // §10.3
+    // Appearance
     pub theme: ThemeId,
     pub color_scheme: ColorScheme,
     pub background: BackgroundSettings,
     pub classic: ClassicSettings,
-    // §10.4
+    // Sensors: the defaults of every sensor
     pub sensors: SensorDefaults,
-    // §10.5
+    // Popups
     pub popups: PopupSettings,
-    // §10.6
+    // Applications
     pub apps: AppSettings,
-    // §10.7
+    // The Settings window
     /// Where the Settings window was closed; `None` until it first closes.
     pub settings_window: Option<WindowPlace>,
 }
@@ -155,16 +155,16 @@ impl Default for Settings {
 pub struct BarSettings {
     pub edge: Edge,
     pub mode: BarMode,
-    /// `"primary"` or a monitor key, `<device>|<friendly name>|<width>x<height>` (SPEC §10.2).
+    /// `"primary"` or a monitor key, `<device>|<friendly name>|<width>x<height>`.
     pub monitor: String,
     pub reserve_space: bool,
     pub z_order: ZOrder,
     pub hide_on_fullscreen: bool,
-    /// Stays visible when Show desktop or Peek clears the windows away (SPEC §5.3).
+    /// Stays visible when Show desktop or Peek clears the windows away.
     pub over_desktop: bool,
     /// Logical px, 22–40; `None` = theme default.
     pub height: Option<u32>,
-    /// Space above and below the sensors, logical px, 0–6 (SPEC §10.2).
+    /// Space above and below the sensors, logical px, 0–6.
     pub sensor_padding: u32,
     pub floating: Option<FloatingRect>,
     pub highlight_on_hover: bool,
@@ -203,7 +203,7 @@ pub struct FloatingRect {
     pub width: u32,
 }
 
-/// The Settings window's place (SPEC §10.7): `x`, `y` its top-left corner with the frame, in
+/// The Settings window's place: `x`, `y` its top-left corner with the frame, in
 /// physical screen px (they name the monitor); `width`, `height` the window without the frame,
 /// in logical px. A maximized window keeps the place it is restored to.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -306,12 +306,12 @@ pub struct PopupSettings {
 }
 
 impl PopupSettings {
-    /// How long the pointer rests on a sensor before its hint shows (SPEC §7.1).
+    /// How long the pointer rests on a sensor before its hint shows.
     pub fn show_delay(&self) -> std::time::Duration {
         std::time::Duration::from_millis(u64::from(self.show_delay_ms))
     }
 
-    /// How long a hint stays after the pointer left (SPEC §7.1).
+    /// How long a hint stays after the pointer left.
     pub fn hide_delay(&self) -> std::time::Duration {
         std::time::Duration::from_millis(u64::from(self.hide_delay_ms))
     }
@@ -360,7 +360,7 @@ string_enum!(HotkeyAction {
 string_enum!(ClicksWhenLocked { Always, AltOnly });
 
 impl ClicksWhenLocked {
-    /// Whether a click reaches a sensor (SPEC §6.1): always while unlocked; while locked as
+    /// Whether a click reaches a sensor: always while unlocked; while locked as
     /// this rule says.
     pub fn allows(self, locked: bool, alt: bool) -> bool {
         !locked || self == ClicksWhenLocked::Always || alt
@@ -406,7 +406,7 @@ string_enum!(Zone {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Theme defaults (SPEC §10.2–10.5, §12.2–12.3)
+// Theme defaults
 // ---------------------------------------------------------------------------------------------
 
 /// Values used when the matching setting is `None`.
@@ -467,12 +467,12 @@ impl Settings {
     }
 }
 
-/// The modern bar's background and sensor text in its light look (SPEC §12.2).
+/// The modern bar's background and sensor text in its light look.
 pub const LIGHT_BAR_BACKGROUND: &str = "#F3F3F3";
 pub const LIGHT_SENSOR_TEXT: &str = "#1A1A1A";
 
 impl Settings {
-    /// Whether Settings and the modern bar are dark (SPEC §10.3): as `colorScheme` says, or with
+    /// Whether Settings and the modern bar are dark: as `colorScheme` says, or with
     /// `system` as the OS apps are (`os_dark`).
     pub fn dark_scheme(&self, os_dark: bool) -> bool {
         match self.color_scheme {
@@ -482,7 +482,7 @@ impl Settings {
         }
     }
 
-    /// Whether the modern bar has its light look (SPEC §12.2): the light scheme, while the
+    /// Whether the modern bar has its light look: the light scheme, while the
     /// background and sensor text colours are not customised.
     pub fn light_bar(&self, os_dark: bool) -> bool {
         let custom_background = self.background.color_mode == BackgroundColorMode::Custom
@@ -493,7 +493,7 @@ impl Settings {
             && self.sensors.text_color == SensorDefaults::default().text_color
     }
 
-    /// Whether a click reaches a sensor now (SPEC §6.1), with Alt held or not.
+    /// Whether a click reaches a sensor now, with Alt held or not.
     pub fn clicks_allowed(&self, alt: bool) -> bool {
         self.clicks_when_locked.allows(self.locked, alt)
     }
@@ -563,7 +563,7 @@ pub fn normalize_color(s: String) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Layout (SPEC §5.4, §11.2)
+// Layout
 // ---------------------------------------------------------------------------------------------
 
 /// Sensors per zone, each in visual left→right order.
@@ -618,7 +618,7 @@ pub struct SensorInstance {
     /// Sensor type id, e.g. `cpu-graph`. Unknown types are kept and shown as placeholders.
     #[serde(rename = "type")]
     pub kind: String,
-    /// Only values that differ from the type's static defaults (SPEC §11.2).
+    /// Only values that differ from the type's static defaults.
     #[serde(default)]
     pub props: Map<String, Value>,
 }
@@ -626,7 +626,7 @@ pub struct SensorInstance {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Legacy {
-    /// Legacy sensors without an Infodock equivalent yet (SPEC §11.4), kept for later versions.
+    /// Legacy sensors without an Infodock equivalent yet, kept for later versions.
     pub unsupported: Vec<LegacyUnsupported>,
 }
 
@@ -682,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn first_run_layout_matches_spec() {
+    fn first_run_layout() {
         let c = Config::first_run("1.2.3");
         let kinds = |z: Zone| {
             c.layout
@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_the_spec() {
+    fn default_settings() {
         let s = Settings::default();
         assert!(s.autostart);
         assert!(!s.bar_focus_ring);

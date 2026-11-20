@@ -1,4 +1,4 @@
-//! `disk` — opens a drive (SPEC §9.18). The bar shows the drive's shell icon; the `volumes`
+//! `disk` — opens a drive. The bar shows the drive's shell icon; the `volumes`
 //! topic tells whether the drive is there and holds a medium. An absent drive is inactive; an
 //! optical or removable drive without a medium stays active and says so. The menu ejects a
 //! drive that can be ejected, with the result as a notification.
@@ -18,7 +18,7 @@ use crate::i18n::{t, t_args};
 use crate::platform::{Canvas, Volume};
 use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
-/// The icon when the shell has none, e.g. for an absent drive (Appendix C).
+/// The icon when the shell has none, e.g. for an absent drive.
 const DRIVE: &[u8] = include_bytes!("../../assets/icons/drive.svg");
 /// The drive when the machine lists none (and the static default).
 const FALLBACK_DRIVE: &str = "C:\\";
@@ -49,7 +49,7 @@ const SCHEMA: &[PropField] = &[
     icon::OPACITY,
 ];
 
-/// SPEC §9.18.
+/// The Disk's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("disk", "drive"),
     LegacyKey::new("title", "title"),
@@ -89,7 +89,7 @@ impl SensorType for DiskType {
         SCHEMA
     }
 
-    /// The first drive (SPEC §9.18).
+    /// The first drive.
     fn machine_defaults(&self, ctx: &DefaultsCtx) -> Props {
         let volumes = ctx.platform.volumes();
         let drive = volumes.first().map_or(FALLBACK_DRIVE, |v| v.root.as_str());
@@ -213,7 +213,7 @@ impl Sensor for Disk {
         ClickResult::Handled
     }
 
-    /// While the drive is absent; a drive without a medium stays active (SPEC §9.18).
+    /// While the drive is absent; a drive without a medium stays active.
     fn inactive(&self) -> bool {
         self.absent()
     }
@@ -222,7 +222,7 @@ impl Sensor for Disk {
         self.name()
     }
 
-    /// *Eject* for a drive that can be ejected and is there (SPEC §9.18).
+    /// *Eject* for a drive that can be ejected and is there.
     fn menu(&self, _cx: &SensorCtx) -> Vec<MenuItem> {
         if self.present().is_some_and(|v| v.ejectable) {
             vec![MenuItem::new(EJECT, t("sensor.diskLauncher.menu.eject"))]

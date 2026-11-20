@@ -1,4 +1,4 @@
-//! The global hotkey (SPEC §6.5): brings the bar to the front or toggles it.
+//! The global hotkey: brings the bar to the front or toggles it.
 //!
 //! The hotkey manager lives on the main thread, whose event loop delivers its messages. Errors are
 //! sentences for Settings to show as they are.
@@ -34,7 +34,7 @@ fn state() -> MutexGuard<'static, State> {
 }
 
 /// Creates the hotkey manager and registers the configured hotkey. A taken hotkey does not stop
-/// the app; Settings shows the error (SPEC §6.5). Main thread only.
+/// the app; Settings shows the error. Main thread only.
 pub fn init(app: &Arc<App>) {
     match GlobalHotKeyManager::new() {
         Ok(manager) => MANAGER.with(|m| *m.borrow_mut() = Some(manager)),
@@ -59,7 +59,7 @@ fn on_pressed(app: &Arc<App>) {
         HotkeyAction::BringToFront => app.bring_bar_to_front(),
         HotkeyAction::ToggleVisibility => app.toggle_bar(),
     }
-    // A shown bar takes the keyboard (SPEC §14.4); a hidden one gave it back.
+    // A shown bar takes the keyboard; a hidden one gave it back.
     app.focus_bar();
 }
 
@@ -89,7 +89,7 @@ pub struct Modifiers {
     pub win: bool,
 }
 
-/// The accelerator for a combination recorded in Settings (SPEC §6.5), e.g. `Ctrl+Alt+K`. `code`
+/// The accelerator for a combination recorded in Settings, e.g. `Ctrl+Alt+K`. `code`
 /// names the physical key as `KeyboardEvent.code` does (`KeyK`, `Digit1`, `F5`, `ArrowUp`).
 /// Without Ctrl, Alt or Win only a function key may stand alone, so that a hotkey never takes a
 /// key away from typing.

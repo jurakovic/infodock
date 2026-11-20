@@ -1,8 +1,8 @@
-//! The bar as screen readers see it (SPEC §14.4): the bar logic describes its sensors after each
-//! frame, and the platform's UI Automation provider (`windows/uia.rs`) answers from that, raises
-//! the events that tell screen readers what changed ([`events`]) and hands what they ask for
-//! back to the bar logic ([`AccessibleAction`]). An open popup is described the same way, as a
-//! list of its rows, after each of its frames (`windows/uia_popup.rs`, [`popup_events`]).
+//! The bar as screen readers see it (INTERNALS.md, Accessibility): the bar logic describes its
+//! sensors after each frame, and the platform's UI Automation provider (`windows/uia.rs`) answers
+//! from that, raises the events that tell screen readers what changed ([`events`]) and hands what
+//! they ask for back to the bar logic ([`AccessibleAction`]). An open popup is described the same
+//! way, as a list of its rows, after each of its frames (`windows/uia_popup.rs`, [`popup_events`]).
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -28,7 +28,7 @@ pub struct AccessibleItem {
     pub popup: Option<bool>,
 }
 
-/// The bar's sensors in focus order (SPEC §14.4), and where the keyboard focus is.
+/// The bar's sensors in focus order, and where the keyboard focus is.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AccessibleBar {
     pub items: Vec<AccessibleItem>,
@@ -76,7 +76,7 @@ pub struct AccessibleRow {
     pub rect: Option<RectF>,
 }
 
-/// An open popup as screen readers see it (SPEC §14.4): a list named as its window, of its rows
+/// An open popup as screen readers see it: a list named as its window, of its rows
 /// in order, one of them marked by the keys or the pointer.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AccessiblePopup {
@@ -125,8 +125,7 @@ impl AccessiblePopup {
     }
 }
 
-/// What a screen reader asks of a sensor or a popup's row, by id; the bar logic does it (SPEC
-/// §14.4).
+/// What a screen reader asks of a sensor or a popup's row, by id; the bar logic does it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessibleAction {
     /// The Invoke pattern: a click.
@@ -199,7 +198,7 @@ pub fn popup_events(old: Option<&AccessiblePopup>, new: &AccessiblePopup) -> Vec
     events
 }
 
-/// Numbers for a popup's rows, which their UI Automation runtime ids carry (SPEC §14.4): a row
+/// Numbers for a popup's rows, which their UI Automation runtime ids carry: a row
 /// gets one when it is first seen and keeps it while it shows. A number is never given twice, so
 /// a row that went keeps its number to itself.
 #[derive(Debug, Default)]

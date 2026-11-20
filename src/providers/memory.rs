@@ -1,4 +1,4 @@
-//! `memory` (SPEC Appendix A): physical memory from `GlobalMemoryStatusEx`; the load is the
+//! `memory`: physical memory from `GlobalMemoryStatusEx`; the load is the
 //! OS's own figure (`dwMemoryLoad`), as Task Manager shows it.
 
 use crate::platform::MemoryStatus;

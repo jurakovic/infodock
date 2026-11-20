@@ -1,4 +1,4 @@
-//! Reading skin packs from `.zip` files (SPEC §12.4): the central directory and entries that
+//! Reading skin packs from `.zip` files: the central directory and entries that
 //! are stored or deflated, enough for the archives Explorer and common tools write. Encrypted
 //! entries and ZIP64 archives are refused; every entry is checked against its size and CRC.
 

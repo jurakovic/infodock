@@ -1,4 +1,4 @@
-# Measures Infodock's budgets (SPEC §14.1, §16): the private working set (Task Manager's
+# Measures Infodock's budgets: the private working set (Task Manager's
 # "Memory" column) of infodock.exe and all its child processes, at idle, with Settings open,
 # and after Settings was closed; its CPU use at idle over 60 s, as a share of all processors
 # (Task Manager's "CPU" column); and the time from process creation to the bar's first frame,
@@ -8,7 +8,7 @@
 # closed). Also saves screenshots, quits the app gracefully and prints its log. Writes summary
 # tables to the job summary.
 #
-# The first run opens the welcome page (SPEC §11.5): a run before the measured one measures it
+# The first run opens the welcome page: a run before the measured one measures it
 # (reported, not enforced) and closes it, which ends the first run, so the measured run starts
 # with the bar alone.
 param(
@@ -24,7 +24,7 @@ param(
     # Fail the step when a measurement without Settings is over budget or missing.
     [switch] $Enforce
 )
-# The records the budget tests write, in the order of SPEC §14.1.
+# The records the budget tests write, in the order INTERNALS.md, Budgets lists them.
 $Recorded = @('redraw', 'sampler', 'hint', 'folder-menu', 'folder-menu-described')
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -177,7 +177,7 @@ try {
     $cpuPercent = [math]::Round(100 * $used.TotalSeconds / $capacity, 3)
     Write-Host "== Idle CPU: $cpuPercent % over $CpuSeconds s ($([math]::Round($used.TotalMilliseconds)) ms on $([Environment]::ProcessorCount) processors)"
 
-    # A second launch opens Settings in the running instance (SPEC §6.5).
+    # A second launch opens Settings in the running instance.
     $second = Start-Process -FilePath $Exe -PassThru
     if (-not $second.WaitForExit(15000)) { Write-Warning 'The second instance did not exit' }
     Start-Sleep -Seconds 10
@@ -196,7 +196,7 @@ try {
 }
 $warm = Get-NewStartTime $startTimes
 
-# Times (SPEC §14.1): the starts, then the budget tests' records.
+# Times: the starts, then the budget tests' records.
 $times = [System.Collections.Generic.List[object]]::new()
 $times.Add([pscustomobject]@{ Label = 'Cold start to bar visible'; Ms = $cold.Ms; BudgetMs = $ColdStartBudgetMs })
 $times.Add([pscustomobject]@{ Label = 'Warm start to bar visible'; Ms = $warm.Ms; BudgetMs = $WarmStartBudgetMs })

@@ -1,11 +1,11 @@
-//! Infodock core (SPEC §4): start-up, the main-thread UI (Settings window, hotkey) and shutdown.
+//! Infodock core: start-up, the main-thread UI (Settings window, hotkey) and shutdown.
 //! The bar, with the tray icon, runs on its own thread (`bar`).
 
-// Elsewhere only Settings opens (SPEC §2.2): most of the bar is unreachable there, so dead code
+// Elsewhere only Settings opens: most of the bar is unreachable there, so dead code
 // is looked for on Windows builds (`cargo check-win`, CI).
 #![cfg_attr(not(windows), allow(dead_code))]
 
-/// Connects a Slint component's `I18n` global to the shared catalog (SPEC §13). Every component
+/// Connects a Slint component's `I18n` global to the shared catalog. Every component
 /// instance has its own copy of the global.
 macro_rules! install_i18n {
     ($component:expr) => {{
@@ -49,14 +49,14 @@ use bar::BarController;
 use config::ConfigStore;
 use platform::Instance;
 
-/// Names the app's data folders and its single-instance lock (SPEC §2.3).
+/// Names the app's data folders and its single-instance lock.
 pub const IDENTIFIER: &str = "app.infodock.desktop";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn run() {
     logging::install_panic_hook();
 
-    // Held until the process ends; a second launch hands over to this instance (SPEC §6.5).
+    // Held until the process ends; a second launch hands over to this instance.
     let _instance = match platform::single_instance(IDENTIFIER) {
         Instance::Primary(guard) => guard,
         Instance::Secondary => {
@@ -71,10 +71,10 @@ pub fn run() {
     }
     tracing::info!("Infodock {VERSION} starting");
 
-    // Before any window: the taskbar groups them, and toasts show, as the app (SPEC §7.4).
+    // Before any window: the taskbar groups them, and toasts show, as the app.
     platform::register_app_id(IDENTIFIER, &i18n::t("app.name"));
 
-    // What the system offers is probed while the app starts, off the bar's way (SPEC §14.1).
+    // What the system offers is probed while the app starts, off the bar's way.
     let platform = platform::current();
     let probe = Arc::clone(&platform);
     if let Err(e) = std::thread::Builder::new()
@@ -95,9 +95,9 @@ pub fn run() {
     logging::startup_step("config");
 
     // The Settings window uses Slint's winit backend on this thread; software rendering keeps
-    // GPU drivers out of the process (SPEC §3, §14.1). The window is opaque: Slint asks for a
+    // GPU drivers out of the process. The window is opaque: Slint asks for a
     // transparent one, whose content Windows drops when transparency effects change, and the
-    // renderer repaints only what changed, so it stayed blank (SPEC §10.7).
+    // renderer repaints only what changed, so it stayed blank.
     if let Err(e) = slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
@@ -149,9 +149,9 @@ pub fn run() {
 
 /// Turns winit's device events off once its event loop runs. Slint uses none of them, and on
 /// Windows winit asks for them with a raw input registration for the keyboard, which keeps
-/// Windows from calling the low-level keyboard hook that notices a hotkey another app holds
-/// (SPEC §6.5): while the newest such hook is a process's that reads the keyboard's raw input,
-/// Windows calls none (S14x2, D120).
+/// Windows from calling the low-level keyboard hook that notices a hotkey another app holds:
+/// while the newest such hook is a process's that reads the keyboard's raw input,
+/// Windows calls none.
 struct NoDeviceEvents;
 
 impl slint::winit_030::CustomApplicationHandler for NoDeviceEvents {
@@ -164,8 +164,8 @@ impl slint::winit_030::CustomApplicationHandler for NoDeviceEvents {
     }
 }
 
-/// Stores the machine-derived props that sensors lack, e.g. after first run or an import
-/// (SPEC §11.2); the machine is asked before the store is locked.
+/// Stores the machine-derived props that sensors lack, e.g. after first run or an import;
+/// the machine is asked before the store is locked.
 fn fill_machine_defaults(store: &ConfigStore, platform: &dyn platform::Platform) {
     let ctx = sensors::DefaultsCtx { platform };
     let registry = sensors::registry::registry();
@@ -180,7 +180,7 @@ fn fill_machine_defaults(store: &ConfigStore, platform: &dyn platform::Platform)
     }
 }
 
-/// Tells the user their unreadable config was put aside (SPEC §11.2).
+/// Tells the user their unreadable config was put aside.
 fn notify_recovery(recovery: &config::store::Recovery, platform: &dyn platform::Platform) {
     platform.notify(&i18n::t("app.name"), &recovery_message(recovery));
 }

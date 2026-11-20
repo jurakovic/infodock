@@ -1,4 +1,4 @@
-//! Data folders and the single-instance lock (SPEC §11.1, §6.5).
+//! Data folders and the single-instance lock.
 //!
 //! The lock is a named mutex in the session namespace. A second launch finds the running bar
 //! window by its class, lets it take the foreground (the second launch has that right, since the

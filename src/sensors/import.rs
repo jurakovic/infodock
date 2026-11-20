@@ -1,5 +1,5 @@
-//! Importing sensors into the layout (SPEC §11.3–11.4). Each sensor a file brings gets a new id
-//! and is checked against its type by the rules of §11.2, as a stored sensor is on load:
+//! Importing sensors into the layout (INTERNALS.md, Config). Each sensor a file brings gets a new
+//! id and is checked against its type by the storage rules, as a stored sensor is on load:
 //! invalid values give way to their defaults (with a warning), numbers are clamped, keys its
 //! type does not know are kept, machine-derived props are filled from this machine, and only
 //! what differs from the defaults is stored. A type this version does not know is kept as it
@@ -16,7 +16,7 @@ use crate::config::model::{Config, IdGen, Layout, SensorInstance};
 pub struct Prepared(Incoming);
 
 /// Checks each sensor `incoming` brings against its type: invalid values give way to their
-/// defaults (with a warning), machine-derived props are asked of the machine (SPEC §11.2), and
+/// defaults (with a warning), machine-derived props are asked of the machine, and
 /// the props are brought into their stored form. Runs before the config store is locked.
 pub fn prepare(registry: &Registry, ctx: &DefaultsCtx, mut incoming: Incoming) -> Prepared {
     for sensor in &mut incoming.sensors {

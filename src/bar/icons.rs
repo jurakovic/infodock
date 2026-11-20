@@ -1,5 +1,5 @@
-//! Shell icons for the sensors on the bar and the rows of popups, and the sensors' image files
-//! (SPEC §4.1): read on a worker thread, since the shell may wait for a network server and a
+//! Shell icons for the sensors on the bar and the rows of popups, and the sensors' image files:
+//! read on a worker thread, since the shell may wait for a network server and a
 //! file may lie on a share that does not answer, and kept by path and size. Sensors ask while
 //! they measure, popups while they lay out; an icon that arrives wakes the bar thread, which
 //! measures and lays out again. The sensors' icons and images are kept; the popups' icons (a
@@ -25,7 +25,7 @@ const QUEUED: usize = 48;
 enum Kind {
     /// The shell's icon of a file, folder or drive.
     Shell,
-    /// An image file, decoded (SPEC §9.2).
+    /// An image file, decoded.
     Image,
 }
 

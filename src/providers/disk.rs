@@ -1,4 +1,4 @@
-//! `disk/<X:\>` (SPEC Appendix A): a volume's size and free space. A drive that is missing or
+//! `disk/<X:\>`: a volume's size and free space. A drive that is missing or
 //! has no medium is a sample too (`present: false`), so sensors can show it as absent. Volumes
 //! are read on a worker thread (`worker.rs`), since a network drive can stall.
 

@@ -1,5 +1,5 @@
-//! The resolved bar theme (SPEC §12.1): theme defaults, user settings and the OS appearance
-//! combined into the values all bar drawing reads.
+//! The resolved bar theme (INTERNALS.md, Theme and skins): theme defaults, user settings and the OS
+//! appearance combined into the values all bar drawing reads.
 
 use super::skins::SkinSpec;
 use crate::config::model::{
@@ -8,7 +8,7 @@ use crate::config::model::{
 };
 use crate::platform::{Color, Font, OsAppearance};
 
-/// How inactive sensors draw their icon or graphic (SPEC §8.5).
+/// How inactive sensors draw their icon or graphic.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Inactive {
     /// Drawn with this opacity (0–1).
@@ -23,18 +23,18 @@ pub struct Theme {
     /// Logical px.
     pub bar_height: u32,
     /// The strip the sensors draw in, logical px: its top and its height, the bar's less the
-    /// space above and below (`bar.sensorPadding`, SPEC §10.2). Icons are sized to its height.
+    /// space above and below (`bar.sensorPadding`). Icons are sized to its height.
     pub sensor_top: f32,
     pub sensor_height: u32,
     /// Tint with the configured opacity as alpha.
     pub bar_background: Color,
-    /// The classic bar's skin, drawn with `bar_background`'s alpha (SPEC §12.3); `None` on the
+    /// The classic bar's skin, drawn with `bar_background`'s alpha; `None` on the
     /// modern bar, which fills its background.
     pub skin: Option<SkinSpec>,
-    /// 1 px line on the edge facing the screen centre (modern only, SPEC §12.2).
+    /// 1 px line on the edge facing the screen centre (modern only).
     pub hairline: Option<Color>,
     pub material: Material,
-    /// Edge padding and gap between sensors (SPEC §5.4).
+    /// Edge padding and gap between sensors.
     pub pad: f32,
     pub gap: f32,
     pub sensor_text: Color,
@@ -50,7 +50,7 @@ pub struct Theme {
     pub popup_font_size: f32,
     pub popup_radius: f32,
     pub popup_shadow: bool,
-    /// Focus ring and drop placer (SPEC §6.2, §14.4).
+    /// Focus ring and drop placer.
     pub accent: Color,
     pub inactive: Inactive,
 }
@@ -70,7 +70,7 @@ impl Theme {
         let modern = s.theme == ThemeId::Modern;
         let custom_background =
             s.background.color_mode == BackgroundColorMode::Custom && s.background.color.is_some();
-        // The light look follows `colorScheme` (SPEC §10.3, §12.2).
+        // The light look follows `colorScheme`.
         let light = s.light_bar(os.dark);
 
         let theme_background = if light {
@@ -126,7 +126,7 @@ impl Theme {
             sensor_top: padding as f32,
             sensor_height: bar_height - 2 * padding,
             // The opacity applies with transparency effects off too, only without the material
-            // behind it (SPEC §12.2).
+            // behind it.
             bar_background: background.with_alpha(percent(
                 s.background.opacity.unwrap_or(d.background_opacity),
             )),
@@ -167,7 +167,7 @@ impl Theme {
 
     /// Whether the bar's background is dark: white stands out on it more than black does
     /// (relative luminance under 0.18), so a material with a light and a dark look takes the
-    /// dark one (SPEC §12.2).
+    /// dark one.
     pub fn dark_backdrop(&self) -> bool {
         self.bar_background.luminance() < 0.18
     }

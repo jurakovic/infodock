@@ -1,4 +1,4 @@
-//! `folder-menu` — Folder Menu (SPEC §9.19): a folder icon that opens a popup listing the
+//! `folder-menu` — Folder Menu: a folder icon that opens a popup listing the
 //! folder's contents (`common/folder_browser.rs`), lined up with the sensor's left edge.
 
 use serde::Deserialize;
@@ -17,7 +17,7 @@ use crate::i18n::t;
 use crate::platform::file_name;
 use crate::platform::{Canvas, DropEffect, FileOp};
 
-/// The built-in folder icon (Appendix C).
+/// The built-in folder icon.
 const FOLDER: &[u8] = include_bytes!("../../assets/icons/folder.svg");
 /// The *Open folder* menu item.
 const OPEN: MenuId = 0;
@@ -64,7 +64,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.19.
+/// The Folder Menu's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("folder", "folder"),
     LegacyKey::new("text", "title"),
@@ -144,7 +144,7 @@ struct FolderMenu {
     icon: BarIcon,
 }
 
-/// What a drop into the folder does (SPEC §9.19).
+/// What a drop into the folder does.
 #[derive(Debug, Clone, PartialEq)]
 enum DropPlan {
     /// Internet shortcuts (`.url`) to the links.
@@ -232,7 +232,7 @@ impl Sensor for FolderMenu {
         }))
     }
 
-    /// Opens the `folder-browser` popup (SPEC §9.19).
+    /// Opens the `folder-browser` popup.
     fn clickable(&self, _cx: &SensorCtx) -> bool {
         !self.unset()
     }
@@ -265,13 +265,13 @@ impl Sensor for FolderMenu {
         self.title()
     }
 
-    /// Once its folder is chosen (SPEC §9.19).
+    /// Once its folder is chosen.
     fn has_popup(&self) -> bool {
         !self.unset()
     }
 
     /// Files and folders are copied, moved or linked into the folder, links become Internet
-    /// shortcuts (SPEC §9.19).
+    /// shortcuts.
     fn drop_action(&self, items: &[Dropped], drag: DragInfo, cx: &SensorCtx) -> Option<DropAction> {
         let title = self.title();
         Some(match self.drop_plan(items, drag, cx)? {

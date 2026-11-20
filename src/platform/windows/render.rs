@@ -1,5 +1,5 @@
-//! The bar renderer (SPEC §4.6): Direct2D with a software render target, drawing into a
-//! premultiplied 32-bit DIB section, with DirectWrite text in grayscale antialiasing (the
+//! The bar renderer (INTERNALS.md, Platform layer): Direct2D with a software render target, drawing
+//! into a premultiplied 32-bit DIB section, with DirectWrite text in grayscale antialiasing (the
 //! background is transparent). Software rendering keeps the GPU driver out of the process; a
 //! bar-sized frame is cheap to rasterise on the CPU. The caller presents the DIB: the bar copies
 //! it to its DWM-composited window, layered popups pass it to `UpdateLayeredWindow`, and
@@ -265,7 +265,7 @@ impl Renderer {
 }
 
 /// Renders `width`×`height` physical px at `scale` into a bitmap, e.g. for previews and the
-/// screenshots CI publishes (SPEC §12.4, §16).
+/// screenshots CI publishes.
 pub fn render_offscreen(
     width: u32,
     height: u32,
@@ -291,7 +291,7 @@ pub fn render_offscreen(
 }
 
 /// A renderer kept across frames, as the bar window keeps its own: what drawing a frame costs,
-/// for the budget tests (SPEC §14.1).
+/// for the budget tests.
 #[cfg(test)]
 pub struct FrameRenderer(Renderer);
 

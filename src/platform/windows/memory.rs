@@ -1,7 +1,7 @@
-//! Physical memory and page files (SPEC Appendix A, `memory` and `swap`):
-//! `GlobalMemoryStatusEx`, and `NtQuerySystemInformation(SystemPageFileInformation)`, which
-//! gives every page file's size and use in one cheap call (no WMI). Also this process's own
-//! memory, for the log (SPEC §14.1).
+//! Physical memory and page files (the `memory` and `swap` topics; INTERNALS.md, Windows data
+//! sources): `GlobalMemoryStatusEx`, and `NtQuerySystemInformation(SystemPageFileInformation)`,
+//! which gives every page file's size and use in one cheap call (no WMI). Also this process's own
+//! memory, for the log.
 
 use windows::Wdk::System::SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS};
 use windows::Win32::Foundation::CloseHandle;

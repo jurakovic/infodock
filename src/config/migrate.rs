@@ -1,4 +1,5 @@
-//! Schema migrations (SPEC §11.2). Each step is a pure function from schema `n` to `n + 1`.
+//! Schema migrations (INTERNALS.md, Config). Each step is a pure function from schema `n` to `n +
+//! 1`.
 
 use serde_json::Value;
 

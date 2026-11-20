@@ -1,4 +1,4 @@
-//! `cpu-meter`, `cpu-graph` and `cpu-graph-dual` — the processors' load (SPEC §9.7–9.9) on the
+//! `cpu-meter`, `cpu-graph` and `cpu-graph-dual` — the processors' load on the
 //! `cpu` topic, as a meter or a graph of one or two series, with the hint all CPU sensors
 //! share; a click opens Task Manager, or the app Settings ▸ Applications names instead.
 
@@ -21,8 +21,7 @@ use crate::i18n::{t, t_args, t_count};
 use crate::platform::{Canvas, Capability, file_name, without_extension};
 use crate::sampler::{CpuSample, Sample, Topic, TopicRequest};
 
-/// Task Manager, opened by a click unless `apps.taskManager` names another app (SPEC §9.7,
-/// §10.6).
+/// Task Manager, opened by a click unless `apps.taskManager` names another app.
 const TASK_MANAGER: &str = "taskmgr.exe";
 
 /// The app a click on a CPU or Memory sensor opens: `apps.taskManager`, or Task Manager.
@@ -37,7 +36,7 @@ pub(super) fn open_task_manager(cx: &SensorCtx) -> ClickResult {
 }
 
 /// The hint's "Click to …" line for [`open_task_manager`]: Task Manager, or the app set in its
-/// place by its file name without the extension, as a Shortcut names its target (§9.17).
+/// place by its file name without the extension, as a Shortcut names its target.
 pub(super) fn task_manager_line(cx: &SensorCtx) -> String {
     match task_manager(cx) {
         None => t("sensor.cpu.hint.click"),
@@ -121,19 +120,19 @@ const DUAL_SCHEMA: &[PropField] = &[
     .describe("sensor.dual.field.flipBottom.help"),
 ];
 
-/// SPEC §9.7.
+/// The CPU Meter's legacy XML keys.
 const METER_LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("interval", "interval"),
     LegacyKey::new("colorize", "color"),
 ];
 
-/// SPEC §9.8.
+/// The CPU Graph's legacy XML keys.
 const GRAPH_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
     LegacyKey::new("graph-color", "graphColor"),
     LegacyKey::new("graph-opacity", "graphOpacity"),
 ];
 
-/// SPEC §9.9: the series keep their defaults.
+/// The dual CPU Graph's legacy XML keys; the series keep their defaults.
 const DUAL_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
     LegacyKey::new("graph-top-color", "topColor"),
     LegacyKey::new("graph-top-opacity", "topOpacity"),
@@ -142,7 +141,7 @@ const DUAL_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
     LegacyKey::new("graph-bottom-flip", "flipBottom"),
 ];
 
-/// A series' value in `sample` (SPEC §9.9): `total`, `user`, `system` or `core<i>`; a
+/// A series' value in `sample`: `total`, `user`, `system` or `core<i>`; a
 /// processor this computer lacks, or one that could not be read (NaN), shows the total.
 fn series_value(series: &str, sample: &CpuSample) -> f32 {
     match series {
@@ -157,7 +156,7 @@ fn series_value(series: &str, sample: &CpuSample) -> f32 {
     }
 }
 
-/// The hint of every CPU sensor (SPEC §9.7): the processor count and the busy, user, system
+/// The hint of every CPU sensor: the processor count and the busy, user, system
 /// and idle shares with one decimal (the caller adds what a click does). User and system are
 /// clamped so that they add up to at most 100.
 pub fn hint(sample: &CpuSample, numbers: Numbers) -> String {
@@ -456,7 +455,7 @@ impl SensorType for CpuDualType {
         DUAL_LEGACY_KEYS
     }
 
-    /// SPEC §9.9: both halves show the one processor.
+    /// On a single processor, both halves show the one processor.
     fn picker_note(&self, ctx: &DefaultsCtx) -> Option<&'static str> {
         (ctx.platform.logical_processors() == 1).then_some("sensor.cpuDual.singleProcessor")
     }
@@ -698,7 +697,7 @@ mod tests {
         let text = hint(&one, Numbers::default());
         assert!(text.starts_with("1 CPU uses"), "{text}");
         assert!(text.contains("by system:\t20.0%"), "clamped: {text}");
-        // Locked with clicks only while Alt is held: no click line (SPEC §6.1).
+        // Locked with clicks only while Alt is held: no click line.
         let mut h = h;
         h.settings.locked = true;
         h.settings.clicks_when_locked = crate::config::model::ClicksWhenLocked::AltOnly;

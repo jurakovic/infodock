@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 21">
-  <!-- Placeholder (SPEC Appendix C): the Eject USB icon, a USB stick on its side, 30×21;
+  <!-- Placeholder: the Eject USB icon, a USB stick on its side, 30×21;
        monochrome white, tinted with the text colour. -->
   <rect x="2" y="5.5" width="17" height="10" rx="2" fill="#FFFFFF"/>
   <rect x="19" y="7" width="8" height="7" rx="0.8" fill="none" stroke="#FFFFFF" stroke-width="1.4"/>

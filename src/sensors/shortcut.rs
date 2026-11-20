@@ -1,4 +1,4 @@
-//! `shortcut` — opens a program, document, folder or web address (SPEC §9.17). The bar shows
+//! `shortcut` — opens a program, document, folder or web address. The bar shows
 //! its icon: a custom image, the target's shell icon, or the built-in globe for web addresses.
 //! The target is checked on the `path/<path>` topic, and the sensor is inactive while it is
 //! missing.
@@ -18,12 +18,12 @@ use crate::i18n::{t, t_args};
 use crate::platform::{Canvas, Launch, PathKind, file_name, without_extension};
 use crate::sampler::{Sample, Topic, TopicRequest};
 
-/// The icon for web addresses (Appendix C).
+/// The icon for web addresses.
 const GLOBE: &[u8] = include_bytes!("../../assets/icons/globe.svg");
-/// The icon when the shell has none, e.g. for a missing target (Appendix C).
+/// The icon when the shell has none, e.g. for a missing target.
 const APP: &[u8] = include_bytes!("../../assets/icons/app.svg");
 
-/// How often the target is checked (SPEC §9.17).
+/// How often the target is checked.
 const CHECK_EVERY: Duration = Duration::from_secs(60);
 /// An automatic title from a web address keeps this many characters at each end.
 const URL_KEEP: usize = 75;
@@ -95,7 +95,7 @@ const SCHEMA: &[PropField] = &[
     icon::OPACITY,
 ];
 
-/// SPEC §9.17.
+/// The Shortcut's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("link", "target"),
     LegacyKey::new("param", "args"),
@@ -183,7 +183,7 @@ struct ShortcutProps {
 }
 
 /// `text` with its middle cut out when it is longer than twice `keep` characters: the first and
-/// last `keep` with `…` between them (SPEC §9.17).
+/// last `keep` with `…` between them.
 fn middle_truncated(text: &str, keep: usize) -> String {
     let count = text.chars().count();
     if count <= 2 * keep {
@@ -194,7 +194,7 @@ fn middle_truncated(text: &str, keep: usize) -> String {
     format!("{head}…{tail}")
 }
 
-/// The automatic title (SPEC §9.17): a web address middle-truncated to 150 characters, a
+/// The automatic title: a web address middle-truncated to 150 characters, a
 /// folder's name, or a file's name without its extension.
 fn auto_title(url: &str, target: &str, kind: Option<PathKind>) -> String {
     if !url.is_empty() {
@@ -213,8 +213,8 @@ fn is_bare_name(target: &str) -> bool {
     !target.contains(['\\', '/', ':'])
 }
 
-/// The working folder for starting `target`: `work_dir`, or else the target's folder (SPEC
-/// §9.17); `None` for a bare program name.
+/// The working folder for starting `target`: `work_dir`, or else the target's folder;
+/// `None` for a bare program name.
 fn work_dir(target: &str, work_dir: &str) -> Option<String> {
     if !work_dir.is_empty() {
         return Some(work_dir.to_owned());

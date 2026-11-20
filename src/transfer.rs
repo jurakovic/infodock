@@ -1,8 +1,8 @@
-//! Importing and exporting layouts as the user does it (SPEC §6.4, §11.3–11.4): the file pickers,
+//! Importing and exporting layouts as the user does it: the file pickers,
 //! the *Replace* / *Merge* question, the report and the errors. Runs on the main thread, as
 //! Settings' pickers do, so the bar goes on while a picker is open; the Tools menu starts it.
 //!
-//! A clean import is announced with a toast (§7.4); one that skipped entries or has warnings
+//! A clean import is announced with a toast; one that skipped entries or has warnings
 //! shows the report in a dialog, so nothing goes unseen.
 
 use std::cell::Cell;
@@ -441,7 +441,7 @@ mod tests {
             Some("Info: The file holds no sensors this version of Infodock can show. | ")
         );
         // Only sensors this version does not support: nothing to replace the bar with, and the
-        // message says why (review M4).
+        // message says why.
         let only_rss = r#"<sensors><sensor side="left" type="DockRSSSensor"/>
             <sensor type="DockText"/></sensors>"#;
         *script.open.borrow_mut() = Some(f.file("rss.xml", only_rss));
@@ -763,9 +763,10 @@ mod tests {
         );
     }
 
-    /// SPEC Appendix B, the exit criterion of M4 (§17).
+    /// The example legacy layout (`tests/fixtures/legacy/example.xml`): what it makes and what it
+    /// warns about.
     #[test]
-    fn imports_appendix_b_as_specified() {
+    fn imports_the_example_layout() {
         use serde_json::json;
         let f = Fixture::new();
         let script = Script::default();

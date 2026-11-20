@@ -1,4 +1,4 @@
-//! Animations (SPEC §5.5, §9.3): values between 0 and 1 that move to a target over time with
+//! Animations: values between 0 and 1 that move to a target over time with
 //! an easing and are read at each frame. Pure; callers supply the clock and drive the frames.
 
 use std::time::{Duration, Instant};
@@ -17,7 +17,7 @@ pub fn enabled(setting: Animations, os: bool) -> bool {
     }
 }
 
-/// Whether the bar slides out before it takes `new`'s place (SPEC §5.5): a docked bar that
+/// Whether the bar slides out before it takes `new`'s place: a docked bar that
 /// changes edges does. The controller then leaves the redocking to the bar thread, which
 /// redocks once the slide is done.
 pub fn slides_out(old: &BarSettings, new: &BarSettings) -> bool {

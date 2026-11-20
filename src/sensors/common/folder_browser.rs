@@ -1,4 +1,4 @@
-//! The `folder-browser` popup (SPEC §9.19), shared by Folder Menu and Start Menu: a header with
+//! The `folder-browser` popup, shared by Folder Menu and Start Menu: a header with
 //! the current folder's title over a list of its folders and files. Each folder is listed on a
 //! worker thread; rows show a 16 px shell icon and the name. A click (or Enter) opens a file
 //! and closes the popup, or goes into a folder (the list slides); Back, ← or Backspace go up
@@ -26,7 +26,7 @@ use crate::platform::{
 use crate::sensors::popup::{Popup, PopupAlign, PopupCtx, PopupReply};
 use crate::sensors::{Fetched, Props};
 
-/// Row icons when the shell has none, and the Back button (Appendix C).
+/// Row icons when the shell has none, and the Back button.
 const FOLDER: &[u8] = include_bytes!("../../../assets/icons/folder.svg");
 const FILE: &[u8] = include_bytes!("../../../assets/icons/file.svg");
 const BACK: &[u8] = include_bytes!("../../../assets/icons/back.svg");
@@ -45,7 +45,7 @@ const TEXT_X: f32 = ICON_X + ICON + 6.0;
 const END: f32 = 6.0;
 /// The Back button's width at the header's right.
 const BACK_WIDTH: f32 = HEADER;
-/// The popup's size limits (SPEC §9.19): at least 130 px a side, at most 600 px wide and 70 %
+/// The popup's size limits: at least 130 px a side, at most 600 px wide and 70 %
 /// of the monitor tall.
 pub const MIN_SIZE: f32 = 130.0;
 pub const MAX_WIDTH: f32 = 600.0;
@@ -57,7 +57,7 @@ const GRIP: f32 = 4.0;
 /// complete; a listing that takes longer than [`LOADING_AFTER`] says it is loading.
 const FIRST_WAIT: Duration = Duration::from_millis(150);
 const LOADING_AFTER: Duration = Duration::from_millis(200);
-/// The list slides this long into a folder and back out (SPEC §9.19).
+/// The list slides this long into a folder and back out.
 const SLIDE: Duration = Duration::from_millis(250);
 /// A wheel turn scrolls over this long.
 const GLIDE: Duration = Duration::from_millis(100);
@@ -71,7 +71,7 @@ pub struct Item {
     pub name: String,
     pub path: String,
     pub folder: bool,
-    /// More folders merged into this one (Start Menu, SPEC §9.20); listed together with it.
+    /// More folders merged into this one (Start Menu); listed together with it.
     pub also: Vec<String>,
 }
 
@@ -97,7 +97,7 @@ pub fn display_name(name: &str, folder: bool) -> String {
     name.to_owned()
 }
 
-/// A folder's entries as the list shows them (SPEC §9.19): `desktop.ini` left out always,
+/// A folder's entries as the list shows them: `desktop.ini` left out always,
 /// hidden and system items unless `show_hidden`; folders first, then files, each in the order
 /// of `cmp`.
 fn prepare(
@@ -125,7 +125,7 @@ fn sort(items: &mut [Item], cmp: impl Fn(&str, &str) -> Ordering) {
     items.sort_by(|a, b| b.folder.cmp(&a.folder).then_with(|| cmp(&a.name, &b.name)));
 }
 
-/// Several folders' lists as one (SPEC §9.20): folders with the same name (ignoring case)
+/// Several folders' lists as one: folders with the same name (ignoring case)
 /// become one folder holding the union of their children, and of files with the same name
 /// the earlier list's wins. Sorted as [`prepare`] sorts.
 pub fn merge(lists: Vec<Vec<Item>>, cmp: impl Fn(&str, &str) -> Ordering) -> Vec<Item> {
@@ -207,7 +207,7 @@ enum Listing {
 /// What the browser shows first and how big it is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
-    /// The folder shown first; more folders merge into it (Start Menu, SPEC §9.20).
+    /// The folder shown first; more folders merge into it (Start Menu).
     pub folders: Vec<String>,
     /// The header's text.
     pub title: String,
@@ -225,7 +225,7 @@ enum Target {
     Row(usize),
 }
 
-/// A resize grip (SPEC §9.19): on the free vertical edge (width) or the edge away from the bar
+/// A resize grip: on the free vertical edge (width) or the edge away from the bar
 /// (height).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Grip {
@@ -526,7 +526,7 @@ impl FolderBrowser {
         PopupReply::Relayout
     }
 
-    /// Moves the selection by a key (SPEC §9.19).
+    /// Moves the selection by a key.
     fn select(&mut self, key: Key) -> PopupReply {
         let count = self.items().len();
         if count == 0 {
@@ -549,7 +549,7 @@ impl FolderBrowser {
         self.select_row(next)
     }
 
-    /// Jumps to the first name starting with what was typed (SPEC §9.19); a character that
+    /// Jumps to the first name starting with what was typed; a character that
     /// matches nothing with the earlier ones starts a new name.
     fn type_ahead(&mut self, c: char, now: Instant) -> PopupReply {
         if self
@@ -691,7 +691,7 @@ impl FolderBrowser {
     }
 }
 
-/// The row highlight on a popup background (SPEC §9.19): light blue on dark backgrounds, dark
+/// The row highlight on a popup background: light blue on dark backgrounds, dark
 /// blue on light ones.
 pub fn highlight(background: Color) -> Color {
     let luminance = 0.299 * background.r + 0.587 * background.g + 0.114 * background.b;
@@ -996,7 +996,7 @@ impl Popup for FolderBrowser {
         PopupReply::Relayout
     }
 
-    /// The current folder's items (SPEC §14.4), by path, in view where the list shows them;
+    /// The current folder's items, by path, in view where the list shows them;
     /// or the message it shows instead.
     fn accessible(&self) -> AccessiblePopup {
         let width = self.view.size.width;

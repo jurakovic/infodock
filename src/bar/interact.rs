@@ -1,4 +1,4 @@
-//! Pointer rules on the bar (SPEC §6.1, §6.2): presses, clicks, and where a reorder drag drops.
+//! Pointer rules on the bar: presses, clicks, and where a reorder drag drops.
 //! The Lock rules for clicks are the config's (`Settings::clicks_allowed`).
 
 use crate::config::model::Zone;
@@ -7,7 +7,7 @@ use crate::platform::PointF;
 /// Moving farther than this (logical px) from the press starts a drag instead of a click.
 const DRAG_THRESHOLD: f32 = 4.0;
 
-/// The zone under `x` when no sensor is (SPEC §6.2, §6.6): by thirds of the bar.
+/// The zone under `x` when no sensor is: by thirds of the bar.
 pub fn zone_at(x: f32, bar_width: f32) -> Zone {
     if x < bar_width / 3.0 {
         Zone::Left
@@ -18,7 +18,7 @@ pub fn zone_at(x: f32, bar_width: f32) -> Zone {
     }
 }
 
-/// Where a new sensor goes in `zone` when not inserted next to a sensor (SPEC §6.6): at the
+/// Where a new sensor goes in `zone` when not inserted next to a sensor: at the
 /// end, except in the right zone, where it goes first (next to the centre).
 pub fn insertion_index(zone: Zone, len: usize) -> usize {
     match zone {
@@ -27,7 +27,7 @@ pub fn insertion_index(zone: Zone, len: usize) -> usize {
     }
 }
 
-/// Where a dragged sensor would land (SPEC §6.2).
+/// Where a dragged sensor would land.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DropTarget {
     pub zone: Zone,
@@ -38,7 +38,7 @@ pub struct DropTarget {
 }
 
 /// The drop target for the pointer at `x`, given each zone's sensors as `(x, width)` in
-/// visual order (SPEC §6.2): over a sensor, before it on its left half and after it on its
+/// visual order: over a sensor, before it on its left half and after it on its
 /// right half (the centre zone first, as it is drawn on top); elsewhere the zone by thirds, at
 /// its insertion point.
 pub fn drop_target(
@@ -98,7 +98,7 @@ pub struct Press {
     /// The pointer moved past [`DRAG_THRESHOLD`]: releasing is no click.
     pub moved: bool,
     /// It closed this sensor's popup, so releasing it does not open the popup again, however
-    /// long it was held (SPEC §7.2).
+    /// long it was held.
     pub closed_popup: bool,
 }
 

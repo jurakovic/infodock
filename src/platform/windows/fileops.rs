@@ -1,4 +1,4 @@
-//! File operations for drops (SPEC §9.16, §9.19): copying and moving into a folder and moving
+//! File operations for drops: copying and moving into a folder and moving
 //! to the Recycle Bin with `IFileOperation` (the shell's progress, conflict and confirmation
 //! dialogs, undo) and shortcuts (`.lnk`) with `IShellLinkW`.
 
@@ -107,7 +107,7 @@ fn transfer(op: FileOp, paths: &[String], folder: &str, quiet: bool) -> Result<(
     }
 }
 
-/// Deletes to the Recycle Bin with undo (SPEC §9.16).
+/// Deletes to the Recycle Bin with undo.
 fn delete(paths: &[String]) -> Result<()> {
     let operation = operation()?;
     // SAFETY: as in `transfer`.

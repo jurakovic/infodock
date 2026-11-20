@@ -1,7 +1,7 @@
-//! Starting with Windows (SPEC §10.1): while `settings.autostart` is on, the per-user `Run` key
+//! Starting with Windows: while `settings.autostart` is on, the per-user `Run` key
 //! starts this exe at sign-in under the value [`RUN_VALUE`]. The entry follows the setting at
 //! start-up (also after the exe it named moved away) and whenever it changes; until the first-run welcome is
-//! done, an existing entry turns the setting on (SPEC §11.5), so an installer that writes one
+//! done, an existing entry turns the setting on, so an installer that writes one
 //! needs nothing else from the app.
 
 use std::path::Path;
@@ -12,7 +12,7 @@ use crate::config::store::Newest;
 use crate::i18n::t_args;
 use crate::platform::{AutostartChange, Platform};
 
-/// The `Run` value's name. Fixed: the uninstaller removes it by this name (SPEC §15.3), and
+/// The `Run` value's name. Fixed: the uninstaller removes it by this name, and
 /// later versions look for it.
 const RUN_VALUE: &str = "Infodock";
 
@@ -187,7 +187,7 @@ mod tests {
             at_start(true, Some(moved), this, false),
             Some(AutostartChange::Update(this))
         );
-        // Another copy that is still there keeps it (review M4).
+        // Another copy that is still there keeps it.
         assert_eq!(at_start(true, Some(moved), this, true), None);
         assert_eq!(
             at_start(false, Some(this), this, true),

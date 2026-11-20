@@ -1,6 +1,7 @@
-//! The sensors on the bar (SPEC §4.4): one instance per layout entry, measured, placed and drawn
-//! on the bar thread. An entry whose type or props change gets a new instance; a sensor that
-//! reports a change is re-measured, and the zones are placed again only if a width changed.
+//! The sensors on the bar (INTERNALS.md, Data flow): one instance per layout entry, measured,
+//! placed and drawn on the bar thread. An entry whose type or props change gets a new instance; a
+//! sensor that reports a change is re-measured, and the zones are placed again only if a width
+//! changed.
 
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
@@ -19,17 +20,17 @@ use crate::sensors::{
     ClickResult, DrawCtx, HintContent, LayoutCtx, MenuId, MenuItem, Props, Sensor, SensorCtx, State,
 };
 
-/// A pressed sensor is drawn 40 % fainter (SPEC §6.1).
+/// A pressed sensor is drawn 40 % fainter.
 const PRESSED_OPACITY: f32 = 0.6;
 /// A sensor whose data cannot be read is drawn this faint while the inactive style is a
-/// colour, which its text could not be read in (SPEC §8.5, §14.2): the default opacity.
+/// colour, which its text could not be read in: the default opacity.
 const FAILED_OPACITY: f32 = 0.78;
-/// The highlight behind a sensor whose popup is open (SPEC §7.2): the text colour this faint,
+/// The highlight behind a sensor whose popup is open: the text colour this faint,
 /// reaching this far beyond the sensor, with these corners.
 const ACTIVE_ALPHA: f32 = 0.16;
 const ACTIVE_REACH: f32 = 3.0;
 const ACTIVE_RADIUS: f32 = 4.0;
-/// The target of a drop has its background darkened (SPEC §9.19).
+/// The target of a drop has its background darkened.
 const DROP_TARGET: Color = Color::rgba(0, 0, 0, 0.78);
 /// A broadcast sample this much before a sensor's interval is over still counts as on time,
 /// at most (samples come on a grid, give or take a few ms).
@@ -38,13 +39,13 @@ const EARLY: Duration = Duration::from_millis(500);
 struct Placed {
     entry: SensorInstance,
     sensor: Box<dyn Sensor>,
-    /// What it subscribes to, asked once when it is created (SPEC §4.4).
+    /// What it subscribes to, asked once when it is created.
     topics: Vec<TopicRequest>,
     /// When it last took a sample of each topic.
     taken: Vec<(Topic, Instant)>,
-    /// The topics whose sample is an error, with the platform's message (SPEC §14.2).
+    /// The topics whose sample is an error, with the platform's message.
     errors: Vec<(Topic, String)>,
-    /// Logical px, from the last measurement, and how narrow it can be (SPEC §5.4).
+    /// Logical px, from the last measurement, and how narrow it can be.
     measured: f32,
     min: f32,
     /// What the layout gives it, logical px: `measured`, or less when the zones do not fit.
@@ -74,8 +75,8 @@ impl Placed {
         }
     }
 
-    /// What its hint and screen readers say while some of its data cannot be read (SPEC
-    /// §14.2): each message once.
+    /// What its hint and screen readers say while some of its data cannot be read:
+    /// each message once.
     fn error_text(&self) -> Option<String> {
         let mut lines: Vec<String> = Vec::new();
         for (_, message) in &self.errors {
@@ -88,7 +89,7 @@ impl Placed {
     }
 }
 
-/// How faint a sensor whose data cannot be read is drawn: as inactive (SPEC §8.5), all of it,
+/// How faint a sensor whose data cannot be read is drawn: as inactive, all of it,
 /// since what it shows is out of date.
 fn failed_opacity(inactive: Inactive) -> f32 {
     match inactive {
@@ -103,12 +104,12 @@ pub(super) struct Env<'a> {
     pub platform: &'a dyn Platform,
     /// Alt is held.
     pub alt: bool,
-    /// Transitions animate (SPEC §5.5).
+    /// Transitions animate.
     pub animate: bool,
-    /// The locale of `settings.dateLocale` and how it writes numbers (SPEC §8.6).
+    /// The locale of `settings.dateLocale` and how it writes numbers.
     pub locale: &'a Locale,
     pub numbers: Numbers,
-    /// Where sensors report what their actions changed (SPEC §4.4).
+    /// Where sensors report what their actions changed.
     pub changes: &'a ChangeSink,
 }
 
@@ -141,11 +142,11 @@ const ZONES: [Zone; 3] = [Zone::Left, Zone::Center, Zone::Right];
 pub(super) struct BarSensors {
     /// Left, centre, right; each in visual order.
     zones: [Vec<Placed>; 3],
-    /// Drawn dimmed while the pointer presses it (SPEC §6.1).
+    /// Drawn dimmed while the pointer presses it.
     pressed: Option<String>,
-    /// Drawn with a highlight behind it while its popup is open (SPEC §7.2).
+    /// Drawn with a highlight behind it while its popup is open.
     active: Option<String>,
-    /// Drawn on a dark background while a drag from another app would drop onto it (§6.3).
+    /// Drawn on a dark background while a drag from another app would drop onto it.
     drop_target: Option<String>,
     /// The zones must be placed again.
     relayout: bool,
@@ -235,8 +236,8 @@ impl BarSensors {
     }
 
     /// Measures the sensors that need it and places the zones if a width, the bar width, the
-    /// scale or the spacing (Sensor spacing, SPEC §10.4) changed; sensors that must give way
-    /// for the zones to fit the bar are narrowed (§5.4).
+    /// scale or the spacing (Sensor spacing) changed; sensors that must give way
+    /// for the zones to fit the bar are narrowed.
     pub fn update_layout(&mut self, cx: &LayoutCtx, bar_width: f32) {
         if cx.scale != self.scale {
             // Images are decoded at their physical size; numbers are written as the locale
@@ -295,9 +296,9 @@ impl BarSensors {
         self.scale
     }
 
-    /// Draws every sensor in its place: left, right, then the centre on top (SPEC §5.4). A
-    /// pressed sensor is dimmed by 40 % (§6.1), one whose data cannot be read is drawn
-    /// inactive (§14.2).
+    /// Draws every sensor in its place: left, right, then the centre on top. A
+    /// pressed sensor is dimmed by 40 %, one whose data cannot be read is drawn
+    /// inactive.
     pub fn draw(&self, canvas: &mut dyn Canvas, theme: &Theme, bar_height: f32) {
         for zone in [0, 2, 1] {
             for p in &self.zones[zone] {
@@ -458,7 +459,7 @@ impl BarSensors {
         })
     }
 
-    /// The ids of the sensors the keyboard focus moves between (SPEC §14.4), in visual order:
+    /// The ids of the sensors the keyboard focus moves between, in visual order:
     /// the zones from left to right, each in its order.
     pub fn focus_order(&self) -> Vec<String> {
         self.zones
@@ -469,7 +470,7 @@ impl BarSensors {
             .collect()
     }
 
-    /// The focusable sensors as screen readers see them (SPEC §14.4), in focus order, on a bar
+    /// The focusable sensors as screen readers see them, in focus order, on a bar
     /// `height` logical px high; `name` gives a sensor type's name. A popup of the sensor
     /// `popup` is open.
     pub fn accessible(
@@ -507,7 +508,7 @@ impl BarSensors {
             .map(|p| (p.x, p.width))
     }
 
-    /// What sensor `id` shows, for screen readers (SPEC §14.4).
+    /// What sensor `id` shows, for screen readers.
     pub fn value(&self, id: &str, env: &Env) -> String {
         self.zones
             .iter()
@@ -520,7 +521,7 @@ impl BarSensors {
             .unwrap_or_default()
     }
 
-    /// Sensor `id`'s hint; the error while its data cannot be read (SPEC §14.2).
+    /// Sensor `id`'s hint; the error while its data cannot be read.
     pub fn hint(&self, id: &str, env: &Env) -> Option<HintContent> {
         let p = self.zones.iter().flatten().find(|p| p.entry.id == id)?;
         match p.error_text() {
@@ -540,7 +541,7 @@ impl BarSensors {
         result
     }
 
-    /// Whether a click on sensor `id` does something now (SPEC §6.1).
+    /// Whether a click on sensor `id` does something now.
     pub fn clickable(&self, id: &str, env: &Env) -> bool {
         self.zones
             .iter()
@@ -549,7 +550,7 @@ impl BarSensors {
             .is_some_and(|p| p.sensor.clickable(&env.ctx()))
     }
 
-    /// Sensor `id`'s own menu items (SPEC §6.4).
+    /// Sensor `id`'s own menu items.
     pub fn menu(&self, id: &str, env: &Env) -> Vec<MenuItem> {
         self.zones
             .iter()
@@ -603,21 +604,21 @@ impl BarSensors {
         changed
     }
 
-    /// The state sensors want stored (SPEC §11.2), by id.
+    /// The state sensors want stored, by id.
     pub fn take_states(&mut self) -> Vec<(String, State)> {
         self.all_mut()
             .filter_map(|p| p.sensor.take_state().map(|s| (p.entry.id.clone(), s)))
             .collect()
     }
 
-    /// The props sensors changed themselves and want saved (SPEC §9.14), by id.
+    /// The props sensors changed themselves and want saved, by id.
     pub fn take_props(&mut self) -> Vec<(String, Props)> {
         self.all_mut()
             .filter_map(|p| p.sensor.take_props().map(|c| (p.entry.id.clone(), c)))
             .collect()
     }
 
-    /// Tells every sensor the wall clock jumped (SPEC §9.4–9.5); returns whether what any of
+    /// Tells every sensor the wall clock jumped; returns whether what any of
     /// them shows changed.
     pub fn clock_changed(&mut self, now: Instant, env: &Env) -> bool {
         let mut changed = false;
@@ -639,7 +640,7 @@ impl BarSensors {
         dirty
     }
 
-    /// The topics of each sensor that has any (SPEC §4.4).
+    /// The topics of each sensor that has any.
     pub fn subscriptions(&self) -> HashMap<String, Vec<TopicRequest>> {
         self.zones
             .iter()
@@ -652,8 +653,8 @@ impl BarSensors {
     /// Hands a sample that arrived `now` to the sensors it is for; returns whether any
     /// changed what it shows. A topic is sampled at the shortest interval any subscriber asked
     /// for, so a broadcast reaches a sensor only once its own interval has passed since the
-    /// last sample it took (a graph keeps its time scale); a catch-up always does (SPEC §4.4).
-    /// An error sample (§14.2) stays with the bar, which shows it, and goes with the next
+    /// last sample it took (a graph keeps its time scale); a catch-up always does.
+    /// An error sample stays with the bar, which shows it, and goes with the next
     /// sample of its topic; the sensor keeps what it had.
     pub fn deliver(&mut self, delivery: &Delivery, env: &Env, now: Instant) -> bool {
         let mut changed = false;

@@ -120,7 +120,7 @@ fn render_settings_pages() {
     }
 
     // As in the app, the renderer keeps its frame and paints only what changed. Raising
-    // `repaint` paints the whole window, as after a restore (SPEC §10.7).
+    // `repaint` paints the whole window, as after a restore.
     state.set_page(0);
     render("settings-general");
     let dirty = |raise: bool| {
@@ -183,7 +183,7 @@ fn render_settings_pages() {
         font >= 150.0,
         "the font's label: {font} px at the minimum width"
     );
-    // Wide, the page takes the window's whole width (SPEC §10.7).
+    // Wide, the page takes the window's whole width.
     state.set_page(0);
     render_at("settings-general-wide", 1600, height);
     let (x, _, w, _) = bounds(
@@ -245,7 +245,7 @@ fn render_settings_pages() {
     render_sized("settings-appearance-custom", 1000);
     set(&mut open, &|s| s.classic.skin = "gone".into());
     render("settings-appearance-missing");
-    // The colour scheme (SPEC §10.3), whatever the OS: dark, then light.
+    // The colour scheme, whatever the OS: dark, then light.
     set(&mut open, &|s| {
         *s = crate::config::model::Settings {
             color_scheme: crate::config::model::ColorScheme::Dark,
@@ -482,7 +482,7 @@ fn render_settings_pages() {
     assert_eq!(background().as_deref(), Some("#20B7FF"));
     state.invoke_reset("popups.background".into());
     // Leaving the colour box and clicking the slider without changing them keep the theme
-    // defaults (SPEC §11.2).
+    // defaults.
     nav(general);
     nav(popups);
     click(AccessibleRole::TextInput, &popup_background);
@@ -502,7 +502,7 @@ fn render_settings_pages() {
     assert!(!autostart());
     click(AccessibleRole::Switch, &autostart_switch);
     assert!(autostart());
-    // Restore defaults (SPEC §10.7) asks first, then puts the page's settings back. Its card is
+    // Restore defaults asks first, then puts the page's settings back. Its card is
     // the page's last, so its buttons are pressed as a screen reader would, wherever they are.
     let press = |label: &str| {
         ElementHandle::find_by_accessible_label(&ui, label)
@@ -563,7 +563,7 @@ fn render_settings_pages() {
         })
         .expect("saved");
     window.set_size(size);
-    // The calendar app is saved as it is typed (SPEC §10.6).
+    // The calendar app is saved as it is typed.
     nav(applications);
     retype(&t("settings.apps.calendar"), "outlookcal:");
     assert_eq!(app.store.get().settings.apps.calendar, "outlookcal:");
@@ -571,7 +571,7 @@ fn render_settings_pages() {
     retype(&t("settings.apps.taskManager"), "procexp64.exe");
     assert_eq!(app.store.get().settings.apps.task_manager, "procexp64.exe");
 
-    // Properties (SPEC §6.7): the logo's, then with a custom colour; a new Text sensor's.
+    // Properties: the logo's, then with a custom colour; a new Text sensor's.
     super::properties::open_form(&app, &logo, false);
     render("settings-properties-image");
     state.invoke_prop_color_mode("color".into(), 1, "#20B7FF".into());
@@ -585,7 +585,7 @@ fn render_settings_pages() {
             .map(|r| r.label.to_string());
         found.unwrap_or_else(|| panic!("a row {key:?}"))
     };
-    // An incomplete colour shows its error on the row and disables Save (SPEC §6.7).
+    // An incomplete colour shows its error on the row and disables Save.
     retype(&row("color"), "#12345");
     assert!(!state.get_props_valid());
     render("settings-properties-invalid");
@@ -640,7 +640,7 @@ fn render_settings_pages() {
     render("settings-properties-disk");
     state.invoke_props_cancel();
     assert!(app.store.get().layout.find(&disk).is_none());
-    // The Shortcut's form: paths, parameters, a web address and how it runs (SPEC §9.17).
+    // The Shortcut's form: paths, parameters, a web address and how it runs.
     let shortcut = app
         .add_sensor(
             "shortcut",
@@ -650,7 +650,7 @@ fn render_settings_pages() {
         )
         .expect("added");
     super::properties::open_form(&app, &shortcut, true);
-    // Without a target or a web address it cannot be saved (SPEC §8.2).
+    // Without a target or a web address it cannot be saved.
     assert!(!state.get_props_valid());
     render_sized("settings-properties-shortcut", 900);
     state.invoke_prop_text("url".into(), "https://example.com".into());
@@ -740,7 +740,7 @@ fn render_settings_pages() {
     render_sized("settings-properties-network", 1000);
     state.invoke_props_cancel();
 
-    // The picker (SPEC §6.6): next to the logo, with Text selected; then a search.
+    // The picker: next to the logo, with Text selected; then a search.
     let place = super::picker::Place::Next(logo.clone());
     super::picker::open_picker(&app, place);
     state.set_picker_selected(2);
@@ -793,7 +793,7 @@ fn render_settings_pages() {
     state.invoke_props_cancel();
     assert_eq!(app.store.get().layout.center.len(), 1);
 
-    // The welcome page (SPEC §11.5), as the first run opens it.
+    // The welcome page, as the first run opens it.
     let show_welcome = || {
         with_open_mut(|open| super::welcome::show(open, &app));
         settle();

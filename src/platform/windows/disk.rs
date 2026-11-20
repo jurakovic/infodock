@@ -1,10 +1,10 @@
-//! Volumes and their free space (SPEC Appendix A, `disk/<X:\>` and `volumes`):
-//! `GetLogicalDriveStringsW`, `GetDriveTypeW`, `GetVolumeInformationW` and
+//! Volumes and their free space (the `disk/<X:\>` and `volumes` topics; INTERNALS.md, Windows
+//! data sources): `GetLogicalDriveStringsW`, `GetDriveTypeW`, `GetVolumeInformationW` and
 //! `GetDiskFreeSpaceExW`. A drive without a medium (an empty card reader or optical drive)
 //! fails quietly: the calls run with critical-error dialogs turned off for the thread. Labels
 //! are read only from local drives that answer at once: a network drive whose server is away
-//! would block for the SMB timeout, and an optical drive may spin up. Folder listings (SPEC
-//! §9.19) and path checks run the same way.
+//! would block for the SMB timeout, and an optical drive may spin up. Folder listings
+//! and path checks run the same way.
 
 use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, GetDiskFreeSpaceExW,

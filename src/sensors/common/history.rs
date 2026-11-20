@@ -1,4 +1,4 @@
-//! A graph's history (SPEC §8.3, §4.4 item 7): the newest raw values, one per plot column, kept
+//! A graph's history: the newest raw values, one per plot column, kept
 //! in the sensor instance and never persisted.
 
 use std::collections::VecDeque;

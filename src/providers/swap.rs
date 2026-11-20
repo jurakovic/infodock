@@ -1,10 +1,10 @@
-//! `swap` (SPEC Appendix A): all page files together, as the platform reports their
+//! `swap`: all page files together, as the platform reports their
 //! allocated sizes and use.
 
 use crate::platform::PageFile;
 use crate::sampler::SwapSample;
 
-/// The sample for these page files; none gives a total of 0 (no page file, SPEC §9.11).
+/// The sample for these page files; none gives a total of 0 (no page file).
 pub fn sample(files: &[PageFile]) -> SwapSample {
     let total: u64 = files.iter().map(|f| f.allocated).sum();
     let used: u64 = files.iter().map(|f| f.used.min(f.allocated)).sum();

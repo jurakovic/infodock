@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <!-- App icon for 16–24 px (SPEC Appendix C): app-icon.svg with bigger letters and a plain bar; icon.ico takes it at those sizes, with a 1 px margin. -->
+  <!-- App icon for 16–24 px: app-icon.svg with bigger letters and a plain bar; icon.ico takes it at those sizes, with a 1 px margin. -->
   <g transform="translate(16 16) scale(0.875)">
   <defs><linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E2E35"/><stop offset="1" stop-color="#18181B"/></linearGradient></defs>
   <rect width="256" height="256" rx="0" fill="url(#t)"/>

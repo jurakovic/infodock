@@ -1,4 +1,4 @@
-//! Ejecting drives (SPEC §9.22): a USB disk or card reader is removed as a device, an optical
+//! Ejecting drives: a USB disk or card reader is removed as a device, an optical
 //! disc is ejected from its drive, and the shell's *Eject* verb is the fallback.
 //!
 //! Only volumes the drive list marks ejectable (removable and optical drives, disks on USB,
@@ -267,7 +267,7 @@ fn request_eject(node: u32) -> Result<(), EjectError> {
     Err(last)
 }
 
-/// What a veto means (SPEC §9.22), by its type: an app or a service names who holds the drive
+/// What a veto means, by its type: an app or a service names who holds the drive
 /// (an app's name is the path of its program), open files and other devices name nobody, and
 /// anything else is a failure, after which the shell's verb is tried. `None`: the device is
 /// gone already.

@@ -1,4 +1,4 @@
-//! `time` — the clock (SPEC §9.5): the hour large, the minutes (or seconds) small and raised,
+//! `time` — the clock: the hour large, the minutes (or seconds) small and raised,
 //! am/pm under them on a 12-hour clock, and an optional chime.
 
 use std::time::{Duration, Instant};
@@ -19,9 +19,9 @@ use crate::look::theme::Theme;
 use crate::platform::time::LocalTime;
 use crate::platform::{Canvas, Font, Locale, PointF, TextEngine, TextLayout, TextStyle};
 
-/// The bundled chime (a placeholder until the artwork, SPEC Appendix C).
+/// The bundled chime (a placeholder until the artwork).
 static CHIME: &[u8] = include_bytes!("../../assets/sounds/chime.wav");
-/// No chime this soon after the start, a resume or a time change (SPEC §9.5).
+/// No chime this soon after the start, a resume or a time change.
 const QUIET: Duration = Duration::from_secs(2);
 /// Between the hour and the small column, logical px.
 const GAP: f32 = 2.0;
@@ -76,7 +76,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.5: the chime's XML values are its minutes, as stored.
+/// The Time's legacy XML keys; the chime's XML values are its minutes, as stored.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("24hours", "use24h"),
     LegacyKey::new("seconds", "showSeconds"),
@@ -229,7 +229,7 @@ fn styles(theme: &Theme) -> (TextStyle, TextStyle, TextStyle) {
     )
 }
 
-/// The locale's am and pm, in lower case (SPEC §9.5).
+/// The locale's am and pm, in lower case.
 fn am_pm(locale: &Locale) -> (String, String) {
     (locale.am.to_lowercase(), locale.pm.to_lowercase())
 }

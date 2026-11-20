@@ -1,4 +1,4 @@
-//! The two-line block (SPEC §8.3): a small label line above a value line, both in the sensor
+//! The two-line block: a small label line above a value line, both in the sensor
 //! font at its small size (modern 10 px, classic 9 px), with tabular digits so changing values
 //! do not shift the bar.
 
@@ -25,12 +25,12 @@ pub fn style(theme: &Theme) -> TextStyle {
 
 /// The baselines of the two lines in a bar `bar_height` tall: two rows of font size + 1 px,
 /// centred as a block, each baseline 1.5 px above its row's bottom. In a 25 px classic bar
-/// (9 px font) that is y = 11 and y = 21, as in the spec.
+/// (9 px font) that is y = 11 and y = 21.
 pub fn baselines(theme: &Theme, bar_height: f32) -> [f32; 2] {
     baselines_for(theme.small_size, bar_height)
 }
 
-/// [`baselines`] for two lines of `size` px, e.g. Date's 11 px month and year (SPEC §9.4).
+/// [`baselines`] for two lines of `size` px, e.g. Date's 11 px month and year.
 pub fn baselines_for(size: f32, bar_height: f32) -> [f32; 2] {
     let row = size + 1.0;
     let top = (bar_height - 2.0 * row) / 2.0;
@@ -80,7 +80,7 @@ mod tests {
     use crate::platform::recording::{FixedMetrics, RecordingCanvas};
 
     #[test]
-    fn classic_baselines_match_the_spec() {
+    fn classic_baselines_are_11_and_21() {
         let settings = Settings {
             theme: ThemeId::Classic,
             ..Settings::default()

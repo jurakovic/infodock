@@ -1,5 +1,5 @@
 //! `memory-meter` / `memory-graph` and `swap-meter` / `swap-graph` — physical memory and the
-//! page files in use (SPEC §9.10–9.11) on the `memory` and `swap` topics, as a meter of the
+//! page files in use on the `memory` and `swap` topics, as a meter of the
 //! load or a graph showing the used bytes or the load; a click opens Task Manager (or the app
 //! Settings ▸ Applications names instead, as the CPU sensors do). Without a
 //! page file the swap sensors show `n/a` and are inactive.
@@ -80,7 +80,7 @@ impl Kind {
         }
     }
 
-    /// The hint (SPEC §9.10–9.11): total, available and load (the caller adds what a click
+    /// The hint: total, available and load (the caller adds what a click
     /// does); for swap without a page file, just that.
     fn hint(self, r: &Reading, numbers: Numbers) -> String {
         if self == Kind::Swap && r.absent() {
@@ -158,13 +158,13 @@ const GRAPH_SCHEMA: &[PropField] = &[
     graph::GRAPH_OPACITY,
 ];
 
-/// SPEC §9.10–9.11.
+/// The memory and swap meters' legacy XML keys.
 const METER_LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("interval", "interval"),
     LegacyKey::new("colorize", "color"),
 ];
 
-/// SPEC §9.10–9.11.
+/// The memory and swap graphs' legacy XML keys.
 const GRAPH_LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
     LegacyKey::options(
         "display-mode",
@@ -205,14 +205,14 @@ fn load(reading: Option<&Reading>) -> String {
     }
 }
 
-/// How an absent reading dims the graphic (SPEC §8.5); `None` while it is there.
+/// How an absent reading dims the graphic; `None` while it is there.
 fn dimmed(reading: Option<&Reading>, cx: &DrawCtx) -> Option<Inactive> {
     reading
         .is_some_and(Reading::absent)
         .then_some(cx.theme.inactive)
 }
 
-/// A meter of a usage topic's load (SPEC §9.10).
+/// A meter of a usage topic's load.
 pub struct UsageMeterType(Kind);
 
 pub static MEMORY_METER: UsageMeterType = UsageMeterType(Kind::Memory);
@@ -341,7 +341,7 @@ impl Sensor for UsageMeter {
     }
 }
 
-/// A graph of a usage topic's load, showing the used bytes or the load (SPEC §9.10).
+/// A graph of a usage topic's load, showing the used bytes or the load.
 pub struct UsageGraphType(Kind);
 
 pub static MEMORY_GRAPH: UsageGraphType = UsageGraphType(Kind::Memory);
@@ -438,7 +438,7 @@ impl UsageGraph {
 impl Sensor for UsageGraph {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
         let value = self.value(cx.numbers);
-        // The column fits `9999 MB` in bytes mode (SPEC §9.10).
+        // The column fits `9999 MB` in bytes mode.
         let reserve = match self.props.display {
             Display::Bytes => t_args("format.mb", &[("value", "9999")]),
             Display::Percent => percent(100.0),
@@ -627,7 +627,7 @@ mod tests {
         );
         assert_eq!(meter.click(&h.ctx()), ClickResult::Handled);
         assert_eq!(h.platform.log(), ["open taskmgr.exe"]);
-        // Another task manager set in Settings ▸ Applications (SPEC §10.6).
+        // Another task manager set in Settings ▸ Applications.
         let mut h = h;
         h.settings.apps.task_manager = r"C:\Tools\procexp64.exe".into();
         let Some(HintContent::Text(text)) = meter.hint(&h.ctx()) else {

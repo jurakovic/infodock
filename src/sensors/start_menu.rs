@@ -1,4 +1,4 @@
-//! `start-menu` — Start Menu (SPEC §9.20): a Folder Menu whose list merges the user's and all
+//! `start-menu` — Start Menu: a Folder Menu whose list merges the user's and all
 //! users' Start Menu programs (`common/folder_browser.rs`).
 
 use serde::Deserialize;
@@ -15,7 +15,7 @@ use super::{
 use crate::i18n::t;
 use crate::platform::{Canvas, Capability, KnownFolder, Platform};
 
-/// The built-in Start Menu icon (Appendix C).
+/// The built-in Start Menu icon.
 const START_MENU: &[u8] = include_bytes!("../../assets/icons/start-menu.svg");
 /// The menu items: the user's Programs folder, and all users'.
 const OPEN: MenuId = 0;
@@ -48,7 +48,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.20: the Folder Menu's keys; the folders are this computer's Start Menu.
+/// The Start Menu's legacy XML keys, the Folder Menu's; the folders are this computer's Start Menu.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::ignored("folder"),
     LegacyKey::new("text", "title"),
@@ -137,7 +137,7 @@ impl StartMenu {
         }
     }
 
-    /// The Start Menu's program folders, the user's first (theirs win, SPEC §9.20).
+    /// The Start Menu's program folders, the user's first (theirs win).
     fn folders(platform: &dyn Platform) -> Vec<String> {
         [KnownFolder::Programs, KnownFolder::CommonPrograms]
             .into_iter()
@@ -165,7 +165,7 @@ impl Sensor for StartMenu {
         Some(HintContent::Text(self.title()))
     }
 
-    /// Opens the `folder-browser` popup on the merged program folders (SPEC §9.20).
+    /// Opens the `folder-browser` popup on the merged program folders.
     fn clickable(&self, cx: &SensorCtx) -> bool {
         !Self::folders(cx.platform).is_empty()
     }

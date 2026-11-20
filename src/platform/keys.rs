@@ -1,4 +1,4 @@
-//! Keys as Settings records a hotkey (SPEC §6.5), and the Windows virtual keys behind them: the
+//! Keys as Settings records a hotkey, and the Windows virtual keys behind them: the
 //! pure part of noticing a combination another app holds, which never reaches the window.
 
 /// A key pressed with modifiers. `code` names the key as `KeyboardEvent.code` does (`KeyK`,

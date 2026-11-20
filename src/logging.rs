@@ -1,4 +1,4 @@
-//! Logging (SPEC §11.1) and the panic hook (SPEC §5.2 step 6, §14.2).
+//! Logging and the panic hook (INTERNALS.md, Errors and logging).
 
 use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
@@ -26,7 +26,7 @@ static FATAL_CLEANUP: Mutex<Vec<Cleanup>> = Mutex::new(Vec::new());
 static STARTUP: Mutex<Option<Vec<(&'static str, Instant)>>> = Mutex::new(Some(Vec::new()));
 
 /// Notes that start-up step `name` is done; the bar's first frame logs when each was, against
-/// the start budget (SPEC §14.1). Steps after that frame are not noted.
+/// the start budget. Steps after that frame are not noted.
 pub fn startup_step(name: &'static str) {
     if let Some(steps) = STARTUP
         .lock()

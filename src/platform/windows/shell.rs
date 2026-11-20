@@ -1,6 +1,6 @@
-//! Shell services (SPEC §4.6): starting programs, files and URIs for sensor clicks
-//! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), the Recycle Bin
-//! (§9.16), and the file and folder pickers (`IFileOpenDialog`, `IFileSaveDialog`).
+//! Shell services: starting programs, files and URIs for sensor clicks
+//! (`ShellExecuteExW`, with parameters, a working folder and the `runas` verb), the Recycle Bin,
+//! and the file and folder pickers (`IFileOpenDialog`, `IFileSaveDialog`).
 
 use windows::Win32::Foundation::ERROR_CANCELLED;
 use windows::Win32::System::Com::{
@@ -76,7 +76,7 @@ pub fn launch(launch: &Launch) {
     }
 }
 
-/// Whether the shell has a Recycle Bin (the `recycle_bin` capability, SPEC §4.6); asked of the
+/// Whether the shell has a Recycle Bin (the `recycle_bin` capability); asked of the
 /// shell's namespace, so no drive is touched.
 pub fn has_recycle_bin() -> bool {
     // SAFETY: the returned ID list is ours and freed with CoTaskMemFree.
@@ -108,7 +108,7 @@ pub fn recycle_bin() -> std::result::Result<RecycleBin, String> {
 }
 
 /// Empties the Recycle Bin of all drives on a short-lived thread, with the shell's own
-/// confirmation, progress and sound (SPEC §9.16), then calls `done`. Declining the
+/// confirmation, progress and sound, then calls `done`. Declining the
 /// confirmation, or an empty bin, is only logged.
 pub fn empty_recycle_bin(done: Box<dyn FnOnce() + Send>) {
     let spawned = std::thread::Builder::new()

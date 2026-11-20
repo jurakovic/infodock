@@ -1,4 +1,4 @@
-//! The `eject-list` popup (SPEC §9.22) of Eject USB: one row per drive that can be ejected,
+//! The `eject-list` popup of Eject USB: one row per drive that can be ejected,
 //! with its shell icon, name, size and an *Eject* button, then *Safely Remove Hardware…*. The
 //! drives come from the sensor's `volumes` samples, so the list follows drives arriving and
 //! going while it is open; sizes are read on a worker.
@@ -21,7 +21,7 @@ use crate::sensors::format::{self, Numbers};
 use crate::sensors::popup::{Popup, PopupCtx, PopupReply};
 use crate::sensors::{Fetched, disk};
 
-/// A row's icon when the shell has none (Appendix C).
+/// A row's icon when the shell has none.
 const DRIVE: &[u8] = include_bytes!("../../../assets/icons/drive.svg");
 
 /// The popup's width, logical px.
@@ -42,7 +42,7 @@ const BUTTON_RADIUS: f32 = 4.0;
 const SEPARATOR: f32 = 9.0;
 /// The footer's row id for screen readers; the drives' are their roots.
 const FOOTER: &str = "footer";
-/// The system's *Safely Remove Hardware* dialog (SPEC §9.22).
+/// The system's *Safely Remove Hardware* dialog.
 const HOTPLUG: (&str, &str) = ("rundll32.exe", "shell32.dll,Control_RunDLL hotplug.dll");
 
 /// The drives that can be ejected now, as the sensor last heard; shared with an open list.
@@ -53,7 +53,7 @@ pub struct Drives {
     pub generation: u64,
 }
 
-/// The drives that can be ejected (SPEC §9.22): removable drives, disks on USB and the like,
+/// The drives that can be ejected: removable drives, disks on USB and the like,
 /// and optical drives holding a disc; never one without a medium.
 pub fn ejectable(volumes: &[Volume]) -> Vec<Volume> {
     volumes
@@ -226,7 +226,7 @@ impl EjectList {
         }
     }
 
-    /// Ejects drive `root` in the background; the result is a notification (SPEC §9.22).
+    /// Ejects drive `root` in the background; the result is a notification.
     fn eject(&mut self, root: &str, cx: &PopupCtx) -> PopupReply {
         let Some(volume) = self.volumes.iter().find(|v| v.root == root) else {
             return PopupReply::Nothing;
@@ -525,7 +525,7 @@ impl Popup for EjectList {
         }
     }
 
-    /// A row per drive (SPEC §14.4), named by the drive, its size and its button (*Eject* or
+    /// A row per drive, named by the drive, its size and its button (*Eject* or
     /// *Ejecting…*), or *Nothing to eject*; then the footer. The marked button marks its row.
     fn accessible(&self) -> AccessiblePopup {
         let SizeF { width, height } = self.view.size;

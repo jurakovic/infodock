@@ -1,13 +1,13 @@
-# Checks a hotkey another app holds while Settings records one (SPEC §6.5), with the release
+# Checks a hotkey another app holds while Settings records one, with the release
 # exe on the runner's desktop. A thread of this script holds Ctrl+Alt+J with RegisterHotKey, as
 # another app would. Settings opens (a second launch, on General), the hotkey button is clicked
 # with the mouse and Ctrl+Alt+J is injected: Settings should find it taken and the holder should
 # never get it. Then Infodock's own hotkey (the default, Ctrl+Alt+Shift+I), pressed while
 # recording, should be found taken too. The app runs with the keyboard hook's trace (RUST_LOG);
 # the lines it logged are printed. Runs after the memory check, whose first run ended the
-# welcome page, and before the installer check, which removes the config. It found S14x2:
-# Windows called no low-level keyboard hook while Infodock's was the newest, as long as the app
-# read the keyboard's raw input (D120); a hook of another app installed after Infodock's hid that.
+# welcome page, and before the installer check, which removes the config. Windows calls no
+# low-level keyboard hook while the newest is a process's that reads the keyboard's raw input, so
+# the app reads none; a hook of another app installed after Infodock's would hide that.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -153,7 +153,7 @@ $env:RUST_LOG = $filter
 try {
     Start-Sleep -Seconds 8
     if ($app.HasExited) { throw "Infodock exited during start-up (code $($app.ExitCode))" }
-    # A second launch opens Settings on General (SPEC §4.1).
+    # A second launch opens Settings on General.
     $second = Start-Process -FilePath $Exe -PassThru
     if (-not $second.WaitForExit(15000)) { Write-Warning 'The second instance did not exit' }
     $window = [IntPtr]::Zero
@@ -187,7 +187,7 @@ try {
     $lines | Write-Host
 }
 
-$summary = @('### Hotkey held by another app (SPEC §6.5)', '', '| Check | Result |', '|---|---|')
+$summary = @('### Hotkey held by another app', '', '| Check | Result |', '|---|---|')
 $summary += $results.GetEnumerator() | ForEach-Object { "| $($_.Key) | $(if ($_.Value) { 'passed' } else { '**failed**' }) |" }
 if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
 $summary -join "`n" | Write-Host

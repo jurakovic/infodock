@@ -1,4 +1,4 @@
-//! `image` — a picture, by default the Infodock logo (SPEC §9.2).
+//! `image` — a picture, by default the Infodock logo.
 
 use std::path::Path;
 
@@ -15,7 +15,7 @@ use crate::i18n::t;
 use crate::look::theme::Theme;
 use crate::platform::{Bitmap, Canvas, Color, RectF, decode_image};
 
-/// The default image (Appendix C): monochrome white, so a custom colour tints it.
+/// The default image: monochrome white, so a custom colour tints it.
 const LOGO: &[u8] = include_bytes!("../../assets/logo.svg");
 
 const SCHEMA: &[PropField] = &[
@@ -41,7 +41,7 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.image.field.popupText.help"),
 ];
 
-/// SPEC §9.2.
+/// The Image's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     icon::LEGACY_IMAGE,
     icon::LEGACY_COLOR,
@@ -105,7 +105,7 @@ impl SensorType for ImageType {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImageProps {
-    /// Its image empty: the logo. Custom tints the image (SPEC §8.4); standard leaves it
+    /// Its image empty: the logo. Custom tints the image; standard leaves it
     /// unchanged.
     #[serde(flatten)]
     look: IconStyle,
@@ -123,8 +123,8 @@ struct Image {
 
 impl Image {
     /// The image `height` physical px tall, tinted; the logo if the file cannot be read; `None`
-    /// while the bar reads the file (SPEC §9.2). The logo is built in, so with Standard colour
-    /// it takes the sensor text colour (§8.4).
+    /// while the bar reads the file. The logo is built in, so with Standard colour
+    /// it takes the sensor text colour.
     fn load(&self, height: u32, theme: &Theme, icons: &dyn IconSource) -> Option<Option<Bitmap>> {
         let file = match self.props.look.image.as_str() {
             "" => None,
@@ -156,7 +156,7 @@ impl Image {
 
 impl Sensor for Image {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
-        // The image keeps its aspect ratio (SPEC §9.2).
+        // The image keeps its aspect ratio.
         let height = IconSize::Picture.physical(cx.theme, cx.scale);
         // Loaded again for another size or text colour (the logo follows it).
         let key = (height, cx.theme.sensor_text);

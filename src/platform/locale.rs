@@ -1,4 +1,4 @@
-//! The locale for dates and numbers (SPEC §8.6, §13): names, date patterns, the hour cycle and
+//! The locale for dates and numbers: names, date patterns, the hour cycle and
 //! the decimal separator, read from the OS for `settings.dateLocale` and never from catalogs.
 //! Plain data, so formatting (`sensors/dates.rs`) is tested against fixed locales on every OS.
 
@@ -88,7 +88,7 @@ impl Locale {
 
 impl Locale {
     /// The locale's language is English, whose month names the Date sensor writes in lower
-    /// case (SPEC §9.4); other languages keep their own case (German capitalises them).
+    /// case; other languages keep their own case (German capitalises them).
     pub fn is_english(&self) -> bool {
         let language = self.name.split(['-', '_']).next().unwrap_or_default();
         language.eq_ignore_ascii_case("en")

@@ -7,7 +7,7 @@
 
 A compact system-information and launcher bar for the Windows desktop: a thin bar docked to the top or bottom of the screen with small live sensors (CPU, memory, network, date, time, battery…) and launchers.
 
-Status: early development. See [SPEC.md](SPEC.md) for the full specification and [docs/plan.md](docs/plan.md) for progress.
+Status: early development.
 
 ## Download
 
@@ -36,7 +36,7 @@ cargo test   # tests
 cargo lint   # clippy
 ```
 
-Local builds are version `0.0.0`; CI builds and releases carry theirs.
+Local builds are version `0.0.0`; CI builds and releases carry theirs. [INTERNALS.md](INTERNALS.md) describes how the code is built.
 
 ### Release
 

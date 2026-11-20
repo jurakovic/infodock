@@ -1,11 +1,11 @@
-// The Settings window (SPEC §10.7): General, Bar, Appearance, Sensors, Popups, Applications, Help
-// and About pages, a sensor's properties, the sensor picker and the first run's welcome page (§11.5).
+// The Settings window: General, Bar, Appearance, Sensors, Popups, Applications, Help
+// and About pages, a sensor's properties, the sensor picker and the first run's welcome page.
 // Rust fills `SettingsState` from the config and handles its callbacks; controls bind to it
 // two-way, and every change is saved through a settings patch.
 import { AboutSlint, Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
 import { I18n } from "i18n.slint";
 
-// One field of a sensor's properties form (SPEC §6.7, §8.2); see `settings/form.rs`.
+// One field of a sensor's properties form; see `settings/form.rs`.
 export struct PropRow {
     key: string,
     // See `RowKinds`.
@@ -28,7 +28,7 @@ export struct PropRow {
     error: string,
 }
 
-// One line of the sensor picker (SPEC §6.6): a category heading or a sensor type.
+// One line of the sensor picker: a category heading or a sensor type.
 export struct PickerRow {
     heading: bool,
     name: string,
@@ -37,7 +37,7 @@ export struct PickerRow {
     entry: int,
 }
 
-// One line of the Layout manager (SPEC §10.7).
+// One line of the Layout manager.
 export struct LayoutRow {
     // See `LineKinds`.
     kind: int,
@@ -55,7 +55,7 @@ export struct LayoutRow {
     count: int,
 }
 
-// A skin in the Appearance page's gallery (SPEC §12.4).
+// A skin in the Appearance page's gallery.
 export struct SkinTile {
     name: string,
     // Rendered by the bar's renderer; where there is none, a swatch of `swatch` instead.
@@ -65,7 +65,7 @@ export struct SkinTile {
     selected: bool,
 }
 
-// A folder in the skins folder (SPEC §12.4): a pack, or why it cannot be used.
+// A folder in the skins folder: a pack, or why it cannot be used.
 export struct SkinPackRow {
     id: string,
     name: string,
@@ -131,7 +131,7 @@ global Look {
     out property <color> secondary-text: self.dark ? #ffffffc8 : #0000009e;
     out property <length> radius: 4px;
     // The window is narrower than 720 px: the controls narrow, so a setting's label keeps at
-    // least 160 px for its words down to the window's minimum width (SPEC §10.7).
+    // least 160 px for its words down to the window's minimum width.
     in-out property <bool> narrow;
     // The width of a setting's control (ComboBox, slider, hotkey), and of the wide ones that
     // show font names or a form's text.
@@ -151,7 +151,7 @@ export global SettingsState {
     // A page by its number (see `Pages`).
     in-out property <int> page;
 
-    // General (SPEC §10.1)
+    // General
     in-out property <bool> autostart;
     // Why the sign-in entry does not follow `autostart`; empty when it does.
     in property <string> autostart-error;
@@ -159,7 +159,7 @@ export global SettingsState {
     // Set while the hotkey button waits for a combination; Rust reads the keys (they are
     // physical keys, which Slint's key events do not carry) and clears it.
     in-out property <bool> recording-hotkey;
-    // Raised by Rust when Windows may have dropped the window's pixels (SPEC §10.7): the
+    // Raised by Rust when Windows may have dropped the window's pixels: the
     // window's background depends on it, so the whole window is painted again.
     in property <int> repaint;
     // Why the hotkey could not be registered or recorded; empty when it works.
@@ -174,7 +174,7 @@ export global SettingsState {
     // 0 = the picker, 1 = a submenu of types.
     in-out property <int> new-sensor-menu;
 
-    // Bar (SPEC §10.2)
+    // Bar
     // 0 = docked, 1 = floating.
     in-out property <int> mode;
     // Logical px.
@@ -196,10 +196,10 @@ export global SettingsState {
     // The height differs from the theme default.
     in property <bool> height-customised;
 
-    // Appearance (SPEC §10.3)
+    // Appearance
     // 0 = modern, 1 = classic.
     in-out property <int> theme;
-    // 0 = like Windows, 1 = light, 2 = dark; also the window's own (SPEC §10.3).
+    // 0 = like Windows, 1 = light, 2 = dark; also the window's own.
     in-out property <int> color-scheme;
     // 0 = the theme's colour, 1 = a custom one.
     in-out property <int> background-mode;
@@ -230,7 +230,7 @@ export global SettingsState {
     in-out property <string> skin-install-message;
     in property <bool> skin-install-failed;
 
-    // Sensors (SPEC §10.4)
+    // Sensors
     in-out property <string> sensor-text-color;
     // "Theme default (…)", then the installed families.
     in property <[string]> fonts;
@@ -243,7 +243,7 @@ export global SettingsState {
     in-out property <string> inactive-color;
     in-out property <float> inactive-opacity;
 
-    // Popups (SPEC §10.5)
+    // Popups
     in-out property <string> popup-background;
     in property <bool> popup-background-customised;
     in property <string> popup-background-default;
@@ -260,21 +260,21 @@ export global SettingsState {
     in-out property <float> show-delay;
     in-out property <float> hide-delay;
 
-    // Applications (SPEC §10.6)
+    // Applications
     in-out property <string> calendar-app;
     in-out property <string> task-manager-app;
 
-    // The welcome page (SPEC §11.5): Modern and Classic with a preview of the bar.
+    // The welcome page: Modern and Classic with a preview of the bar.
     in property <[SkinTile]> welcome-themes;
 
-    // A sensor's properties (SPEC §6.7)
+    // A sensor's properties
     in property <[PropRow]> props;
     in property <string> props-title;
     in property <string> props-error;
-    // No field holds an invalid value, so the form can be saved (SPEC §6.7).
+    // No field holds an invalid value, so the form can be saved.
     in property <bool> props-valid: true;
 
-    // The Layout manager (SPEC §10.7)
+    // The Layout manager
     in property <[LayoutRow]> layout-rows;
     // The sensor whose Remove waits for confirmation.
     in-out property <string> layout-confirm;
@@ -285,7 +285,7 @@ export global SettingsState {
     in-out property <string> layout-focus-id;
     in property <bool> layout-focus-up;
 
-    // The sensor picker (SPEC §6.6)
+    // The sensor picker
     in property <[PickerRow]> picker-rows;
     in-out property <string> picker-search;
     // The selected type's `entry`; -1 for none.
@@ -334,7 +334,7 @@ export global SettingsState {
     callback browse-calendar-app();
     callback browse-task-manager-app();
 
-    // About (SPEC §10.7)
+    // About
     in property <string> version;
     // Infodock's licence, the text of `LICENSE`.
     in property <string> licence;
@@ -505,7 +505,7 @@ component OnOffSwitch inherits HorizontalLayout {
     }
 }
 
-// The swatch beside a colour box: a button that opens Windows' colour dialog (SPEC §10.7). Like
+// The swatch beside a colour box: a button that opens Windows' colour dialog. Like
 // the other buttons it does not take the focus on a click; Tab reaches it.
 component ColorSwatch inherits FocusScope {
     in property <string> label;
@@ -609,7 +609,7 @@ component WithReset inherits VerticalLayout {
 }
 
 // The last card of a settings page: puts the page's settings back to their defaults once the
-// question in its place is answered (SPEC §10.7).
+// question in its place is answered.
 component RestoreDefaults inherits VerticalLayout {
     in property <int> page;
     property <bool> asking: SettingsState.restore-confirm == root.page;
@@ -991,7 +991,7 @@ component BarPage inherits VerticalLayout {
 }
 
 // A heading for a group of settings on a page, above its cards (Windows 11's Body Strong).
-// The Infodock logo at the top of About and the welcome page (SPEC Appendix C): the README's,
+// The Infodock logo at the top of About and the welcome page: the README's,
 // for the window's light or dark scheme. Decorative: the page's title names the app.
 component Logo inherits HorizontalLayout {
     alignment: start;
@@ -1032,7 +1032,7 @@ component IconButton inherits Button {
     accessible-label: self.label;
 }
 
-// The Layout manager (SPEC §10.7): each zone's sensors, which move by dragging or with the
+// The Layout manager: each zone's sensors, which move by dragging or with the
 // arrow buttons. All lines are equally tall, so a pointer position maps to a line boundary.
 component LayoutList inherits Rectangle {
     property <length> line-height: 44px;
@@ -1090,7 +1090,7 @@ component LayoutList inherits Rectangle {
             border-radius: Look.radius;
             border-width: 1px;
             border-color: Look.card-stroke;
-            // Dimmed while dragged, like on the bar (SPEC §6.2).
+            // Dimmed while dragged, like on the bar.
             background: touch.has-hover || root.drag-id == row.id ? Look.card-hover : Look.card;
             opacity: root.drag-id == row.id ? 0.6 : 1;
             accessible-role: list-item;
@@ -1235,7 +1235,7 @@ component LayoutList inherits Rectangle {
     }
 }
 
-// The classic skins as tiles with their previews (SPEC §12.4), in as many columns as fit. A
+// The classic skins as tiles with their previews, in as many columns as fit. A
 // click chooses one; with the focus, the arrow keys move to the previous or next.
 component SkinGallery inherits FocusScope {
     property <length> tile-width: 172px;
@@ -1788,7 +1788,7 @@ component PopupsPage inherits VerticalLayout {
     }
 }
 
-// The properties form, generated from the sensor type's schema (SPEC §6.7).
+// The properties form, generated from the sensor type's schema.
 component ApplicationsPage inherits VerticalLayout {
     alignment: start;
 
@@ -1848,7 +1848,7 @@ component ApplicationsPage inherits VerticalLayout {
     }
 }
 
-// Settings ▸ About (SPEC §10.7): the version, the licence, the crates Infodock is built with and
+// Settings ▸ About: the version, the licence, the crates Infodock is built with and
 // their licences, Slint's attribution, and the logs folder for reporting problems.
 component AboutPage inherits VerticalLayout {
     alignment: start;
@@ -1933,7 +1933,7 @@ component AboutPage inherits VerticalLayout {
     }
 }
 
-// The welcome page's theme choice (SPEC §11.5): a tile per theme with a preview of the bar, chosen
+// The welcome page's theme choice: a tile per theme with a preview of the bar, chosen
 // by a click or, once it has the focus, the arrow keys.
 component ThemeChoice inherits FocusScope {
     height: tiles.preferred-height;
@@ -2028,8 +2028,8 @@ component Tip inherits HorizontalLayout {
     }
 }
 
-// Settings ▸ Help (SPEC §10.7): getting started, the keyboard on the bar (§14.4), dropping onto
-// the bar (§6.3) and Folder Menu tips (§9.19), with buttons to the pages the tips name.
+// Settings ▸ Help: getting started, the keyboard on the bar, dropping onto
+// the bar and Folder Menu tips, with buttons to the pages the tips name.
 component HelpPage inherits VerticalLayout {
     alignment: start;
     spacing: 16px;
@@ -2179,7 +2179,7 @@ component HelpPage inherits VerticalLayout {
     }
 }
 
-// Shown once, on first run (SPEC §11.5): how the bar looks, where it sits, starting with Windows,
+// Shown once, on first run: how the bar looks, where it sits, starting with Windows,
 // a layout to bring along, and how to get going.
 component WelcomePage inherits VerticalLayout {
     alignment: start;
@@ -2408,7 +2408,7 @@ component PropertiesPage inherits VerticalLayout {
     }
 }
 
-// The sensor picker (SPEC §6.6): types by category, a search box, and for a target sensor
+// The sensor picker: types by category, a search box, and for a target sensor
 // where to insert.
 // The search box and buttons stay; only the list scrolls, following the selection.
 component PickerPage inherits VerticalLayout {
@@ -2425,7 +2425,7 @@ component PickerPage inherits VerticalLayout {
         }
     }
 
-    // Up and Down move the selection while the search box keeps the focus (SPEC §6.6).
+    // Up and Down move the selection while the search box keeps the focus.
     FocusScope {
         enabled: false;
         capture-key-pressed(event) => {
@@ -2595,7 +2595,7 @@ component PickerPage inherits VerticalLayout {
 // hovered and the one shown, and the accent pill on the latter. One Tab stop; Up, Down, Home and
 // End move to another page. A page it does not list (a sensor's properties, the picker, the
 // welcome page) selects none. A click does not take the focus, so a colour being typed is saved
-// first (SPEC §10.7).
+// first.
 component Navigation inherits FocusScope {
     in property <[NavItem]> items;
     in-out property <int> current;
@@ -2734,7 +2734,7 @@ export component SettingsWindow inherits Window {
     }
     // The page last shown, so that each change of page is reported once.
     property <int> shown-page: 0;
-    // The Fluent palette in the colour scheme (SPEC §10.3); `unknown` follows the OS, live.
+    // The Fluent palette in the colour scheme; `unknown` follows the OS, live.
     property <int> color-scheme: SettingsState.color-scheme;
     changed color-scheme => {
         root.apply-color-scheme();
@@ -2818,7 +2818,7 @@ export component SettingsWindow inherits Window {
                 horizontal-scrollbar-policy: always-off;
                 content-width: self.visible-width;
                 content-height: content.preferred-height;
-                // The window's whole width, beside the scrollbar (SPEC §10.7).
+                // The window's whole width, beside the scrollbar.
                 content := VerticalLayout {
                     x: 0;
                     width: scroll.visible-width - 20px;
@@ -2835,7 +2835,7 @@ export component SettingsWindow inherits Window {
                     if SettingsState.page == Pages.welcome: WelcomePage { }
                 }
             }
-            // The picker scrolls only its list (SPEC §6.6).
+            // The picker scrolls only its list.
             if SettingsState.page == Pages.picker: PickerPage {
                 opacity: root.page-opacity;
                 vertical-stretch: 1;

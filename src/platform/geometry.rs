@@ -1,5 +1,5 @@
 //! Pure placement geometry shared by every platform: docking strips, logical→physical sizes and
-//! monitor selection (SPEC §5.1–5.2). No OS calls, fully unit-tested.
+//! monitor selection. No OS calls, fully unit-tested.
 
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +31,7 @@ impl Rect {
     }
 }
 
-/// A monitor as reported by the platform (SPEC §4.6 `monitors()`).
+/// A monitor as reported by the platform (`Platform::monitors`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorInfo {
@@ -78,7 +78,7 @@ fn monitor_key(device: &str, name: &str, width: i32, height: i32) -> String {
 ///
 /// Order: device and name match → name and resolution match (device names change when monitors
 /// are re-plugged) → device matches → primary → first. An absent monitor therefore falls back to
-/// the primary one while the setting is kept for when it returns (SPEC §5.1).
+/// the primary one while the setting is kept for when it returns.
 pub fn select_monitor<'a>(monitors: &'a [MonitorInfo], selection: &str) -> Option<&'a MonitorInfo> {
     let primary = || {
         monitors
@@ -141,12 +141,12 @@ pub fn keep_height(rect: Rect, edge: Edge, height: i32) -> Rect {
     }
 }
 
-/// A floating bar's width until the user sets one, logical px (SPEC §5.1).
+/// A floating bar's width until the user sets one, logical px.
 pub const DEFAULT_FLOATING_WIDTH: u32 = 800;
 /// Its default gap to the work area's edge, logical px.
 const FLOATING_MARGIN: u32 = 12;
 
-/// Where a floating bar goes (SPEC §5.1): at `floating` (x and y physical screen px, width
+/// Where a floating bar goes: at `floating` (x and y physical screen px, width
 /// logical px), kept inside the work area of the monitor it is on; without a position, centred
 /// near `edge` of the selected monitor. Returns the rect and its monitor.
 pub fn floating_rect<'a>(
@@ -214,8 +214,7 @@ fn monitor_for(monitors: &[MonitorInfo], f: FloatingRect, height: u32) -> Option
         .or_else(|| monitors.iter().min_by_key(|m| distance(m)))
 }
 
-/// The monitor edge nearer to the middle of `rect`: where hints of a floating bar open away
-/// from (SPEC §7.3).
+/// The monitor edge nearer to the middle of `rect`: where hints of a floating bar open away from.
 pub fn nearer_edge(rect: Rect, monitor: &MonitorInfo) -> Edge {
     let middle = (rect.top + rect.bottom) / 2;
     if middle - monitor.bounds.top < monitor.bounds.bottom - middle {

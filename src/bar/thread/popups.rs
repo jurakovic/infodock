@@ -1,10 +1,10 @@
-//! The interactive popup (SPEC §7.2): opening it beside its sensor, laying it out, its
+//! The interactive popup: opening it beside its sensor, laying it out, its
 //! input, wake-ups and replies, and closing it.
 
 use super::*;
 
 impl BarLogic {
-    /// Opens `popup` for sensor `id` next to it (SPEC §7.2): the hint closes, the sensor shows
+    /// Opens `popup` for sensor `id` next to it: the hint closes, the sensor shows
     /// its active state, and the popup window takes the focus.
     pub(super) fn open_popup(&mut self, window: &dyn BarWindow, id: &str, popup: Box<dyn Popup>) {
         self.dismiss_hint(window);
@@ -78,7 +78,7 @@ impl BarLogic {
         );
     }
 
-    /// A screen reader marks a row of the open popup (SPEC §14.4).
+    /// A screen reader marks a row of the open popup.
     pub(super) fn select_popup_row(&mut self, window: &dyn BarWindow, id: &str) {
         if let Some(reply) = self.with_popup(|open, _| open.popup.accessible_select(id)) {
             self.popup_reply(window, reply);
@@ -86,7 +86,7 @@ impl BarLogic {
     }
 
     /// Closes the open popup, if any: its window hides, its sensor's active state ends, and
-    /// the sensor ignores clicks for a moment (SPEC §7.2).
+    /// the sensor ignores clicks for a moment.
     pub(super) fn close_popup(&mut self, window: &dyn BarWindow) {
         let Some(mut open) = self.popups.close(Instant::now()) else {
             return;
@@ -158,7 +158,7 @@ impl BarLogic {
         Some(f(open, &cx))
     }
 
-    /// Input in the popup window: Esc closes it (SPEC §7.2), the rest goes to the popup.
+    /// Input in the popup window: Esc closes it, the rest goes to the popup.
     pub(super) fn popup_input(&mut self, window: &dyn BarWindow, input: PopupInput) {
         if matches!(
             input,

@@ -1,4 +1,4 @@
-//! The interactive popup host (SPEC §7.2): which sensor's popup is open, where its frame is,
+//! The interactive popup host: which sensor's popup is open, where its frame is,
 //! and the 500 ms during which a sensor whose popup has just closed ignores clicks. The bar
 //! logic (`thread/popups.rs`) opens, feeds and closes it; the platform's popup window shows what
 //! [`paint`] draws.
@@ -12,11 +12,11 @@ use crate::platform::{AccessiblePopup, Canvas, PointF, PopupInput, SizeF};
 use crate::sensors::popup::{Popup, PopupAlign};
 
 /// A sensor whose popup has just closed ignores clicks this long, so the click that closed it
-/// does not open it again (SPEC §7.2).
+/// does not open it again.
 pub const GUARD: Duration = Duration::from_millis(500);
 /// Space between the bubble's edge and the popup's content.
 pub const PADDING: f32 = 4.0;
-/// Space kept from the monitor's edges (SPEC §7.3).
+/// Space kept from the monitor's edges.
 const MARGIN: f32 = 7.0;
 
 /// The most room a popup's content may take next to `anchor`: the monitor's width, and the

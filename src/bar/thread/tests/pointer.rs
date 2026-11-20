@@ -56,7 +56,7 @@ fn a_floating_bar_moves_by_its_background_while_unlocked() {
         })
     );
 
-    // Dragged into the upper half, its shadow turns below it at once (SPEC §5.1).
+    // Dragged into the upper half, its shadow turns below it at once.
     settings.bar.shadow = true;
     let (mut logic, window, _, _) = bar(settings.clone());
     window.position.set(Some(start));
@@ -345,7 +345,7 @@ fn the_hand_shows_over_sensors_a_click_reaches() {
     logic.on_event(&window, UiEvent::PointerLeave);
     assert_eq!(window.cursor.get(), PopupCursor::Arrow);
 
-    // Locked with clicks only while Alt is held: no hand, as no "Click to …" line (SPEC §6.1).
+    // Locked with clicks only while Alt is held: no hand, as no "Click to …" line.
     let settings = Settings {
         locked: true,
         clicks_when_locked: ClicksWhenLocked::AltOnly,

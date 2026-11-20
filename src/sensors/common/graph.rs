@@ -1,4 +1,4 @@
-//! Graphs (SPEC §8.3): a plot of one value per logical px column, newest at the right edge,
+//! Graphs: a plot of one value per logical px column, newest at the right edge,
 //! over an optional background and grid, with a two-line block to its right. The CPU, Memory
 //! and Swap graphs draw one series; the dual graph (`dual_graph.rs`) two.
 
@@ -12,7 +12,7 @@ use crate::sensors::color;
 use crate::sensors::schema::{FieldKind, Lit, PropField};
 use crate::sensors::{ColorChoice, ColorModeKind, DrawCtx};
 
-/// The properties every graph has (SPEC §9.8), for the types' schemas.
+/// The properties every graph has, for the types' schemas.
 pub const INTERVAL: PropField = PropField::new(
     "interval",
     FieldKind::Interval {
@@ -70,7 +70,7 @@ pub const GRAPH_OPACITY: PropField = PropField::new(
     Lit::Int(55),
 );
 
-/// The XML keys of a graph's interval, width, background and grid (SPEC §9.8), then `$more`,
+/// The XML keys of a graph's interval, width, background and grid, then `$more`,
 /// as a type's `legacy_keys`.
 macro_rules! legacy_keys {
     ($($more:expr),* $(,)?) => {
@@ -87,11 +87,11 @@ macro_rules! legacy_keys {
 }
 pub(crate) use legacy_keys;
 
-/// The standard colours of a graph's background and grid (SPEC §9.8).
+/// The standard colours of a graph's background and grid.
 const STANDARD_BACKGROUND: Color = Color::BLACK;
 const STANDARD_GRID: Color = Color::rgba(0xA0, 0xFF, 0x9B, 1.0);
 
-/// A plot's look, as stored: its width, background and grid (SPEC §9.8). Single-series
+/// A plot's look, as stored: its width, background and grid. Single-series
 /// graphs add their column colour ([`GraphStyle`]); dual graphs one per series.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,7 +118,7 @@ fn opacity(percent: u32) -> f32 {
 }
 
 /// How a series' columns are coloured from its stored colour mode and opacity; Standard is the
-/// sensor text colour (SPEC §8.4).
+/// sensor text colour.
 pub fn columns(choice: &ColorChoice, opacity_percent: u32, theme: &Theme) -> Columns {
     let alpha = opacity(opacity_percent);
     match choice.mode {
@@ -128,7 +128,7 @@ pub fn columns(choice: &ColorChoice, opacity_percent: u32, theme: &Theme) -> Col
 }
 
 impl PlotStyle {
-    /// The plot's width: 50–150, rounded down to a multiple of 5 (SPEC §9.8).
+    /// The plot's width: 50–150, rounded down to a multiple of 5.
     pub fn plot_width(&self) -> f32 {
         (self.width.clamp(50, 150) / 5 * 5) as f32
     }
@@ -167,7 +167,7 @@ const GRID_CELL: f32 = 5.0;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Columns {
     Solid(Color),
-    /// Each column takes the dynamic gradient's colour of its own value (SPEC §8.4), at this
+    /// Each column takes the dynamic gradient's colour of its own value, at this
     /// opacity.
     Dynamic(f32),
 }
@@ -429,7 +429,7 @@ mod tests {
              fill rect 0,9 12×1 #A0FF9B/50%\n\
              fill rect 0,4 12×1 #A0FF9B/50%\n"
         );
-        // Transparent layers draw nothing (the defaults: SPEC §9.8).
+        // Transparent layers draw nothing (by default the background and the grid are).
         let mut canvas = RecordingCanvas::new(1.0);
         let none = Backdrop {
             background: Color::BLACK.with_alpha(0.0),

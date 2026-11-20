@@ -1,4 +1,4 @@
-//! Building blocks shared by sensor types (SPEC §8.3).
+//! Building blocks shared by sensor types (INTERNALS.md, Sensors).
 
 pub mod dual_graph;
 pub mod eject;

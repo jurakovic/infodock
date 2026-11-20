@@ -1,4 +1,4 @@
-//! The bar's drop target (SPEC §6.3): an `IDropTarget` registered on the bar window
+//! The bar's drop target: an `IDropTarget` registered on the bar window
 //! (`RegisterDragDrop`, bar thread). It reads paths (`CF_HDROP`, or the `Shell IDList Array`
 //! for items with a file-system path) and web addresses (`UniformResourceLocatorW`, with the
 //! link's text from `FileGroupDescriptorW` or the `HTML Format` fragment), and hands the bar
@@ -221,7 +221,7 @@ impl IDropTarget_Impl for BarDropTarget_Impl {
     }
 }
 
-/// The answer after a caught panic (SPEC §14.2): nothing is dropped.
+/// The answer after a caught panic: nothing is dropped.
 fn refuse(effect: *mut DROPEFFECT) -> windows::core::Result<()> {
     // SAFETY: OLE passes a valid in/out pointer (checked for null all the same).
     if let Some(effect) = unsafe { effect.as_mut() } {
@@ -340,7 +340,7 @@ fn global_bytes(data: &IDataObject, format: u16) -> Option<Vec<u8>> {
     }
 }
 
-/// What `data` holds that the bar may take (SPEC §6.3): paths, or else a web address.
+/// What `data` holds that the bar may take: paths, or else a web address.
 fn read_items(data: &IDataObject) -> Vec<DragItem> {
     let paths = global_bytes(data, CF_HDROP.0)
         .map(|bytes| drag::dropfiles(&bytes))

@@ -1,4 +1,4 @@
-//! The meter of the CPU, Memory, Swap and Disk meters (SPEC §8.3): a thin vertical bar filled
+//! The meter of the CPU, Memory, Swap and Disk meters: a thin vertical bar filled
 //! from the bottom, with a two-line block beside it.
 //!
 //! ```text
@@ -32,7 +32,7 @@ pub struct Meter {
 impl Meter {
     /// A meter showing `label` and `value`. A right-aligned value sits in a column that fits
     /// `100%`, so the bar does not shift as the value changes; the Disk Meter's byte modes
-    /// put it under the label instead (SPEC §9.12).
+    /// put it under the label instead.
     pub fn new(
         engine: &dyn TextEngine,
         theme: &Theme,
@@ -57,14 +57,14 @@ impl Meter {
         label.max(value).ceil()
     }
 
-    /// The fill colour of Standard mode (SPEC §8.3).
+    /// The fill colour of Standard mode.
     pub fn standard_fill(theme: &Theme) -> Color {
         let text = theme.sensor_text;
         text.with_alpha(text.a * STANDARD_FILL_OPACITY)
     }
 
     /// Draws the bar filled to `fraction` (0..1) with `fill`, and the text. An `inactive`
-    /// meter dims its bar, not its text (SPEC §8.5).
+    /// meter dims its bar, not its text.
     pub fn draw(
         &self,
         canvas: &mut dyn Canvas,

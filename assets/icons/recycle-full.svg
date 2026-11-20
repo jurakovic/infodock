@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Placeholder (SPEC Appendix C): the Recycle Bin with items in it, papers above the rim;
+  <!-- Placeholder: the Recycle Bin with items in it, papers above the rim;
        monochrome white, so the sensor text colour or a Custom colour tints it. -->
   <path d="M6.5 7.6 L8.6 2.6 L13.2 4.4 L12.4 7.6 Z" fill="#FFFFFF" opacity="0.75"/>
   <path d="M11.6 7.6 L15.4 3.2 L18.6 6.2 L17.8 7.6 Z" fill="#FFFFFF"/>

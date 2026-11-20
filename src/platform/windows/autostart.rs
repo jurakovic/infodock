@@ -1,4 +1,4 @@
-//! Starting at sign-in (SPEC §10.1): a value of the per-user `Run` key, and Task Manager's mark
+//! Starting at sign-in: a value of the per-user `Run` key, and Task Manager's mark
 //! for it under `StartupApproved\Run` (a missing mark means enabled).
 
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, WIN32_ERROR};

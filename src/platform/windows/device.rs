@@ -1,4 +1,4 @@
-//! Volume devices (SPEC Appendix A `volumes`, §9.22): the bus a disk hangs on, which tells a
+//! Volume devices (the `volumes` topic): the bus a disk hangs on, which tells a
 //! USB disk (ejectable) from an internal one, and whether a removable or optical drive holds a
 //! medium. Both are asked of the device without reading the medium, so nothing spins up.
 

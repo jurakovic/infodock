@@ -1,7 +1,7 @@
-//! The bar as a UI Automation provider (SPEC §14.4). `WM_GETOBJECT` answers with a root provider
-//! for the bar window, a fragment root whose children are the sensors; both answer from the
-//! snapshot the bar logic hands over after each frame ([`AccessibleBar`]), so they never wait
-//! for the bar logic. Comparing each snapshot with the last raises the events screen readers
+//! The bar as a UI Automation provider (INTERNALS.md, Accessibility). `WM_GETOBJECT` answers with a
+//! root provider for the bar window, a fragment root whose children are the sensors; both answer
+//! from the snapshot the bar logic hands over after each frame ([`AccessibleBar`]), so they never
+//! wait for the bar logic. Comparing each snapshot with the last raises the events screen readers
 //! follow (focus, values, popups, structure). What a screen reader asks of a sensor (Invoke,
 //! ExpandCollapse, SetFocus) is queued and the window is told with [`WM_UIA`], since patterns
 //! must return at once. The providers use COM threading: UI Automation calls them on the bar
@@ -539,7 +539,7 @@ impl IRawElementProviderFragment_Impl for SensorProvider_Impl {
 
 impl IValueProvider_Impl for SensorProvider_Impl {
     fn SetValue(&self, _value: &PCWSTR) -> Result<()> {
-        // Read-only (SPEC §14.4).
+        // Read-only.
         Err(Error::from(windows::Win32::Foundation::E_ACCESSDENIED))
     }
 
@@ -809,7 +809,7 @@ mod tests {
         }
     }
 
-    /// Expanding the Folder Menu showed its list (S14u2): the popup window is a list of its
+    /// Expanding the Folder Menu showed its list: the popup window is a list of its
     /// rows, the marked one selected; selecting another reaches the bar logic.
     fn walks_the_popups_rows(
         automation: &IUIAutomation,

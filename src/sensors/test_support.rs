@@ -19,7 +19,7 @@ use crate::sampler::{Change, ChangeSink};
 use crate::test_util::{FakePlatform, en_us};
 
 /// What a sensor runs with in the tests: the fake platform, default settings and the default
-/// modern theme; the changes its actions report are kept (SPEC §4.4).
+/// modern theme; the changes its actions report are kept.
 pub struct Harness {
     pub platform: FakePlatform,
     pub settings: Settings,
@@ -252,7 +252,7 @@ impl IconSource for Later {
     fn forget(&self, _path: &str) {}
 }
 
-/// Gives `sensor` `width`, as the bar does when the zones do not fit (SPEC §5.4).
+/// Gives `sensor` `width`, as the bar does when the zones do not fit.
 pub fn fit(sensor: &mut dyn Sensor, width: f32) {
     sensor.fit(width, &Harness::new().layout());
 }

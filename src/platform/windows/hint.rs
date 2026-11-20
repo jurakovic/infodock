@@ -1,4 +1,4 @@
-//! The hint window (SPEC §4.1, §7.1): layered (`UpdateLayeredWindow`, per-pixel alpha),
+//! The hint window: layered (`UpdateLayeredWindow`, per-pixel alpha),
 //! topmost, click-through, never activated, owned by the bar window. Created on first use and
 //! reused. A new hint fades in over 120 ms; the bar window's timer drives the fade.
 
@@ -22,7 +22,7 @@ use crate::platform::guard::guard;
 use crate::platform::{Canvas, Rect};
 
 const CLASS_NAME: PCWSTR = w!("Infodock.Hint");
-/// How long a new hint takes to fade in (SPEC §7.3).
+/// How long a new hint takes to fade in.
 pub(super) const FADE: Duration = Duration::from_millis(120);
 
 fn blend(alpha: u8) -> BLENDFUNCTION {
@@ -49,7 +49,7 @@ unsafe extern "system" fn hint_proc(
     )
 }
 
-/// Gives `hwnd` the title `name`, which screen readers read as its name (SPEC §14.4), when it
+/// Gives `hwnd` the title `name`, which screen readers read as its name, when it
 /// differs from `last`.
 pub(super) fn name_window(hwnd: HWND, name: &str, last: &RefCell<String>) {
     if *last.borrow() != name {

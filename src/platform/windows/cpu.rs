@@ -1,6 +1,6 @@
-//! The processors' load (SPEC Appendix A, `cpu`): `GetSystemTimes` for user, kernel and idle
-//! time, and PDH's `% Processor Utility` for the busy share Task Manager shows, in total and
-//! per logical processor. The PDH query is opened once and reused.
+//! The processors' load (the `cpu` topic; INTERNALS.md, Windows data sources): `GetSystemTimes` for
+//! user, kernel and idle time, and PDH's `% Processor Utility` for the busy share Task Manager
+//! shows, in total and per logical processor. The PDH query is opened once and reused.
 
 use windows::Win32::Foundation::FILETIME;
 use windows::Win32::System::Performance::{
@@ -134,7 +134,7 @@ impl Drop for WinCpu {
     }
 }
 
-/// Whether the per-processor utility counters can be read (SPEC §4.6 `per_core_cpu`); they
+/// Whether the per-processor utility counters can be read (the `per_core_cpu` capability); they
 /// cannot when the performance counters are broken (`lodctr /r` repairs them). Checked once.
 pub fn per_processor_counters() -> bool {
     static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

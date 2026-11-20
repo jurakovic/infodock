@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 22">
-  <!-- Placeholder (SPEC Appendix C): Wi-Fi signal level 3 of 5, the dot and 2 of the 4 arcs
+  <!-- Placeholder: Wi-Fi signal level 3 of 5, the dot and 2 of the 4 arcs
        lit; monochrome white, tinted with the sensor text colour. -->
   <circle cx="13.0" cy="18.6" r="1.9" fill="#FFFFFF"/>
   <path d="M10.03 16.03 A4.2 4.2 0 0 1 15.97 16.03" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/>

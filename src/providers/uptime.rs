@@ -1,4 +1,4 @@
-//! `uptime` (Appendix A): the time since the system started, from `GetTickCount64`.
+//! `uptime`: the time since the system started, from `GetTickCount64`.
 
 use std::time::{Duration, Instant, SystemTime};
 

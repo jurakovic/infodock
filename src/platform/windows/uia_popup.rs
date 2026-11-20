@@ -1,5 +1,5 @@
-//! The popup window as a UI Automation provider (SPEC §14.4): a list whose items are the open
-//! popup's rows (the Folder Menu's items, the Eject USB list's drives). As for the bar
+//! The popup window as a UI Automation provider (INTERNALS.md, Accessibility): a list whose items
+//! are the open popup's rows (the Folder Menu's items, the Eject USB list's drives). As for the bar
 //! (`uia.rs`), the providers answer from the description the bar logic hands over with the
 //! popup's frames ([`AccessiblePopup`]), and comparing each description with the last raises
 //! the events screen readers follow: the mark moving (selection and focus), rows coming and
@@ -620,9 +620,9 @@ mod tests {
     }
 
     /// One frame's accessibility work for an open Folder Menu of 5,000 items while a client
-    /// listens (`review-code.md` R2): the description built (`Popup::accessible`), compared with
+    /// listens: the description built (`Popup::accessible`), compared with
     /// the last and numbered, as with each frame of a scroll or of the pointer crossing rows.
-    /// Held to the Folder Menu's budget (SPEC §14.1). CI's budget check reads the median.
+    /// Held to the Folder Menu's budget. CI's budget check reads the median.
     #[test]
     #[ignore = "measures a budget; run with --ignored"]
     fn budget_folder_menu_described() {

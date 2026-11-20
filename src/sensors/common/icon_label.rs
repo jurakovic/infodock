@@ -1,4 +1,4 @@
-//! Icon + two-line (SPEC §8.3): Battery, Wi-Fi and Recycle Bin. An icon at the sensor's left,
+//! Icon + two-line: Battery, Wi-Fi and Recycle Bin. An icon at the sensor's left,
 //! centred vertically, then a two-line block after a small gap.
 
 use super::icon::BarIcon;

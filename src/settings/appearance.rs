@@ -1,8 +1,8 @@
-//! Settings ▸ Appearance (SPEC §10.3, §10.7): the theme, the bar's background and, for the
+//! Settings ▸ Appearance: the theme, the bar's background and, for the
 //! classic theme, the skin gallery with previews rendered by the bar's renderer
 //! (`skin_preview`), the custom image, a notice when the configured skin is missing, and the
 //! skin packs: installed from a folder or a `.zip`, listed with their problems, removed to the
-//! Recycle Bin (SPEC §12.4).
+//! Recycle Bin.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ use crate::ui;
 pub(super) const PAGE: i32 = 2;
 /// The previews' width, logical px.
 const PREVIEW_WIDTH: f32 = 160.0;
-/// The file types the custom image may have (SPEC §10.3).
+/// The file types the custom image may have.
 const IMAGE_TYPES: &[&str] = &["png", "jpg", "jpeg"];
 
 /// A skin the gallery offers.
@@ -37,8 +37,7 @@ pub struct SkinEntry {
     pub name: String,
 }
 
-/// The gallery: the built-in skins, the custom image, then the packs that can be used, by name
-/// (SPEC §12.4).
+/// The gallery: the built-in skins, the custom image, then the packs that can be used, by name.
 pub fn entries(packs: &[PackEntry]) -> Vec<SkinEntry> {
     let built_in = BuiltIn::ALL
         .iter()
@@ -71,7 +70,7 @@ fn pack_rows(packs: &[PackEntry]) -> Vec<(String, String, String)> {
 }
 
 /// Why the bar does not draw the configured skin `id`: it is not installed, or its pack cannot
-/// be used, so Gloss stands in (SPEC §12.4); `None` when it is drawn.
+/// be used, so Gloss stands in; `None` when it is drawn.
 pub fn notice(id: &str, packs: &[PackEntry]) -> Option<String> {
     if BuiltIn::from_id(id).is_some() || id == CUSTOM {
         return None;
@@ -329,7 +328,7 @@ pub(super) fn fill(open: &mut Open, app: &App, settings: &Settings) {
     state.set_skins(ModelRc::new(VecModel::from(tiles)));
 }
 
-/// Gives the window's title bar the colour scheme (SPEC §10.3); the Fluent palette follows
+/// Gives the window's title bar the colour scheme; the Fluent palette follows
 /// `color-scheme` in the UI. Done again until the native window exists.
 pub(super) fn apply_scheme(open: &mut Open, scheme: ColorScheme) {
     use slint::winit_030::WinitWindowAccessor;
@@ -384,7 +383,7 @@ pub(super) fn packs_changed(app: &App) {
     });
 }
 
-/// Lets the user pick a pack's folder, or a `.zip` holding one, and installs it (SPEC §12.4).
+/// Lets the user pick a pack's folder, or a `.zip` holding one, and installs it.
 fn install(app: &Arc<App>, folder: bool) {
     let picked = if folder {
         pick(&t("settings.appearance.packs.pickFolder"), true, &[], "")
@@ -426,7 +425,7 @@ fn install(app: &Arc<App>, folder: bool) {
     packs_changed(app);
 }
 
-/// Moves the pack `id`, one the page lists, to the Recycle Bin (SPEC §12.4).
+/// Moves the pack `id`, one the page lists, to the Recycle Bin.
 fn remove(app: &Arc<App>, id: &str) {
     let listed = with_open(|open| open.gallery.packs.iter().any(|p| p.id == id));
     if listed != Some(true) {

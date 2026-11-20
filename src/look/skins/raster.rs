@@ -1,4 +1,4 @@
-//! Pixel work on decoded skin tiles (SPEC §12.4): cutting the bar part from the shadow band,
+//! Pixel work on decoded skin tiles: cutting the bar part from the shadow band,
 //! mirroring, scaling and tiling. Premultiplied RGBA, like [`Bitmap`], so scaling never bleeds
 //! the colour of transparent pixels into their neighbours.
 

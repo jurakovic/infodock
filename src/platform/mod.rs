@@ -1,6 +1,6 @@
-//! The OS layer (SPEC §4.6). Everything OS-specific sits behind these traits so other platforms
-//! can be added without touching sensors. Windows lives in `windows/`; every other OS gets the
-//! portable stub in `stub.rs` (enough to develop and test on Linux).
+//! The OS layer (INTERNALS.md, Platform layer). Everything OS-specific sits behind these traits so
+//! other platforms can be added without touching sensors. Windows lives in `windows/`; every other
+//! OS gets the portable stub in `stub.rs` (enough to develop and test on Linux).
 //!
 //! [`Platform`] holds the services every thread shares; the bar thread's window, menus, hint,
 //! popup, tray icon and AppBar are reached through [`BarWindow`] and [`AppBar`] from
@@ -41,7 +41,7 @@ pub use geometry::{MonitorInfo, Rect};
 pub use locale::Locale;
 pub use text::{Font, TextEngine, TextLayout, TextStyle};
 
-/// Which sensors and features exist on this system (SPEC §4.6). Flags turn on as their
+/// Which sensors and features exist on this system. Flags turn on as their
 /// implementations land.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,7 +70,7 @@ impl Capabilities {
     }
 }
 
-/// A capability a sensor type can require (SPEC §4.6).
+/// A capability a sensor type can require.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Capability {
     RecycleBin,
@@ -81,7 +81,7 @@ pub enum Capability {
     PerCoreCpu,
 }
 
-/// The OS appearance settings the bar follows (SPEC §10.3, §12.1–12.2).
+/// The OS appearance settings the bar follows.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OsAppearance {
     /// Apps use dark mode.
@@ -90,13 +90,13 @@ pub struct OsAppearance {
     pub transparency: bool,
     /// The user's accent colour.
     pub accent: Color,
-    /// "Animation effects" is on (SPEC §5.5).
+    /// "Animation effects" is on.
     pub animations: bool,
 }
 
 impl OsAppearance {
     /// The accent colour in channels from the OS; `None` when it has no alpha, as the DWM's
-    /// `AccentColor` value can be 0 while Windows has an accent set (SPEC §12.1).
+    /// `AccentColor` value can be 0 while Windows has an accent set.
     pub fn accent_from(r: u8, g: u8, b: u8, a: u8) -> Option<Color> {
         (a != 0).then(|| Color::rgba(r, g, b, 1.0))
     }
@@ -129,7 +129,7 @@ pub struct CpuTimes {
     pub user: u64,
 }
 
-/// One reading of the processors (SPEC Appendix A, `cpu`).
+/// One reading of the processors (the `cpu` topic).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CpuReading {
     pub times: CpuTimes,
@@ -143,21 +143,20 @@ pub struct CpuReading {
     pub logical: u32,
 }
 
-/// Reads the processors. Owned by the sampler thread, so counters are opened once and reused
-/// (SPEC §14.1).
+/// Reads the processors. Owned by the sampler thread, so counters are opened once and reused.
 pub trait CpuReader: Send {
     /// Why not (the OS's message) if nothing could be read.
     fn read(&mut self) -> Result<CpuReading, String>;
 }
 
-/// A page file's size and how much of it is in use, bytes (SPEC Appendix A, `swap`).
+/// A page file's size and how much of it is in use, bytes (the `swap` topic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PageFile {
     pub allocated: u64,
     pub used: u64,
 }
 
-/// What kind of drive a volume is on (SPEC Appendix A, `volumes`).
+/// What kind of drive a volume is on (the `volumes` topic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriveKind {
     Fixed,
@@ -168,7 +167,7 @@ pub enum DriveKind {
     Other,
 }
 
-/// A volume with a drive letter (SPEC §4.5: lists of volumes; Appendix A `volumes`).
+/// A volume with a drive letter (lists of volumes; the `volumes` topic).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Volume {
     /// `C:\`.
@@ -177,7 +176,7 @@ pub struct Volume {
     /// The volume label; empty if it has none or no medium is inserted.
     pub label: String,
     /// It can be ejected: removable and optical drives, and disks on USB, FireWire or SD
-    /// buses (SPEC §9.22).
+    /// buses.
     pub ejectable: bool,
     /// A medium is inserted; always for fixed, network and RAM drives.
     pub media: bool,
@@ -197,7 +196,7 @@ impl Volume {
     }
 }
 
-/// Why a drive was not ejected (SPEC §9.22).
+/// Why a drive was not ejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EjectError {
     /// A program or service has it open; its name when Windows says.
@@ -208,17 +207,17 @@ pub enum EjectError {
     Failed(String),
 }
 
-/// Words an eject's result as a notification: its title and body (SPEC §9.18, §9.22).
+/// Words an eject's result as a notification: its title and body.
 pub type EjectReport = Box<dyn FnOnce(&Result<(), EjectError>) -> (String, String) + Send>;
 
-/// A volume's size and free space, bytes (SPEC Appendix A, `disk/<X:\>`).
+/// A volume's size and free space, bytes (the `disk/<X:\>` topic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DiskSpace {
     pub total: u64,
     pub free: u64,
 }
 
-/// A network interface (SPEC Appendix A, `net/<id|auto>`).
+/// A network interface (the `net/<id|auto>` topic).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NetInterface {
     /// A stable id: the interface GUID.
@@ -237,7 +236,7 @@ pub struct NetInterface {
     pub link_tx: u64,
 }
 
-/// What a path names (SPEC §9.17: a Shortcut is inactive while its target is missing).
+/// What a path names (a Shortcut is inactive while its target is missing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathKind {
     Missing,
@@ -245,7 +244,7 @@ pub enum PathKind {
     Folder,
 }
 
-/// A program, document, folder or URI to start, as a sensor click starts it (SPEC §9.17).
+/// A program, document, folder or URI to start, as a sensor click starts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Launch<'a> {
     pub target: &'a str,
@@ -269,7 +268,7 @@ impl<'a> Launch<'a> {
     }
 }
 
-/// What a battery is doing (SPEC §9.14).
+/// What a battery is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BatteryState {
     Charging,
@@ -281,7 +280,7 @@ pub enum BatteryState {
     Unknown,
 }
 
-/// One battery now (SPEC Appendix A `battery/<i>`).
+/// One battery now (the `battery/<i>` topics).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BatteryReading {
     /// Its vendor and model as the battery reports them; empty when it says nothing.
@@ -294,17 +293,17 @@ pub struct BatteryReading {
     pub time_to_full: Option<std::time::Duration>,
 }
 
-/// The batteries and the power line (SPEC Appendix A `battery/<i>`).
+/// The batteries and the power line (the `battery/<i>` topics).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PowerStatus {
     /// Running on AC power.
     pub ac_online: bool,
     /// In the order the battery driver lists them; one that cannot be read keeps its place,
-    /// with the driver's message, so the batteries after it keep theirs (SPEC §9.14).
+    /// with the driver's message, so the batteries after it keep theirs.
     pub batteries: Vec<Result<BatteryReading, String>>,
 }
 
-/// The Wi-Fi connection now (SPEC §9.15, Appendix A `wifi`).
+/// The Wi-Fi connection now (the `wifi` topic).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct WifiStatus {
     /// A wireless interface exists.
@@ -342,7 +341,7 @@ pub trait WifiReader: Send {
     fn read(&mut self) -> Result<WifiStatus, String>;
 }
 
-/// What the Recycle Bin holds on all drives (SPEC §9.16, Appendix A `recycle-bin`).
+/// What the Recycle Bin holds on all drives (the `recycle-bin` topic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RecycleBin {
     pub items: u64,
@@ -350,7 +349,7 @@ pub struct RecycleBin {
     pub bytes: u64,
 }
 
-/// An entry of a folder (SPEC §9.19).
+/// An entry of a folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirItem {
     pub name: String,
@@ -398,7 +397,7 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-/// A file operation into a folder (SPEC §9.19).
+/// A file operation into a folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileOp {
     Copy,
@@ -464,7 +463,7 @@ fn url_file_text(url: &str) -> String {
     format!("[InternetShortcut]\r\nURL={url}\r\n")
 }
 
-/// A folder the shell knows by role (SPEC §9.20).
+/// A folder the shell knows by role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnownFolder {
     /// The user's Start Menu programs (`FOLDERID_Programs`).
@@ -473,7 +472,7 @@ pub enum KnownFolder {
     CommonPrograms,
 }
 
-/// What the Power sensor does (SPEC §9.21).
+/// What the Power sensor does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerAction {
     Lock,
@@ -516,7 +515,7 @@ impl PowerAction {
     }
 }
 
-/// Physical memory (SPEC Appendix A, `memory`; `GlobalMemoryStatusEx`), bytes.
+/// Physical memory (the `memory` topic; `GlobalMemoryStatusEx`), bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryStatus {
     pub total: u64,
@@ -526,7 +525,7 @@ pub struct MemoryStatus {
 }
 
 /// This process's own memory, bytes, as Task Manager shows it: the app logs it so a log from
-/// real hardware shows what CI's runner cannot (SPEC §14.1).
+/// real hardware shows what CI's runner cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ProcessMemory {
     /// The private working set: Task Manager's *Memory* column, the measure of the budget;
@@ -561,7 +560,7 @@ impl std::fmt::Display for ProcessMemory {
     }
 }
 
-/// A change to the per-user `Run` entry that starts Infodock at sign-in (SPEC §10.1).
+/// A change to the per-user `Run` entry that starts Infodock at sign-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutostartChange<'a> {
     /// The user turned autostart on: write the command, and clear the mark with which Task
@@ -573,11 +572,11 @@ pub enum AutostartChange<'a> {
     Remove,
 }
 
-/// Why a reading failed where the platform has no reader for it (SPEC §14.2); the bar runs
+/// Why a reading failed where the platform has no reader for it; the bar runs
 /// only on Windows, so no user sees it.
 pub const UNSUPPORTED: &str = "not supported on this platform";
 
-/// The OS services every thread shares (SPEC §4.6): readings for the providers and Settings,
+/// The OS services every thread shares: readings for the providers and Settings,
 /// the shell, power, notifications, sound, autostart and the locale. A method's default is what
 /// other OSes get: the stub (`stub.rs`) implements only the four required methods, and Windows
 /// overrides every other one except three that are portable (`open`, `volume_of`,
@@ -591,36 +590,36 @@ pub const UNSUPPORTED: &str = "not supported on this platform";
 /// (the folder browser, `bar/icons.rs`). Settings reads `volumes` (machine defaults when a
 /// sensor is added), `net_interfaces` and `font_families` on the main thread. The one accepted
 /// exception: a drop onto the bar reads `path_kind` of each dropped item on the bar thread,
-/// once per drop (never per drag-over), because the sensors the drop creates depend on it
-/// (SPEC §6.3). Actions (`open`, `launch`, `reveal`, `file_operation`, `recycle`,
+/// once per drop (never per drag-over), because the sensors the drop creates depend on it.
+/// Actions (`open`, `launch`, `reveal`, `file_operation`, `recycle`,
 /// `create_url_file`, `empty_recycle_bin`, `power`, `eject`, `notify`, `play_sound`) return at
 /// once and do their work in the background.
 ///
 /// **Absence and failure.** A reading that can fail returns `Result<_, String>` with the OS's
 /// message (`memory`, `page_files`, `list_dir`, `power_status`, `recycle_bin`, the CPU and
-/// Wi-Fi readers), which the sampler turns into an error sample after three failures in a row
-/// (SPEC §14.2). `disk_space`, `volumes`, `net_interface`, `net_interfaces` and `path_kind`
+/// Wi-Fi readers), which the sampler turns into an error sample after three failures in a row.
+/// `disk_space`, `volumes`, `net_interface`, `net_interfaces` and `path_kind`
 /// fold a failure into absence (`None`, an empty list, [`PathKind::Missing`]), which sensors
 /// show as missing or "n/a"; so does `process_memory`, which only the log reads. Typed errors ([`EjectError`], [`ImageError`]) are for callers
 /// that act on the reason.
 pub trait Platform: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     /// The capabilities if they are known already, without waiting for a probe still running:
-    /// the bar's first frame does not wait for it (SPEC §14.1).
+    /// the bar's first frame does not wait for it.
     fn probed_capabilities(&self) -> Option<Capabilities> {
         Some(self.capabilities())
     }
     /// All active monitors, physical pixels.
     fn monitors(&self) -> Vec<MonitorInfo>;
     fn appearance(&self) -> OsAppearance;
-    /// The time since the system started (the `uptime` topic, SPEC Appendix A).
+    /// The time since the system started (the `uptime` topic).
     fn uptime(&self) -> std::time::Duration;
-    /// The installed font families, sorted by name (SPEC §4.5: lists of fonts); none where
+    /// The installed font families, sorted by name (lists of fonts); none where
     /// the platform cannot list them.
     fn font_families(&self) -> Vec<String> {
         Vec::new()
     }
-    /// The number of logical processors, e.g. for the CPU dual graph's series (SPEC §9.9).
+    /// The number of logical processors, e.g. for the CPU dual graph's series.
     fn logical_processors(&self) -> u32 {
         std::thread::available_parallelism().map_or(1, |n| n.get() as u32)
     }
@@ -648,13 +647,13 @@ pub trait Platform: Send + Sync {
         let _ = root;
         None
     }
-    /// The network connections users know (no loopback or filter drivers), by name (SPEC §4.5:
+    /// The network connections users know (no loopback or filter drivers), by name (Settings'
     /// lists of network adapters).
     fn net_interfaces(&self) -> Vec<NetInterface> {
         Vec::new()
     }
-    /// The interface `id` now, or with `None` the one carrying the default route (SPEC §9.13
-    /// Automatic), for the `net/<id|auto>` topic; `None` when there is none.
+    /// The interface `id` now, or with `None` the one carrying the default route
+    /// (Automatic), for the `net/<id|auto>` topic; `None` when there is none.
     fn net_interface(&self, id: Option<&str>) -> Option<NetInterface> {
         let _ = id;
         None
@@ -669,14 +668,14 @@ pub trait Platform: Send + Sync {
             now.subsec_millis() as u16,
         )
     }
-    /// Opens `target` as Explorer would, for sensor clicks (SPEC §9): a program such as
+    /// Opens `target` as Explorer would, for sensor clicks: a program such as
     /// `taskmgr.exe`, a file or folder, or a URI such as `ms-settings:dateandtime`. It runs in
     /// the background; failures are logged (and the shell may explain them).
     fn open(&self, target: &str) {
         self.launch(&Launch::open(target));
     }
     /// Starts a program, document, folder or URI with parameters, a working folder and
-    /// optionally elevated (SPEC §9.17), in the background like [`Platform::open`].
+    /// optionally elevated, in the background like [`Platform::open`].
     fn launch(&self, launch: &Launch) {
         tracing::info!("starting {launch:?} is not supported on this platform");
     }
@@ -691,7 +690,7 @@ pub trait Platform: Send + Sync {
         }
     }
     /// The entries of folder `path`, unsorted; why not when it cannot be read. It may wait
-    /// for a network server, so it runs off the bar thread (SPEC §9.19).
+    /// for a network server, so it runs off the bar thread.
     fn list_dir(&self, path: &str) -> Result<Vec<DirItem>, String> {
         let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
         Ok(entries
@@ -708,7 +707,7 @@ pub trait Platform: Send + Sync {
             })
             .collect())
     }
-    /// Compares two names as the shell sorts them (SPEC §9.19).
+    /// Compares two names as the shell sorts them.
     fn compare_names(&self, a: &str, b: &str) -> std::cmp::Ordering {
         natural_cmp(a, b)
     }
@@ -718,13 +717,13 @@ pub trait Platform: Send + Sync {
         None
     }
     /// The volume `path` lies on (`C:\`, `\\server\share\`), to choose between moving and
-    /// copying a drop (SPEC §9.19); `None` where it cannot tell. By the path's form, so a drag
+    /// copying a drop; `None` where it cannot tell. By the path's form, so a drag
     /// touches no drive: a volume mounted in a folder counts as the one holding the folder.
     fn volume_of(&self, path: &str) -> Option<String> {
         path_root(path)
     }
     /// Copies or moves `paths` into `folder`, or makes shortcuts (`.lnk`) to them there, in the
-    /// background with the shell's progress and conflict dialogs (SPEC §9.19); then calls
+    /// background with the shell's progress and conflict dialogs; then calls
     /// `done`, whatever happened.
     fn file_operation(
         &self,
@@ -736,14 +735,14 @@ pub trait Platform: Send + Sync {
         tracing::info!("{op:?} {paths:?} into {folder} is not supported on this platform");
         done();
     }
-    /// Moves `paths` to the Recycle Bin in the background, asking as the OS settings say (SPEC
-    /// §9.16); then calls `done`, whatever happened.
+    /// Moves `paths` to the Recycle Bin in the background, asking as the OS settings say;
+    /// then calls `done`, whatever happened.
     fn recycle(&self, paths: Vec<String>, done: Box<dyn FnOnce() + Send>) {
         tracing::info!("recycling {paths:?} is not supported on this platform");
         done();
     }
     /// Writes an Internet shortcut to `url` into `folder` as `stem.url` (numbered if that name
-    /// is taken), in the background (SPEC §9.19); failures are logged.
+    /// is taken), in the background; failures are logged.
     fn create_url_file(&self, folder: &str, stem: &str, url: &str) {
         let (folder, stem, url) = (PathBuf::from(folder), stem.to_owned(), url.to_owned());
         let spawned = std::thread::Builder::new()
@@ -758,7 +757,7 @@ pub trait Platform: Send + Sync {
             tracing::warn!("could not start writing a link file: {e}");
         }
     }
-    /// Shows `path` selected in its folder in Explorer, in the background (SPEC §9.19).
+    /// Shows `path` selected in its folder in Explorer, in the background.
     fn reveal(&self, path: &str) {
         tracing::info!("revealing {path:?} is not supported on this platform");
     }
@@ -776,8 +775,8 @@ pub trait Platform: Send + Sync {
         Err(UNSUPPORTED.into())
     }
     /// A reader of the Wi-Fi connection for the `wifi` topic; `changed` is called from another
-    /// thread when Windows reports a connection, a disconnection or a radio change (SPEC
-    /// §9.15). `None` where there is no WLAN.
+    /// thread when Windows reports a connection, a disconnection or a radio change.
+    /// `None` where there is no WLAN.
     fn wifi_reader(&self, changed: Box<dyn Fn() + Send + Sync>) -> Option<Box<dyn WifiReader>> {
         let _ = changed;
         None
@@ -789,34 +788,34 @@ pub trait Platform: Send + Sync {
         Err(UNSUPPORTED.into())
     }
     /// Empties the Recycle Bin in the background, with the OS confirmation, progress and
-    /// sound (SPEC §9.16), then calls `done`, whether it was emptied or not.
+    /// sound, then calls `done`, whether it was emptied or not.
     fn empty_recycle_bin(&self, done: Box<dyn FnOnce() + Send>) {
         tracing::info!("emptying the Recycle Bin is not supported on this platform");
         done();
     }
-    /// Locks, signs out, switches user, sleeps, hibernates, shuts down or restarts (SPEC
-    /// §9.21), in the background; `force` closes apps without asking (sign out, shut down,
+    /// Locks, signs out, switches user, sleeps, hibernates, shuts down or restarts,
+    /// in the background; `force` closes apps without asking (sign out, shut down,
     /// restart). Failures are logged.
     fn power(&self, action: PowerAction, force: bool) {
         tracing::info!("{action:?} (force: {force}) is not supported on this platform");
     }
-    /// Ejects drive `root` (`E:\`) in the background (SPEC §9.22) and shows the notification
+    /// Ejects drive `root` (`E:\`) in the background and shows the notification
     /// `report` makes of the result.
     fn eject(&self, root: &str, report: EjectReport) {
         tracing::info!("ejecting {root} is not supported on this platform");
         let (title, body) = report(&Err(EjectError::NotEjectable));
         self.notify(&title, &body);
     }
-    /// Shows a notification from Infodock (SPEC §7.4): a toast with `title` (e.g. the
+    /// Shows a notification from Infodock: a toast with `title` (e.g. the
     /// sensor's) and `body`, in the background; failures are logged.
     fn notify(&self, title: &str, body: &str) {
         tracing::info!("notification: {title}: {body}");
     }
-    /// Plays a WAV sound in the background, e.g. the Time sensor's chime (SPEC §9.5).
+    /// Plays a WAV sound in the background, e.g. the Time sensor's chime.
     fn play_sound(&self, wav: &'static [u8]) {
         let _ = wav;
     }
-    /// The command of the per-user `Run` entry `name` (SPEC §10.1), as written; `None` without
+    /// The command of the per-user `Run` entry `name`, as written; `None` without
     /// one, or where nothing starts at sign-in.
     fn autostart(&self, name: &str) -> Option<String> {
         let _ = name;
@@ -829,17 +828,17 @@ pub trait Platform: Send + Sync {
         Ok(())
     }
     /// `bytes` in the Windows code page `code_page`, or the system's ANSI code page with `None`
-    /// (the legacy import, SPEC §11.4); `None` where the platform cannot convert them.
+    /// (the legacy import); `None` where the platform cannot convert them.
     fn decode_code_page(&self, bytes: &[u8], code_page: Option<u32>) -> Option<String> {
         let _ = (bytes, code_page);
         None
     }
-    /// This process's memory now, for the log (SPEC §14.1); `None` where it cannot be read.
+    /// This process's memory now, for the log; `None` where it cannot be read.
     /// It counts the system's processes once, a few milliseconds.
     fn process_memory(&self) -> Option<ProcessMemory> {
         None
     }
-    /// The locale for dates and numbers (SPEC §8.6): the OS regional format for `System`, the
+    /// The locale for dates and numbers: the OS regional format for `System`, the
     /// UI language's for `Ui`. English (United States) where the platform cannot tell.
     fn locale(&self, which: DateLocale) -> Locale {
         let _ = which;
@@ -847,7 +846,7 @@ pub trait Platform: Send + Sync {
     }
 }
 
-/// Where and how the bar should sit (SPEC §5.1–5.3), derived from the settings.
+/// Where and how the bar should sit, derived from the settings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DockRequest {
     pub visible: bool,
@@ -860,9 +859,9 @@ pub struct DockRequest {
     pub reserve_space: bool,
     pub z_order: ZOrder,
     pub hide_on_fullscreen: bool,
-    /// Stays visible over the desktop that Show desktop or Peek shows (SPEC §5.3).
+    /// Stays visible over the desktop that Show desktop or Peek shows.
     pub over_desktop: bool,
-    /// Where a floating bar is (SPEC §5.1); `None` until it was moved or sized.
+    /// Where a floating bar is; `None` until it was moved or sized.
     pub floating: Option<FloatingRect>,
 }
 
@@ -879,7 +878,7 @@ pub struct BarGeometry {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppBarEvent {
     Placed(BarGeometry),
-    /// A full-screen app opened (`true`) or closed on the bar's monitor (SPEC §5.3).
+    /// A full-screen app opened (`true`) or closed on the bar's monitor.
     Fullscreen(bool),
 }
 
@@ -887,13 +886,13 @@ pub enum AppBarEvent {
 /// the handler as [`UiEvent`]s.
 pub(crate) type AppBarSink = Box<dyn Fn(AppBarEvent) + Send + Sync>;
 
-/// Docks the bar window and reserves screen space (SPEC §5.2). Implementations are thread-safe;
+/// Docks the bar window and reserves screen space. Implementations are thread-safe;
 /// changes are applied asynchronously on the window's UI thread.
 pub trait AppBar: Send + Sync {
     /// Applies a new placement. Repeating the current request is cheap.
     fn configure(&self, request: DockRequest);
     /// Brings the bar to the front and focuses it. With z-order `bottom` it stays in front until
-    /// it loses focus (SPEC §5.3).
+    /// it loses focus.
     fn raise(&self);
     /// Releases the reserved screen space. Safe to call repeatedly and from the panic hook.
     fn release(&self);
@@ -914,10 +913,10 @@ pub fn current() -> Arc<dyn Platform> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Drawing: text and images (SPEC §4.6)
+// Drawing: text and images
 // ---------------------------------------------------------------------------------------------
 
-/// While it lives, Settings hears of the hotkey combinations other apps hold (SPEC §6.5): such
+/// While it lives, Settings hears of the hotkey combinations other apps hold: such
 /// a combination goes to its app and never reaches the window, so recording would wait for keys
 /// that never come. Dropping it ends the watch.
 pub struct HotkeyWatch {
@@ -988,7 +987,7 @@ impl OwnerWindow {
     }
 }
 
-/// What a file or folder picker asks for (SPEC §4.6 `IFileOpenDialog`).
+/// What a file or folder picker asks for (`IFileOpenDialog` on Windows).
 pub struct PathRequest<'a> {
     pub title: &'a str,
     /// Pick a folder instead of a file.
@@ -1012,7 +1011,7 @@ pub fn pick_path(owner: Option<OwnerWindow>, request: &PathRequest) -> Option<St
     }
 }
 
-/// What the save picker asks for (SPEC §4.6 `IFileSaveDialog`).
+/// What the save picker asks for (`IFileSaveDialog` on Windows).
 pub struct SaveRequest<'a> {
     pub title: &'a str,
     /// The file name suggested, without its extension.
@@ -1035,7 +1034,7 @@ pub fn save_path(owner: Option<OwnerWindow>, request: &SaveRequest) -> Option<(S
     }
 }
 
-/// A question answered with one of `choices` or Cancel (SPEC §6.4).
+/// A question answered with one of `choices` or Cancel.
 pub struct Choice<'a> {
     pub question: &'a str,
     /// Shown under the question; may be empty.
@@ -1051,7 +1050,7 @@ pub enum MessageKind {
     Error,
 }
 
-/// A message with OK (SPEC §6.4).
+/// A message with OK.
 pub struct Message<'a> {
     pub kind: MessageKind,
     pub text: &'a str,
@@ -1130,7 +1129,7 @@ impl Dialogs for NativeDialogs {
 }
 
 /// Renders `width`×`height` physical px at `scale` with the bar's renderer, e.g. for previews
-/// and the screenshots CI publishes (SPEC §12.4, §16). Windows only for now.
+/// and the screenshots CI publishes. Windows only for now.
 pub fn render_offscreen(
     width: u32,
     height: u32,
@@ -1146,19 +1145,19 @@ pub fn render_offscreen(
     }
 }
 
-/// A renderer kept across frames, for the budget tests (SPEC §14.1).
+/// A renderer kept across frames, for the budget tests.
 #[cfg(all(windows, test))]
 pub use windows::render::FrameRenderer;
 
 // ---------------------------------------------------------------------------------------------
-// The bar thread (SPEC §4.1)
+// The bar thread
 // ---------------------------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------------------------
-// App start-up: data folders and the single-instance lock (SPEC §11.1, §6.5)
+// App start-up: data folders and the single-instance lock
 // ---------------------------------------------------------------------------------------------
 
-/// Where the app keeps its files (SPEC §11.1).
+/// Where the app keeps its files.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppDirs {
     /// Config and skin packs: `%APPDATA%\<identifier>` on Windows.
@@ -1168,7 +1167,7 @@ pub struct AppDirs {
 }
 
 impl AppDirs {
-    /// Skin packs, one folder each (SPEC §12.4).
+    /// Skin packs, one folder each.
     pub fn skins(&self) -> PathBuf {
         self.config.join("skins")
     }
@@ -1208,8 +1207,8 @@ pub fn single_instance(identifier: &str) -> Instance {
     return stub::single_instance(identifier);
 }
 
-/// Makes this process the app `identifier` for the OS (taskbar grouping, notifications;
-/// SPEC §7.4), named `display_name` in notifications.
+/// Makes this process the app `identifier` for the OS (taskbar grouping,
+/// notifications), named `display_name` in notifications.
 pub fn register_app_id(identifier: &str, display_name: &str) {
     #[cfg(windows)]
     windows::toast::register(identifier, display_name);
@@ -1217,7 +1216,7 @@ pub fn register_app_id(identifier: &str, display_name: &str) {
     let _ = (identifier, display_name);
 }
 
-/// Asks the running instance to show the bar and open Settings (SPEC §6.5). Waits up to a few
+/// Asks the running instance to show the bar and open Settings. Waits up to a few
 /// seconds for its bar window to exist.
 pub fn activate_running_instance() {
     #[cfg(windows)]
@@ -1233,7 +1232,7 @@ pub enum UiEvent {
     Wake,
     /// The bar was placed or moved.
     Placed(BarGeometry),
-    /// A full-screen app opened (`true`) or closed on the bar's monitor (SPEC §5.3).
+    /// A full-screen app opened (`true`) or closed on the bar's monitor.
     Fullscreen(bool),
     /// Light/dark mode, accent colour or transparency effects may have changed.
     AppearanceChanged,
@@ -1248,11 +1247,11 @@ pub enum UiEvent {
     /// A drive arrived or went: a disk plugged in or removed, a disc inserted or ejected, a
     /// network drive mapped or disconnected.
     DevicesChanged,
-    /// The power line or a battery's charge changed (SPEC §9.14).
+    /// The power line or a battery's charge changed.
     PowerChanged,
-    /// A second launch asked this instance to show itself (SPEC §6.5).
+    /// A second launch asked this instance to show itself.
     Activate,
-    /// The tray icon was clicked or selected with the keyboard (SPEC §6.5).
+    /// The tray icon was clicked or selected with the keyboard.
     TrayClick,
     /// The tray icon's menu was requested (right click, menu key).
     TrayMenu,
@@ -1275,15 +1274,14 @@ pub enum UiEvent {
     },
     /// Another window took the pointer capture.
     CaptureLost,
-    /// Input in the popup window (SPEC §7.2).
+    /// Input in the popup window.
     Popup(PopupInput),
     /// The popup window lost the activation: another window was clicked or activated, or it
     /// was asked to close (Alt+F4). It is hidden already.
     PopupDeactivated,
-    /// A key pressed while the bar window has the keyboard focus (SPEC §14.4).
+    /// A key pressed while the bar window has the keyboard focus.
     Key { key: Key, modifiers: Modifiers },
-    /// A screen reader asks something of a sensor or the popup through UI Automation (SPEC
-    /// §14.4).
+    /// A screen reader asks something of a sensor or the popup through UI Automation.
     Accessible(AccessibleAction),
     /// The bar window got the keyboard focus.
     FocusGained,
@@ -1292,7 +1290,7 @@ pub enum UiEvent {
     FocusLost { within_app: bool },
 }
 
-/// A key the popup window (SPEC §9.19) or the focused bar (§14.4) passes on.
+/// A key the popup window or the focused bar passes on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     Tab,
@@ -1353,25 +1351,24 @@ pub enum PopupCursor {
     ResizeWidth,
     /// Over a grip that changes the height.
     ResizeHeight,
-    /// Over a bar sensor a click reaches (SPEC §6.1).
+    /// Over a bar sensor a click reaches.
     Hand,
 }
 
 /// The bar logic's timers; each runs independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerId {
-    /// The sensors' earliest wake-up (SPEC §4.4).
+    /// The sensors' earliest wake-up.
     Wake,
-    /// The hint's show or hide delay (SPEC §7.1).
+    /// The hint's show or hide delay.
     Hint,
-    /// Polls Esc while a reorder drag runs (SPEC §6.2).
+    /// Polls Esc while a reorder drag runs.
     Drag,
-    /// The next frame of a bar animation (SPEC §5.5).
+    /// The next frame of a bar animation.
     Frame,
-    /// The open popup's next wake-up: an animation frame, or work it waits for (SPEC §7.2).
+    /// The open popup's next wake-up: an animation frame, or work it waits for.
     Popup,
-    /// Checks whether the capability probe has answered, so the sensors that need one join
-    /// (SPEC §14.1).
+    /// Checks whether the capability probe has answered, so the sensors that need one join.
     Probe,
 }
 
@@ -1390,7 +1387,7 @@ pub struct Modifiers {
     pub shift: bool,
 }
 
-/// An entry of a native menu: the tray menu, and the context menus of SPEC §6.4.
+/// An entry of a native menu: the tray menu, and the bar's and the sensors' context menus.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MenuEntry {
     Item {
@@ -1444,7 +1441,7 @@ impl MenuEntry {
 /// The bar logic. Called by the native bar window, always on the bar thread.
 pub trait BarHandler {
     fn on_event(&mut self, window: &dyn BarWindow, event: UiEvent);
-    /// A drag from another app over the bar (SPEC §6.3); returns what dropping would do, or on
+    /// A drag from another app over the bar; returns what dropping would do, or on
     /// [`DragEvent::Drop`] what it did.
     fn on_drag(&mut self, window: &dyn BarWindow, event: DragEvent) -> DropEffect {
         let _ = (window, event);
@@ -1452,19 +1449,19 @@ pub trait BarHandler {
     }
     /// Draws the bar into a cleared canvas of `size` logical px.
     fn paint(&mut self, canvas: &mut dyn Canvas, size: SizeF);
-    /// The skin's shadow band or the bar's shadow to show beside the bar (SPEC §5.1, §5.5),
+    /// The skin's shadow band or the bar's shadow to show beside the bar,
     /// asked after each frame.
     fn band(&self) -> Option<Band> {
         None
     }
-    /// The bar as screen readers see it (SPEC §14.4), asked after each frame once a UI
+    /// The bar as screen readers see it, asked after each frame once a UI
     /// Automation client asked for the bar.
     fn accessible(&self) -> AccessibleBar {
         AccessibleBar::default()
     }
 }
 
-/// A skin's shadow band or the bar's shadow (SPEC §5.1, §5.5, §12.4): a transparent shadow as
+/// A skin's shadow band or the bar's shadow: a transparent shadow as
 /// wide as the bar, beside it on the side facing the screen centre. The platform shows it in a
 /// click-through window of its own that follows the bar's window, outside the reserved work
 /// area.
@@ -1500,15 +1497,15 @@ pub trait BarWindow {
     /// Delivers [`UiEvent::Timer`] once after `delay` (it may come a few ms early), replacing the
     /// previous timer with this id; `None` cancels it.
     fn set_timer(&self, id: TimerId, delay: Option<std::time::Duration>);
-    /// Shows the hint window (SPEC §7.1) at `rect` (physical screen px) with what `paint` draws
+    /// Shows the hint window at `rect` (physical screen px) with what `paint` draws
     /// at `scale`: fading in when it was hidden, updated in place when it was shown. `name` is
-    /// its title, which screen readers read (§14.4).
+    /// its title, which screen readers read.
     fn show_hint(&self, rect: Rect, scale: f32, name: &str, paint: &mut dyn FnMut(&mut dyn Canvas));
     fn hide_hint(&self);
-    /// Shows the popup window (SPEC §7.2) at `rect` (physical screen px) with what `paint`
+    /// Shows the popup window at `rect` (physical screen px) with what `paint`
     /// draws at `scale` and gives it the keyboard focus: fading in when it was hidden, updated
     /// in place (and moved) when it was shown. Its input arrives as [`UiEvent::Popup`]. `name`
-    /// is its title, which screen readers read (§14.4); `describe` says what they list in it,
+    /// is its title, which screen readers read; `describe` says what they list in it,
     /// asked once a UI Automation client asked for the popup window.
     fn show_popup(
         &self,
@@ -1527,28 +1524,28 @@ pub trait BarWindow {
     fn capture_popup_pointer(&self, capture: bool);
     /// While captured, pointer events keep coming when the pointer leaves the window.
     fn capture_pointer(&self, capture: bool);
-    /// Whether Esc is held now, read without focus (clicks never give the bar the focus; SPEC
-    /// §6.2).
+    /// Whether Esc is held now, read without focus (clicks never give the bar
+    /// the focus).
     fn escape_down(&self) -> bool;
-    /// Gives the bar window the keyboard focus (the hotkey, SPEC §14.4), remembering which
+    /// Gives the bar window the keyboard focus (the hotkey), remembering which
     /// window of another app had it; returns whether the bar has it now.
     fn take_focus(&self) -> bool;
     /// Gives the keyboard focus back to the window that had it before [`Self::take_focus`].
     fn restore_focus(&self);
-    /// Asks a yes/no question in a native dialog (SPEC §6.4): `message` as the main text and
+    /// Asks a yes/no question in a native dialog: `message` as the main text and
     /// `action` on the confirming button. Returns whether the user confirmed.
     fn confirm(&self, message: &str, action: &str) -> bool;
-    /// Moves a floating bar by physical px (SPEC §5.1) and returns where it is now; `None` when
+    /// Moves a floating bar by physical px and returns where it is now; `None` when
     /// the bar is docked or not shown.
     fn move_by(&self, dx: i32, dy: i32) -> Option<Rect>;
-    /// Puts a floating bar at `rect` (physical screen px) while one of its ends is dragged
-    /// (SPEC §5.1); `width` is its width in logical px. Returns where it is now; `None` when
+    /// Puts a floating bar at `rect` (physical screen px) while one of its ends is dragged;
+    /// `width` is its width in logical px. Returns where it is now; `None` when
     /// the bar is docked or not shown.
     fn resize_to(&self, rect: Rect, width: u32) -> Option<Rect>;
     /// The pointer's shape over the bar window: the resize cursor over a floating bar's ends.
     fn set_cursor(&self, cursor: PopupCursor);
     /// Shows the bar `dy` physical px below (positive) or above its place, for the rise
-    /// animation (SPEC §5.5); 0 puts it back.
+    /// animation; 0 puts it back.
     fn slide(&self, dy: i32);
 }
 

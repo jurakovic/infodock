@@ -1,4 +1,4 @@
-//! `uptime` — how long the system has been running (SPEC §9.6), with the longest uptime seen
+//! `uptime` — how long the system has been running, with the longest uptime seen
 //! so far kept in the sensor's `state`.
 
 use std::time::{Duration, Instant};
@@ -28,9 +28,9 @@ const PAST_BOUNDARY: Duration = Duration::from_millis(20);
 const RECORD_STEP: u64 = 10 * 60;
 /// Legacy records longer than a century are not uptimes; they are refused on import.
 const MAX_RECORD_SECS: u64 = 100 * 366 * 86_400;
-/// The `state` key of the record (SPEC §11.2).
+/// The `state` key of the record.
 const LONGEST: &str = "longestSecs";
-/// The record's XML key, `d:h:m:s` (SPEC §9.6).
+/// The record's XML key, `d:h:m:s`.
 const LEGACY_LONGEST: &str = "max-uptime";
 
 const SCHEMA: &[PropField] = &[
@@ -70,7 +70,7 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.field.shadow.help"),
 ];
 
-/// SPEC §9.6; the record goes into the state.
+/// The Uptime's legacy XML keys; the record goes into the state.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("text", "text"),
     LegacyKey::new("font", "font"),
@@ -347,7 +347,7 @@ mod tests {
               instead."
             ]
         );
-        // Not an uptime: over a century (review M4).
+        // Not an uptime: over a century.
         let (_, state, warnings) = convert(&[("max-uptime", "0:0:0:18446744073709551615")]);
         assert!(state.is_empty());
         assert_eq!(warnings.len(), 1);

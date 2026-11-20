@@ -1,11 +1,11 @@
-//! Resizing a floating bar by its ends (SPEC §5.1): which end the pointer is at, and where the
+//! Resizing a floating bar by its ends: which end the pointer is at, and where the
 //! bar is while one is dragged.
 
 use crate::platform::geometry::{Rect, to_physical};
 
 /// The pointer within this many logical px of a floating bar's left or right end resizes it.
 pub const GRIP: f32 = 6.0;
-/// A floating bar's width, logical px: the range of the *Width* setting (SPEC §10.2).
+/// A floating bar's width, logical px: the range of the *Width* setting.
 const MIN_WIDTH: u32 = 200;
 pub const MAX_WIDTH: u32 = 3840;
 

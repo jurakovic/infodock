@@ -1,5 +1,5 @@
-//! Portable fallback for systems without a native implementation yet (SPEC §2.2: only Windows
-//! ships in v1). There is no bar window: the bar thread runs the handler for queued work, so the
+//! Portable fallback for systems without a native implementation (only Windows
+//! has one). There is no bar window: the bar thread runs the handler for queued work, so the
 //! rest of the app (tray, Settings, config) can be developed and tested on Linux.
 
 use std::path::PathBuf;

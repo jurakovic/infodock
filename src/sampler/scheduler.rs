@@ -1,8 +1,8 @@
-//! Which topics to sample when (SPEC §4.4): each topic is sampled at the shortest interval its
-//! subscribers asked for and keeps its newest sample for subscribers that join later. All
-//! topics keep to one grid, counted from the first sample, so topics with whole-second
+//! Which topics to sample when (INTERNALS.md, Data flow): each topic is sampled at the shortest
+//! interval its subscribers asked for and keeps its newest sample for subscribers that join later.
+//! All topics keep to one grid, counted from the first sample, so topics with whole-second
 //! intervals are read (and drawn) together. A topic that keeps failing turns into an error
-//! sample and is retried less and less often (SPEC §14.2). Pure; the sampler thread supplies
+//! sample and is retried less and less often. Pure; the sampler thread supplies
 //! the clock.
 
 use std::collections::HashMap;
@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 /// No topic is sampled more often than this, whatever a sensor asks for.
 const MIN_INTERVAL: Duration = Duration::from_millis(100);
-/// Failed readings in a row before a topic's sample is an error (SPEC §14.2); until then
+/// Failed readings in a row before a topic's sample is an error; until then
 /// subscribers keep the previous sample.
 const FAILURES_BEFORE_ERROR: u32 = 3;
 /// The first retry after the error sample comes this much later, each next one twice as late,
@@ -66,7 +66,7 @@ fn grid_after(epoch: Instant, interval: Duration, at: Instant) -> Instant {
 }
 
 /// How long after the `failures`-th failed reading in a row the next try comes, at least:
-/// nothing extra before the error sample, then 1 s, 2 s, 4 s … up to 30 s (SPEC §14.2).
+/// nothing extra before the error sample, then 1 s, 2 s, 4 s … up to 30 s.
 fn backoff(failures: u32) -> Duration {
     match failures.checked_sub(FAILURES_BEFORE_ERROR) {
         None => Duration::ZERO,
@@ -143,14 +143,14 @@ impl<K: Clone + Eq + Hash, S: Clone + PartialEq, U: Eq + Hash> Scheduler<K, S, U
     }
 
     /// After the system resumed: every topic is due now, and the cadence starts again from the
-    /// next reading (SPEC §4.4).
+    /// next reading.
     pub fn resume(&mut self, now: Instant) {
         for entry in self.topics.values_mut() {
             entry.next = now;
         }
     }
 
-    /// The topics `which` picks are due now, e.g. after a drive arrived (SPEC §4.4); the
+    /// The topics `which` picks are due now, e.g. after a drive arrived; the
     /// cadence goes on from that reading.
     pub fn refresh(&mut self, now: Instant, which: impl Fn(&K) -> bool) {
         for (topic, entry) in &mut self.topics {
@@ -187,7 +187,7 @@ impl<K: Clone + Eq + Hash, S: Clone + PartialEq, U: Eq + Hash> Scheduler<K, S, U
         failed && entry.failures == 0
     }
 
-    /// Records that `topic` could not be read at `now` (SPEC §14.2). Until the third failure
+    /// Records that `topic` could not be read at `now`. Until the third failure
     /// in a row its subscribers keep the previous sample and the next try comes at the next
     /// tick; from then on its sample is `error`, returned when it differs from the one
     /// delivered last, and the tries back off from 1 s to 30 s.

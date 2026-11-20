@@ -1,9 +1,9 @@
-//! The bar logic on the bar thread (SPEC §4.1, §4.4): applies the config and the OS appearance,
-//! keeps the sensors, their wake-up timer and layout, and draws the bar. It handles the pointer
-//! (clicks, the reorder drag, moving and resizing a floating bar; §5.1, §6.1–6.2), the context
-//! menus and the tray (§6.4–6.5), the hover hint and the interactive popups (§7), drops from
-//! other apps (§6.3), the keyboard and UI Automation (§14.4), and the bar's motion: showing,
-//! hiding, the rise animation and sliding out to change edges (§5.5).
+//! The bar logic on the bar thread (INTERNALS.md, The bar): applies the config and the OS
+//! appearance, keeps the sensors, their wake-up timer and layout, and draws the bar. It handles the
+//! pointer (clicks, the reorder drag, moving and resizing a floating bar), the context
+//! menus and the tray, the hover hint and the interactive popups, drops from
+//! other apps, the keyboard and UI Automation, and the bar's motion: showing,
+//! hiding, the rise animation and sliding out to change edges.
 //!
 //! This module holds [`BarLogic`]'s state, its construction, the event dispatch, the config and
 //! the tray; each other job is a child module with its own `impl BarLogic` block (`pointer`,
@@ -102,11 +102,11 @@ mod tests;
 
 /// How often Esc is checked during a drag.
 const ESC_POLL: Duration = Duration::from_millis(50);
-/// The hover highlight fades in and out over this long (SPEC §5.5).
+/// The hover highlight fades in and out over this long.
 const HIGHLIGHT: Duration = Duration::from_millis(300);
-/// The bar rises into place, or slides out, over this long (SPEC §5.5).
+/// The bar rises into place, or slides out, over this long.
 const RISE: Duration = Duration::from_millis(300);
-/// How often the bar checks whether the capability probe has answered (SPEC §14.1), and how
+/// How often the bar checks whether the capability probe has answered, and how
 /// long it checks before waiting for it.
 const PROBE_POLL: Duration = Duration::from_millis(25);
 const PROBE_PATIENCE: Duration = Duration::from_secs(2);
@@ -120,7 +120,7 @@ struct Drag {
     target: Option<DropTarget>,
 }
 
-/// A drag from another app over the bar (SPEC §6.3).
+/// A drag from another app over the bar.
 struct ExternalDrag {
     /// What the bar takes of the dragged items, in order.
     items: Vec<Dropped>,
@@ -132,7 +132,7 @@ struct ExternalDrag {
     onto: Option<(String, DragInfo, Option<DropAction>)>,
 }
 
-/// The keyboard on the bar (SPEC §14.4), from the hotkey until Esc or the focus goes to
+/// The keyboard on the bar, from the hotkey until Esc or the focus goes to
 /// another app.
 struct KeyFocus {
     /// The sensor with the focus ring; `None`: the bar itself.
@@ -161,19 +161,19 @@ pub(super) struct BarLogic {
     previews: HashMap<String, SensorInstance>,
     /// The left button is down on a sensor.
     press: Option<Press>,
-    /// A reorder drag runs (SPEC §6.2).
+    /// A reorder drag runs.
     drag: Option<Drag>,
-    /// Another app drags something over the bar (SPEC §6.3).
+    /// Another app drags something over the bar.
     external: Option<ExternalDrag>,
-    /// The left button is down on the background of a floating bar, which moves it (§5.1).
+    /// The left button is down on the background of a floating bar, which moves it.
     moving: Option<Moving>,
-    /// The left button is down on an end of a floating bar, which resizes it (§5.1).
+    /// The left button is down on an end of a floating bar, which resizes it.
     resizing: Option<Resizing>,
     /// The pointer's shape over the bar as last set.
     cursor: PopupCursor,
     /// When the hover hint shows and hides.
     hover: Hover,
-    /// The open interactive popup (SPEC §7.2).
+    /// The open interactive popup.
     popups: PopupHost,
     /// Wakes this thread from workers, e.g. a popup's.
     waker: UiWaker,
@@ -185,23 +185,23 @@ pub(super) struct BarLogic {
     icons: IconLoader,
     appearance: OsAppearance,
     theme: Theme,
-    /// The classic bar's skin as last drawn (SPEC §12.4).
+    /// The classic bar's skin as last drawn.
     skin: SkinCache,
-    /// The bar's own shadow as last drawn (SPEC §5.5).
+    /// The bar's own shadow as last drawn.
     shadow: ShadowCache,
     /// The skin's shadow band or the bar's shadow as last drawn, for the platform to show beside
-    /// the bar (SPEC §5.1).
+    /// the bar.
     band: Option<Band>,
     /// The material last applied to the window and whether the bar was dark; `None` until the
     /// first application.
     material: Option<(Material, bool)>,
     /// Whether the tray icon is shown; `None` until first applied.
     tray_shown: Option<bool>,
-    /// The topics each sensor was last subscribed to (SPEC §4.4).
+    /// The topics each sensor was last subscribed to.
     subscribed: HashMap<String, Vec<TopicRequest>>,
-    /// Transitions animate (the setting, or the OS for `auto`; SPEC §5.5).
+    /// Transitions animate (the setting, or the OS for `auto`).
     animate: bool,
-    /// The locale of `settings.dateLocale` (SPEC §8.6) and how it writes numbers, read once and
+    /// The locale of `settings.dateLocale` and how it writes numbers, read once and
     /// again when the setting or the OS regional format changes; sensors and popups get them on
     /// their contexts, so none reads the locale itself.
     locale: Locale,
@@ -210,19 +210,19 @@ pub(super) struct BarLogic {
     inside: bool,
     /// The sensor under the pointer, told when the pointer enters and leaves it.
     hovered: Option<String>,
-    /// A click on `hovered` does something (the hand cursor, SPEC §6.1); asked as the pointer
+    /// A click on `hovered` does something (the hand cursor); asked as the pointer
     /// comes onto it.
     hovered_clickable: bool,
-    /// The keyboard on the bar (SPEC §14.4); `None` unless the hotkey focused it.
+    /// The keyboard on the bar; `None` unless the hotkey focused it.
     keys: Option<KeyFocus>,
     /// The size of the last frame, logical px.
     painted: SizeF,
     /// Since when the sensors wait for the capability probe; `None` once it has answered.
     probe_since: Option<Instant>,
-    /// The hover highlight (SPEC §5.5), 0–1.
+    /// The hover highlight, 0–1.
     highlight: Fade,
     /// How far the bar has risen into place, 0–1: its content's opacity, and how far it is
-    /// off its place (SPEC §5.5).
+    /// off its place.
     shown: Fade,
     /// The next placement starts the rise (start-up, and after sliding out).
     rise_pending: bool,
@@ -232,7 +232,7 @@ pub(super) struct BarLogic {
     /// the window in its place.
     slid: Option<i32>,
     platform: Arc<dyn Platform>,
-    /// Reports what sensors' actions changed to the sampler, through the host (SPEC §4.4).
+    /// Reports what sensors' actions changed to the sampler, through the host.
     changes: ChangeSink,
     commands: Receiver<Command>,
     host: Arc<dyn BarHost>,
@@ -254,7 +254,7 @@ struct Resizing {
 
 /// The subscription changes from `old` to `new` (by sensor id): new or changed topic lists, the
 /// lists of sensors `created` anew (a re-created sensor keeps its id and topics but starts
-/// without data, and subscribing sends it the newest samples, SPEC §4.4), and an empty list for
+/// without data, and subscribing sends it the newest samples), and an empty list for
 /// sensors that no longer subscribe. Sorted by id.
 fn subscription_changes(
     old: &HashMap<String, Vec<TopicRequest>>,
@@ -340,7 +340,7 @@ impl BarLogic {
         }
     }
 
-    /// Shows or hides the tray icon as configured (SPEC §6.5).
+    /// Shows or hides the tray icon as configured.
     fn refresh_tray(&mut self, window: &dyn BarWindow) {
         let show = self.settings.show_tray_icon;
         if self.tray_shown != Some(show) {
@@ -382,7 +382,7 @@ impl BarLogic {
         {
             window.invalidate();
         }
-        // A docked bar changing edges slides out toward the old one first (SPEC §5.5); the
+        // A docked bar changing edges slides out toward the old one first; the
         // controller left the redocking to us.
         if anim::slides_out(old, new) {
             if self.animate && self.geometry.is_some() && self.host.bar_visible() {
@@ -407,7 +407,7 @@ impl BarLogic {
         layout_changed
     }
 
-    /// The bar thread was woken (SPEC §4.4): takes every queued command, so a burst of config
+    /// The bar thread was woken: takes every queued command, so a burst of config
     /// changes and samples costs one theme refresh and one sync; icons and popup work that
     /// arrived meanwhile are taken too.
     fn drain(&mut self, window: &dyn BarWindow) {
@@ -498,7 +498,7 @@ impl BarLogic {
                 let step = self.hover.timer();
                 self.apply_hint(window, step);
             }
-            // Esc cancels a drag; the bar has no focus, so it is polled (SPEC §6.2).
+            // Esc cancels a drag; the bar has no focus, so it is polled.
             TimerId::Drag if self.drag.is_some() => {
                 if window.escape_down() {
                     self.cancel_drag(window);
@@ -610,7 +610,7 @@ impl BarHandler for BarLogic {
                 self.end_moving(window);
                 self.end_resizing(window);
             }
-            // Middle clicks are reserved (SPEC §6.1).
+            // Middle clicks are reserved.
             UiEvent::PointerUp { .. } => {}
             UiEvent::AppearanceChanged => {
                 let appearance = self.platform.appearance();
@@ -629,7 +629,7 @@ impl BarHandler for BarLogic {
                 self.refresh_hint(window);
                 self.relayout_popup(window);
             }
-            // Full-screen apps close the hint and the popup (SPEC §5.3).
+            // Full-screen apps close the hint and the popup.
             UiEvent::Fullscreen(true) => {
                 self.dismiss_hint(window);
                 self.close_popup(window);

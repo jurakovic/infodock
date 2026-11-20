@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lists the crates in Infodock's Windows build with their licences (SPEC §10.7 About).
+"""Lists the crates in Infodock's Windows build with their licences, for Settings' About page.
 
 Run from the repository root after `Cargo.lock` changes:
 

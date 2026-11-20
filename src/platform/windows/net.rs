@@ -1,6 +1,6 @@
-//! Network interfaces (SPEC Appendix A, `net/<id|auto>`): `GetIfTable2` lists them,
-//! `GetIfEntry2` reads one interface's counters each tick, and `GetBestInterfaceEx` finds the
-//! one carrying the default route (a route lookup; nothing is sent).
+//! Network interfaces (the `net/<id|auto>` topic; INTERNALS.md, Windows data sources):
+//! `GetIfTable2` lists them, `GetIfEntry2` reads one interface's counters each tick, and
+//! `GetBestInterfaceEx` finds the one carrying the default route (a route lookup; nothing is sent).
 
 use std::collections::HashSet;
 

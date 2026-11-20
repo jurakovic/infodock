@@ -1,4 +1,4 @@
-//! `cpu` (SPEC Appendix A): the processors' load. User, kernel and idle shares come from the
+//! `cpu`: the processors' load. User, kernel and idle shares come from the
 //! change in processor times since the previous reading; the busy share from the platform's
 //! utility counter where it has one (as Task Manager), else from the same times. The first
 //! reading after a start or resume only sets the baseline.
@@ -29,7 +29,7 @@ impl Cpu {
             .map(|previous| sample(previous, &reading)))
     }
 
-    /// The next reading starts a new baseline (SPEC §4.4: after resume).
+    /// The next reading starts a new baseline (after resume).
     pub fn resume(&mut self) {
         self.previous = None;
     }

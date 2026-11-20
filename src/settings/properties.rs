@@ -1,7 +1,7 @@
-//! The properties form in the Settings window (SPEC §6.7): opened for a sensor on the route
+//! The properties form in the Settings window: opened for a sensor on the route
 //! `sensor/<id>`, generated from its type's schema (`form.rs`). Edits preview live on the bar
 //! (150 ms after the last one); Save stores them and Cancel, leaving the page or closing the
-//! window drops them, which also removes a sensor the picker has just added (§6.6).
+//! window drops them, which also removes a sensor the picker has just added.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +18,7 @@ use crate::ui;
 
 /// The page index of the form in the window.
 pub(super) const PAGE: i32 = 8;
-/// Edits are previewed this long after the last one (SPEC §6.7).
+/// Edits are previewed this long after the last one.
 const PREVIEW_DELAY: Duration = Duration::from_millis(150);
 
 /// An open form.
@@ -113,7 +113,7 @@ pub(super) fn cancel(open: &mut Open, app: &App) {
 }
 
 /// Applies an edit to the open form, refreshes the rows it affects and schedules the preview.
-/// An invalid value shows an error on its row and disables Save (SPEC §6.7).
+/// An invalid value shows an error on its row and disables Save.
 fn edit(app: &Arc<App>, change: impl FnOnce(&mut Form, &[String]) -> bool) {
     with_open_mut(|open| {
         let families = open.families.clone();
@@ -203,7 +203,7 @@ fn preview(app: &App) {
 fn save(app: &App) {
     let pending = with_open(|open| {
         let state = open.form.as_ref()?;
-        // Save is disabled while a value is invalid (SPEC §6.7).
+        // Save is disabled while a value is invalid.
         let valid = state.form.valid();
         valid.then(|| (state.form.id.clone(), state.form.changes().clone()))
     })

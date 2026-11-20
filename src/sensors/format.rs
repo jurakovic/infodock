@@ -1,10 +1,10 @@
-//! Formatting for sensor text (SPEC §8.6): sizes, rates, durations and percentages. Words and
+//! Formatting for sensor text: sizes, rates, durations and percentages. Words and
 //! units come from the catalog (with plural forms); the decimal separator from the locale.
 
 use crate::i18n::{t, t_args, t_count};
 use crate::platform::Locale;
 
-/// How numbers are written: the locale's decimal separator (SPEC §8.6).
+/// How numbers are written: the locale's decimal separator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Numbers {
     pub decimal: char,
@@ -64,7 +64,7 @@ fn scaled(n: f64) -> (f64, usize) {
     (value, unit)
 }
 
-/// The automatic number of decimals (SPEC §8.6): two below 10, one below 100, else none, judged
+/// The automatic number of decimals: two below 10, one below 100, else none, judged
 /// after rounding (9.999 is `10.0`, not `10.00`).
 fn auto_digits(value: f64) -> usize {
     if value == 0.0 {
@@ -78,7 +78,7 @@ fn auto_digits(value: f64) -> usize {
     }
 }
 
-/// A size in bytes, base 1024 (SPEC §8.6): `0 bytes`, `1 byte`, `512 bytes`, `1.50 KB`,
+/// A size in bytes, base 1024: `0 bytes`, `1 byte`, `512 bytes`, `1.50 KB`,
 /// `12.3 MB`, `431 GB`. `digits` fixes the decimals of KB and above; plain bytes have none.
 pub fn bytes(n: u64, digits: Option<usize>, numbers: Numbers) -> String {
     let (value, unit) = scaled(n as f64);
@@ -107,7 +107,7 @@ fn parts(seconds: u64) -> (u64, u64, u64) {
     (seconds / 86_400, seconds / 3600 % 24, seconds / 60 % 60)
 }
 
-/// A compact duration (Uptime, SPEC §9.6): `3d 04h 12m`, `4h 05m`, `12m`. The leading unit is
+/// A compact duration (Uptime): `3d 04h 12m`, `4h 05m`, `12m`. The leading unit is
 /// not padded, the ones after it are.
 pub fn duration_compact(seconds: u64) -> String {
     let (days, hours, minutes) = parts(seconds);
@@ -132,7 +132,7 @@ pub fn duration_compact(seconds: u64) -> String {
     out.join(" ")
 }
 
-/// A duration in words (SPEC §8.6): `3 days, 4 hours, 12 minutes`; parts that are zero are left
+/// A duration in words: `3 days, 4 hours, 12 minutes`; parts that are zero are left
 /// out, and less than a minute is `0 minutes`.
 pub fn duration_long(seconds: u64) -> String {
     let (days, hours, minutes) = parts(seconds);
@@ -151,7 +151,7 @@ pub fn duration_long(seconds: u64) -> String {
     words.join(&t("format.listSeparator"))
 }
 
-/// Hours and minutes as `h:mm` (battery times, SPEC §9.14).
+/// Hours and minutes as `h:mm` (battery times).
 pub fn hours_minutes(seconds: u64) -> String {
     format!("{}:{:02}", seconds / 3600, seconds / 60 % 60)
 }
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn sizes_use_base_1024_and_auto_digits() {
-        // The spec's examples.
+        // An example of each unit.
         assert_eq!(b(0), "0 bytes");
         assert_eq!(b(512), "512 bytes");
         assert_eq!(b(1536), "1.50 KB");

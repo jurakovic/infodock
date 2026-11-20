@@ -1,4 +1,4 @@
-//! Settings ▸ About (SPEC §10.7): the version, Infodock's licence, the crates of the Windows
+//! Settings ▸ About: the version, Infodock's licence, the crates of the Windows
 //! build with their licences, the navigation's icons with theirs, Slint's attribution
 //! (`AboutSlint`) and the logs folder. The crates come from `assets/third-party.tsv`, which
 //! `.github/scripts/third-party.py` writes from `cargo tree`; a test keeps it in step with

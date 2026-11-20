@@ -11,7 +11,7 @@ use crate::i18n::t_args;
 use crate::platform::MonitorInfo;
 use crate::platform::geometry::{floating_rect, to_physical};
 
-/// Settings pages in navigation order (SPEC §10.7); the window's `Pages` global numbers the
+/// Settings pages in navigation order; the window's `Pages` global numbers the
 /// last ones and those the navigation does not list.
 pub const PAGES: [&str; 8] = [
     "general",
@@ -26,7 +26,7 @@ pub const PAGES: [&str; 8] = [
 /// The page with the Layout manager.
 pub const SENSORS_PAGE: usize = 3;
 
-/// Where Settings opens (SPEC §4.1, §6.6, §6.7).
+/// Where Settings opens.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Route {
     /// A page of the navigation, by index into [`PAGES`].
@@ -39,7 +39,7 @@ pub enum Route {
     },
     /// A sensor's properties.
     Sensor(String),
-    /// The welcome page (SPEC §11.5).
+    /// The welcome page.
     Welcome,
 }
 
@@ -128,7 +128,7 @@ const CHOICES: &[Choice] = &[
     },
 ];
 
-/// The font styles in the order Settings lists them, after "Theme default" (SPEC §8.2).
+/// The font styles in the order Settings lists them, after "Theme default".
 pub const FONT_STYLES: [&str; 6] = [
     "normal",
     "semibold",
@@ -138,7 +138,7 @@ pub const FONT_STYLES: [&str; 6] = [
     "boldItalic",
 ];
 
-/// The materials in the order Settings lists them, after "Theme default" (SPEC §10.3).
+/// The materials in the order Settings lists them, after "Theme default".
 pub const MATERIALS: [&str; 3] = ["none", "acrylic", "mica"];
 
 /// "Theme default (…)" naming the theme's choice, then every choice in `ids`, each named by the
@@ -220,7 +220,7 @@ pub fn choice_index(settings: &Value, choice: &Choice) -> i32 {
 
 /// The value in effect at a dotted path: the stored one, or the theme's default for a
 /// theme-dependent setting stored as `null`; `None` for an unknown path. `os_dark`: the OS apps
-/// are dark, for the modern bar's light look with `colorScheme: system` (SPEC §12.2).
+/// are dark, for the modern bar's light look with `colorScheme: system`.
 pub fn in_effect(settings: &Settings, os_dark: bool, path: &str) -> Option<Value> {
     let json = serde_json::to_value(settings).ok()?;
     let stored = value_at(&json, path)?;
@@ -247,7 +247,7 @@ pub fn in_effect(settings: &Settings, os_dark: bool, path: &str) -> Option<Value
 
 /// Whether setting `path` to `value` changes what is in effect. A theme-dependent setting left
 /// at the theme's value (a colour box losing the focus, a slider clicked without moving) stays
-/// `null` and keeps following the theme (SPEC §11.2). An invalid value counts as a change, so
+/// `null` and keeps following the theme. An invalid value counts as a change, so
 /// saving it reports why.
 pub fn changes(settings: &Settings, os_dark: bool, path: &str, value: &Value) -> bool {
     apply_settings_patch(settings, &patch(path, value.clone())).map_or(true, |next| {
@@ -255,7 +255,7 @@ pub fn changes(settings: &Settings, os_dark: bool, path: &str, value: &Value) ->
     })
 }
 
-/// The settings each page's controls save, by page (SPEC §10.7): what its *Restore defaults*
+/// The settings each page's controls save, by page: what its *Restore defaults*
 /// puts back. The Sensors page's are its defaults for every sensor, not the layout; the Bar
 /// page's include the floating place, which its *Width* is part of.
 pub fn page_paths(page: usize) -> &'static [&'static str] {
@@ -323,7 +323,7 @@ pub fn page_paths(page: usize) -> &'static [&'static str] {
 }
 
 /// The settings patch that puts `page`'s settings back to their defaults; theme-dependent ones
-/// go back to `null`, following the theme again (SPEC §11.2).
+/// go back to `null`, following the theme again.
 pub fn page_defaults(page: usize) -> Value {
     let defaults = serde_json::to_value(Settings::default()).unwrap_or_default();
     let mut restore = Value::Object(Map::new());
@@ -348,13 +348,13 @@ pub fn patch(path: &str, value: Value) -> Value {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonitorChoices {
     pub labels: Vec<String>,
-    /// The stored value for each label: `primary` or a monitor key (SPEC §10.2).
+    /// The stored value for each label: `primary` or a monitor key.
     pub keys: Vec<String>,
     pub current: usize,
 }
 
 /// A floating bar's place with a new `width` (logical px): where it is, or, before it was ever
-/// placed, centred where it starts (SPEC §5.1).
+/// placed, centred where it starts.
 pub fn floating_with_width(
     settings: &Settings,
     monitors: &[MonitorInfo],
@@ -389,8 +389,8 @@ const TITLE_BAR: u32 = 32;
 /// (logical px).
 const GRAB: u32 = 48;
 
-/// Whether the Settings window at `place` can be grabbed by its title bar on one of `monitors`
-/// (SPEC §10.7): a work area shows a strip of it at least [`GRAB`] px wide. Otherwise, e.g.
+/// Whether the Settings window at `place` can be grabbed by its title bar on one of `monitors`:
+/// a work area shows a strip of it at least [`GRAB`] px wide. Otherwise, e.g.
 /// when its monitor is gone, the window opens where Windows puts it.
 pub fn place_reachable(place: &WindowPlace, monitors: &[MonitorInfo]) -> bool {
     monitors.iter().any(|m| {
@@ -423,7 +423,7 @@ pub fn monitor_choices(saved: &str, monitors: &[MonitorInfo]) -> MonitorChoices 
         keys.push(m.key.clone());
     }
     if !keys.iter().any(|k| k == saved) {
-        // Monitor keys are `<device>|<name>|<w>x<h>` (SPEC §10.2).
+        // Monitor keys are `<device>|<name>|<w>x<h>`.
         let name = saved.split('|').nth(1).unwrap_or(saved);
         labels.push(t_args("settings.bar.monitor.missing", &[("name", name)]));
         keys.push(saved.to_owned());
@@ -576,7 +576,7 @@ mod tests {
     #[test]
     fn the_light_look_is_the_modern_themes_colour_in_light_mode() {
         let settings = Settings::modern();
-        // OS in light mode: the light look's background is the theme's colour (SPEC §12.2), so
+        // OS in light mode: the light look's background is the theme's colour, so
         // leaving the colour box keeps following it.
         assert_eq!(
             in_effect(&settings, false, "background.color"),

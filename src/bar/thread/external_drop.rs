@@ -1,11 +1,11 @@
-//! Drags from other apps over the bar (SPEC §6.3): the placer, a sensor that takes the
+//! Drags from other apps over the bar: the placer, a sensor that takes the
 //! drop itself with its floating hint, and the drop.
 
 use super::*;
 
 impl BarLogic {
     /// Another app's drag enters the bar: the hint closes, and the items the bar can take are
-    /// kept for the drop (SPEC §6.3).
+    /// kept for the drop.
     pub(super) fn drag_enter(
         &mut self,
         window: &dyn BarWindow,
@@ -22,7 +22,7 @@ impl BarLogic {
     }
 
     /// The pointer of another app's drag is at `at`: a sensor under it may take the drop
-    /// itself (it is darkened and a floating hint says what would happen, SPEC §9.16, §9.19);
+    /// itself (it is darkened and a floating hint says what would happen);
     /// otherwise the placer shows where new sensors would go. Returns the effect.
     pub(super) fn drag_over(
         &mut self,
@@ -87,7 +87,7 @@ impl BarLogic {
         }
     }
 
-    /// Shows the floating drop hint `text` above (or below) sensor `id` (SPEC §9.19).
+    /// Shows the floating drop hint `text` above (or below) sensor `id`.
     pub(super) fn show_drop_hint(&self, window: &dyn BarWindow, id: &str, text: &str) {
         let Some((anchor, scale)) = self.anchor(id) else {
             return;
@@ -122,7 +122,7 @@ impl BarLogic {
     }
 
     /// Drops the dragged items: onto the sensor under the pointer if it takes them, otherwise
-    /// one new sensor each, in order, where the placer was (SPEC §6.3), without Properties.
+    /// one new sensor each, in order, where the placer was, without Properties.
     pub(super) fn drag_drop(
         &mut self,
         window: &dyn BarWindow,

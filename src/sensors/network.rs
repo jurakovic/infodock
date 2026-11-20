@@ -1,4 +1,4 @@
-//! `network-graph` — a network connection's traffic (SPEC §9.13) on the `net/<id|auto>` topic:
+//! `network-graph` — a network connection's traffic on the `net/<id|auto>` topic:
 //! receive above the middle and send below it, each scaled to its configured maximum or the
 //! largest rate in view, with both rates beside the plot. A click opens Network Connections.
 
@@ -23,9 +23,9 @@ use crate::i18n::{t, t_args};
 use crate::platform::{Canvas, NetInterface};
 use crate::sampler::{NetSample, Sample, Topic, TopicRequest};
 
-/// Network Connections, opened by a click (SPEC §9.13: `control.exe ncpa.cpl`).
+/// Network Connections, opened by a click (`control.exe ncpa.cpl`).
 const NETWORK_CONNECTIONS: &str = "ncpa.cpl";
-/// The smallest scale, bytes per second (SPEC §9.13: 1 KB/s).
+/// The smallest scale, bytes per second (1 KB/s).
 const MIN_SCALE: f32 = 1024.0;
 
 const SCHEMA: &[PropField] = &[
@@ -84,7 +84,7 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.network.field.flipBottom.help"),
 ];
 
-/// SPEC §9.13; the adapter is matched against this computer's connections.
+/// The Network Graph's legacy XML keys; the adapter is matched against this computer's connections.
 const LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
     LegacyKey::new("bandwidth", "bandwidth"),
     LegacyKey::new("graph-top-color", "topColor"),
@@ -96,7 +96,7 @@ const LEGACY_KEYS: &[LegacyKey] = graph::legacy_keys![
 /// The legacy adapter: its description.
 const LEGACY_ADAPTER: &str = "net-adapter";
 
-/// The connection a legacy layout names by `adapter` (SPEC §9.13): the adapter's description,
+/// The connection a legacy layout names by `adapter`: the adapter's description,
 /// or else the connection's name, ignoring case.
 fn legacy_adapter<'a>(interfaces: &'a [NetInterface], adapter: &str) -> Option<&'a NetInterface> {
     let adapter = adapter.trim();
@@ -107,7 +107,7 @@ fn legacy_adapter<'a>(interfaces: &'a [NetInterface], adapter: &str) -> Option<&
         .or_else(|| interfaces.iter().find(|i| named(&i.alias)))
 }
 
-/// The configured maxima (SPEC §9.13), bytes per second: `"in,out"`, or one value for both.
+/// The configured maxima, bytes per second: `"in,out"`, or one value for both.
 /// Anything that is not a positive number scales automatically.
 pub fn bandwidth(text: &str) -> (Option<f32>, Option<f32>) {
     let parse = |s: &str| {
@@ -125,7 +125,7 @@ pub fn bandwidth(text: &str) -> (Option<f32>, Option<f32>) {
     }
 }
 
-/// A series' scale (SPEC §9.13): the configured maximum, the largest rate in view or 1 KB/s,
+/// A series' scale: the configured maximum, the largest rate in view or 1 KB/s,
 /// whichever is largest.
 pub fn scale(configured: Option<f32>, history: &History) -> f32 {
     let seen = history
@@ -274,7 +274,7 @@ impl NetworkGraph {
 impl Sensor for NetworkGraph {
     fn measure(&mut self, cx: &LayoutCtx) -> f32 {
         let (rx, tx) = self.rates(cx.numbers);
-        // The column fits `1023 MB/s` (SPEC §9.13).
+        // The column fits `1023 MB/s`.
         let reserve = t_args("format.rate.mb", &[("value", "1023")]);
         let text = GraphText::new(cx.text, cx.theme, &rx, &tx, &reserve);
         let width = text.sensor_width(self.props.plot.plot_width());

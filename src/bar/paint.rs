@@ -1,4 +1,4 @@
-//! Drawing the bar's background (SPEC §5.5, §12): the modern bar's fill and hairline, or the
+//! Drawing the bar's background: the modern bar's fill and hairline, or the
 //! classic bar's skin. The sensors draw themselves on top (`bar/sensors.rs`).
 
 use std::path::Path;
@@ -8,7 +8,7 @@ use crate::look::skins;
 use crate::look::theme::Theme;
 use crate::platform::{Bitmap, Canvas, OsAppearance, PlatformError, RectF, SizeF};
 
-/// The hover highlight multiplies the background opacity by up to this (SPEC §5.5).
+/// The hover highlight multiplies the background opacity by up to this.
 const HIGHLIGHT_GAIN: f32 = 1.7;
 
 /// Draws the bar's background into a cleared canvas of `size` logical px: `skin`, the classic
@@ -26,12 +26,12 @@ pub(super) fn paint_bar(
     let gain = 1.0 + (HIGHLIGHT_GAIN - 1.0) * highlight;
     let opacity = (background.a * gain).min(1.0);
     match skin {
-        // The opacity applies to the skin only, not to the sensors (SPEC §12.3).
+        // The opacity applies to the skin only, not to the sensors.
         Some(skin) => canvas.draw_bitmap(skin, RectF::from_size(size), opacity),
         None => canvas.fill_rect(RectF::from_size(size), background.with_alpha(opacity)),
     }
     if let Some(hairline) = theme.hairline {
-        // One px on the edge facing the screen centre (SPEC §12.2), whole physical px thick.
+        // One px on the edge facing the screen centre, whole physical px thick.
         let thickness = canvas.snap(1.0).max(1.0 / canvas.scale());
         let top = match edge {
             Edge::Bottom => 0.0,
@@ -41,8 +41,8 @@ pub(super) fn paint_bar(
     }
 }
 
-/// A preview of the bar's background as `settings` choose it, e.g. a skin in Settings' gallery
-/// (SPEC §12.4): `width` logical px wide and as tall as the bar, on its edge, drawn by the bar's
+/// A preview of the bar's background as `settings` choose it, e.g. a skin in Settings' gallery:
+/// `width` logical px wide and as tall as the bar, on its edge, drawn by the bar's
 /// renderer at `scale` with packs from `skins_dir`. Fails where there is no renderer.
 pub fn skin_preview(
     settings: &Settings,
@@ -173,7 +173,7 @@ mod tests {
 
         pub const WIDTH: f32 = 900.0;
 
-        /// The SVG app icon, also tinted with `tint` (SPEC §12.3), and the PNG icon where raster
+        /// The SVG app icon, also tinted with `tint`, and the PNG icon where raster
         /// decoding exists; two px less than `bar_height` logical px tall.
         pub fn images(bar_height: u32, scale: f32, tint: Color) -> Vec<Bitmap> {
             let icons = Path::new(env!("CARGO_MANIFEST_DIR")).join("icons");
@@ -226,7 +226,7 @@ mod tests {
             let small = TextStyle::new(&theme.sensor_font, theme.small_size).tabular();
             let mut x = theme.pad;
 
-            // Two-line block: label above value, centred as a block (SPEC §8.3).
+            // Two-line block: label above value, centred as a block.
             let line = theme.small_size + 1.0;
             let top = canvas.snap((h - 2.0 * line) / 2.0);
             let label = text.layout("CPU", &small);
@@ -234,7 +234,7 @@ mod tests {
             let baseline = |canvas: &dyn Canvas, row: f32, layout: &crate::platform::TextLayout| {
                 canvas.snap(top + row * line + theme.small_size) - layout.baseline()
             };
-            // Meter (SPEC §8.3): 4 px bar, background 31 %, fill 59 %.
+            // Meter: 4 px bar, background 31 %, fill 59 %.
             let meter = RectF::new(x, 3.0, x + 4.0, h - 3.0);
             canvas.fill_rect(meter, fg.faded(0.31));
             let fill_top = meter.bottom - 0.37 * meter.height();
@@ -252,7 +252,7 @@ mod tests {
             );
             x = column + theme.gap;
 
-            // Graph (SPEC §8.3): one column per px, dynamic colours, grid and background.
+            // Graph: one column per px, dynamic colours, grid and background.
             let plot = RectF::new(x, 2.0, x + 60.0, h - 2.0);
             canvas.fill_rect(plot, Color::BLACK.faded(0.3));
             let mut gx = plot.left;
@@ -312,7 +312,7 @@ mod tests {
             );
             x += 90.0 + theme.gap;
 
-            // Images; the second at the inactive opacity (SPEC §8.5).
+            // Images; the second at the inactive opacity.
             let inactive = match theme.inactive {
                 Inactive::Opacity(opacity) => opacity,
                 Inactive::Colorize(_) => 1.0,
@@ -363,7 +363,7 @@ mod tests {
             );
             x = bubble.right + theme.gap;
 
-            // Gloss skin piece: base colour, white gradient over the upper half (SPEC §12.4).
+            // Gloss skin piece: base colour, white gradient over the upper half.
             let gloss = RectF::new(x, 0.0, x + 60.0, h);
             canvas.fill_rect(gloss, Color::rgba(0x2A, 0x2A, 0x2E, 1.0));
             canvas.fill(
@@ -404,7 +404,7 @@ mod tests {
             canvas.pop();
             x += 28.0;
 
-            // Accent line, like the drop placer (SPEC §12.2).
+            // Accent line, like the drop placer.
             canvas.fill_rect(RectF::new(x, 2.0, x + 2.0, h - 2.0), theme.accent);
         }
     }
@@ -548,7 +548,7 @@ mod tests {
         }
     }
 
-    /// The full bar redraw (SPEC §14.1, ≤ 2 ms): the first-run layout on a bar 2560 px wide at
+    /// The full bar redraw (≤ 2 ms): the first-run layout on a bar 2560 px wide at
     /// 100 %, each frame after a second's samples arrived, drawn as the bar draws one (the
     /// sensors that changed measure again, then the background and every sensor) by Direct2D
     /// with a renderer kept across frames. CI's budget check reads the median.
@@ -623,7 +623,7 @@ mod tests {
         );
     }
 
-    /// The hint shown after its delay (SPEC §14.1, ≤ 30 ms): as the bar shows one when its
+    /// The hint shown after its delay (≤ 30 ms): as the bar shows one when its
     /// delay is over, the first-run Date sensor's calendar is asked for, laid out, framed above
     /// the sensor and drawn by Direct2D with a renderer kept across hints, as the hint window
     /// keeps its own. CI's budget check reads the median.
@@ -714,7 +714,7 @@ mod tests {
         );
     }
 
-    /// The Folder Menu's first paint for a folder of 500 items (SPEC §14.1, ≤ 200 ms): from the
+    /// The Folder Menu's first paint for a folder of 500 items (≤ 200 ms): from the
     /// click's popup to its first frame showing the items, as the bar opens one: the folder is
     /// listed and sorted on a worker while the first layout waits for it, then the popup is laid
     /// out, placed above its sensor and drawn by Direct2D, its shell icons still loading. Each
@@ -874,7 +874,7 @@ mod tests {
             theme: ThemeId::Classic,
             ..Settings::default()
         };
-        // A skin pack, made here (SPEC §12.4): a blue tile with a 9 px shadow band, drawn for a
+        // A skin pack, made here: a blue tile with a 9 px shadow band, drawn for a
         // 25 px bar, with a groove at its right edge so the tiling shows.
         let skins_dir = tempfile::tempdir().expect("temp dir");
         let pack_dir = skins_dir.path().join("blue-steel");
@@ -927,7 +927,7 @@ mod tests {
                 1.0,
             ),
         ];
-        // Every built-in skin (SPEC §12.4), also at 150 %, where its lines and textures follow
+        // Every built-in skin, also at 150 %, where its lines and textures follow
         // the scale; Glass on a top bar, where its highlight is at the bottom; Gloss tinted.
         let skinned = |id: &str, color: Option<&str>| {
             let mut s = classic.clone();
@@ -1022,7 +1022,7 @@ mod tests {
             .expect("rendered");
             save(name, &bitmap);
         }
-        // The bar's own shadow (SPEC §5.5) over a light desktop, where it shows best: modern on
+        // The bar's own shadow over a light desktop, where it shows best: modern on
         // both edges and classic at 150 %.
         for (name, settings, os, edge, scale) in [
             ("bar-shadow", Settings::modern(), dark, Edge::Bottom, 1.0),
@@ -1091,7 +1091,7 @@ mod tests {
             }
         }
 
-        // Sensors (SPEC §16): the first-run layout and the General sensors.
+        // Sensors: the first-run layout and the General sensors.
         let mut general = Layout::default();
         let entry = |id: &str, kind: &str, props: serde_json::Value| SensorInstance {
             id: id.into(),
@@ -1175,7 +1175,7 @@ mod tests {
             ),
             entry("s12", "recycle-bin", serde_json::json!({})),
         ];
-        // Launchers (SPEC §9.17, §9.18, §9.21): Shortcuts to a program, a folder, a web
+        // Launchers: Shortcuts to a program, a folder, a web
         // address, a tinted program, a bare program name and a missing target (inactive); the
         // system drive and an absent one (inactive); a Folder Menu, the Start Menu and Eject
         // USB; every Power mode, the last at 50 %.
@@ -1239,7 +1239,7 @@ mod tests {
         };
         let platform = crate::platform::current();
         let first_run = crate::config::Config::first_run("1.0.0").layout;
-        // The defaults with space above and below the sensors (SPEC §10.2).
+        // The defaults with space above and below the sensors.
         let mut padded = Settings::default();
         padded.bar.sensor_padding = 3;
         for (name, layout, settings, os, bar_width) in [
@@ -1326,8 +1326,8 @@ mod tests {
             }
         }
 
-        // Hints (SPEC §7.1): a two-column hint above a bottom bar, one below a top bar, and
-        // Date's calendar (a rich hint, §9.4).
+        // Hints: a two-column hint above a bottom bar, one below a top bar, and
+        // Date's calendar (a rich hint).
         use crate::bar::hint::Prepared;
         use crate::bar::placement::Anchor;
         use crate::platform::time::Date;
@@ -1383,7 +1383,7 @@ mod tests {
             }
         }
 
-        // The Folder Menu's list (SPEC §9.19): C:\Windows with this machine's shell icons,
+        // The Folder Menu's list: C:\Windows with this machine's shell icons,
         // its left edge at the sensor's, the third row hovered.
         use crate::bar::popup::{self, Open};
         use crate::platform::{KnownFolder, PopupInput, UiWaker};
@@ -1392,7 +1392,7 @@ mod tests {
         let platform = crate::platform::current();
         let icons = crate::sensors::DirectIcons(platform.as_ref());
         let waker = UiWaker::new(|| {});
-        // The Start Menu's list merges the user's and all users' programs (SPEC §9.20).
+        // The Start Menu's list merges the user's and all users' programs.
         let start_menu: Vec<String> = [KnownFolder::Programs, KnownFolder::CommonPrograms]
             .into_iter()
             .filter_map(|f| platform.known_folder(f))
@@ -1407,7 +1407,7 @@ mod tests {
             }))
         };
         let windows = ["C:\\Windows".to_owned()];
-        // Eject USB's list (SPEC §9.22): a stick, a USB disk and a disc, the first button
+        // Eject USB's list: a stick, a USB disk and a disc, the first button
         // hovered.
         let eject = || -> Box<dyn crate::sensors::popup::Popup> {
             use crate::platform::{DriveKind, Volume};

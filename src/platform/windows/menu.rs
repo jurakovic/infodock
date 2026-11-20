@@ -1,4 +1,4 @@
-//! Native popup menus (SPEC §6.4), shown at the pointer or beside the focused sensor from the
+//! Native popup menus, shown at the pointer or beside the focused sensor from the
 //! bar thread.
 
 use std::mem::size_of;
@@ -59,7 +59,7 @@ fn build(entries: &[MenuEntry]) -> Option<HMENU> {
 /// Shows `entries` at the pointer, or beside `near` (physical screen px) without covering it,
 /// and returns the chosen id. Runs a modal loop. The bar takes the foreground for it; a menu
 /// closed without a choice (Esc, a click on the bar) gives the foreground back to the window
-/// that had it, as Esc on the focused bar does (SPEC §6.4, §14.4).
+/// that had it, as Esc on the focused bar does.
 pub(super) fn show(hwnd: HWND, entries: &[MenuEntry], near: Option<Rect>) -> Option<u32> {
     // SAFETY: the menu is created, shown and destroyed here; `hwnd` is the bar window.
     unsafe {

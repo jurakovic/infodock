@@ -1,4 +1,4 @@
-//! The properties form (SPEC §6.7): a sensor's schema fields as rows for Settings (§8.2), the
+//! The properties form: a sensor's schema fields as rows for Settings, the
 //! user's edits, and the changes to preview and save. Pure; the window glue is in `mod.rs`.
 
 use std::collections::BTreeSet;
@@ -59,7 +59,7 @@ pub struct FormRow {
     pub error: String,
 }
 
-/// The colour modes a field offers, in list order (SPEC §8.4).
+/// The colour modes a field offers, in list order.
 pub(super) fn modes(dynamic: bool) -> &'static [&'static str] {
     if dynamic {
         &["standard", "custom", "dynamic"]
@@ -72,7 +72,7 @@ pub(super) fn modes(dynamic: bool) -> &'static [&'static str] {
 pub struct Form {
     pub id: String,
     pub title: String,
-    /// Added by the picker just now: Cancel removes it again (SPEC §6.6).
+    /// Added by the picker just now: Cancel removes it again.
     pub new: bool,
     schema: &'static [PropField],
     /// The resolved props with the edits applied.
@@ -82,7 +82,7 @@ pub struct Form {
     opened: Props,
     /// The edited keys and their values, for previewing and saving.
     changes: Props,
-    /// Fields whose last edit was invalid: they show an error and block saving (SPEC §6.7).
+    /// Fields whose last edit was invalid: they show an error and block saving.
     invalid: BTreeSet<&'static str>,
     /// This computer's logical processors, for `cpuSeries` fields.
     processors: u32,
@@ -126,17 +126,17 @@ impl Form {
             .any(|f| matches!(f.kind, FieldKind::Battery))
     }
 
-    /// Sets the batteries `battery` fields offer, by name in the driver's order (SPEC §8.2).
+    /// Sets the batteries `battery` fields offer, by name in the driver's order.
     pub fn set_batteries(&mut self, names: Vec<String>) {
         self.batteries = Some(names);
     }
 
-    /// Sets the power modes `powerMode` fields offer (SPEC §9.21).
+    /// Sets the power modes `powerMode` fields offer.
     pub fn set_power_modes(&mut self, modes: Vec<String>) {
         self.power_modes = modes;
     }
 
-    /// Sets the number of logical processors `cpuSeries` fields offer (SPEC §9.9).
+    /// Sets the number of logical processors `cpuSeries` fields offer.
     pub fn set_processors(&mut self, processors: u32) {
         self.processors = processors.max(1);
     }
@@ -156,12 +156,12 @@ impl Form {
             .any(|f| matches!(f.kind, FieldKind::NetAdapter))
     }
 
-    /// Sets the connections `netAdapter` fields offer (SPEC §8.2).
+    /// Sets the connections `netAdapter` fields offer.
     pub fn set_adapters(&mut self, adapters: Vec<NetInterface>) {
         self.adapters = adapters;
     }
 
-    /// Sets the volumes `drive` fields offer (SPEC §8.2).
+    /// Sets the volumes `drive` fields offer.
     pub fn set_volumes(&mut self, volumes: Vec<Volume>) {
         self.volumes = Some(volumes);
     }
@@ -171,7 +171,7 @@ impl Form {
     }
 
     /// Whether the edits can be saved: no visible field holds an invalid value or is required
-    /// and empty (SPEC §8.2).
+    /// and empty.
     pub fn valid(&self) -> bool {
         self.schema
             .iter()
@@ -438,7 +438,7 @@ fn power_modes(offered: &[String], stored: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// "Default" (the global sensor font, SPEC §8.2), the installed families, and `current` if it
+/// "Default" (the global sensor font), the installed families, and `current` if it
 /// is not installed.
 fn font_options(fonts: &[String], current: &str) -> Vec<String> {
     let mut options = vec![t("settings.props.font.default")];
@@ -449,7 +449,7 @@ fn font_options(fonts: &[String], current: &str) -> Vec<String> {
     options
 }
 
-/// The series a CPU dual graph offers (SPEC §9.9), as (value, label): total, user, system and
+/// The series a CPU dual graph offers, as (value, label): total, user, system and
 /// each logical processor; a `stored` processor this computer lacks stays listed, marked as
 /// unavailable.
 fn cpu_series(processors: u32, stored: &str) -> Vec<(String, String)> {

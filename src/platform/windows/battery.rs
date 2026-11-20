@@ -1,4 +1,4 @@
-//! Batteries (SPEC §9.14, Appendix A `battery/<i>`): charge, state, times and names from
+//! Batteries (the `battery/<i>` topics): charge, state, times and names from
 //! `starship-battery` (the battery class driver's IOCTLs), the power line from
 //! `GetSystemPowerStatus`. A battery the crate cannot read (one that reports its capacity
 //! only relatively) is taken from `GetSystemPowerStatus` alone.

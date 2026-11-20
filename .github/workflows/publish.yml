@@ -1,7 +1,7 @@
 name: Publish
 
-# Builds, packages and releases Infodock, see publish.sh and SPEC §15.3. Run it from the
-# Actions tab ("Run workflow"):
+# Builds, packages and releases Infodock, see publish.sh and INTERNALS.md, Building and
+# releasing. Run it from the Actions tab ("Run workflow"):
 #
 # - The version is computed from the latest tag of the current major (v1.x.y until there is a
 #   v2 tag; Base Ver picks another): master gives the next release (1.0.0 while there is none,

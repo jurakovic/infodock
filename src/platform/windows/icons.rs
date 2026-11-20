@@ -1,4 +1,4 @@
-//! Shell icons (SPEC §4.6 `Icons`): the icon Explorer shows for a file, folder or drive, at a
+//! Shell icons (`Platform::shell_icon`): the icon Explorer shows for a file, folder or drive, at a
 //! physical size, from `IShellItemImageFactory` (a `.lnk` gives its target's icon). It is
 //! called on the bar's icon worker, so a slow network path never holds up the bar.
 

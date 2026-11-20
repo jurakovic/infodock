@@ -1,4 +1,4 @@
-# Checks a bar kept behind the windows (the default z-order, SPEC §5.3) around Show desktop, with
+# Checks a bar kept behind the windows (the default z-order) around Show desktop, with
 # the release exe on the runner's desktop: a maximised Notepad covers the bar; Win+D and the
 # taskbar's far corner show the desktop, and the bar comes up over it; a right-click or a left
 # click on the bar keeps it there, without a flash; a window restored from the taskbar (also one
@@ -6,8 +6,8 @@
 # z-order), the bar's topmost flag, the foreground window, and a screenshot. The app runs with the
 # appbar's debug log, whose `foreground:` and `z-order:` lines are printed. Runs after the memory
 # check, whose first run ended the welcome page, and before the installer check, which removes
-# the config. It found D121: a window brought back from the taskbar gets the foreground while it
-# is still minimised, which left the bar on top of it.
+# the config. A window brought back from the taskbar gets the foreground while it is still
+# minimised, so that step checks that the window covers the bar once it is restored.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -273,7 +273,7 @@ try {
     $lines | Write-Host
 }
 
-$summary = @('### Show desktop and a bar kept behind the windows (SPEC §5.3)', '', '| Step | Result |', '|---|---|')
+$summary = @('### Show desktop and a bar kept behind the windows', '', '| Step | Result |', '|---|---|')
 $summary += $results | ForEach-Object { "| $($_.Name) | $(if ($_.Passed) { 'passed' } else { '**failed**' }) |" }
 if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
 $summary -join "`n" | Write-Host

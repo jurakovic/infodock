@@ -1,11 +1,11 @@
-//! Colours of sensor graphics (SPEC §8.4–8.5): colour modes, the dynamic gradient, and how an
+//! Colours of sensor graphics: colour modes, the dynamic gradient, and how an
 //! inactive sensor's icon or graphic is drawn.
 
 use super::{ColorChoice, ColorModeKind};
 use crate::look::theme::Inactive;
 use crate::platform::Color;
 
-/// The dynamic gradient (SPEC §8.4): green at 0, yellow at 0.5, red at 1. Values outside
+/// The dynamic gradient: green at 0, yellow at 0.5, red at 1. Values outside
 /// 0..1 are clamped; NaN counts as 0.
 pub fn gradient(value: f32) -> Color {
     let v = if value.is_nan() {
@@ -32,7 +32,7 @@ pub fn resolve(choice: &ColorChoice, standard: Color, value: f32) -> Color {
     }
 }
 
-/// `color` for an inactive sensor's graphic (SPEC §8.5): faded, or the inactive colour keeping
+/// `color` for an inactive sensor's graphic: faded, or the inactive colour keeping
 /// the graphic's own opacity. Labels keep their colour.
 pub fn inactive(color: Color, how: Inactive) -> Color {
     match how {

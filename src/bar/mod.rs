@@ -1,5 +1,5 @@
-//! The bar (SPEC §4.1, §5): a native window on its own thread. [`BarController`] is the handle
-//! the rest of the app uses; the logic in `thread/` runs on the bar thread.
+//! The bar (INTERNALS.md, The bar): a native window on its own thread. [`BarController`] is the
+//! handle the rest of the app uses; the logic in `thread/` runs on the bar thread.
 
 mod drop;
 mod focus;
@@ -36,7 +36,7 @@ use crate::platform::{
 use crate::sampler::{Change, Delivery, TopicRequest};
 use thread::BarLogic;
 
-/// Where and how the bar should sit (SPEC §5.1–5.3), from the settings.
+/// Where and how the bar should sit, from the settings.
 fn dock_request(s: &Settings, visible: bool) -> DockRequest {
     DockRequest {
         visible,
@@ -56,19 +56,19 @@ fn dock_request(s: &Settings, visible: bool) -> DockRequest {
 pub trait BarHost: Send + Sync {
     /// The OS asked the app to close (graceful `taskkill`, Restart Manager).
     fn quit(&self);
-    /// A second launch asked this instance to show itself (SPEC §6.5).
+    /// A second launch asked this instance to show itself.
     fn activate(&self);
     fn bar_visible(&self) -> bool;
     /// Shows or hides the bar (tray click, tray menu).
     fn toggle_bar(&self);
-    /// Opens Settings on `route`, e.g. `general` or `sensor/<id>` (SPEC §4.1).
+    /// Opens Settings on `route`, e.g. `general` or `sensor/<id>`.
     fn open_settings(&self, route: &str);
     /// Changes and saves settings (tray menu: Lock, Popups).
     fn change_settings(&self, change: Box<dyn FnOnce(&mut Settings) + Send>);
-    /// Adds a sensor of type `kind` with its defaults; returns its id (SPEC §4.5).
+    /// Adds a sensor of type `kind` with its defaults; returns its id.
     fn add_sensor(&self, kind: &str, zone: Zone, index: usize) -> Option<String>;
     /// Adds sensors of the given types and props in this order at `index` of `zone`, without
-    /// opening their Properties (a drop, SPEC §6.3).
+    /// opening their Properties (a drop).
     fn add_sensors(
         &self,
         zone: Zone,
@@ -76,30 +76,30 @@ pub trait BarHost: Send + Sync {
         sensors: Vec<(&'static str, crate::sensors::Props)>,
     );
     fn remove_sensor(&self, id: &str);
-    /// Moves a sensor; `index` counts with it already taken out (SPEC §6.2).
+    /// Moves a sensor; `index` counts with it already taken out.
     fn move_sensor(&self, id: &str, zone: Zone, index: usize);
-    /// Replaces the topics sensor `id` receives samples of; empty to stop (SPEC §4.4).
+    /// Replaces the topics sensor `id` receives samples of; empty to stop.
     fn subscribe(&self, id: &str, topics: Vec<TopicRequest>);
     /// Docks the bar as the settings say now; after a docked bar's edge changed, the bar
-    /// thread calls this once it has slid out (SPEC §5.5).
+    /// thread calls this once it has slid out.
     fn redock(&self);
-    /// The system resumed from sleep: the sampler reads every topic again (SPEC §4.4).
+    /// The system resumed from sleep: the sampler reads every topic again.
     fn resumed(&self);
     /// Something changed, e.g. a drive arrived or went: the sampler reads the topics that
-    /// follow it again (SPEC §4.4). Called from any thread.
+    /// follow it again. Called from any thread.
     fn changed(&self, change: Change);
-    /// Stores sensor `id`'s runtime state in the config (SPEC §11.2), e.g. the uptime record.
+    /// Stores sensor `id`'s runtime state in the config, e.g. the uptime record.
     fn set_sensor_state(&self, id: &str, state: crate::sensors::State);
     /// Saves props sensor `id` changed itself (`changes`: the changed keys), e.g. what a
-    /// Battery shows after a click (SPEC §9.14).
+    /// Battery shows after a click.
     fn update_sensor(&self, id: &str, changes: crate::sensors::Props);
-    /// Imports a layout file as the user picks it (Tools menu, SPEC §6.4, §11.3): the picker,
+    /// Imports a layout file as the user picks it (Tools menu): the picker,
     /// the *Replace* / *Merge* question and the report, on the main thread.
     fn import_layout(&self, format: ImportFormat);
-    /// Exports the layout or the whole config to a file the user picks (SPEC §11.3).
+    /// Exports the layout or the whole config to a file the user picks.
     fn export_layout(&self);
     /// The OS appearance changed (light or dark, accent colour, transparency effects): Settings
-    /// shows what depends on it, e.g. whether a material can be chosen (SPEC §10.3).
+    /// shows what depends on it, e.g. whether a material can be chosen.
     fn appearance_changed(&self, appearance: OsAppearance);
 }
 
@@ -107,16 +107,16 @@ pub trait BarHost: Send + Sync {
 enum Command {
     /// The config changed: settings, layout or sensor state. One older than the bar's is dropped.
     Config(Revision, Box<Config>),
-    /// Show a sensor with other props until the preview ends (SPEC §6.7).
+    /// Show a sensor with other props until the preview ends.
     Preview(Box<SensorInstance>),
     EndPreview(String),
-    /// A sample from the sampler thread (SPEC §4.4).
+    /// A sample from the sampler thread.
     Sample(Delivery),
     /// The bar was hidden (tray, hotkey): its hint and popup close.
     Hidden,
-    /// The hotkey focuses the bar (SPEC §14.4).
+    /// The hotkey focuses the bar.
     Focus,
-    /// A skin pack was installed or removed (SPEC §12.4): the skin is drawn again.
+    /// A skin pack was installed or removed: the skin is drawn again.
     SkinsChanged,
 }
 
@@ -133,7 +133,7 @@ pub struct BarController {
 
 impl BarController {
     /// Starts the bar thread and docks the bar; follows `store` from then on. Skin packs come
-    /// from `skins` (SPEC §11.1).
+    /// from `skins`.
     pub fn create(
         store: &ConfigStore,
         platform: Arc<dyn Platform>,
@@ -223,7 +223,7 @@ impl BarController {
         self.appbar.raise();
     }
 
-    /// Gives the shown bar the keyboard focus (hotkey, SPEC §14.4).
+    /// Gives the shown bar the keyboard focus (hotkey).
     pub fn focus(&self) {
         if self.is_visible() {
             self.send(Command::Focus);

@@ -1,4 +1,4 @@
-//! The hover hint's content (SPEC §7.1): a rounded bubble with a pointer triangle towards the
+//! The hover hint's content: a rounded bubble with a pointer triangle towards the
 //! sensor and an optional soft shadow, around multi-line text whose tab-separated cells line
 //! up in columns ("label:\tvalue"). The hint window (platform) shows what this draws; timing
 //! lives in `thread/hover.rs`, placement in `placement.rs`.
@@ -123,7 +123,7 @@ impl HintBody {
     }
 }
 
-/// The hint window's geometry for one hint, or the popup window's for a popup (SPEC §7.2):
+/// The hint window's geometry for one hint, or the popup window's for a popup:
 /// both are the same bubble with its pointer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HintFrame {
@@ -138,13 +138,13 @@ pub struct HintFrame {
 }
 
 impl HintFrame {
-    /// Places a hint whose content is `size` at `anchor` (SPEC §7.1, §7.3).
+    /// Places a hint whose content is `size` at `anchor`.
     pub fn new(size: SizeF, anchor: &Anchor, theme: &Theme) -> Self {
         Self::framed(size, anchor, theme, PADDING, PopupAlign::Center)
     }
 
     /// Places content of `size` with `padding` around it in its bubble, lined up with the
-    /// sensor as `align` says: hints and popups alike (SPEC §7.3).
+    /// sensor as `align` says: hints and popups alike.
     pub fn framed(
         size: SizeF,
         anchor: &Anchor,
@@ -212,7 +212,7 @@ fn fill_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, radius: f32, grow: f3
     canvas.fill(&Shape::Polygon(points), &Brush::Solid(color));
 }
 
-/// A hint's text as the hint window's title, which screen readers read (SPEC §14.4): its lines
+/// A hint's text as the hint window's title, which screen readers read: its lines
 /// joined by commas and its columns by spaces.
 pub fn spoken(text: &str) -> String {
     text.lines()
@@ -227,7 +227,7 @@ pub fn spoken(text: &str) -> String {
         .join(", ")
 }
 
-/// A hint ready to show (SPEC §7.1, §7.3): its content laid out and framed beside its sensor.
+/// A hint ready to show: its content laid out and framed beside its sensor.
 /// The bar shows it in the hint window; the screenshots and the hint budget draw it the same
 /// way.
 pub struct Prepared {
@@ -272,7 +272,7 @@ impl Prepared {
 pub fn paint_bubble(canvas: &mut dyn Canvas, frame: &HintFrame, theme: &Theme) {
     let radius = theme.popup_radius;
     if theme.popup_shadow {
-        // A soft shadow: rings fading outwards (SPEC §7.1).
+        // A soft shadow: rings fading outwards.
         let steps = SHADOW as usize;
         for step in (1..=steps).rev() {
             let alpha = 0.035 * (steps + 1 - step) as f32 / steps as f32;
@@ -307,7 +307,7 @@ enum Pending {
     Hide,
 }
 
-/// When the hint shows and hides (SPEC §7.1): after the show delay over a sensor, until the
+/// When the hint shows and hides: after the show delay over a sensor, until the
 /// hide delay after the pointer left it; moving to another sensor while a hint is shown swaps
 /// it at once. A click, a press, a menu or a drag dismisses the hint until the pointer moves to
 /// another sensor.

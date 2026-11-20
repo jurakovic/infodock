@@ -1,4 +1,4 @@
-//! Where a hint or popup appears (SPEC §7.3). Pure; all values in logical screen px (physical
+//! Where a hint or popup appears. Pure; all values in logical screen px (physical
 //! px divided by the monitor's scale).
 //!
 //! ```text
@@ -61,7 +61,7 @@ pub fn place(anchor: &Anchor, size: SizeF, pointer_width: f32, radius: f32) -> P
 }
 
 /// Places popup content like [`place`], but with its left edge at the sensor's left edge, or
-/// its right edge at the sensor's right edge when that would overflow the monitor (SPEC §9.19).
+/// its right edge at the sensor's right edge when that would overflow the monitor.
 pub fn place_left_edge(anchor: &Anchor, size: SizeF, pointer_width: f32, radius: f32) -> Placement {
     let center = (anchor.rect.left + anchor.rect.right) / 2.0;
     let min_x = anchor.monitor.left + MARGIN;

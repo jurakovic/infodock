@@ -1,4 +1,4 @@
-//! Renders the raster artwork from its SVG sources (SPEC Appendix C). Run it from the repository
+//! Renders the raster artwork from its SVG sources. Run it from the repository
 //! after changing one of the SVGs, and commit what it writes:
 //!
 //! ```text
@@ -25,7 +25,7 @@ use resvg::usvg;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// The app icon's `.ico` frames (Appendix C).
+/// The app icon's `.ico` frames.
 const ICO_SIZES: [u32; 8] = [16, 20, 24, 32, 40, 48, 64, 256];
 /// The largest frame drawn from `app-icon-small.svg`.
 const SMALL_ART_UP_TO: u32 = 24;
@@ -37,7 +37,7 @@ const PNGS: [(&str, u32); 4] = [
     ("128x128@2x.png", 256),
     ("icon.png", 512),
 ];
-/// The tray icon's frames: the small icon at 100–200 % (Appendix C).
+/// The tray icon's frames: the small icon at 100–200 %.
 const TRAY_SIZES: [u32; 4] = [16, 20, 24, 32];
 const TRAY_VARIANTS: [&str; 2] = ["dark", "light"];
 const INSTALLER_IMAGES: [&str; 2] = ["header", "sidebar"];

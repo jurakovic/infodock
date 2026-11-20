@@ -1,4 +1,4 @@
-//! `date` — today's date (SPEC §9.4): the day large with month and year small beside it, or
+//! `date` — today's date: the day large with month and year small beside it, or
 //! one line from the locale's patterns; a month calendar as its hint.
 
 use std::time::Instant;
@@ -23,7 +23,7 @@ use crate::platform::{
 
 /// Between the day and the month and year, logical px.
 const GAP: f32 = 3.0;
-/// The smallest calendar column (SPEC §9.4).
+/// The smallest calendar column.
 const MIN_COLUMN: f32 = 29.0;
 
 macro_rules! options {
@@ -92,7 +92,7 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.date.field.calendar.help"),
 ];
 
-/// SPEC §9.4.
+/// The Date's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::options(
         "dayname",
@@ -253,7 +253,7 @@ fn without_year(pattern: &str) -> String {
 }
 
 impl DateSensor {
-    /// The single line shown without a year (SPEC §9.4), built from the locale's patterns so
+    /// The single line shown without a year, built from the locale's patterns so
     /// the order follows the locale: `Saturday, October 11`, `Sat, Oct 11`, `Saturday, 10/11`.
     fn one_line(&self, date: Date, locale: &Locale) -> String {
         let month_day = match self.props.month {
@@ -295,7 +295,7 @@ impl DateSensor {
     fn read(&mut self, at: Instant, cx: &SensorCtx) -> bool {
         let now = cx.platform.local_time();
         // Every minute: midnight is noticed within a moment, and a missed timer at most a
-        // minute late (SPEC §9.4: midnight timer plus a 60 s safety tick).
+        // minute late (midnight timer plus a 60 s safety tick).
         self.next = Some(at + now.until_next_minute());
         let changed = self.today != Some(now.date);
         self.today = Some(now.date);
@@ -441,7 +441,7 @@ impl Sensor for DateSensor {
     }
 }
 
-/// The month calendar (SPEC §9.4): short weekday names from the chosen first day, the weeks
+/// The month calendar: short weekday names from the chosen first day, the weeks
 /// with right-aligned day numbers, weekends in the strong colour, today highlighted, and the
 /// week and day of the year below.
 pub struct MonthCalendar {

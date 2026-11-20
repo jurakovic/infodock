@@ -1,4 +1,4 @@
-//! The Windows AppBar: work-area reservation, z-order and full-screen handling (SPEC §5.2–5.3).
+//! The Windows AppBar: work-area reservation, z-order and full-screen handling.
 //!
 //! The AppBar is registered for the bar window itself. The bar window's procedure
 //! (`window.rs`) passes every message to [`Shared::handle`] first, which receives the AppBar
@@ -67,7 +67,7 @@ const RESTORED: usize = 4;
 /// How often at most the bar takes back a topmost place it lost to other code.
 const RESTORE_TOPMOST_EVERY: Duration = Duration::from_secs(1);
 /// How often a bar that comes up over the desktop looks at the foreground window again, for
-/// [`LOOK_AFTER_CHANGE`] after the foreground changed or a window was restored (SPEC §5.3).
+/// [`LOOK_AFTER_CHANGE`] after the foreground changed or a window was restored.
 const LOOK_EVERY_MS: u32 = 250;
 /// How long such a bar looks again after the foreground changed: in case a window that
 /// was not shown when it got the foreground is shown with no event the bar hears.
@@ -142,7 +142,7 @@ struct UiState {
     /// A placement is running; a nested request is re-posted instead of run re-entrantly.
     busy: bool,
     /// How far the window is shown below its place (above: negative) while it rises or slides
-    /// out (SPEC §5.5). A placement that changes nothing keeps it; a new one starts in place.
+    /// out. A placement that changes nothing keeps it; a new one starts in place.
     offset: i32,
     /// Whether Peek leaves the bar shown, as last set ([`exclude_from_peek`]).
     peek: Option<bool>,
@@ -168,7 +168,7 @@ impl Shared {
             let _ = ChangeWindowMessageFilterEx(hwnd, m.callback, MSGFLT_ALLOW, None);
         }
         // Show desktop (Win+D) raises the desktop over every normal window: a bar kept behind
-        // them or among them comes up while the desktop is in front, if it should (SPEC §5.3).
+        // them or among them comes up while the desktop is in front, if it should.
         // The hook calls back on this thread, the bar thread, from its message loop.
         HOOKED_BAR.store(hwnd.0 as isize, Ordering::SeqCst);
         // SAFETY: a plain hook with a static callback; it lasts as long as the process.
@@ -262,7 +262,7 @@ impl Shared {
         }
     }
 
-    /// Computes and applies the placement for the current request (SPEC §5.2 steps 1–2).
+    /// Computes and applies the placement for the current request.
     fn reposition(&self) {
         if self.ui(|u| std::mem::replace(&mut u.busy, true)) {
             self.post(0);
@@ -314,7 +314,7 @@ impl Shared {
             tracing::warn!("no monitors found; bar not placed");
             return;
         };
-        // A floating bar's hints open away from the nearer screen edge (SPEC §7.3).
+        // A floating bar's hints open away from the nearer screen edge.
         let edge = if floating {
             nearer_edge(rect, monitor)
         } else {
@@ -359,7 +359,7 @@ impl Shared {
     }
 
     /// Peek, which shows the desktop while the pointer is on the taskbar's far corner, leaves
-    /// the bar shown when it should stay visible over the desktop (SPEC §5.3).
+    /// the bar shown when it should stay visible over the desktop.
     fn follow_peek(&self, over_desktop: bool) {
         if self.ui(|u| u.peek.replace(over_desktop)) == Some(over_desktop) {
             return;
@@ -371,12 +371,12 @@ impl Shared {
         }
     }
 
-    /// How far the bar is shown off its place (rising or sliding out, SPEC §5.5); 0 in place.
+    /// How far the bar is shown off its place (rising or sliding out); 0 in place.
     pub(super) fn offset(&self) -> i32 {
         self.ui(|u| u.offset)
     }
 
-    /// Shows the bar `dy` px off its place (the rise animation, SPEC §5.5). The placement stays
+    /// Shows the bar `dy` px off its place (the rise animation). The placement stays
     /// as it is: one that changes nothing keeps the offset, a new one puts the bar in place.
     pub(super) fn slide(&self, dy: i32) {
         let Some((_, rect)) = self.ui(|u| {
@@ -388,7 +388,7 @@ impl Shared {
         self.set_window_pos(HWND_TOP, shifted(rect, dy), SWP_NOACTIVATE | SWP_NOZORDER);
     }
 
-    /// Moves a floating bar by physical px while the user drags it (SPEC §5.1). The request
+    /// Moves a floating bar by physical px while the user drags it. The request
     /// follows, so a placement meanwhile (e.g. crossing to a monitor with another scale) keeps
     /// the new position; the caller stores it when the drag ends.
     pub(super) fn move_by(&self, dx: i32, dy: i32) -> Option<Rect> {
@@ -420,7 +420,7 @@ impl Shared {
         Some(rect)
     }
 
-    /// Puts a floating bar at `rect` while the user drags one of its ends (SPEC §5.1); `width`
+    /// Puts a floating bar at `rect` while the user drags one of its ends; `width`
     /// is its width in logical px. As with [`Self::move_by`], the request follows and the
     /// caller stores it when the drag ends.
     pub(super) fn resize_to(&self, rect: Rect, width: u32) -> Option<Rect> {
@@ -524,7 +524,7 @@ impl Shared {
 
     /// Makes the bar topmost again after `HWND_TOPMOST` did not. Some starts leave it stuck:
     /// its owned `Default IME` window is topmost and the bar is not, and `HWND_TOPMOST` has no
-    /// effect until `HWND_NOTOPMOST` has unstuck it (D96).
+    /// effect until `HWND_NOTOPMOST` has unstuck it.
     fn take_topmost(&self) {
         tracing::warn!("the bar did not become topmost; trying again from not topmost");
         self.set_z(HWND_NOTOPMOST);
@@ -555,7 +555,7 @@ impl Shared {
 
     /// Where a bar kept behind or among the windows belongs, from the foreground window: over
     /// the desktop while that is in front, behind the windows once one that can cover the bar
-    /// is (SPEC §5.3). Read now rather than taken from the hook, so a window that was in front
+    /// is. Read now rather than taken from the hook, so a window that was in front
     /// only for a moment changes nothing. A window brought back from the taskbar gets the
     /// foreground while it is still minimised, which changes nothing either; the bar looks
     /// again when it is restored.
@@ -611,7 +611,7 @@ impl Shared {
     }
 
     /// The bar's place in the z-order changed from outside: a bar that should be topmost and
-    /// is not any more takes its place back, at most once a second (SPEC §5.3). The placement
+    /// is not any more takes its place back, at most once a second. The placement
     /// that does it unsticks the bar if `HWND_TOPMOST` alone does not take ([`Self::take_topmost`]).
     fn on_pos_changed(&self) {
         let Some(req) = lock(&self.request).clone() else {
@@ -664,7 +664,7 @@ impl Shared {
         }
     }
 
-    /// ABN_* notifications (SPEC §5.2 step 3).
+    /// The shell's ABN_* notifications.
     fn on_notification(&self, code: u32, lparam: LPARAM) {
         match code {
             ABN_POSCHANGED | ABN_STATECHANGE => self.post(0),
@@ -758,7 +758,7 @@ struct Stacking {
     topmost_now: bool,
 }
 
-/// Where the bar goes in the z-order (SPEC §5.3). `HWND_NOTOPMOST` only has an effect on a
+/// Where the bar goes in the z-order. `HWND_NOTOPMOST` only has an effect on a
 /// topmost window, so a non-topmost bar that should be in front of the normal windows (one
 /// that behaves like them, or one kept behind them that the hotkey raised) is brought up with
 /// `HWND_TOP` instead (e.g. after a full-screen app sent it to the bottom).
@@ -786,7 +786,7 @@ fn insert_after(req: &DockRequest, now: Stacking) -> HWND {
     }
 }
 
-/// Whether the bar comes up over the desktop when that comes to the front (SPEC §5.3): one that
+/// Whether the bar comes up over the desktop when that comes to the front: one that
 /// should stay visible there and is not on top anyway.
 fn follows_desktop(req: &DockRequest) -> bool {
     req.visible && req.over_desktop && req.z_order != ZOrder::Topmost
@@ -848,7 +848,7 @@ fn is_taskbar_class(class: &str) -> bool {
     matches!(class, "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
 }
 
-/// The foreground window, as far as the z-order cares (SPEC §5.3).
+/// The foreground window, as far as the z-order cares.
 #[derive(Debug)]
 struct Foreground {
     /// The class of its top-level window.
@@ -981,7 +981,7 @@ impl Shared {
             return Some(LRESULT(0));
         }
         if msg == m.taskbar_created {
-            // Explorer restarted and forgot every appbar (SPEC §5.2 step 5). The new Explorer may
+            // Explorer restarted and forgot every appbar. The new Explorer may
             // never send the "full-screen closed" for an app the old one reported.
             tracing::info!("taskbar re-created; registering again");
             self.unregister();

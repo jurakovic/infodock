@@ -1,8 +1,8 @@
-//! The classic bar's background (SPEC §12.3–12.4): a skin drawn into a bitmap of the bar's
-//! physical size, which the bar draws with the background opacity, so the opacity applies to the
-//! skin only. Built-in skins are drawn from the base colour; skin packs and the custom image are
-//! decoded, cut, tinted, scaled to the bar's height and tiled across it, and a pack's shadow band
-//! is drawn the same way for the side facing the screen centre. The result is kept until the
+//! The classic bar's background (INTERNALS.md, Theme and skins): a skin drawn into a bitmap of the
+//! bar's physical size, which the bar draws with the background opacity, so the opacity applies to
+//! the skin only. Built-in skins are drawn from the base colour; skin packs and the custom image
+//! are decoded, cut, tinted, scaled to the bar's height and tiled across it, and a pack's shadow
+//! band is drawn the same way for the side facing the screen centre. The result is kept until the
 //! skin, its colours, the bar's size or its edge change.
 
 mod builtin;
@@ -19,12 +19,12 @@ use crate::config::model::Edge;
 use crate::platform::{Bitmap, Color, SizeF};
 use pack::{Pack, PackError, TileLayout};
 
-/// The skin used when the configured one is not on this machine (SPEC §12.4).
+/// The skin used when the configured one is not on this machine.
 pub const FALLBACK: BuiltIn = BuiltIn::Gloss;
 /// `classic.skin` for the user's own image, `classic.customSkin`.
 pub const CUSTOM: &str = "custom";
 
-/// The classic bar's skin as the settings choose it (SPEC §10.3).
+/// The classic bar's skin as the settings choose it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkinSpec {
     /// `classic.skin`: a built-in skin's id, [`CUSTOM`] or a pack's folder name.
@@ -33,7 +33,7 @@ pub struct SkinSpec {
     pub custom_image: String,
     /// The built-in skins' base colour: `background.color`, or the theme's; opaque.
     pub base: Color,
-    /// What packs and the custom image are tinted with (SPEC §12.3): the background colour the
+    /// What packs and the custom image are tinted with: the background colour the
     /// user set in custom colour mode. With the theme's colour they keep their own.
     pub tint: Option<Color>,
 }
@@ -71,7 +71,7 @@ pub struct Rendered {
 }
 
 /// The skin `spec` chooses, drawn for `target` with packs from `dir`; `None` for an empty bar.
-/// A pack that is not there or cannot be used gives Gloss, a custom image Flat (SPEC §12.4).
+/// A pack that is not there or cannot be used gives Gloss, a custom image Flat.
 pub fn render(dir: &Path, spec: &SkinSpec, target: Target) -> Option<Rendered> {
     render_with(dir, spec, target, &platform_decode)
 }
@@ -145,7 +145,7 @@ fn draw_pack(
     ))
 }
 
-/// The custom image: tiled like a pack's tile without a band (SPEC §12.4).
+/// The custom image: tiled like a pack's tile without a band.
 fn draw_custom(
     spec: &SkinSpec,
     target: Target,
@@ -161,7 +161,7 @@ fn draw_custom(
     Ok(draw_tile(&tile, 0, layout, spec.tint, target))
 }
 
-/// Reads the custom image at `path` after the checks a pack's tiles get (SPEC §12.4); Settings
+/// Reads the custom image at `path` after the checks a pack's tiles get; Settings
 /// shows why it cannot be used.
 pub fn read_custom(path: &str) -> Result<Vec<u8>, PackError> {
     let bytes = pack::read_image(Path::new(path), path)?;
@@ -217,7 +217,7 @@ fn draw_tile(
 
 /// The bar's drawn skin, kept between frames.
 pub struct SkinCache {
-    /// The skins folder (SPEC §11.1).
+    /// The skins folder.
     dir: PathBuf,
     decode: fn(&[u8]) -> Option<Bitmap>,
     drawn: Option<(SkinSpec, Target, Option<Rendered>)>,
@@ -458,7 +458,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// Packs decode through the platform: WIC on Windows (SPEC §16).
+    /// Packs decode through the platform: WIC on Windows.
     #[cfg(windows)]
     #[test]
     #[ignore = "decodes with WIC; run with --ignored"]

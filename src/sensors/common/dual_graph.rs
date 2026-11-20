@@ -1,4 +1,4 @@
-//! The dual graph of the CPU dual graph and the Network Graph (SPEC §8.3): the plot split into
+//! The dual graph of the CPU dual graph and the Network Graph: the plot split into
 //! two halves with a 1 px gap; the top series grows up from the middle, the bottom one down
 //! from the middle (`flip`) or up from the bottom edge.
 

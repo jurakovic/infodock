@@ -1,4 +1,4 @@
-//! The sensor framework (SPEC §8). A sensor *type* is a static description: its id, category,
+//! The sensor framework. A sensor *type* is a static description: its id, category,
 //! names, required capabilities and property schema; it creates *sensors*, the placed instances
 //! that live on the bar thread and are re-created when their props change. Adding a sensor
 //! type means adding one module (or a type to a module of its family, as `cpu.rs` and
@@ -59,14 +59,14 @@ use schema::PropField;
 /// An `i18n` message key.
 pub type MsgKey = &'static str;
 
-/// A sensor's props: as stored, only the values that differ from the defaults (SPEC §11.2);
+/// A sensor's props: as stored, only the values that differ from the defaults;
 /// resolved, every schema field.
 pub type Props = Map<String, Value>;
 
 /// Runtime state kept per sensor id in the config, e.g. the uptime record.
 pub type State = Map<String, Value>;
 
-/// Whether what a sensor shows changed; the bar then re-measures and redraws it (SPEC §4.4).
+/// Whether what a sensor shows changed; the bar then re-measures and redraws it.
 pub type Dirty = bool;
 
 /// Resolved props as a type's typed props struct (`camelCase` fields, as in the schema).
@@ -74,7 +74,7 @@ pub fn typed<T: DeserializeOwned>(props: &Props) -> serde_json::Result<T> {
     serde_json::from_value(Value::Object(props.clone()))
 }
 
-/// A `colorMode` prop (SPEC §8.2, §8.4).
+/// A `colorMode` prop.
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct ColorChoice {
     pub mode: ColorModeKind,
@@ -92,7 +92,7 @@ pub enum ColorModeKind {
     Dynamic,
 }
 
-/// Groups of the sensor picker (SPEC §6.6).
+/// Groups of the sensor picker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Category {
     General,
@@ -114,12 +114,12 @@ impl Category {
     }
 }
 
-/// What a sensor type may consult for its machine-derived defaults (SPEC §8.2, §11.2).
+/// What a sensor type may consult for its machine-derived defaults.
 pub struct DefaultsCtx<'a> {
     pub platform: &'a dyn Platform,
 }
 
-/// One per sensor module; registered in `registry.rs`. Static and thread-safe (SPEC §8.1).
+/// One per sensor module; registered in `registry.rs`. Static and thread-safe.
 pub trait SensorType: Send + Sync {
     /// Stable id, e.g. `cpu-graph`.
     fn id(&self) -> &'static str;
@@ -127,24 +127,24 @@ pub trait SensorType: Send + Sync {
     /// Localised display name.
     fn name(&self) -> MsgKey;
     fn description(&self) -> MsgKey;
-    /// Legacy XML type ids this type imports (SPEC §11.4).
+    /// Legacy XML type ids this type imports.
     fn legacy_types(&self) -> &'static [&'static str] {
         &[]
     }
-    /// The XML keys of its legacy types and the props they set (SPEC §9 "XML key").
+    /// The XML keys of its legacy types and the props they set.
     fn legacy_keys(&self) -> &'static [legacy::LegacyKey] {
         &[]
     }
     /// The props of a legacy sensor of one of [`Self::legacy_types`] (`cx.legacy_type`): by
     /// default each of [`Self::legacy_keys`] read by its field's encoding, with warnings for
-    /// values that cannot be read and properties it does not name (SPEC §11.4).
+    /// values that cannot be read and properties it does not name.
     fn convert_legacy(&self, raw: &LegacyProps, cx: &mut legacy::LegacyCtx) -> Props {
         legacy::convert(self.schema(), self.legacy_keys(), raw, cx)
     }
     fn requires(&self) -> &'static [Capability] {
         &[]
     }
-    /// Ordered fields: the Settings form, validation and static defaults (SPEC §8.2).
+    /// Ordered fields: the Settings form, validation and static defaults.
     fn schema(&self) -> &'static [PropField] {
         &[]
     }
@@ -160,7 +160,7 @@ pub trait SensorType: Send + Sync {
     fn summary(&self, _props: &Props) -> Option<String> {
         None
     }
-    /// A note the picker adds to the description on this machine (SPEC §6.6), e.g. the CPU
+    /// A note the picker adds to the description on this machine, e.g. the CPU
     /// dual graph's on a single-processor computer.
     fn picker_note(&self, _ctx: &DefaultsCtx) -> Option<MsgKey> {
         None
@@ -173,11 +173,11 @@ pub struct LayoutCtx<'a> {
     pub text: &'a dyn TextEngine,
     /// Physical px per logical px, e.g. for decoding images at their drawn size.
     pub scale: f32,
-    /// The locale of `settings.dateLocale` (SPEC §8.6), kept by the bar.
+    /// The locale of `settings.dateLocale`, kept by the bar.
     pub locale: &'a Locale,
     /// How that locale writes numbers.
     pub numbers: format::Numbers,
-    /// Shell icons of files, folders and drives (SPEC §9.17–9.18) and image files (§9.2).
+    /// Shell icons of files, folders and drives and image files.
     pub icons: &'a dyn IconSource,
 }
 
@@ -194,12 +194,12 @@ pub enum Fetched {
 
 /// Shell icons and image files for measuring sensors (bar thread). The bar reads them on a
 /// worker thread, since the shell may wait for a network server and a file may lie on a share
-/// that does not answer (SPEC §4.1).
+/// that does not answer.
 pub trait IconSource {
     /// The icon of `path`, `px` physical px square.
     fn shell_icon(&self, path: &str, px: u32) -> Fetched;
     /// The image file at `path` (a sensor's `image` prop), decoded `px` physical px tall
-    /// keeping its aspect ratio (SPEC §9.2). By default read at once, on the calling thread.
+    /// keeping its aspect ratio. By default read at once, on the calling thread.
     fn image(&self, path: &str, px: u32) -> Fetched {
         read_image(path, px).map_or(Fetched::None, Fetched::Ready)
     }
@@ -248,12 +248,12 @@ impl IconSource for DirectIcons<'_> {
 pub struct DrawCtx<'a> {
     pub theme: &'a Theme,
     /// The sensor's place on the bar, in logical px: its height is the bar's, less the space
-    /// above and below the sensors (`Theme::sensor_top`, SPEC §10.2).
+    /// above and below the sensors (`Theme::sensor_top`).
     pub rect: RectF,
 }
 
 /// What a sensor may use when it handles a sample, a wake-up, a click, a menu item or a drop,
-/// or is asked for its hint, menu or accessible value (SPEC §8.1); built by the bar for each
+/// or is asked for its hint, menu or accessible value; built by the bar for each
 /// call. It acts through the platform (opening, notifying) and [`SensorCtx::changes`]; state
 /// and props to save are taken from it afterwards ([`Sensor::take_state`],
 /// [`Sensor::take_props`]).
@@ -262,21 +262,21 @@ pub struct SensorCtx<'a> {
     pub locked: bool,
     /// Alt is held.
     pub alt: bool,
-    /// Transitions animate (SPEC §5.5); otherwise they jump.
+    /// Transitions animate; otherwise they jump.
     pub animate: bool,
-    /// The locale of `settings.dateLocale` (SPEC §8.6) and how it writes numbers, kept by the
+    /// The locale of `settings.dateLocale` and how it writes numbers, kept by the
     /// bar and read again when the setting or the OS regional format changes.
     pub locale: &'a Locale,
     pub numbers: format::Numbers,
     pub platform: &'a dyn Platform,
     /// Tells the sampler what a sensor's action changed, e.g. that the Recycle Bin was emptied,
-    /// so its topics are read again at once (SPEC §4.4); clone it for actions that finish on
+    /// so its topics are read again at once; clone it for actions that finish on
     /// another thread.
     pub changes: &'a ChangeSink,
 }
 
 impl SensorCtx<'_> {
-    /// Whether a click would reach the sensor now (SPEC §6.1): hints end with their
+    /// Whether a click would reach the sensor now: hints end with their
     /// "Click to …" line only then. Hints are built without Alt held, so with Lock and
     /// *Alt only* they have none.
     pub fn clicks(&self) -> bool {
@@ -300,7 +300,7 @@ impl SensorCtx<'_> {
     }
 }
 
-/// The content of a hover hint (SPEC §7.1).
+/// The content of a hover hint.
 pub enum HintContent {
     /// Plain text; `\n` breaks lines, tabs align "label: value" columns.
     Text(String),
@@ -324,7 +324,7 @@ impl std::fmt::Debug for HintContent {
     }
 }
 
-/// A hint that lays itself out and draws itself (SPEC §7.1), in the popup font and colours.
+/// A hint that lays itself out and draws itself, in the popup font and colours.
 pub trait RichHint {
     /// Lays the content out; returns its size, logical px.
     fn layout(&mut self, text: &dyn TextEngine, theme: &Theme) -> SizeF;
@@ -335,7 +335,7 @@ pub trait RichHint {
 /// A sensor's own menu item id; unique within its type.
 pub type MenuId = u16;
 
-/// One of a sensor's own items in the sensor menu (SPEC §6.4), e.g. *Eject*.
+/// One of a sensor's own items in the sensor menu, e.g. *Eject*.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuItem {
     pub id: MenuId,
@@ -360,7 +360,7 @@ impl MenuItem {
     }
 }
 
-/// A question the bar asks in a native dialog before a sensor acts (SPEC §6.4, §9.21).
+/// A question the bar asks in a native dialog before a sensor acts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Question {
     /// The main text, e.g. "Do you really want to shut down this computer?".
@@ -369,14 +369,14 @@ pub struct Question {
     pub action: String,
 }
 
-/// What a click did (SPEC §8.1).
+/// What a click did.
 pub enum ClickResult {
     /// The sensor has no click action.
     None,
     Handled,
     /// The bar asks this first and calls [`Sensor::confirmed`] if the user agrees.
     Confirm(Question),
-    /// The bar shows this popup next to the sensor (SPEC §7.2).
+    /// The bar shows this popup next to the sensor.
     Popup(Box<dyn popup::Popup>),
 }
 
@@ -402,13 +402,13 @@ impl std::fmt::Debug for ClickResult {
     }
 }
 
-/// A placed sensor. Lives on the bar thread; re-created when its props change (SPEC §8.1).
+/// A placed sensor. Lives on the bar thread; re-created when its props change.
 pub trait Sensor {
-    /// Width in logical px; the height is the strip the sensors draw in (`Theme::sensor_height`,
-    /// SPEC §10.2). Called after creation and whenever the sensor or the theme changed, so text
+    /// Width in logical px; the height is the strip the sensors draw in (`Theme::sensor_height`).
+    /// Called after creation and whenever the sensor or the theme changed, so text
     /// layouts and bitmaps are built (and kept) here.
     fn measure(&mut self, cx: &LayoutCtx) -> f32;
-    /// How narrow it can be drawn when the zones do not fit the bar (SPEC §5.4), logical px,
+    /// How narrow it can be drawn when the zones do not fit the bar, logical px,
     /// for sensors whose text can end in an ellipsis; `None` (the default) keeps the measured
     /// width. Asked after each [`Sensor::measure`].
     fn min_width(&self) -> Option<f32> {
@@ -423,7 +423,7 @@ pub trait Sensor {
     fn hint(&self, _cx: &SensorCtx) -> Option<HintContent> {
         None
     }
-    /// The click action (SPEC §6.1); called only when the Lock rules allow clicks.
+    /// The click action; called only when the Lock rules allow clicks.
     fn click(&mut self, _cx: &SensorCtx) -> ClickResult {
         ClickResult::None
     }
@@ -432,7 +432,7 @@ pub trait Sensor {
     fn confirmed(&mut self, _cx: &SensorCtx) -> Dirty {
         false
     }
-    /// Its own items for the sensor menu (SPEC §6.4), shown between *Remove sensor* and
+    /// Its own items for the sensor menu, shown between *Remove sensor* and
     /// *Tools*; the menu is built each time it opens.
     fn menu(&self, _cx: &SensorCtx) -> Vec<MenuItem> {
         Vec::new()
@@ -441,7 +441,7 @@ pub trait Sensor {
     fn on_menu(&mut self, _item: MenuId, _cx: &SensorCtx) -> Dirty {
         false
     }
-    /// What dropping `items` here would do (SPEC §6.3): the effect and the floating hint;
+    /// What dropping `items` here would do: the effect and the floating hint;
     /// `None` (the default) has the bar insert new sensors next to this one instead. Asked
     /// when the drag reaches the sensor and when its keys change.
     fn drop_action(
@@ -454,30 +454,30 @@ pub trait Sensor {
     }
     /// `items` were dropped here, as [`Sensor::drop_action`] said.
     fn drop_items(&mut self, _items: &[drop::Dropped], _drag: drop::DragInfo, _cx: &SensorCtx) {}
-    /// Whether its icon or graphic is drawn inactive (SPEC §8.5): the drive is absent, the
-    /// target missing, …. The sensor applies §8.5 itself when it measures and draws, with
+    /// Whether its icon or graphic is drawn inactive: the drive is absent, the
+    /// target missing, …. The sensor applies the style itself when it measures and draws, with
     /// `cx.theme.inactive` (through [`color::inactive`] or `common::icon::Icon`); the bar does
-    /// not ask. A sensor whose topic failed (an error sample, §14.2) is dimmed as a whole by
+    /// not ask. A sensor whose topic failed (an error sample) is dimmed as a whole by
     /// the bar instead.
     fn inactive(&self) -> bool {
         false
     }
-    /// The value read by screen readers (SPEC §14.4).
+    /// The value read by screen readers.
     fn accessible_value(&self, _cx: &SensorCtx) -> String {
         String::new()
     }
-    /// Whether the keyboard focus stops at it and screen readers list it (SPEC §14.4); only
+    /// Whether the keyboard focus stops at it and screen readers list it; only
     /// the Spacer, a divider, says no.
     fn focusable(&self) -> bool {
         true
     }
-    /// Whether its click opens a popup (SPEC §7.2), which screen readers offer to expand
-    /// (§14.4). It must agree with [`Sensor::click`]: `true` exactly for sensors whose click
+    /// Whether its click opens a popup, which screen readers offer to expand.
+    /// It must agree with [`Sensor::click`]: `true` exactly for sensors whose click
     /// can return [`ClickResult::Popup`].
     fn has_popup(&self) -> bool {
         false
     }
-    /// Whether a click does something now (SPEC §6.1), for the hand cursor. It must agree with
+    /// Whether a click does something now, for the hand cursor. It must agree with
     /// [`Sensor::click`]: `true` exactly when that would not return [`ClickResult::None`].
     /// Asked when the pointer comes onto the sensor, not on every move.
     fn clickable(&self, _cx: &SensorCtx) -> bool {
@@ -488,7 +488,7 @@ pub trait Sensor {
     fn on_hover(&mut self, _hovered: bool, _now: Instant, _cx: &SensorCtx) -> Dirty {
         false
     }
-    /// The system data this sensor needs (SPEC §4.4); asked once per instance.
+    /// The system data this sensor needs; asked once per instance.
     fn topics(&self) -> Vec<TopicRequest> {
         Vec::new()
     }
@@ -496,12 +496,12 @@ pub trait Sensor {
     fn on_sample(&mut self, _topic: &Topic, _sample: &Sample, _cx: &SensorCtx) -> Dirty {
         false
     }
-    /// State to store for this sensor in the config (SPEC §11.2 `state`), e.g. a new uptime
+    /// State to store for this sensor in the config (its `state` entry), e.g. a new uptime
     /// record; the bar asks after samples and wake-ups, and each change is taken once.
     fn take_state(&mut self) -> Option<State> {
         None
     }
-    /// Props it changed itself, to be saved (SPEC §9.14: a click toggles what the Battery
+    /// Props it changed itself, to be saved (a click toggles what the Battery
     /// shows), as the changed keys; the bar asks after clicks, and each change is taken once.
     fn take_props(&mut self) -> Option<Props> {
         None
@@ -513,7 +513,7 @@ pub trait Sensor {
         false
     }
     /// The wall clock jumped: the time or time zone changed, or the system resumed. Clocks
-    /// read the time again and move their wake-ups (SPEC §9.4–9.5). A new locale is not a
+    /// read the time again and move their wake-ups. A new locale is not a
     /// clock change: the bar measures every sensor again with it.
     fn on_clock_change(&mut self, _now: Instant, _cx: &SensorCtx) -> Dirty {
         false
@@ -540,7 +540,7 @@ mod tests {
     use super::test_support::{Harness, resolved};
     use super::*;
 
-    /// The hand cursor follows `clickable`, so it must say what a click does (SPEC §6.1).
+    /// The hand cursor follows `clickable`, so it must say what a click does.
     #[test]
     fn clickable_agrees_with_click() {
         let h = Harness::new();

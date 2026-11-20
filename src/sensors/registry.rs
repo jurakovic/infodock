@@ -1,5 +1,5 @@
-//! All sensor types (SPEC §8.1), and the operations that need them: creating the sensor for a
-//! layout entry, and filling machine-derived props (§11.2).
+//! All sensor types (INTERNALS.md, Sensors), and the operations that need them: creating the sensor
+//! for a layout entry, and filling machine-derived props.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -77,7 +77,7 @@ impl Registry {
         self.types.iter().copied().find(|ty| ty.id() == id)
     }
 
-    /// The type that imports the legacy type `legacy` (SPEC §11.4).
+    /// The type that imports the legacy type `legacy`.
     pub fn by_legacy_type(&self, legacy: &str) -> Option<&'static dyn SensorType> {
         self.types
             .iter()
@@ -151,7 +151,7 @@ impl Registry {
             .collect()
     }
 
-    /// Stores the machine-derived props that entries of known types lack (SPEC §11.2), so a
+    /// Stores the machine-derived props that entries of known types lack, so a
     /// sensor keeps its meaning when drives, the locale or the hardware change, from what
     /// [`machine_defaults`](Self::machine_defaults) said. Returns whether anything was added.
     pub fn fill_machine_defaults(
@@ -170,7 +170,7 @@ impl Registry {
 
     /// What the machine says for the machine-derived props `instance` lacks; `None`, without
     /// asking it, when it lacks none or its type is unknown. Asked before the config store is
-    /// locked (SPEC §4.5): some types list the drives, which may wait for one that does not
+    /// locked: some types list the drives, which may wait for one that does not
     /// answer, while every thread's `get` waits for the lock.
     pub fn machine_props(&self, instance: &SensorInstance, ctx: &DefaultsCtx) -> Option<Props> {
         let ty = self.get(&instance.kind)?;

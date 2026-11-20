@@ -1,4 +1,4 @@
-//! `spacer` — empty space, optionally with a divider line (SPEC §9.3).
+//! `spacer` — empty space, optionally with a divider line.
 
 use std::time::{Duration, Instant};
 
@@ -32,7 +32,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.3.
+/// The Spacer's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("show", "showDivider"),
     LegacyKey::new("width", "width"),
@@ -86,9 +86,9 @@ struct SpacerProps {
     width: f32,
 }
 
-/// The divider's opacity (SPEC §9.3).
+/// The divider's opacity.
 const DIVIDER_OPACITY: f32 = 0.4;
-/// A hidden divider fades in on hover, and out again (SPEC §9.3).
+/// A hidden divider fades in on hover, and out again.
 const FADE_IN: Duration = Duration::from_millis(200);
 const FADE_OUT: Duration = Duration::from_millis(300);
 
@@ -117,7 +117,7 @@ impl Sensor for Spacer {
         self.props.width
     }
 
-    /// A divider: nothing to read or click (SPEC §14.4).
+    /// A divider: nothing to read or click.
     fn focusable(&self) -> bool {
         false
     }

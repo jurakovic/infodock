@@ -70,7 +70,7 @@ fn a_pack_installed_later_is_drawn_once_the_bar_hears_of_it() {
     // The skin drawn is kept until the bar hears of it.
     logic.paint(&mut RecordingCanvas::new(1.0), size);
     assert_eq!(logic.band(), None);
-    // Settings installed it and tells the bar (SPEC §12.4).
+    // Settings installed it and tells the bar.
     let (commands, queue) = mpsc::channel();
     logic.commands = queue;
     commands.send(Command::SkinsChanged).expect("queued");
@@ -111,7 +111,7 @@ fn the_bars_shadow_goes_where_a_skins_band_would() {
     logic.paint(&mut RecordingCanvas::new(1.0), size);
     assert!(!logic.band().expect("a shadow").above);
 
-    // A skin pack's own band takes its place (SPEC §12.4).
+    // A skin pack's own band takes its place.
     let skins = tempfile::tempdir().expect("temp dir");
     let folder = pack(
         skins.path(),
@@ -292,7 +292,7 @@ fn settings_hear_when_transparency_effects_change() {
     // The bar hears of a change that is none: Settings is not told.
     logic.on_event(&window, UiEvent::AppearanceChanged);
     assert!(host.calls().is_empty());
-    // Transparency effects off, then on again: Settings hears of each (SPEC §10.3).
+    // Transparency effects off, then on again: Settings hears of each.
     os.set_appearance(crate::platform::OsAppearance {
         transparency: false,
         ..Default::default()

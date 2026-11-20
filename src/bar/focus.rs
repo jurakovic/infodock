@@ -1,4 +1,4 @@
-//! The keyboard on the bar (SPEC §14.4), the pure part: which sensor Tab moves the focus ring
+//! The keyboard on the bar, the pure part: which sensor Tab moves the focus ring
 //! to, where the focus goes when its sensor is removed, and where and how the ring is drawn.
 
 use crate::platform::{Color, RectF, SizeF};

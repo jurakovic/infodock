@@ -1,4 +1,4 @@
-//! Zone layout (SPEC §5.4): where each sensor sits, from the widths the sensors measured.
+//! Zone layout: where each sensor sits, from the widths the sensors measured.
 //!
 //! ```text
 //! left:   x = pad; for s in left: place(s, x); x += width(s) + gap
@@ -6,7 +6,7 @@
 //! right:  x = barWidth − pad; for s in reverse(right): x −= width(s); place(s, x); x −= gap
 //! ```
 //!
-//! The centre total includes one trailing gap, as the spec says. A centre zone that would meet
+//! The centre total deliberately includes one trailing gap. A centre zone that would meet
 //! the left or right zone moves towards the side with room, as far as it needs. When the zones
 //! do not fit side by side, [`fit`] narrows the sensors that can shrink (text with an
 //! ellipsis), the centre zone first, then the left, then the right; what still does not fit
@@ -16,7 +16,7 @@
 /// left-to-right order. Logical px.
 pub type Zones = [Vec<f32>; 3];
 
-/// The width each sensor gets (SPEC §5.4): the width it measured while the zones fit the bar
+/// The width each sensor gets: the width it measured while the zones fit the bar
 /// side by side, with a gap between zones and the padding at the ends (the centre zone then
 /// moves off the centre as far as it needs, [`place`]). Otherwise the sensors that can shrink
 /// (a minimum below their width) give way, down to their minimums, until the zones fit: the
@@ -68,7 +68,7 @@ fn shrink(widths: &mut [f32], mins: &[f32], amount: f32) -> f32 {
 
 /// The x position of every sensor. The centre zone is centred where it has room; where it would
 /// meet the left or the right zone, it moves towards the other side as far as it needs, and
-/// with no room either way it sits midway between them, over both (SPEC §5.4).
+/// with no room either way it sits midway between them, over both.
 pub fn place(widths: &Zones, bar_width: f32, pad: f32, gap: f32) -> Zones {
     let [left, center, right] = widths;
     let total: f32 = center.iter().map(|w| w + gap).sum();

@@ -1,4 +1,4 @@
-//! `recycle-bin` — what the Recycle Bin holds (SPEC §9.16): an empty or full icon with the
+//! `recycle-bin` — what the Recycle Bin holds: an empty or full icon with the
 //! title above the item count. A click opens the Recycle Bin; the menu opens or empties it, and
 //! emptying makes the sampler read the `recycle-bin` topic again at once.
 
@@ -21,7 +21,7 @@ use crate::i18n::{t, t_count};
 use crate::platform::{Canvas, DropEffect, RecycleBin};
 use crate::sampler::{Change, Sample, Topic, TopicRequest};
 
-/// The built-in icons (Appendix C).
+/// The built-in icons.
 const EMPTY: &[u8] = include_bytes!("../../assets/icons/recycle-empty.svg");
 const FULL: &[u8] = include_bytes!("../../assets/icons/recycle-full.svg");
 /// What a click and *Open Recycle Bin* open.
@@ -71,7 +71,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.16.
+/// The Recycle Bin's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("title", "title"),
     LegacyKey::new("image-empty", "imageEmpty"),
@@ -137,7 +137,7 @@ struct BinProps {
     /// Empty: the built-in icons.
     image_empty: String,
     image_full: String,
-    /// Custom tints the icon (SPEC §8.4).
+    /// Custom tints the icon.
     color: ColorChoice,
     /// The icon's, percent.
     opacity: u32,
@@ -234,8 +234,7 @@ impl Sensor for Bin {
         ClickResult::Handled
     }
 
-    /// *Open Recycle Bin* and *Empty Recycle Bin*, the latter greyed out while it is empty
-    /// (SPEC §9.16).
+    /// *Open Recycle Bin* and *Empty Recycle Bin*, the latter greyed out while it is empty.
     fn menu(&self, _cx: &SensorCtx) -> Vec<MenuItem> {
         let empty = self.bin.is_some_and(|b| b.items == 0);
         vec![
@@ -262,7 +261,7 @@ impl Sensor for Bin {
         self.value()
     }
 
-    /// Files and folders go to the Recycle Bin (SPEC §9.16); anything else is left to the bar.
+    /// Files and folders go to the Recycle Bin; anything else is left to the bar.
     fn drop_action(
         &self,
         items: &[Dropped],

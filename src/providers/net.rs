@@ -1,4 +1,4 @@
-//! `net/<id|auto>` (SPEC Appendix A): a network interface's traffic. Rates come from the
+//! `net/<id|auto>`: a network interface's traffic. Rates come from the
 //! change in its byte counters since the previous reading of the same topic, timed with the
 //! monotonic clock; a counter that went backwards (a reset), another interface behind
 //! Automatic, the first reading and the first after resume all give 0 and a new baseline.
@@ -63,7 +63,7 @@ impl Net {
         }
     }
 
-    /// The next reading of every topic starts a new baseline (SPEC §4.4: after resume).
+    /// The next reading of every topic starts a new baseline (after resume).
     pub fn resume(&mut self) {
         self.baselines.clear();
     }

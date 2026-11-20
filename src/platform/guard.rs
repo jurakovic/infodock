@@ -1,12 +1,12 @@
-//! The panic boundary of the callbacks the OS calls (SPEC §14.2): window procedures, hooks, the
-//! drop target. A panic must not unwind into the OS, which aborts the process with nothing
-//! flushed and the AppBar still reserved.
+//! The panic boundary of the callbacks the OS calls (INTERNALS.md, Errors and logging): window
+//! procedures, hooks, the drop target. A panic must not unwind into the OS, which aborts the
+//! process with nothing flushed and the AppBar still reserved.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Runs `callback`, which the OS called as `what` (e.g. "the bar window's procedure"). After a
 /// panic in it, which the panic hook has logged, the OS gets `default()`, the answer it would
-/// have without us, and the app goes on with its state as the panic left it (SPEC §14.2), hence
+/// have without us, and the app goes on with its state as the panic left it, hence
 /// `AssertUnwindSafe`.
 pub fn guard<T>(what: &str, default: impl FnOnce() -> T, callback: impl FnOnce() -> T) -> T {
     match catch_unwind(AssertUnwindSafe(callback)) {

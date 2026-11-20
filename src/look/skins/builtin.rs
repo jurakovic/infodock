@@ -1,4 +1,4 @@
-//! The built-in skins (SPEC §12.4), drawn pixel by pixel from the base colour: Flat, Gloss,
+//! The built-in skins, drawn pixel by pixel from the base colour: Flat, Gloss,
 //! Brushed metal, Carbon and Glass. Plain functions, so they are tested on every OS.
 
 use super::Target;
@@ -60,7 +60,7 @@ impl BuiltIn {
     }
 
     /// The skin at `target`'s size with `base` as its colour; the base's alpha is ignored, since
-    /// the bar draws the skin with the background opacity (SPEC §12.3).
+    /// the bar draws the skin with the background opacity.
     pub fn render(self, base: Color, target: Target) -> Option<Bitmap> {
         let mut pixels = Vec::with_capacity(target.width as usize * target.height as usize * 4);
         for y in 0..target.height {

@@ -1,4 +1,4 @@
-//! Eject results as notifications (SPEC §7.4, §9.18, §9.22), for the Disk launcher and, later,
+//! Eject results as notifications, for the Disk launcher and
 //! Eject USB: the drive's name as the title and what happened as the body.
 
 use crate::i18n::t_args;

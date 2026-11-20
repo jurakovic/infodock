@@ -1,4 +1,4 @@
-//! `wifi` — Wi-Fi Signal (SPEC §9.15): a signal icon in six levels with the network name above
+//! `wifi` — Wi-Fi Signal: a signal icon in six levels with the network name above
 //! the signal in percent or dBm (or the name). Offline it is inactive. When Windows withholds
 //! the network name for want of location access, it says so and a click opens those settings.
 
@@ -20,7 +20,7 @@ use crate::i18n::{t, t_args};
 use crate::platform::{Canvas, WifiStatus};
 use crate::sampler::{Sample, Topic, TopicRequest};
 
-/// The icons by signal level (Appendix C).
+/// The icons by signal level.
 const LEVELS: [&[u8]; 6] = [
     include_bytes!("../../assets/icons/wifi-0.svg"),
     include_bytes!("../../assets/icons/wifi-1.svg"),
@@ -29,7 +29,7 @@ const LEVELS: [&[u8]; 6] = [
     include_bytes!("../../assets/icons/wifi-4.svg"),
     include_bytes!("../../assets/icons/wifi-5.svg"),
 ];
-/// The icon is drawn at this opacity of the text colour, percent (SPEC §9.15).
+/// The icon is drawn at this opacity of the text colour, percent.
 const ICON_OPACITY: u32 = 75;
 /// What a click opens.
 const WIFI_SETTINGS: &str = "ms-settings:network-wifi";
@@ -77,7 +77,7 @@ const SCHEMA: &[PropField] = &[
     ),
 ];
 
-/// SPEC §9.15.
+/// The Wi-Fi's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("title", "title"),
     LegacyKey::new("interval", "interval"),
@@ -159,7 +159,7 @@ struct WifiProps {
     display: Display,
 }
 
-/// The icon level (SPEC §9.15): 0 offline or with the radio off, otherwise 1–5 by quality.
+/// The icon level: 0 offline or with the radio off, otherwise 1–5 by quality.
 pub fn level(status: &WifiStatus) -> usize {
     if !online(status) {
         return 0;
@@ -340,7 +340,7 @@ impl Sensor for Wifi {
         ClickResult::Handled
     }
 
-    /// Offline (SPEC §8.5).
+    /// Offline.
     fn inactive(&self) -> bool {
         self.status.is_some() && !self.online()
     }

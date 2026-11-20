@@ -1,4 +1,4 @@
-//! Notifications (SPEC §7.4): the toast's content, built here so it is tested on every OS.
+//! Notifications: the toast's content, built here so it is tested on every OS.
 
 /// `text` with the characters XML reserves escaped.
 fn escaped(text: &str) -> String {

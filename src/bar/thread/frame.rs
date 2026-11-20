@@ -1,4 +1,4 @@
-//! The bar's motion and painting (SPEC §5.5): the rise and the slide out, the hover
+//! The bar's motion and painting: the rise and the slide out, the hover
 //! highlight, and the frame the bar draws.
 
 use super::*;
@@ -44,7 +44,7 @@ impl BarLogic {
         }
     }
 
-    /// Starts the rise into place after a placement (SPEC §5.5).
+    /// Starts the rise into place after a placement.
     pub(super) fn rise(&mut self, window: &dyn BarWindow) {
         if !std::mem::take(&mut self.rise_pending) || self.sliding_out {
             return;
@@ -60,7 +60,7 @@ impl BarLogic {
     }
 
     /// Fades the hover highlight in while the pointer is over the bar and the setting is on,
-    /// and out otherwise (SPEC §5.5).
+    /// and out otherwise.
     pub(super) fn refresh_highlight(&mut self, window: &dyn BarWindow) {
         let on = self.inside && self.settings.bar.highlight_on_hover;
         let (to, easing) = if on {
@@ -82,20 +82,20 @@ impl BarLogic {
     }
 
     /// Draws the bar into a cleared canvas of `size` logical px: the background, the
-    /// sensors, the placer and the focus ring, faded while the bar rises (SPEC §5.5).
+    /// sensors, the placer and the focus ring, faded while the bar rises.
     pub(super) fn paint_frame(&mut self, canvas: &mut dyn Canvas, size: SizeF) {
         self.painted = size;
         self.sensors
             .update_layout(&layout_ctx!(self, canvas.scale()), size.width);
         let now = Instant::now();
-        // The content fades in while the bar rises (SPEC §5.5).
+        // The content fades in while the bar rises.
         let opacity = self.shown.value(now);
         if opacity < 1.0 {
             canvas.push_opacity(opacity);
         }
         let highlight = self.highlight.value(now);
         // The edge it is placed on: the nearer one for a floating bar, the old one while it
-        // slides out (SPEC §12.2).
+        // slides out.
         let edge = self
             .geometry
             .as_ref()
@@ -107,7 +107,7 @@ impl BarLogic {
             .as_ref()
             .and_then(|spec| self.skin.get(spec, target));
         // A band goes on the side facing the screen centre: above a bar at the bottom. The
-        // skin's own band takes the place of the bar's shadow (SPEC §5.5). None while the
+        // skin's own band takes the place of the bar's shadow. None while the
         // content fades, which a floating bar does in place.
         let above = edge == Edge::Bottom;
         let bitmap = match skin.and_then(|s| s.band.clone()) {
@@ -127,7 +127,7 @@ impl BarLogic {
         );
         self.sensors.draw(canvas, &self.theme, size.height);
         // The placer: a 2 px line in the accent colour where the dragged sensor, or the
-        // sensors a drop creates, would go (SPEC §6.2, §6.3, §12.2).
+        // sensors a drop creates, would go.
         let placer = self.drag.as_ref().and_then(|d| d.target).or_else(|| {
             self.external
                 .as_ref()
@@ -141,7 +141,7 @@ impl BarLogic {
                 self.theme.accent,
             );
         }
-        // The focus ring in the accent colour, while the bar has the keyboard (SPEC §14.4):
+        // The focus ring in the accent colour, while the bar has the keyboard:
         // around the focused sensor, and around the bar itself only when the setting asks.
         let keys = self.keys.as_ref().filter(|k| k.focused);
         let place = keys.map(|keys| {

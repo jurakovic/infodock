@@ -1,10 +1,10 @@
-//! The keyboard on the bar and UI Automation (SPEC §14.4): the focus ring, keys, the menu
+//! The keyboard on the bar and UI Automation: the focus ring, keys, the menu
 //! from the keyboard, and what screen readers see and ask.
 
 use super::*;
 
 impl BarLogic {
-    /// The hotkey focuses the bar (SPEC §14.4): the window takes the keyboard focus and the
+    /// The hotkey focuses the bar: the window takes the keyboard focus and the
     /// ring goes around the bar itself, or stays on its sensor when the bar had the focus.
     pub(super) fn focus_bar(&mut self, window: &dyn BarWindow) {
         if !self.host.bar_visible() {
@@ -27,7 +27,7 @@ impl BarLogic {
     }
 
     /// A key on the focused bar: Tab and the arrows move the ring, Enter and Space click its
-    /// sensor, Shift+F10 and the Menu key open its menu, Esc gives the focus back (§14.4).
+    /// sensor, Shift+F10 and the Menu key open its menu, Esc gives the focus back.
     pub(super) fn key(&mut self, window: &dyn BarWindow, key: Key, modifiers: Modifiers) {
         if !self.keys.as_ref().is_some_and(|k| k.focused) {
             return;
@@ -76,7 +76,7 @@ impl BarLogic {
         }
     }
 
-    /// The focused sensor's menu, or the bar menu with no sensor focused, beside it (§6.4).
+    /// The focused sensor's menu, or the bar menu with no sensor focused, beside it.
     pub(super) fn keyboard_menu(&mut self, window: &dyn BarWindow) {
         let hit = self.focused_sensor().and_then(|id| self.sensors.get(&id));
         // The bar menu's new sensors go to the end of the left zone.
@@ -129,7 +129,7 @@ impl BarLogic {
         }
     }
 
-    /// What a screen reader asks of a sensor (SPEC §14.4): a click, its popup opened or
+    /// What a screen reader asks of a sensor: a click, its popup opened or
     /// closed, the focus ring moved to it; or of the open popup: a row marked, or the popup
     /// described. Deliberate, like a key, so the Lock rules for the
     /// pointer do not apply.
@@ -176,7 +176,7 @@ impl BarLogic {
     }
 
     /// A popup opened from the keyboard closed by itself (Esc, an item chosen): the bar takes
-    /// the focus back, with the ring where it was (SPEC §14.4).
+    /// the focus back, with the ring where it was.
     pub(super) fn refocus(&mut self, window: &dyn BarWindow) {
         if self.keys.as_ref().is_some_and(|k| !k.focused) {
             if window.take_focus() {
@@ -187,7 +187,7 @@ impl BarLogic {
         }
     }
 
-    /// The bar as screen readers see it (SPEC §14.4): its sensors in focus order.
+    /// The bar as screen readers see it: its sensors in focus order.
     pub(super) fn accessible_bar(&self) -> AccessibleBar {
         let env = sensor_env!(self, false);
         let items =

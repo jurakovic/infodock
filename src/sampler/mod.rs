@@ -1,6 +1,6 @@
-//! The sampler (SPEC §4.4): one thread that reads the topics sensors subscribe to, each at the
-//! shortest interval any of its subscribers asked for, and hands every sample to the bar
-//! thread. Providers are shared, so ten sensors on one topic cost one reading per tick.
+//! The sampler (INTERNALS.md, Data flow): one thread that reads the topics sensors subscribe to,
+//! each at the shortest interval any of its subscribers asked for, and hands every sample to the
+//! bar thread. Providers are shared, so ten sensors on one topic cost one reading per tick.
 
 mod scheduler;
 pub mod topics;
@@ -37,7 +37,7 @@ pub struct Sampler {
 }
 
 /// Reports a [`Change`] from any thread, e.g. from the thread that emptied the Recycle Bin once
-/// it is done, so the sampler reads the topics it concerns at once (SPEC §4.4).
+/// it is done, so the sampler reads the topics it concerns at once.
 #[derive(Clone)]
 pub struct ChangeSink(Option<Arc<dyn Fn(Change) + Send + Sync>>);
 
@@ -75,13 +75,12 @@ impl Sampler {
         });
     }
 
-    /// The system resumed from sleep: every topic is read again at once, from new baselines
-    /// (SPEC §4.4).
+    /// The system resumed from sleep: every topic is read again at once, from new baselines.
     pub fn resume(&self) {
         let _ = self.messages.send(Message::Resume);
     }
 
-    /// Something changed: the topics that follow it are read again at once (SPEC §4.4), e.g.
+    /// Something changed: the topics that follow it are read again at once, e.g.
     /// volumes, disks and paths when a drive arrived or went.
     pub fn changed(&self, change: Change) {
         let _ = self.messages.send(Message::Changed(change));
@@ -186,7 +185,7 @@ fn run(queue: &Receiver<Message>, mut providers: Providers, deliver: &dyn Fn(Del
                         tracing::info!("{topic:?} can be read again");
                     }
                 }
-                // After a few in a row, the error is the topic's sample (SPEC §14.2).
+                // After a few in a row, the error is the topic's sample.
                 Err(message) => {
                     let error = Arc::new(Sample::Error(message.clone()));
                     if let Some(error) = scheduler.failed(&topic, now, error) {
@@ -274,7 +273,7 @@ mod tests {
         sampler.shutdown();
         thread.join().expect("the thread ends");
     }
-    /// The sampler's cost per tick (SPEC §14.1, ≤ 2 ms): the topics the first-run layout's
+    /// The sampler's cost per tick (≤ 2 ms): the topics the first-run layout's
     /// sensors subscribe to, read on this machine's providers as a tick reads them, a tick
     /// every 100 ms; the first, which opens the providers, is one of them. CI's budget check
     /// reads the median.

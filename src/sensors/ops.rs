@@ -1,5 +1,5 @@
-//! Sensor operations used by Settings and the bar (SPEC §4.5): add, update, move and remove
-//! sensors, and the props a live preview shows. Each is a function on a [`Config`]; the app
+//! Sensor operations used by Settings and the bar (INTERNALS.md, Config): add, update, move and
+//! remove sensors, and the props a live preview shows. Each is a function on a [`Config`]; the app
 //! runs it inside a config-store update, which saves the result and notifies the bar and
 //! Settings. What the machine says for machine-derived props is asked before, with
 //! [`machine_props`], so the store is never locked while the machine is asked.
@@ -16,7 +16,7 @@ fn not_found(id: &str) -> ConfigError {
 
 /// What the machine says for the machine-derived props a sensor of type `kind` with `props`
 /// lacks once `changes` are applied, for [`add`], [`update`] and [`preview`]; empty, without
-/// asking the machine, when it lacks none (SPEC §11.2). Fields `changes` sets are not asked
+/// asking the machine, when it lacks none. Fields `changes` sets are not asked
 /// of the machine, so a dropped drive lists no drives.
 pub fn machine_props(
     registry: &Registry,
@@ -76,8 +76,8 @@ pub fn add(
 }
 
 /// The stored props of `instance` with `changes` (keys of its type's schema) applied: each
-/// value is validated and normalised, and only what differs from the defaults is kept
-/// (SPEC §8.2, §11.2). Fails with `invalid` for an unknown type, an unknown key or a value of
+/// value is validated and normalised, and only what differs from the defaults is kept.
+/// Fails with `invalid` for an unknown type, an unknown key or a value of
 /// the wrong type, naming the keys.
 fn updated_props(
     registry: &Registry,
@@ -123,7 +123,7 @@ fn with_changes(instance: &SensorInstance, changes: &Props) -> SensorInstance {
 
 /// [`updated_props`] for `instance` with the machine-derived props it lacks filled in first,
 /// from `machine`: stored machine fields are kept as they are, so their static defaults must
-/// not stand in for the machine's values (SPEC §11.2).
+/// not stand in for the machine's values.
 fn with_machine_props(
     registry: &Registry,
     machine: &Props,
@@ -153,7 +153,7 @@ pub fn update(
     Ok(())
 }
 
-/// Sensor `id` as it would be with `changes`, for a live preview (SPEC §6.7); nothing is
+/// Sensor `id` as it would be with `changes`, for a live preview; nothing is
 /// saved.
 pub fn preview(
     config: &Config,
@@ -183,8 +183,8 @@ pub fn move_to(config: &mut Config, id: &str, zone: Zone, index: usize) -> Resul
     Ok(())
 }
 
-/// The [`move_to`] index for an insertion point counted while the source is still in place
-/// (SPEC §6.2): within the same zone, a target after the source shifts down by one.
+/// The [`move_to`] index for an insertion point counted while the source is still in place:
+/// within the same zone, a target after the source shifts down by one.
 pub fn index_after_removal(source: (Zone, usize), zone: Zone, insertion: usize) -> usize {
     if source.0 == zone && source.1 < insertion {
         insertion - 1

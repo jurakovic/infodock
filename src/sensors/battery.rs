@@ -1,4 +1,4 @@
-//! `battery` — Battery Life (SPEC §9.14): a layered battery icon whose level shows the charge,
+//! `battery` — Battery Life: a layered battery icon whose level shows the charge,
 //! with the state above the percentage or the time left. A click switches between the two for
 //! the current state and saves it; while charging it can calculate the time to full itself and
 //! tell, once per charge, that the charger can come off.
@@ -23,13 +23,13 @@ use crate::look::theme::Inactive;
 use crate::platform::{BatteryState, Bitmap, Canvas, Color, RectF};
 use crate::sampler::{BATTERY_EVERY, BatterySample, Sample, Topic, TopicRequest};
 
-/// The icon layers (Appendix C), in a 19×23 view box.
+/// The icon layers, in a 19×23 view box.
 const BACK: &[u8] = include_bytes!("../../assets/icons/battery-back.svg");
 const FRONT: &[u8] = include_bytes!("../../assets/icons/battery-front.svg");
 const CHARGING: &[u8] = include_bytes!("../../assets/icons/battery-charging.svg");
 const CHARGED: &[u8] = include_bytes!("../../assets/icons/battery-charged.svg");
 const NONE: &[u8] = include_bytes!("../../assets/icons/battery-none.svg");
-/// The icon's drawn size, logical px (SPEC §9.14), and the level's area inside it.
+/// The icon's drawn size, logical px, and the level's area inside it.
 const ICON: (f32, f32) = (19.0, 23.0);
 const LEVEL: RectF = RectF {
     left: 4.3,
@@ -156,7 +156,7 @@ const SCHEMA: &[PropField] = &[
     .describe("sensor.battery.field.alertAbove.help"),
 ];
 
-/// SPEC §9.14: `-1` is the OS's own value or never.
+/// The Battery's legacy XML keys; `-1` is the OS's own value or never.
 const LEGACY_KEYS: &[LegacyKey] = &[
     LegacyKey::new("battery", "battery"),
     LegacyKey::options(
@@ -280,7 +280,7 @@ impl BatteryProps {
     }
 }
 
-/// What the battery is doing, as the sensor shows it (SPEC §9.14).
+/// What the battery is doing, as the sensor shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     NoBattery,
@@ -301,7 +301,7 @@ pub fn status(sample: &BatterySample, assume: Option<f32>) -> Status {
     }
     if !sample.ac_online {
         return Status::Draining {
-            // Whole percentages, as shown (SPEC §9.14).
+            // Whole percentages, as shown.
             low: sample.percent.round() < LOW,
         };
     }
@@ -316,7 +316,7 @@ pub fn status(sample: &BatterySample, assume: Option<f32>) -> Status {
     }
 }
 
-/// The share of the level area shown for `percent`, piecewise for visibility (SPEC §9.14):
+/// The share of the level area shown for `percent`, piecewise for visibility:
 /// 0–15 % → 0–30 %, 15–40 % → 30–70 %, 40–100 % → 70–100 %.
 fn level_share(percent: f32) -> f32 {
     let p = percent.clamp(0.0, 100.0);
@@ -329,7 +329,7 @@ fn level_share(percent: f32) -> f32 {
     }
 }
 
-/// The level's colour (SPEC §9.14): red through yellow to green, `#FF{g}00` below 50 % and
+/// The level's colour: red through yellow to green, `#FF{g}00` below 50 % and
 /// `#{r}FF00` from 50 %.
 fn level_color(percent: f32) -> Color {
     let p = percent.clamp(0.0, 100.0).round();
@@ -391,7 +391,7 @@ impl Tracker {
                 from: p,
                 estimate: None,
             });
-            // The time per percent so far, for what is left (SPEC §9.14): the first estimate
+            // The time per percent so far, for what is left: the first estimate
             // errs long, later ones move a thirtieth of the way.
             if p > charge.from {
                 let elapsed = now.saturating_duration_since(charge.since).as_secs_f32();
@@ -526,7 +526,7 @@ impl BatterySensor {
             .map_or_else(String::new, |s| format::percent(f64::from(s.percent)))
     }
 
-    /// The first line: the state (SPEC §9.14).
+    /// The first line: the state.
     fn label(&self) -> String {
         let key = match self.status() {
             None => return String::new(),
@@ -673,7 +673,7 @@ impl Sensor for BatterySensor {
     }
 
     /// Switches between the percentage and the time for the current state and saves it.
-    /// While a battery is there; a click toggles what it shows (SPEC §9.14).
+    /// While a battery is there; a click toggles what it shows.
     fn clickable(&self, _cx: &SensorCtx) -> bool {
         !matches!(self.status(), None | Some(Status::NoBattery))
     }
@@ -737,7 +737,7 @@ impl Sensor for BatterySensor {
         let target = assume.unwrap_or(100.0);
         self.track.update(sample, status, target, Instant::now());
         self.sample = Some(sample.clone());
-        // Once per charge: the charger can come off (SPEC §9.14).
+        // Once per charge: the charger can come off.
         if status == Status::Charging
             && !self.track.alerted
             && let Some(above) = self.props.alert_above()

@@ -1,9 +1,9 @@
-//! The hover hint (SPEC §7.1, §7.3): when it shows and hides, and where.
+//! The hover hint: when it shows and hides, and where.
 
 use super::*;
 
 impl BarLogic {
-    /// Closes the hint now and cancels its delay (SPEC §7.1).
+    /// Closes the hint now and cancels its delay.
     pub(super) fn dismiss_hint(&mut self, window: &dyn BarWindow) {
         let step = self.hover.dismiss();
         self.apply_hint(window, step);
@@ -28,7 +28,7 @@ impl BarLogic {
         }
     }
 
-    /// Sensor `id`'s place on the screen, for placing its hint or popup (SPEC §7.3), in logical
+    /// Sensor `id`'s place on the screen, for placing its hint or popup, in logical
     /// px, and the monitor's scale; `None` before the bar is placed or without that sensor.
     pub(super) fn anchor(&self, id: &str) -> Option<(Anchor, f32)> {
         let geometry = self.geometry.as_ref()?;
@@ -52,7 +52,7 @@ impl BarLogic {
         Some((anchor, scale))
     }
 
-    /// Shows (or updates) sensor `id`'s hint above or below it (SPEC §7.1, §7.3); `false` if
+    /// Shows (or updates) sensor `id`'s hint above or below it; `false` if
     /// it has none.
     pub(super) fn show_hint(&self, window: &dyn BarWindow, id: &str) -> bool {
         let env = sensor_env!(self, false);
@@ -61,7 +61,7 @@ impl BarLogic {
             return false;
         };
         // What screen readers read of it: its text, or for a rich hint (a calendar) the
-        // sensor's value (SPEC §14.4).
+        // sensor's value.
         let name = match &content {
             crate::sensors::HintContent::Text(text) => hint::spoken(text),
             crate::sensors::HintContent::Rich(_) => self.sensors.value(id, &env),
@@ -76,7 +76,7 @@ impl BarLogic {
         true
     }
 
-    /// Redraws a shown hint, whose sensor or theme may have changed (SPEC §7.1: live).
+    /// Redraws a shown hint, whose sensor or theme may have changed (live).
     pub(super) fn refresh_hint(&mut self, window: &dyn BarWindow) {
         if !self.settings.popups_enabled {
             self.dismiss_hint(window);

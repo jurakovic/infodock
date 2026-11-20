@@ -1,6 +1,6 @@
-//! Layout exchange files (SPEC §11.3): the export of the whole config or of its layout, and what
-//! an imported file brings before each sensor is checked against its type
-//! (`sensors::import`). The legacy XML import (§11.4) brings the same [`Incoming`].
+//! Layout exchange files (INTERNALS.md, Config): the export of the whole config or of its layout,
+//! and what an imported file brings before each sensor is checked against its type
+//! (`sensors::import`). The legacy XML import brings the same [`Incoming`].
 
 use std::path::Path;
 
@@ -32,10 +32,10 @@ const ZONES: [(Zone, &str); 3] = [
 pub enum ImportFormat {
     /// An exchange file, `.infodock.json`.
     Json,
-    /// A legacy XML layout (SPEC §11.4).
+    /// A legacy XML layout.
     Legacy,
     /// Either, told apart by the file's name: a `.json` file is an exchange file, any other a
-    /// legacy layout (the welcome page, §11.5).
+    /// legacy layout (the welcome page).
     Any,
 }
 
@@ -87,7 +87,7 @@ pub struct IncomingSensor {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Incoming {
     pub sensors: Vec<IncomingSensor>,
-    /// Legacy sensors without an Infodock type yet (SPEC §11.4).
+    /// Legacy sensors without an Infodock type yet.
     pub unsupported: Vec<LegacyUnsupported>,
     pub skipped: Vec<Skipped>,
     pub warnings: Vec<Warning>,
@@ -126,7 +126,7 @@ pub fn shown(text: &str) -> String {
     }
 }
 
-/// The outcome of an import (SPEC §11.3).
+/// The outcome of an import.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ImportReport {
     pub added: usize,
@@ -146,7 +146,7 @@ pub struct Skipped {
 pub enum SkipReason {
     /// Not an object with a `type`.
     NotASensor,
-    /// A legacy type kept in `legacy.unsupported` for later versions (SPEC §11.4).
+    /// A legacy type kept in `legacy.unsupported` for later versions.
     NotSupportedYet,
     /// A legacy type Infodock does not know.
     UnknownType,
@@ -171,9 +171,9 @@ pub enum Warning {
     /// A value its type cannot use; the default is used instead. `sensor` names the sensor as
     /// the report shows it: its type's name.
     InvalidValue { sensor: String, key: String },
-    /// A type this version does not know; kept and shown as a placeholder (SPEC §11.2).
+    /// A type this version does not know; kept and shown as a placeholder.
     UnknownType { kind: String },
-    /// A legacy property its type does not name; ignored (SPEC §11.4).
+    /// A legacy property its type does not name; ignored.
     UnknownProperty { legacy: String, key: String },
     /// A legacy property whose value cannot be read; the default is used instead.
     InvalidProperty {
@@ -181,10 +181,9 @@ pub enum Warning {
         key: String,
         value: String,
     },
-    /// A legacy property Infodock has no counterpart for; not imported (SPEC §11.4).
+    /// A legacy property Infodock has no counterpart for; not imported.
     DroppedProperty { legacy: String, key: String },
-    /// A legacy network adapter this computer does not have; Automatic is used instead
-    /// (SPEC §9.13).
+    /// A legacy network adapter this computer does not have; Automatic is used instead.
     UnknownAdapter { legacy: String, adapter: String },
 }
 
@@ -326,7 +325,7 @@ pub fn read_bytes(path: &Path) -> Result<Vec<u8>, ImportError> {
 
 /// What an exchange file brings: a whole config or a layout export, migrated to this schema.
 /// Only its layout, the state of its sensors and its unsupported legacy sensors are imported;
-/// settings are not (SPEC §11.3). Entries that are not sensors are skipped.
+/// settings are not. Entries that are not sensors are skipped.
 pub fn parse(text: &str) -> Result<Incoming, ImportError> {
     let value: Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
     if !value.is_object() {

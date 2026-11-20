@@ -1,7 +1,7 @@
-//! The notification-area icon (SPEC §4.1, §6.5), registered for the bar window. Its callback
+//! The notification-area icon, registered for the bar window. Its callback
 //! message arrives in the bar window procedure and becomes [`UiEvent::TrayClick`] or
 //! [`UiEvent::TrayMenu`](crate::platform::UiEvent). The icon follows the taskbar's theme: the
-//! variant for a light or a dark taskbar (Appendix C).
+//! variant for a light or a dark taskbar.
 
 use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, Ordering};

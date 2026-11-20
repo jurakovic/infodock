@@ -1,4 +1,4 @@
-//! `eject-usb` — Eject USB (SPEC §9.22): a USB icon whose click lists the drives that can be
+//! `eject-usb` — Eject USB: a USB icon whose click lists the drives that can be
 //! ejected (`common/eject_list.rs`), each with an *Eject* button. The `volumes` topic keeps
 //! the count in the hint and the open list up to date.
 
@@ -18,12 +18,12 @@ use crate::i18n::{t, t_count};
 use crate::platform::{Canvas, Capability};
 use crate::sampler::{Sample, Topic, TopicRequest, VOLUMES_EVERY};
 
-/// The built-in USB icon, 30×21 (Appendix C).
+/// The built-in USB icon, 30×21.
 const USB: &[u8] = include_bytes!("../../assets/icons/usb.svg");
 
 const SCHEMA: &[PropField] = &[icon::OPACITY];
 
-/// SPEC §9.22.
+/// Eject USB's legacy XML keys.
 const LEGACY_KEYS: &[LegacyKey] = &[icon::LEGACY_OPACITY];
 
 pub struct EjectUsbType;
@@ -116,7 +116,7 @@ impl Sensor for EjectUsb {
         Some(HintContent::Text(self.text()))
     }
 
-    /// Opens the `eject-list` popup (SPEC §9.22).
+    /// Opens the `eject-list` popup.
     fn clickable(&self, _cx: &SensorCtx) -> bool {
         true
     }

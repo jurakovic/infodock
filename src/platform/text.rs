@@ -1,6 +1,6 @@
-//! Text layout and measurement (SPEC §4.6). A [`TextEngine`] lays text out once; the resulting
+//! Text layout and measurement. A [`TextEngine`] lays text out once; the resulting
 //! [`TextLayout`] knows its size for the zone layout and is drawn with [`super::Canvas`].
-//! Sensors keep their layouts and re-create them when their text or style changes (§14.1).
+//! Sensors keep their layouts and re-create them when their text or style changes.
 
 use std::any::Any;
 use std::fmt;
@@ -13,7 +13,7 @@ use crate::config::model::FontStyle;
 pub struct Font {
     pub family: String,
     /// CSS-style weight: 400 normal, 600 semibold, 700 bold. Fonts without a semibold face
-    /// render semibold as bold (SPEC §8.2).
+    /// render semibold as bold.
     pub weight: u16,
     pub italic: bool,
 }
@@ -41,8 +41,7 @@ pub struct TextStyle {
     pub font: Font,
     /// Logical px.
     pub size: f32,
-    /// All digits equally wide (OpenType `tnum`), so changing numbers do not shift the bar
-    /// (SPEC §5.4).
+    /// All digits equally wide (OpenType `tnum`), so changing numbers do not shift the bar.
     pub tabular: bool,
     /// Lines longer than this end in an ellipsis.
     pub max_width: Option<f32>,
