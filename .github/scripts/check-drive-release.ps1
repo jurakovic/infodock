@@ -8,9 +8,10 @@
 # see a holder. The app's log must also say, under each layout, that it watched the drive again
 # after an unlock, and its last line of letting go of the drive or watching it again must be a
 # watch-again: a drive let go of and never watched again is read no more, so every lock would
-# take while the drive's Recycle Bin, space and listing stay as they were. The app's log lines
-# about drives are kept. Runs after the Show desktop check and before the installer check, which
-# removes the config; the config found is put back at the end.
+# take while its Recycle Bin goes uncounted, its space reads as absent and the drive list keeps
+# its last listing. The app's log lines about drives are kept. Runs after the Show desktop check
+# and before the installer check, which removes the config; the config found is put back at the
+# end.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
