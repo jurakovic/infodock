@@ -98,7 +98,7 @@ pub fn has_recycle_bin() -> bool {
 /// drive whose bin cannot be read is left out; the shell's message is returned only when no
 /// bin can be read.
 pub fn recycle_bin() -> std::result::Result<RecycleBin, String> {
-    // Read here when the drives thread cannot start.
+    // Read here when the drives thread cannot start or gave no answer.
     super::drives::run(bins).unwrap_or_else(bins)
 }
 

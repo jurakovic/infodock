@@ -342,7 +342,7 @@ pub trait WifiReader: Send {
     fn read(&mut self) -> Result<WifiStatus, String>;
 }
 
-/// What the Recycle Bin holds on all drives (the `recycle-bin` topic).
+/// What the Recycle Bin holds on the fixed drives (the `recycle-bin` topic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RecycleBin {
     pub items: u64,
@@ -638,12 +638,14 @@ pub trait Platform: Send + Sync {
     fn page_files(&self) -> Result<Vec<PageFile>, String> {
         Err(UNSUPPORTED.into())
     }
-    /// The volumes with drive letters, in letter order.
+    /// The volumes with drive letters, in letter order. A drive the OS is removing, locking or
+    /// dismounting is listed as it was last listed.
     fn volumes(&self) -> Vec<Volume> {
         Vec::new()
     }
     /// The size and free space of the volume at `root` (`C:\`), for the `disk/<X:\>` topic;
-    /// `None` when there is none (no such drive, no medium inserted).
+    /// `None` when there is none (no such drive, no medium inserted), and while the OS removes,
+    /// locks or dismounts the drive.
     fn disk_space(&self, root: &str) -> Option<DiskSpace> {
         let _ = root;
         None
@@ -680,9 +682,10 @@ pub trait Platform: Send + Sync {
     fn launch(&self, launch: &Launch) {
         tracing::info!("starting {launch:?} is not supported on this platform");
     }
-    /// What `path` names now; [`PathKind::Missing`] also when it cannot be read. It may wait
-    /// for a network server, so it runs off the bar thread (the `path/<path>` topic), except
-    /// once per drop onto the bar (see the trait's doc).
+    /// What `path` names now; [`PathKind::Missing`] also when it cannot be read, and while the
+    /// OS removes, locks or dismounts its drive. It may wait for a network server, so it runs
+    /// off the bar thread (the `path/<path>` topic), except once per drop onto the bar (see the
+    /// trait's doc).
     fn path_kind(&self, path: &str) -> PathKind {
         match std::fs::metadata(path) {
             Ok(m) if m.is_dir() => PathKind::Folder,
@@ -690,8 +693,9 @@ pub trait Platform: Send + Sync {
             Err(_) => PathKind::Missing,
         }
     }
-    /// The entries of folder `path`, unsorted; why not when it cannot be read. It may wait
-    /// for a network server, so it runs off the bar thread.
+    /// The entries of folder `path`, unsorted; why not when it cannot be read, as while the OS
+    /// removes, locks or dismounts its drive. It may wait for a network server, so it runs off
+    /// the bar thread.
     fn list_dir(&self, path: &str) -> Result<Vec<DirItem>, String> {
         let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
         Ok(entries
@@ -763,8 +767,9 @@ pub trait Platform: Send + Sync {
         tracing::info!("revealing {path:?} is not supported on this platform");
     }
     /// The shell's icon for a file, folder or drive, `px` physical px square (a `.lnk` shows
-    /// its target's icon); `None` where it has none or the platform has no shell. It may be
-    /// slow, so the bar asks for it on a worker thread.
+    /// its target's icon); `None` where it has none or the platform has no shell, and while the
+    /// OS removes, locks or dismounts its drive. It may be slow, so the bar asks for it on a
+    /// worker thread.
     fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
         let _ = (path, px);
         None
@@ -782,9 +787,10 @@ pub trait Platform: Send + Sync {
         let _ = changed;
         None
     }
-    /// What the Recycle Bin holds on all drives, for the `recycle-bin` topic; why not (the
-    /// shell's message) when it cannot be read. It may take a while with many items, so it is
-    /// read off the sampler thread.
+    /// What the Recycle Bin holds on the fixed drives, for the `recycle-bin` topic: a drive
+    /// whose bin cannot be read, or that the OS is removing, is left out; why not (the shell's
+    /// message) when no bin can be read. It may take a while with many items, so it is read off
+    /// the sampler thread.
     fn recycle_bin(&self) -> Result<RecycleBin, String> {
         Err(UNSUPPORTED.into())
     }

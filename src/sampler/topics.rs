@@ -21,7 +21,7 @@ pub enum Topic {
     Path(String),
     /// `volumes`: the drives; also pushed when one arrives or goes.
     Volumes,
-    /// `recycle-bin`: what the Recycle Bin holds on all drives.
+    /// `recycle-bin`: what the Recycle Bin holds on the fixed drives.
     RecycleBin,
     /// `battery/<i>`: one battery by its place in the driver's list.
     Battery(u32),
