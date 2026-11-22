@@ -21,43 +21,51 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::platform::guard::guard;
 
-/// The bar window, where the threads that watch after it was created hand their close requests;
-/// 0 until then.
+/// The bar window, where the threads hand their close requests; 0 until it exists.
 static BAR: AtomicIsize = AtomicIsize::new(0);
 
+/// Where a thread hands its close requests.
+#[derive(Clone, Copy)]
+enum Target {
+    /// The bar window, as it is when a request comes: a thread may watch before it exists (the
+    /// drives thread starts when the machine defaults list the drives).
+    Bar,
+    /// This window (the tests').
+    #[cfg(test)]
+    Window(isize),
+}
+
 thread_local! {
-    /// Where this thread hands its close requests; 0 while it does not watch.
-    static TARGET: Cell<isize> = const { Cell::new(0) };
+    /// Where this thread hands its close requests; `None` while it does not watch.
+    static TARGET: Cell<Option<Target>> = const { Cell::new(None) };
 }
 
 /// The bar window was created on this thread: close requests to the thread's other windows, and
-/// to those of the threads that watch from now on, go to it.
+/// to those of the threads that watch, go to it.
 pub(super) fn bar_created(bar: HWND) {
     BAR.store(bar.0 as isize, Ordering::SeqCst);
-    watch(bar);
+    watch(Target::Bar);
 }
 
-/// Hands a `WM_CLOSE` posted to any of this thread's windows to the bar window, if it exists.
+/// Hands a `WM_CLOSE` posted to any of this thread's windows to the bar window from now on. One
+/// that comes before the bar window exists reaches its window as usual.
 pub(crate) fn watch_for_bar() {
-    let bar = BAR.load(Ordering::SeqCst);
-    if bar != 0 {
-        watch(HWND(bar as *mut c_void));
-    }
+    watch(Target::Bar);
 }
 
-/// From now on, a `WM_CLOSE` posted to one of this thread's windows other than `to` goes to `to`
-/// instead, and the window it was posted to gets nothing (`WM_NULL`). Once per thread; the hook
-/// lasts as long as the thread.
-fn watch(to: HWND) {
-    if TARGET.get() != 0 {
+/// From now on, a `WM_CLOSE` posted to one of this thread's windows other than the target goes to
+/// the target instead, and the window it was posted to gets nothing (`WM_NULL`). Once per thread;
+/// the hook lasts as long as the thread.
+fn watch(target: Target) {
+    if TARGET.get().is_some() {
         return;
     }
-    TARGET.set(to.0 as isize);
+    TARGET.set(Some(target));
     // SAFETY: a hook for this thread only, whose procedure is in this module (no module handle).
     let hook =
         unsafe { SetWindowsHookExW(WH_GETMESSAGE, Some(get_message), None, GetCurrentThreadId()) };
     if let Err(e) = hook {
-        TARGET.set(0);
+        TARGET.set(None);
         tracing::warn!("close requests to this thread's windows are not watched: {e}");
     }
 }
@@ -81,8 +89,16 @@ unsafe extern "system" fn get_message(code: i32, wparam: WPARAM, lparam: LPARAM)
 
 /// Hands `msg` to this thread's target when it is a close request to another window.
 fn hand_over(msg: &mut MSG) {
-    let to = TARGET.get();
-    if msg.message != WM_CLOSE || msg.hwnd.is_invalid() || msg.hwnd.0 as isize == to || to == 0 {
+    if msg.message != WM_CLOSE || msg.hwnd.is_invalid() {
+        return;
+    }
+    let to = match TARGET.get() {
+        Some(Target::Bar) => BAR.load(Ordering::SeqCst),
+        #[cfg(test)]
+        Some(Target::Window(window)) => window,
+        None => 0,
+    };
+    if to == 0 || msg.hwnd.0 as isize == to {
         return;
     }
     let target = HWND(to as *mut c_void);
@@ -117,7 +133,7 @@ mod tests {
     };
     use windows::core::{PCWSTR, w};
 
-    use super::watch;
+    use super::{Target, watch};
 
     /// The `WM_CLOSE`s the target window received.
     static RECEIVED: AtomicU32 = AtomicU32::new(0);
@@ -199,7 +215,7 @@ mod tests {
     fn a_close_request_posted_to_another_window_goes_to_the_target() {
         let target = window(w!("InfodockTest.CloseTarget"), Some(target_proc));
         let other = window(w!("InfodockTest.CloseOther"), Some(plain_proc));
-        watch(target);
+        watch(Target::Window(target.0 as isize));
 
         // SAFETY: posting to this thread's own windows.
         unsafe { PostMessageW(Some(other), WM_CLOSE, WPARAM(0), LPARAM(0)) }.expect("posted");

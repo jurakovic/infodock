@@ -247,8 +247,8 @@ unsafe extern "system" fn window_proc(
                 // TRUE: a removal Windows asks about may go on.
                 LRESULT(1)
             }
-            // The window lives as long as the process. A posted WM_CLOSE (`taskkill`) went to
-            // the bar window instead (`close.rs`), and one sent here is ignored.
+            // The window lives as long as the process. A posted WM_CLOSE (`taskkill`) goes to the
+            // bar window once that exists (`close.rs`); one that reaches this window is ignored.
             WM_CLOSE => LRESULT(0),
             // SAFETY: default processing for our own window.
             _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },

@@ -1235,8 +1235,8 @@ pub fn register_app_id(identifier: &str, display_name: &str) {
 }
 
 /// Makes a `WM_CLOSE` posted to any of this thread's windows, as `taskkill` posts one, a request
-/// to quit, handed to the bar window. Call once the bar exists, on the main thread; the bar and
-/// drives threads do it for theirs.
+/// to quit, handed to the bar window once it exists. Call on the main thread; the bar and drives
+/// threads do it for theirs.
 pub fn watch_close_requests() {
     #[cfg(windows)]
     windows::close::watch_for_bar();
