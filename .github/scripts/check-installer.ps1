@@ -1,7 +1,9 @@
 # Checks the NSIS installer: it asks for no elevation,
 # installs silently per user (no Program Files, no HKLM), with the Start Menu shortcut carrying
 # the AppUserModelID, and starts the app after installing (/R). The app's first run takes an
-# existing sign-in entry for a missing exe into its setting and points it at the installed exe.
+# existing sign-in entry for a missing exe into its setting and points it at the installed exe,
+# and quits within 10 s of a taskkill without /f while its welcome page is open (one that has to
+# be killed lists its windows and fails).
 # The uninstaller removes the app, its shortcuts, its registration (the install
 # location under HKCU too), the sign-in entry and Task Manager's mark for it. A second
 # silent install with /AUTOSTART writes the sign-in entry for the installed exe and clears Task
@@ -35,6 +37,43 @@ public static class InstallerWindow {
         Rect r;
         if (!GetWindowRect(window, out r)) { return null; }
         return new int[] { r.Left, r.Top, r.Right, r.Bottom };
+    }
+}
+'@
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class AppWindows {
+    delegate bool EnumProc(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumProc proc, IntPtr data);
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassNameW(IntPtr window, StringBuilder name, int size);
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr window, uint relation);
+
+    // The top-level windows of process `id`, the top of the z-order first.
+    public static string[] Of(uint id) {
+        var found = new List<string>();
+        EnumWindows((window, data) => {
+            uint process;
+            uint thread = GetWindowThreadProcessId(window, out process);
+            if (process == id) {
+                var name = new StringBuilder(256);
+                GetClassNameW(window, name, name.Capacity);
+                found.Add(string.Format("{0} (thread {1}{2}{3})", name, thread,
+                    IsWindowVisible(window) ? ", visible" : "",
+                    GetWindow(window, 4 /* GW_OWNER */) != IntPtr.Zero ? ", owned" : ""));
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found.ToArray();
     }
 }
 '@
@@ -204,13 +243,16 @@ Check ([bool] (Get-InstalledApp)) 'the installed app keeps running'
 $entry = Get-RunEntry
 Check ($entry -eq "`"$exe`"") "the first run took the sign-in entry and points it at the installed app (got '$entry')"
 
-# Graceful quit, so the config is written.
+# Graceful quit, with the welcome page open, so the config is written.
 foreach ($process in @(Get-InstalledApp)) {
     & taskkill.exe /pid $process.Id | Out-Null
-    if (-not $process.WaitForExit(10000)) {
-        Write-Warning 'Infodock did not quit within 10 s; killing it'
+    $quit = $process.WaitForExit(10000)
+    if (-not $quit) {
+        Write-Host "Infodock's windows, the top of the z-order first:"
+        [AppWindows]::Of([uint32]$process.Id) | ForEach-Object { Write-Host "  $_" }
         & taskkill.exe /f /t /pid $process.Id | Out-Null
     }
+    Check $quit 'the installed app quits within 10 s of a taskkill without /f'
 }
 $config = Join-Path $configDir 'config.json'
 $autostart = (Test-Path $config) -and ((Get-Content $config -Raw | ConvertFrom-Json).settings.autostart -eq $true)

@@ -5,12 +5,14 @@
 # which the app logs, of the first run (cold) and the measured run (warm). Adds the times the
 # budget tests recorded (`target/budgets/*.json`, `cargo test budget_ -- --ignored`) and the
 # memory the app logged itself (at the bar's first frame, 10 s after Settings opened and
-# closed). Also saves screenshots, quits the app gracefully and prints its log. Writes summary
-# tables to the job summary.
+# closed). Also saves screenshots and prints the app's log. Writes summary tables to the job
+# summary.
 #
 # The first run opens the welcome page: a run before the measured one measures it
 # (reported, not enforced) and closes it, which ends the first run, so the measured run starts
-# with the bar alone.
+# with the bar alone. Restart Manager closes the first run, as an installer that uses it would;
+# the measured run is quit with taskkill without /f. Each must quit within 10 s: one that has to
+# be killed lists its windows and is a failure.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -21,7 +23,8 @@ param(
     [int] $CpuSeconds = 60,
     [int] $ColdStartBudgetMs = 500,
     [int] $WarmStartBudgetMs = 300,
-    # Fail the step when a measurement without Settings is over budget or missing.
+    # Fail the step when a measurement without Settings is over budget or missing, or when the
+    # app had to be killed.
     [switch] $Enforce
 )
 # The records the budget tests write, in the order INTERNALS.md, Budgets lists them.
@@ -38,6 +41,68 @@ public static class User32 {
     public static extern IntPtr FindWindowW(string cls, string title);
     [DllImport("user32.dll")]
     public static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+}
+'@
+Add-Type @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class RestartManager {
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmStartSession(out uint session, int flags, StringBuilder key);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmRegisterResources(uint session, uint files, string[] names, uint apps, IntPtr processes, uint services, string[] serviceNames);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmShutdown(uint session, uint flags, IntPtr progress);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmEndSession(uint session);
+
+    // Asks the apps that have `file` open to close, without forcing them, as an installer that
+    // replaces the file does; 0 once they closed, else a Win32 error.
+    public static int Shutdown(string file) {
+        uint session;
+        var key = new StringBuilder(33); // CCH_RM_SESSION_KEY + 1
+        int error = RmStartSession(out session, 0, key);
+        if (error != 0) { return error; }
+        try {
+            error = RmRegisterResources(session, 1, new[] { file }, 0, IntPtr.Zero, 0, null);
+            return error != 0 ? error : RmShutdown(session, 0, IntPtr.Zero);
+        } finally {
+            RmEndSession(session);
+        }
+    }
+}
+public static class AppWindows {
+    delegate bool EnumProc(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumProc proc, IntPtr data);
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassNameW(IntPtr window, StringBuilder name, int size);
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr window, uint relation);
+
+    // The top-level windows of process `id`, the top of the z-order first.
+    public static string[] Of(uint id) {
+        var found = new List<string>();
+        EnumWindows((window, data) => {
+            uint process;
+            uint thread = GetWindowThreadProcessId(window, out process);
+            if (process == id) {
+                var name = new StringBuilder(256);
+                GetClassNameW(window, name, name.Capacity);
+                found.Add(string.Format("{0} (thread {1}{2}{3})", name, thread,
+                    IsWindowVisible(window) ? ", visible" : "",
+                    GetWindow(window, 4 /* GW_OWNER */) != IntPtr.Zero ? ", owned" : ""));
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found.ToArray();
+    }
 }
 '@
 
@@ -89,15 +154,37 @@ function Close-Settings {
     return $true
 }
 
-# Graceful quit: taskkill without /f, which posts WM_CLOSE to one of the app's windows.
-function Stop-Gracefully($Process) {
-    if (-not $Process.HasExited) {
-        & taskkill.exe /pid $Process.Id | Out-Null
-        if (-not $Process.WaitForExit(10000)) {
-            Write-Warning 'Infodock did not quit within 10 s; killing it'
-            & taskkill.exe /f /t /pid $Process.Id | Out-Null
-        }
+# How each run ended: whether it quit when asked.
+$quits = [System.Collections.Generic.List[object]]::new()
+
+# Waits up to 10 s for the app to quit; kills it after listing its windows if it did not.
+function Wait-Quit($Process, [string] $Run) {
+    $quit = $Process.WaitForExit(10000)
+    if (-not $quit) {
+        Write-Warning "Infodock did not quit within 10 s ($Run); killing it. Its windows, the top of the z-order first:"
+        [AppWindows]::Of([uint32]$Process.Id) | ForEach-Object { Write-Host "  $_" }
+        & taskkill.exe /f /t /pid $Process.Id | Out-Null
     }
+    $quits.Add([pscustomobject]@{ Run = $Run; Quit = $quit })
+}
+
+# Graceful quit: taskkill without /f, which posts WM_CLOSE to one of the app's windows.
+function Stop-Gracefully($Process, [string] $Run) {
+    if ($Process.HasExited) { return }
+    & taskkill.exe /pid $Process.Id | Out-Null
+    Wait-Quit $Process $Run
+}
+
+# Restart Manager asks the app to close (WM_QUERYENDSESSION and WM_ENDSESSION, as for a
+# sign-out), as an installer that replaces the exe does.
+function Stop-WithRestartManager($Process, [string] $Run) {
+    if ($Process.HasExited) { return }
+    $code = [RestartManager]::Shutdown((Resolve-Path $Exe).Path)
+    if ($code -ne 0) {
+        Write-Warning "Restart Manager could not close Infodock (error $code)"
+        $Run = "$Run (Restart Manager error $code)"
+    }
+    Wait-Quit $Process $Run
 }
 
 $LogDir = Join-Path $env:LOCALAPPDATA 'app.infodock.desktop\logs'
@@ -157,7 +244,7 @@ try {
     if (-not (Close-Settings)) { Write-Warning 'The welcome page did not open on the first run' }
     Start-Sleep -Seconds 12
 } finally {
-    Stop-Gracefully $first
+    Stop-WithRestartManager $first 'the first run, by Restart Manager'
 }
 $cold = Get-NewStartTime $startTimes
 $startTimes = @(Get-StartTimes)
@@ -192,7 +279,7 @@ try {
     # The app's own reading 10 s after Settings closed may follow the measurement.
     Start-Sleep -Seconds 2
 } finally {
-    Stop-Gracefully $app
+    Stop-Gracefully $app 'the measured run, by taskkill'
     Show-Log
 }
 $warm = Get-NewStartTime $startTimes
@@ -230,6 +317,8 @@ $summary += $times | ForEach-Object {
 }
 if ($cold.Steps) { $summary += @('', "Cold start, ms after the process started: $($cold.Steps)") }
 if ($warm.Steps) { $summary += @('', "Warm start, ms after the process started: $($warm.Steps)") }
+$summary += @('', '### Quitting', '', '| Run | Result |', '|---|---|')
+$summary += $quits | ForEach-Object { "| $($_.Run) | $(if ($_.Quit) { 'quit within 10 s' } else { '**killed** after 10 s' }) |" }
 if ($env:GITHUB_STEP_SUMMARY) { $summary -join "`n" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY }
 $summary -join "`n" | Write-Host
 
@@ -248,7 +337,11 @@ foreach ($time in $times) {
         $problems += "$($time.Label) $($time.Ms) ms is over the $($time.BudgetMs) ms budget"
     }
 }
+$killed = @($quits | Where-Object { -not $_.Quit } | ForEach-Object { $_.Run })
+if ($killed) {
+    $problems += 'Infodock had to be killed: ' + ($killed -join '; ')
+}
 if ($problems) {
-    $message = 'Budgets missed: ' + ($problems -join '; ')
+    $message = 'Checks failed: ' + ($problems -join '; ')
     if ($Enforce) { throw $message } else { Write-Warning $message }
 }
