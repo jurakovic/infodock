@@ -4,7 +4,7 @@
 //! fails quietly: the calls run with critical-error dialogs turned off for the thread. Labels
 //! are read only from local drives that answer at once: a network drive whose server is away
 //! would block for the SMB timeout, and an optical drive may spin up. Folder listings
-//! and path checks run the same way. Every reading of a drive passes the drive gate
+//! and path checks run the same way. Each of these readings passes the drive gate
 //! (`drives.rs`), so none starts while Windows removes, locks or dismounts the drive.
 
 use windows::Win32::Foundation::ERROR_NOT_READY;
