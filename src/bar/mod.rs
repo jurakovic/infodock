@@ -57,6 +57,10 @@ pub trait BarHost: Send + Sync {
     /// Quits the app: the tray's or the menu's *Quit*, or a close request
     /// ([`UiEvent::CloseRequested`](crate::platform::UiEvent::CloseRequested)).
     fn quit(&self);
+    /// The session ends (sign-out, shutdown) or Restart Manager closes the app: the app cleans
+    /// up before this returns, since Windows may end the process then, and quits. Called on the
+    /// bar thread, from its window rather than the bar logic, which may be busy.
+    fn session_ending(&self);
     /// A second launch asked this instance to show itself.
     fn activate(&self);
     fn bar_visible(&self) -> bool;
@@ -144,16 +148,20 @@ impl BarController {
         let (config, revision) = store.get_revised();
         let settings = config.settings.clone();
         let (commands, queue) = mpsc::channel();
-        let thread = platform::start_bar_thread(Box::new(move |waker| {
-            Box::new(BarLogic::new(
-                (config, revision),
-                platform,
-                queue,
-                host,
-                waker,
-                skins,
-            ))
-        }))?;
+        let ending = Arc::clone(&host);
+        let thread = platform::start_bar_thread(
+            Box::new(move |waker| {
+                Box::new(BarLogic::new(
+                    (config, revision),
+                    platform,
+                    queue,
+                    host,
+                    waker,
+                    skins,
+                ))
+            }),
+            Box::new(move || ending.session_ending()),
+        )?;
 
         let controller = Arc::new(Self {
             appbar: thread.appbar,

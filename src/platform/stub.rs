@@ -8,7 +8,7 @@ use std::sync::{Arc, mpsc};
 use super::{
     AppBar, AppDirs, BarHandler, BarThread, BarWindow, Canvas, Capabilities, DockRequest,
     HandlerFactory, Instance, InstanceGuard, MenuEntry, MonitorInfo, OsAppearance, Platform,
-    PlatformError, Rect, TimerId, TrayIcon, UiEvent, UiWaker,
+    PlatformError, Rect, SessionEnd, TimerId, TrayIcon, UiEvent, UiWaker,
 };
 use crate::config::model::Material;
 
@@ -123,7 +123,10 @@ impl TrayIcon for NoTray {
     fn remove(&self) {}
 }
 
-pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, PlatformError> {
+pub fn start_bar_thread(
+    make_handler: HandlerFactory,
+    _session_end: SessionEnd,
+) -> Result<BarThread, PlatformError> {
     let (wake_tx, wake_rx) = mpsc::channel::<()>();
     let waker = UiWaker::new(move || {
         let _ = wake_tx.send(());

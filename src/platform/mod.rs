@@ -1600,6 +1600,11 @@ impl UiWaker {
 /// loader).
 pub type HandlerFactory = Box<dyn FnOnce(UiWaker) -> Box<dyn BarHandler> + Send>;
 
+/// Runs on the bar thread when the session ends (sign-out, shutdown) or Restart Manager closes
+/// the app, at once, even while the handler is busy (a menu is open). Windows may end the process
+/// as soon as it returns.
+pub type SessionEnd = Box<dyn Fn() + Send>;
+
 /// Handles to a running bar thread, usable from any thread.
 pub struct BarThread {
     pub appbar: Arc<dyn AppBar>,
@@ -1608,13 +1613,17 @@ pub struct BarThread {
 }
 
 /// Starts the bar thread: creates the bar window and its AppBar, builds the handler with
-/// `make_handler` on that thread and runs the message loop. Returns once the window exists; the
-/// window becomes visible with the first [`AppBar::configure`].
-pub fn start_bar_thread(make_handler: HandlerFactory) -> Result<BarThread, PlatformError> {
+/// `make_handler` on that thread and runs the message loop; `session_end` runs there when the
+/// session ends. Returns once the window exists; the window becomes visible with the first
+/// [`AppBar::configure`].
+pub fn start_bar_thread(
+    make_handler: HandlerFactory,
+    session_end: SessionEnd,
+) -> Result<BarThread, PlatformError> {
     #[cfg(windows)]
-    return windows::window::start_bar_thread(make_handler);
+    return windows::window::start_bar_thread(make_handler, session_end);
     #[cfg(not(windows))]
-    return stub::start_bar_thread(make_handler);
+    return stub::start_bar_thread(make_handler, session_end);
 }
 
 #[cfg(test)]

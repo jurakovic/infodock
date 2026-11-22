@@ -190,6 +190,9 @@ impl BarHost for FakeHost {
     fn quit(&self) {
         self.log("quit".into());
     }
+    fn session_ending(&self) {
+        self.log("session ending".into());
+    }
     fn activate(&self) {}
     fn bar_visible(&self) -> bool {
         true

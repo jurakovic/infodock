@@ -723,12 +723,15 @@ mod tests {
     fn ui_automation_walks_the_bars_sensors_and_clicks_them() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let handler_seen = Arc::clone(&seen);
-        crate::platform::start_bar_thread(Box::new(move |_| {
-            Box::new(Described {
-                seen: handler_seen,
-                marked: None,
-            })
-        }))
+        crate::platform::start_bar_thread(
+            Box::new(move |_| {
+                Box::new(Described {
+                    seen: handler_seen,
+                    marked: None,
+                })
+            }),
+            Box::new(|| {}),
+        )
         .expect("the bar thread");
         // SAFETY: plain UI Automation client calls on this test's thread.
         unsafe {

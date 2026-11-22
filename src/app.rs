@@ -163,6 +163,14 @@ impl App {
         });
     }
 
+    /// The session ends or Restart Manager closes the app: Windows may end the process as soon
+    /// as the caller (the bar window) answers, so the cleanup runs now, on the calling thread,
+    /// and then the app quits. Settings' place is not kept.
+    fn end_session(self: &Arc<Self>) {
+        self.shutdown();
+        self.request_quit();
+    }
+
     /// Releases the reserved screen space and the tray icon, writes pending config changes and
     /// closes the log.
     /// Runs once, whichever path ends the app.
@@ -324,6 +332,10 @@ pub struct AppHost(pub Arc<App>);
 impl BarHost for AppHost {
     fn quit(&self) {
         self.0.request_quit();
+    }
+
+    fn session_ending(&self) {
+        self.0.end_session();
     }
 
     fn activate(&self) {
