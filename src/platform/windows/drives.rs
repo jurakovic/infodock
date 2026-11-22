@@ -438,9 +438,10 @@ fn register(hwnd: HWND, letter: char) -> Option<Watched> {
     }
 }
 
-/// Lets go of the drive of `notify` for `why`: closes it in the gate, waits for its readings and
-/// closes the handle, before the answer lets Windows go on. The registration stays, to hear how
-/// it ends, as Windows asks.
+/// Lets go of the drive of `notify` for `why`: closes it in the gate, waits for the other
+/// threads' readings of it and closes the handle, before the answer lets Windows go on. A
+/// reading of it by the job this call came inside still runs then. The registration stays, to
+/// hear how it ends, as Windows asks.
 fn let_go(notify: HDEVNOTIFY, why: &str) {
     let found = WATCHED.with_borrow_mut(|watched| {
         let drive = watched.iter_mut().find(|drive| drive.notify == notify)?;
