@@ -4,12 +4,14 @@
 //! system drive, registered for the drive's device events on a hidden window. On a request it
 //! closes the drive in the gate ([`DRIVES`]), waits for the readings running there, closes its
 //! handle and says yes; when the request fails or ends, it watches the drive again. It answers
-//! on a thread of its own, whatever the bar thread is doing.
+//! on a thread of its own, whatever the bar thread is doing. Jobs handed to it with [`run`] (the
+//! Recycle Bin's readings) run between its answers, so no answer comes while a job reads a drive.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::ffi::c_void;
 use std::mem::{offset_of, size_of};
 use std::sync::OnceLock;
-use std::sync::mpsc;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use windows::Win32::Foundation::{HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
@@ -20,8 +22,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DEV_BROADCAST_HDR, DEVICE_NOTIFY_WINDOW_HANDLE, DefWindowProcW, DispatchMessageW,
     GUID_IO_VOLUME_DISMOUNT, GUID_IO_VOLUME_DISMOUNT_FAILED, GUID_IO_VOLUME_LOCK,
     GUID_IO_VOLUME_LOCK_FAILED, GUID_IO_VOLUME_MOUNT, GUID_IO_VOLUME_UNLOCK, GetMessageW,
-    HDEVNOTIFY, MSG, RegisterClassExW, RegisterDeviceNotificationW, UnregisterDeviceNotification,
-    WM_CLOSE, WM_DEVICECHANGE, WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_POPUP,
+    HDEVNOTIFY, MSG, PostMessageW, RegisterClassExW, RegisterDeviceNotificationW,
+    UnregisterDeviceNotification, WM_APP, WM_CLOSE, WM_DEVICECHANGE, WNDCLASSEXW, WS_EX_TOOLWINDOW,
+    WS_POPUP,
 };
 use windows::core::{GUID, PCWSTR, w};
 
@@ -33,6 +36,8 @@ use crate::platform::guard::guard;
 
 /// Not `Infodock.Bar`, which the single-instance check looks for.
 const CLASS_NAME: PCWSTR = w!("Infodock.Drives");
+/// Private: jobs are waiting ([`run`]).
+const WM_JOBS: u32 = WM_APP + 1;
 /// How long a request waits for the readings running on its drive.
 const READINGS_WAIT: Duration = Duration::from_secs(2);
 
@@ -40,14 +45,49 @@ const READINGS_WAIT: Duration = Duration::from_secs(2);
 /// through [`enter`].
 static DRIVES: DriveGate = DriveGate::new();
 
-/// The drives thread's window, once it is created; `None` if it could not be.
-static WINDOW: OnceLock<Option<isize>> = OnceLock::new();
+type Job = Box<dyn FnOnce() + Send>;
+
+/// The drives thread: its window, and the jobs it is handed.
+struct Thread {
+    hwnd: isize,
+    jobs: Sender<Job>,
+}
+
+/// Started on first use; `None` if it could not start.
+static THREAD: OnceLock<Option<Thread>> = OnceLock::new();
+
+fn thread() -> Option<&'static Thread> {
+    THREAD.get_or_init(start).as_ref()
+}
 
 /// A reading of `path`'s drive (see [`DriveGate::enter`]); `None` while Windows takes the drive.
 /// The first call starts the drives thread.
 pub(super) fn enter(path: &str) -> Option<Entry<'static>> {
-    WINDOW.get_or_init(start);
+    thread();
     DRIVES.enter(path)
+}
+
+/// Runs `job` on the drives thread and waits for its answer; `None` if the thread could not
+/// start, or the job gave no answer (it panicked). Not for the drives thread itself, which
+/// would wait for itself.
+pub(super) fn run<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let thread = thread()?;
+    let (answer, answered) = mpsc::channel();
+    let job: Job = Box::new(move || {
+        let _ = answer.send(job());
+    });
+    thread.jobs.send(job).ok()?;
+    // SAFETY: posting to the drives window, which lives as long as the process.
+    unsafe {
+        PostMessageW(
+            Some(HWND(thread.hwnd as *mut c_void)),
+            WM_JOBS,
+            WPARAM(0),
+            LPARAM(0),
+        )
+    }
+    .ok()?;
+    answered.recv().ok()
 }
 
 /// A watched drive.
@@ -69,16 +109,25 @@ impl Drop for Watched {
 thread_local! {
     /// The watched drives, on the drives thread.
     static WATCHED: RefCell<Vec<Watched>> = const { RefCell::new(Vec::new()) };
+    /// The jobs handed to the drives thread, there.
+    static JOBS: RefCell<Option<Receiver<Job>>> = const { RefCell::new(None) };
+    /// A job runs: a request that comes meanwhile (a call in the job handled messages) cannot
+    /// wait for the job's own readings.
+    static IN_JOB: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Starts the drives thread and returns its window once it is created.
-fn start() -> Option<isize> {
+/// Starts the drives thread and returns it once its window is created.
+fn start() -> Option<Thread> {
+    let (jobs, queue) = mpsc::channel::<Job>();
     let (ready, created) = mpsc::channel();
     let spawned = std::thread::Builder::new()
         .name("drives".into())
         .spawn(move || {
+            // Its jobs call into the shell.
+            super::com::enter();
             // A drive without a medium brings up no dialog.
             let _quiet = QuietErrors::new();
+            JOBS.with_borrow_mut(|jobs| *jobs = Some(queue));
             let hwnd = match create_window() {
                 Ok(hwnd) => hwnd,
                 Err(e) => {
@@ -102,7 +151,8 @@ fn start() -> Option<isize> {
         tracing::warn!("drives are not watched: the thread did not start: {e}");
         return None;
     }
-    created.recv().ok().flatten()
+    let hwnd = created.recv().ok().flatten()?;
+    Some(Thread { hwnd, jobs })
 }
 
 /// The hidden window: top-level, so volume broadcasts reach it, and never shown.
@@ -148,6 +198,10 @@ unsafe extern "system" fn window_proc(
         // SAFETY: default processing for the message whose handling panicked.
         || unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
         || match msg {
+            WM_JOBS => {
+                run_jobs();
+                LRESULT(0)
+            }
             WM_DEVICECHANGE => {
                 device_change(hwnd, wparam, lparam);
                 // TRUE: a removal Windows asks about may go on.
@@ -160,6 +214,18 @@ unsafe extern "system" fn window_proc(
             _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
         },
     )
+}
+
+/// Runs the jobs handed over, one after the other. A job that handles messages is not
+/// interrupted by the next: this loop takes it when the job is done.
+fn run_jobs() {
+    if IN_JOB.replace(true) {
+        return;
+    }
+    while let Some(job) = JOBS.with_borrow(|jobs| jobs.as_ref()?.try_recv().ok()) {
+        guard("a job on the drives thread", || (), job);
+    }
+    IN_JOB.set(false);
 }
 
 /// What Windows says of a watched drive.
@@ -344,7 +410,13 @@ fn let_go(notify: HDEVNOTIFY, why: &str) {
     let Some((letter, device)) = found else {
         return;
     };
-    let finished = DRIVES.close(letter, READINGS_WAIT);
+    // A job's readings, below this call on the same thread, cannot end while it waits.
+    let wait = if IN_JOB.get() {
+        Duration::ZERO
+    } else {
+        READINGS_WAIT
+    };
+    let finished = DRIVES.close(letter, wait);
     drop(device);
     if finished {
         tracing::info!("let go of {letter}: for {why}");
@@ -393,7 +465,109 @@ fn gone(notify: HDEVNOTIFY) {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
+    use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+    use windows::Win32::System::Ioctl::{FSCTL_LOCK_VOLUME, FSCTL_UNLOCK_VOLUME};
+
     use super::*;
+
+    /// The watched drives, read on the drives thread: each letter, whether its handle is open,
+    /// and its registration.
+    fn watched() -> Vec<(char, bool, usize)> {
+        run(|| {
+            WATCHED.with_borrow(|watched| {
+                watched
+                    .iter()
+                    .map(|d| (d.letter, d.device.is_some(), d.notify.0 as usize))
+                    .collect()
+            })
+        })
+        .expect("the drives thread answers")
+    }
+
+    fn system_letter() -> char {
+        let drive = std::env::var("SystemDrive").expect("SystemDrive");
+        drive_letter(&drive).expect("a drive letter")
+    }
+
+    /// The fixed drives but the system drive.
+    fn other_fixed() -> Vec<char> {
+        disk::roots()
+            .iter()
+            .filter(|root| disk::kind(root) == DriveKind::Fixed && !disk::is_system(root))
+            .filter_map(|root| drive_letter(root))
+            .collect()
+    }
+
+    /// Runs on the Windows CI runner (`cargo test -- --ignored`), which has `D:` beside the
+    /// system drive.
+    #[test]
+    #[ignore = "watches this machine's drives"]
+    fn every_fixed_drive_but_the_system_drive_is_watched() {
+        let others = other_fixed();
+        assert!(!others.is_empty(), "a fixed drive besides the system drive");
+        let watched = watched();
+        for letter in &others {
+            assert!(
+                watched.iter().any(|d| d.0 == *letter && d.1),
+                "{letter}: in {watched:?}"
+            );
+        }
+        let system = system_letter();
+        assert!(watched.iter().all(|d| d.0 != system), "{watched:?}");
+    }
+
+    /// Runs on the Windows CI runner as an administrator, which may open a volume to lock it.
+    /// The runner's checkout is on `D:`, so the lock fails: the watch lets go of the drive
+    /// before the lock is tried, waiting for a reading that ends 300 ms later, and the failure
+    /// watches the drive again, as an unlock would.
+    #[test]
+    #[ignore = "locks a drive of this machine"]
+    fn a_lock_lets_go_of_the_drive_and_its_end_watches_it_again() {
+        let letter = *other_fixed()
+            .first()
+            .expect("a fixed drive besides the system drive");
+        let root = format!("{letter}:\\");
+        let before = watched();
+        assert!(
+            before.iter().any(|d| d.0 == letter && d.1),
+            "{letter}: is watched: {before:?}"
+        );
+        let volume =
+            Device::open_volume(&root, GENERIC_READ.0 | GENERIC_WRITE.0).expect("the volume opens");
+        let reading = DRIVES.enter(&root).expect("open");
+        let (locked, took) = std::thread::scope(|s| {
+            s.spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                drop(reading);
+            });
+            let started = Instant::now();
+            let locked = volume.control(FSCTL_LOCK_VOLUME, None, None);
+            (locked, started.elapsed())
+        });
+        if locked {
+            volume.control(FSCTL_UNLOCK_VOLUME, None, None);
+        }
+        drop(volume);
+        assert!(
+            took >= Duration::from_millis(250),
+            "the lock waited for the reading on {letter}: only {took:?} (locked: {locked})"
+        );
+        // Let go of meanwhile, so watched again: the handle open, the gate too.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let now = watched();
+            if now.iter().any(|d| d.0 == letter && d.1) && DRIVES.enter(&root).is_some() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{letter}: not watched again (locked: {locked}): {now:?}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
 
     #[test]
     fn what_each_event_asks() {

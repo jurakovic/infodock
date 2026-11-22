@@ -18,7 +18,8 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, Result, w};
 
-use crate::platform::{Launch, OwnerWindow, PathRequest, RecycleBin, SaveRequest};
+use super::disk;
+use crate::platform::{DriveKind, Launch, OwnerWindow, PathRequest, RecycleBin, SaveRequest};
 
 /// Starts `launch` as Explorer would, on a short-lived thread: the shell can take a moment (and
 /// show its own message when the target is missing, or ask for elevation), and the bar thread
@@ -91,16 +92,56 @@ pub fn has_recycle_bin() -> bool {
     }
 }
 
-/// What the Recycle Bin holds on all drives (`SHQueryRecycleBinW` without a root); the
-/// shell's message if it cannot say.
+/// What the Recycle Bin holds on all fixed drives, read drive by drive on the drives thread
+/// (`drives.rs`): a drive Windows is taking is skipped, whatever the shell keeps of a bin lives
+/// on a thread that handles messages, and no answer to Windows comes while a bin is read. A
+/// drive whose bin cannot be read is left out; the shell's message is returned only when no
+/// bin can be read.
 pub fn recycle_bin() -> std::result::Result<RecycleBin, String> {
+    // Read here when the drives thread cannot start.
+    super::drives::run(bins).unwrap_or_else(bins)
+}
+
+/// The sum of the fixed drives' bins, each read while its drive is open in the gate.
+fn bins() -> std::result::Result<RecycleBin, String> {
     super::com::enter();
+    let mut total = RecycleBin::default();
+    let (mut read, mut failed) = (0, None);
+    for root in disk::roots() {
+        let Some(_reading) = super::drives::enter(&root) else {
+            continue;
+        };
+        if disk::kind(&root) != DriveKind::Fixed {
+            continue;
+        }
+        let wide = HSTRING::from(root.as_str());
+        match query(PCWSTR(wide.as_ptr())) {
+            Ok(bin) => {
+                total.items = total.items.saturating_add(bin.items);
+                total.bytes = total.bytes.saturating_add(bin.bytes);
+                read += 1;
+            }
+            Err(e) => {
+                tracing::debug!("the Recycle Bin of {root} cannot be read: {e}");
+                failed.get_or_insert(e);
+            }
+        }
+    }
+    match failed {
+        Some(e) if read == 0 => Err(e),
+        _ => Ok(total),
+    }
+}
+
+/// What the Recycle Bin of the drive at `root` holds (`SHQueryRecycleBinW`); null for every
+/// drive's.
+fn query(root: PCWSTR) -> std::result::Result<RecycleBin, String> {
     let mut info = SHQUERYRBINFO {
         cbSize: size_of::<SHQUERYRBINFO>() as u32,
         ..Default::default()
     };
-    // SAFETY: `info` is initialised with its size; a null root means all drives.
-    unsafe { SHQueryRecycleBinW(PCWSTR::null(), &mut info) }.map_err(|e| e.message())?;
+    // SAFETY: `info` is initialised with its size; `root` is a NUL-terminated path or null.
+    unsafe { SHQueryRecycleBinW(root, &mut info) }.map_err(|e| e.message())?;
     Ok(RecycleBin {
         items: u64::try_from(info.i64NumItems).unwrap_or(0),
         bytes: u64::try_from(info.i64Size).unwrap_or(0),
@@ -289,5 +330,24 @@ fn show_save(owner: Option<OwnerWindow>, request: &SaveRequest) -> Result<Option
         // One-based.
         let index = dialog.GetFileTypeIndex()?.saturating_sub(1) as usize;
         Ok(item_path(&dialog.GetResult()?)?.map(|path| (path, index)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs on the Windows CI runner (`cargo test -- --ignored`).
+    #[test]
+    #[ignore = "reads this machine's Recycle Bin"]
+    fn the_bins_of_the_drives_add_up_to_the_whole() {
+        let (by_drive, whole) = std::thread::scope(|s| {
+            let whole = s.spawn(|| {
+                super::super::com::enter();
+                query(PCWSTR::null())
+            });
+            (recycle_bin(), whole.join().expect("no panic"))
+        });
+        assert_eq!(by_drive.expect("readable"), whole.expect("readable"));
     }
 }
