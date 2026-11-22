@@ -341,6 +341,10 @@ mod tests {
     #[test]
     #[ignore = "reads this machine's Recycle Bin"]
     fn the_bins_of_the_drives_add_up_to_the_whole() {
+        // A drive the drives tests lock would be skipped.
+        let _alone = super::super::drives::ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (by_drive, whole) = std::thread::scope(|s| {
             let whole = s.spawn(|| {
                 super::super::com::enter();

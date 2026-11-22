@@ -45,6 +45,11 @@ const READINGS_WAIT: Duration = Duration::from_secs(2);
 /// through [`enter`].
 static DRIVES: DriveGate = DriveGate::new();
 
+/// Held by the tests that lock a drive, and by those that count on every drive being open
+/// meanwhile, so they run one at a time.
+#[cfg(test)]
+pub(super) static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 type Job = Box<dyn FnOnce() + Send>;
 
 /// The drives thread: its window, and the jobs it is handed.
@@ -505,6 +510,9 @@ mod tests {
     #[test]
     #[ignore = "watches this machine's drives"]
     fn every_fixed_drive_but_the_system_drive_is_watched() {
+        let _alone = ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let others = other_fixed();
         assert!(!others.is_empty(), "a fixed drive besides the system drive");
         let watched = watched();
@@ -525,6 +533,9 @@ mod tests {
     #[test]
     #[ignore = "locks a drive of this machine"]
     fn a_lock_lets_go_of_the_drive_and_its_end_watches_it_again() {
+        let _alone = ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let letter = *other_fixed()
             .first()
             .expect("a fixed drive besides the system drive");
