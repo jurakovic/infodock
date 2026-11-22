@@ -21,7 +21,7 @@ icons/               app and tray icons, the README logo and the installer's ima
 examples/            `icons.rs`: renders the artwork's `.ico`, PNG and BMP files from the SVGs
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
-.github/scripts/     CI helpers (memory, hotkey, Show desktop and installer checks)
+.github/scripts/     CI helpers (memory, hotkey, Show desktop, drive release and installer checks)
 tests/fixtures/      shared test fixtures (legacy XML, skin packs)
 INTERNALS.md         how the code is built, as it is now
 ```
@@ -43,7 +43,7 @@ INTERNALS.md         how the code is built, as it is now
 | Build the exe and installer with a version (Windows, Git Bash) | `./publish.sh build -v 1.0.0-build.1` (`-t false` skips the tests) |
 | The next release's version, from the tags | `./publish.sh version` |
 
-Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `Infodock_v<version>_screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, budget tests and the memory and time check, the hotkey and Show desktop checks, a silent install and uninstall).
+Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path without linking; it needs the `x86_64-pc-windows-msvc` target and `llvm-rc` (installed by the SessionStart hook, together with `libfontconfig-dev` for Slint on Linux). To look at UI changes, render the Settings pages and open the PNGs; the bar renders only on Windows, so look at it in CI's `Infodock_v<version>_screenshots` artifact (the GitHub tools give a download link). Drawing code is tested on Linux against the recording canvas (`platform/recording.rs`). Real Windows behaviour is verified by CI (`.github/workflows/ci.yml`: clippy, tests, `--ignored` integration tests, Settings and bar screenshots, NSIS installer and portable exe, budget tests and the memory and time check, the hotkey, Show desktop and drive release checks, a silent install and uninstall).
 
 ## Gate before every commit
 

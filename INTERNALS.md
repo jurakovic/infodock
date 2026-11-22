@@ -44,7 +44,7 @@ examples/icons.rs    renders the .ico, PNG and BMP files of icons/ from their SV
 resources/           the Windows application manifest
 tests/fixtures/      legacy XML layouts (legacy/), a skin pack (skins/)
 .github/workflows/   ci.yml, publish.yml
-.github/scripts/     CI's memory, time, hotkey, Show desktop and installer checks; the third-party list
+.github/scripts/     CI's memory, time, hotkey, Show desktop, drive release and installer checks; the third-party list
 .cargo/config.toml   the `lint` and `check-win` aliases
 build.rs             compiles the Slint UI and the Windows resources
 publish.sh           versions, builds, packages and releases
@@ -523,7 +523,7 @@ All artwork is Infodock's own, except the Settings navigation's icons (`ui/icons
 | Windows integration | providers on a real machine, locale data, folder listings, links, shell icons, skin packs; the Direct2D renderer drawing the bar and each sensor type to PNG | `cargo test -- --ignored` on Windows; the bar's renders with `cargo test render_bar -- --ignored` |
 | Settings | every page rendered offscreen to PNG and driven with clicks and keys that find their controls by accessible role and name; the accessible names and Tab order; the contract with the window | `cargo test`, the renders with `cargo test render_settings_pages -- --ignored` |
 | Budgets | see [Budgets](#budgets) | `cargo test budget_ -- --ignored --test-threads=1` on Windows; `measure-memory.ps1` |
-| CI checks | the hotkey, Show desktop and the installer | `.github/scripts/` (see [CI](#ci)) |
+| CI checks | the hotkey, Show desktop, releasing a drive Windows locks, and the installer | `.github/scripts/` (see [CI](#ci)) |
 
 Test support:
 
@@ -541,8 +541,9 @@ Test support:
   - `measure-memory.ps1`: memory, idle CPU and the start times, with the budget tests' records and the app's own log lines, in the job summary; fails above a budget or when a measurement is missing. Its first run opens the welcome page and ends the first run, so the measured run starts with the bar alone.
   - `check-hotkey.ps1`: a hotkey another app holds, pressed while Settings records one, with the keyboard hook's trace.
   - `check-show-desktop.ps1`: a bar kept behind the windows beside a maximised window, through Win+D, clicks on the bar, a window back from the taskbar, every window minimised and restored, and the taskbar's far corner; each step records what is at the bar, its topmost flag, the foreground window and a screenshot, and the clicks check that the z-order did not change.
+  - `check-drive-release.ps1`: a 64 MB VHD attached as a fixed NTFS drive with an item in its Recycle Bin, locked and unlocked (`FSCTL_LOCK_VOLUME`, `FSCTL_UNLOCK_VOLUME`) in a tight loop for a minute while the app runs each of three layouts (a Recycle Bin read every 5 s; a Disk for `C:` and Eject USB; both and a Disk Meter for `C:`), after a baseline without the app (the drive locks, and a file held open on it keeps it from locking); a lock that fails means a reading had the drive open. The app's log lines that name the drive are kept. It reports only, and does not fail the build.
   - `check-installer.ps1`: the interactive installer's first pages saved as screenshots, then closed; a silent install without elevation (per user, no Program Files, no `HKLM`), the Start Menu shortcut with its AppUserModelID, the app started (`/R`) and its first run taking an existing sign-in entry; the uninstall removing the app, its shortcuts, its registration, the sign-in entry and Task Manager's mark; a second silent install with `/AUTOSTART` writing the entry, and its uninstall removing it.
-- Artifacts, named like the release files: `Infodock_v<version>_win-x64-setup.exe`, `Infodock_v<version>_win-x64` (the portable exe), `_screenshots`, `_memory-check`, `_show-desktop-check`, `_installer-check`.
+- Artifacts, named like the release files: `Infodock_v<version>_win-x64-setup.exe`, `Infodock_v<version>_win-x64` (the portable exe), `_screenshots`, `_memory-check`, `_show-desktop-check`, `_drive-release-check`, `_installer-check`.
 
 `.github/scripts/third-party.py` writes `assets/third-party.tsv` from `cargo tree --target x86_64-pc-windows-msvc --edges normal,no-proc-macro`: the crates the Windows build links, with their licences.
 
