@@ -170,7 +170,8 @@ try {
     $results['Ctrl+Alt+J kept from the app that holds it'] = $holder.Hotkeys -eq $hotkeysBefore
     $results["Infodock's own hotkey found taken"] = Test-Taken $window 'Ctrl+Alt+Shift+I' @(0x11, 0x12, 0x10, 0x49)
 
-    [Desktop]::PostMessageW($window, 0x0010 <# WM_CLOSE #>, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    # As its close button does: a WM_CLOSE posted to any of the app's windows quits the app.
+    [Desktop]::PostMessageW($window, 0x0112 <# WM_SYSCOMMAND #>, [IntPtr]0xF060 <# SC_CLOSE #>, [IntPtr]::Zero) | Out-Null
     Start-Sleep -Seconds 1
 } catch {
     Write-Warning "The hotkey check could not run: $_"

@@ -1009,7 +1009,7 @@ impl Shared {
                 self.on_pos_changed();
             }
             // Alt+F4 and the system menu's Close must not destroy the bar; quitting is a tray
-            // action. A plain WM_CLOSE (graceful taskkill, Restart Manager) quits the app cleanly.
+            // action. A plain WM_CLOSE (`taskkill` without `/f`) quits the app cleanly.
             WM_SYSCOMMAND if (wparam.0 & 0xFFF0) == SC_CLOSE as usize => return Some(LRESULT(0)),
             // Draw as active even when unfocused, so DWM keeps the Acrylic/Mica backdrop instead
             // of its inactive fallback (the bar is almost never the active window).

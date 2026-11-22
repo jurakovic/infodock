@@ -54,7 +54,8 @@ fn dock_request(s: &Settings, visible: bool) -> DockRequest {
 
 /// What the bar asks of the rest of the app. Called on the bar thread.
 pub trait BarHost: Send + Sync {
-    /// The OS asked the app to close (graceful `taskkill`, Restart Manager).
+    /// Quits the app: the tray's or the menu's *Quit*, or a close request
+    /// ([`UiEvent::CloseRequested`](crate::platform::UiEvent::CloseRequested)).
     fn quit(&self);
     /// A second launch asked this instance to show itself.
     fn activate(&self);

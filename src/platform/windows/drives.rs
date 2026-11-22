@@ -176,6 +176,7 @@ fn start() -> Option<Thread> {
                 }
             };
             let _ = ready.send(Some(hwnd.0 as isize));
+            super::close::watch_for_bar();
             watch(hwnd);
             let mut msg = MSG::default();
             // SAFETY: the standard message loop for this thread's window.
@@ -246,8 +247,8 @@ unsafe extern "system" fn window_proc(
                 // TRUE: a removal Windows asks about may go on.
                 LRESULT(1)
             }
-            // The window lives as long as the process: the WM_CLOSE `taskkill` sends to every
-            // top-level window does not end it (the bar's ends the app).
+            // The window lives as long as the process. A posted WM_CLOSE (`taskkill`) went to
+            // the bar window instead (`close.rs`), and one sent here is ignored.
             WM_CLOSE => LRESULT(0),
             // SAFETY: default processing for our own window.
             _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },

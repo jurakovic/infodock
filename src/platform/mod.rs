@@ -1234,6 +1234,14 @@ pub fn register_app_id(identifier: &str, display_name: &str) {
     let _ = (identifier, display_name);
 }
 
+/// Makes a `WM_CLOSE` posted to any of this thread's windows, as `taskkill` posts one, a request
+/// to quit, handed to the bar window. Call once the bar exists, on the main thread; the bar and
+/// drives threads do it for theirs.
+pub fn watch_close_requests() {
+    #[cfg(windows)]
+    windows::close::watch_for_bar();
+}
+
 /// Asks the running instance to show the bar and open Settings. Waits up to a few
 /// seconds for its bar window to exist.
 pub fn activate_running_instance() {
@@ -1254,7 +1262,8 @@ pub enum UiEvent {
     Fullscreen(bool),
     /// Light/dark mode, accent colour or transparency effects may have changed.
     AppearanceChanged,
-    /// The OS asks the app to close (graceful `taskkill`, Restart Manager).
+    /// The app was asked to close: a `WM_CLOSE` to the bar window, or posted to another of its
+    /// windows (`taskkill` without `/f`).
     CloseRequested,
     /// The system time or time zone changed (`WM_TIMECHANGE`).
     TimeChanged,

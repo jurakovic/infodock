@@ -1054,6 +1054,7 @@ fn run(make_handler: HandlerFactory, ready: mpsc::Sender<Result<BarThread, Platf
         }
     };
     crate::logging::startup_step("window");
+    super::close::bar_created(state.hwnd());
     let (Some(appbar), Some(tray)) = (state.appbar.get().cloned(), state.tray.get().cloned())
     else {
         let _ = ready.send(Err(PlatformError::Os("AppBar or tray missing".into())));

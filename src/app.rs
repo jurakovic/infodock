@@ -34,6 +34,7 @@ pub struct App {
     sampler: Sampler,
     /// The sampler thread until [`App::start_sampler`] starts it.
     pending: Mutex<Option<Pending>>,
+    quitting: AtomicBool,
     shut_down: AtomicBool,
 }
 
@@ -47,6 +48,7 @@ impl App {
             bar: OnceLock::new(),
             sampler,
             pending: Mutex::new(Some(pending)),
+            quitting: AtomicBool::new(false),
             shut_down: AtomicBool::new(false),
         }
     }
@@ -139,8 +141,13 @@ impl App {
     }
 
     /// Ends the event loop from any thread; the main thread then cleans up. If the loop does not
-    /// end in time (or is gone), the process ends here after the same cleanup.
+    /// end in time (or is gone), the process ends here after the same cleanup. Once; a later
+    /// request (a second close request, say) changes nothing.
     fn request_quit(self: &Arc<Self>) {
+        if self.quitting.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        tracing::info!("quitting");
         let queued = slint::invoke_from_event_loop(|| {
             let _ = slint::quit_event_loop();
         })

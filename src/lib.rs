@@ -130,6 +130,8 @@ pub fn run() {
     };
     app.set_bar(bar);
     app.start_sampler();
+    // `taskkill` may post its WM_CLOSE to a window of this thread rather than the bar's.
+    platform::watch_close_requests();
 
     hotkey::init(&app);
     settings::watch(&app);

@@ -4,6 +4,7 @@ pub mod appbar;
 mod autostart;
 mod band;
 mod battery;
+pub(super) mod close;
 mod com;
 mod cpu;
 mod device;

@@ -79,16 +79,17 @@ function Save-Screenshot([string] $Path) {
     $bitmap.Dispose()
 }
 
-# Closes the Settings window as its close button does; $false if it is not open.
+# Closes the Settings window as its close button does (SC_CLOSE, which sends it WM_CLOSE; a
+# WM_CLOSE posted to any of the app's windows quits the app); $false if it is not open.
 function Close-Settings {
     # [NullString]: PowerShell would pass $null to a string parameter as "".
     $settings = [User32]::FindWindowW([NullString]::Value, 'Infodock Settings')
     if ($settings -eq [IntPtr]::Zero) { return $false }
-    [User32]::PostMessageW($settings, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null # WM_CLOSE
+    [User32]::PostMessageW($settings, 0x0112, [IntPtr]0xF060, [IntPtr]::Zero) | Out-Null # WM_SYSCOMMAND, SC_CLOSE
     return $true
 }
 
-# Graceful quit: WM_CLOSE to the app's windows, as Restart Manager or a plain taskkill does.
+# Graceful quit: taskkill without /f, which posts WM_CLOSE to one of the app's windows.
 function Stop-Gracefully($Process) {
     if (-not $Process.HasExited) {
         & taskkill.exe /pid $Process.Id | Out-Null
