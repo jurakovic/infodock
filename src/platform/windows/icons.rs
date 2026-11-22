@@ -1,7 +1,7 @@
 //! Shell icons (`Platform::shell_icon`): the icon Explorer shows for a file, folder or drive, at a
 //! physical size, from `IShellItemImageFactory` (a `.lnk` gives its target's icon). It is
 //! called on the bar's icon worker, so a slow network path never holds up the bar. It passes the
-//! drive gate (`drives.rs`): no icon is read from a drive while Windows takes it.
+//! drive gate (`drives.rs`): while Windows takes the drive, it reads nothing and says busy.
 
 use std::mem::size_of;
 
@@ -16,16 +16,23 @@ use windows::Win32::UI::Shell::{
 use windows::core::HSTRING;
 
 use super::disk::QuietErrors;
-use crate::platform::Bitmap;
+use crate::platform::{Bitmap, ShellIcon};
 
 /// Larger icons are not asked for (the shell's largest is 256 px).
 const MAX_PX: u32 = 256;
 
-pub fn shell_icon(path: &str, px: u32) -> Option<Bitmap> {
+pub fn shell_icon(path: &str, px: u32) -> ShellIcon {
     if px == 0 || px > MAX_PX || path.is_empty() {
-        return None;
+        return ShellIcon::None;
     }
-    let _reading = super::drives::enter(path)?;
+    let Some(_reading) = super::drives::enter(path) else {
+        return ShellIcon::Busy;
+    };
+    read_icon(path, px).map_or(ShellIcon::None, ShellIcon::Icon)
+}
+
+/// The icon of `path`, inside the drive gate.
+fn read_icon(path: &str, px: u32) -> Option<Bitmap> {
     super::com::enter();
     // An empty card reader or optical drive must not ask for a disk.
     let _quiet = QuietErrors::new();
@@ -122,10 +129,12 @@ mod tests {
             windir.clone(),
             "C:\\".into(),
         ] {
-            let icon = shell_icon(&path, 24).unwrap_or_else(|| panic!("an icon for {path}"));
+            let ShellIcon::Icon(icon) = shell_icon(&path, 24) else {
+                panic!("an icon for {path}");
+            };
             assert_eq!((icon.width(), icon.height()), (24, 24), "{path}");
             assert!(icon.pixels().as_chunks::<4>().0.iter().any(|px| px[3] > 0));
         }
-        assert!(shell_icon("Q:\\no\\such\\file.exe", 24).is_none());
+        assert_eq!(shell_icon("Q:\\no\\such\\file.exe", 24), ShellIcon::None);
     }
 }

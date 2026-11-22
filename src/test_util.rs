@@ -9,7 +9,7 @@ use crate::config::model::DateLocale;
 use crate::platform::time::{Date, LocalTime};
 use crate::platform::{
     Bitmap, Capabilities, EjectReport, FileOp, KnownFolder, Launch, Locale, MonitorInfo,
-    NetInterface, OsAppearance, Platform, PowerAction, Volume,
+    NetInterface, OsAppearance, Platform, PowerAction, ShellIcon, Volume,
 };
 
 /// `target/screenshots/<name>.png`, creating the folder. CI uploads the folder.
@@ -87,6 +87,8 @@ pub struct FakePlatform {
     connections: Vec<NetInterface>,
     /// Paths with a shell icon.
     shell_icons: Vec<String>,
+    /// Every shell icon is busy, as while the OS takes the drive.
+    shell_busy: AtomicBool,
     /// `volume_of` knows no volumes, so every drop copies.
     no_volumes: bool,
     time: Mutex<Option<LocalTime>>,
@@ -126,6 +128,7 @@ impl FakePlatform {
             volumes: Vec::new(),
             connections: Vec::new(),
             shell_icons: Vec::new(),
+            shell_busy: AtomicBool::new(false),
             no_volumes: false,
             time: Mutex::new(None),
             locale: Mutex::new(None),
@@ -174,6 +177,12 @@ impl FakePlatform {
 
     pub fn answer_probe(&self) {
         self.probed.store(true, Ordering::SeqCst);
+    }
+
+    /// From now on every shell icon is busy, or not, as while the OS takes the drive and once
+    /// it is done.
+    pub fn set_shell_busy(&self, busy: bool) {
+        self.shell_busy.store(busy, Ordering::SeqCst);
     }
 
     /// Sets the clock to `hour:minute:second` on 2026-10-13.
@@ -250,10 +259,16 @@ impl Platform for FakePlatform {
     fn locale(&self, _which: DateLocale) -> Locale {
         lock(&self.locale).clone().unwrap_or_else(Locale::en_us)
     }
-    fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
-        self.shell_icons.iter().any(|p| p == path).then(|| {
-            Bitmap::from_rgba(px, px, vec![255; (px * px * 4) as usize]).expect("a bitmap")
-        })
+    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
+        if self.shell_busy.load(Ordering::SeqCst) {
+            return ShellIcon::Busy;
+        }
+        if !self.shell_icons.iter().any(|p| p == path) {
+            return ShellIcon::None;
+        }
+        ShellIcon::Icon(
+            Bitmap::from_rgba(px, px, vec![255; (px * px * 4) as usize]).expect("a bitmap"),
+        )
     }
     fn volume_of(&self, path: &str) -> Option<String> {
         if self.no_volumes {

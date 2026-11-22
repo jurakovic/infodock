@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use super::drop::{self, Dropped};
 use super::focus::{self, Move};
 use super::hint::{self, Hover, Prepared, Step};
-use super::icons::IconLoader;
+use super::icons::{IconLoader, Received};
 use super::interact::{self, DropTarget, Press};
 use super::menus::{self, MenuCommand};
 use super::paint::paint_bar;
@@ -441,10 +441,16 @@ impl BarLogic {
             }
         }
         // Icons that arrived: the sensors (and a popup) that asked for them measure again.
-        if self.icons.receive() {
-            self.sensors.invalidate_all();
-            window.invalidate();
-            self.relayout_popup(window);
+        // Icons whose drive was busy are asked for again at the next paint, which they do not
+        // bring forward.
+        match self.icons.receive() {
+            Received::Icons => {
+                self.sensors.invalidate_all();
+                window.invalidate();
+                self.relayout_popup(window);
+            }
+            Received::Busy => self.sensors.invalidate_all(),
+            Received::Nothing => {}
         }
         // Work from the popup's own threads, e.g. a folder listing.
         if let Some(reply) = self.with_popup(|open, cx| open.popup.poll(cx)) {

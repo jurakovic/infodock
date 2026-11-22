@@ -236,9 +236,12 @@ pub struct DirectIcons<'a>(pub &'a dyn Platform);
 #[cfg(test)]
 impl IconSource for DirectIcons<'_> {
     fn shell_icon(&self, path: &str, px: u32) -> Fetched {
-        self.0
-            .shell_icon(path, px)
-            .map_or(Fetched::None, Fetched::Ready)
+        use crate::platform::ShellIcon;
+        match self.0.shell_icon(path, px) {
+            ShellIcon::Icon(icon) => Fetched::Ready(icon),
+            ShellIcon::None => Fetched::None,
+            ShellIcon::Busy => Fetched::Loading,
+        }
     }
 
     fn forget(&self, _path: &str) {}

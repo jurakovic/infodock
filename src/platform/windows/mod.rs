@@ -220,7 +220,7 @@ impl Platform for WindowsPlatform {
         shell::launch(launch);
     }
 
-    fn shell_icon(&self, path: &str, px: u32) -> Option<super::Bitmap> {
+    fn shell_icon(&self, path: &str, px: u32) -> super::ShellIcon {
         icons::shell_icon(path, px)
     }
 

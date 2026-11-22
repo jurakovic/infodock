@@ -245,6 +245,17 @@ pub enum PathKind {
     Folder,
 }
 
+/// What [`Platform::shell_icon`] reads.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShellIcon {
+    Icon(Bitmap),
+    /// The shell has none, or the platform has no shell.
+    None,
+    /// Not read: the OS is removing, locking or dismounting the path's drive. Asked again
+    /// later, it may have one.
+    Busy,
+}
+
 /// A program, document, folder or URI to start, as a sensor click starts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Launch<'a> {
@@ -767,12 +778,12 @@ pub trait Platform: Send + Sync {
         tracing::info!("revealing {path:?} is not supported on this platform");
     }
     /// The shell's icon for a file, folder or drive, `px` physical px square (a `.lnk` shows
-    /// its target's icon); `None` where it has none or the platform has no shell, and while the
-    /// OS removes, locks or dismounts its drive. It may be slow, so the bar asks for it on a
-    /// worker thread.
-    fn shell_icon(&self, path: &str, px: u32) -> Option<Bitmap> {
+    /// its target's icon); [`ShellIcon::None`] where it has none or the platform has no shell,
+    /// [`ShellIcon::Busy`] while the OS removes, locks or dismounts its drive. It may be slow,
+    /// so the bar asks for it on a worker thread.
+    fn shell_icon(&self, path: &str, px: u32) -> ShellIcon {
         let _ = (path, px);
-        None
+        ShellIcon::None
     }
     /// The batteries and whether the computer runs on AC power, for the `battery/<i>` topics
     /// and Settings' battery lists; why not (the OS's message) when it cannot be read.

@@ -2,16 +2,17 @@
 //! read on a worker thread, since the shell may wait for a network server and a
 //! file may lie on a share that does not answer, and kept by path and size. Sensors ask while
 //! they measure, popups while they lay out; an icon that arrives wakes the bar thread, which
-//! measures and lays out again. The sensors' icons and images are kept; the popups' icons (a
-//! long folder has many) are transient: only the newest requests wait to be read, and the
-//! least recently asked for are dropped beyond [`CAPACITY`].
+//! measures and lays out again. An icon whose drive the OS is taking is not kept: the sensors
+//! measure again at the bar's next paint, which asks for it again. The sensors' icons and images
+//! are kept; the popups' icons (a long folder has many) are transient: only the newest requests
+//! wait to be read, and the least recently asked for are dropped beyond [`CAPACITY`].
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::platform::{Bitmap, Platform, UiWaker};
+use crate::platform::{Bitmap, Platform, ShellIcon, UiWaker};
 use crate::sensors::{Fetched, IconSource, read_image};
 
 /// Transient icons kept at most; beyond it, the least recently asked for go.
@@ -31,6 +32,25 @@ enum Kind {
 
 /// What, from which path, at which size in physical px.
 type Key = (Kind, String, u32);
+
+/// What the worker read for a key.
+enum Read {
+    /// The icon or image; `None` when there is none.
+    Done(Option<Bitmap>),
+    /// Nothing: the OS is taking the path's drive.
+    Busy,
+}
+
+/// What [`IconLoader::receive`] took, by what the bar does about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Received {
+    Nothing,
+    /// Only icons whose drive was busy, which are not kept: the sensors measure again at the
+    /// next paint, which asks for them again; nothing needs painting now.
+    Busy,
+    /// Icons or images: the sensors and a popup that asked for them measure again now.
+    Icons,
+}
 
 pub(super) struct IconLoader {
     platform: Arc<dyn Platform>,
@@ -60,7 +80,7 @@ struct Inner {
 
 struct Worker {
     requests: Sender<Key>,
-    results: Receiver<(Key, Option<Bitmap>)>,
+    results: Receiver<(Key, Read)>,
     /// Requests no longer wanted, skipped by the worker.
     cancelled: Arc<Mutex<HashSet<Key>>>,
 }
@@ -83,11 +103,15 @@ impl Worker {
                     if gone {
                         continue;
                     }
-                    let icon = match key.0 {
-                        Kind::Shell => platform.shell_icon(&key.1, key.2),
-                        Kind::Image => read_image(&key.1, key.2),
+                    let read = match key.0 {
+                        Kind::Shell => match platform.shell_icon(&key.1, key.2) {
+                            ShellIcon::Icon(icon) => Read::Done(Some(icon)),
+                            ShellIcon::None => Read::Done(None),
+                            ShellIcon::Busy => Read::Busy,
+                        },
+                        Kind::Image => Read::Done(read_image(&key.1, key.2)),
                     };
-                    if answers.send((key, icon)).is_err() {
+                    if answers.send((key, read)).is_err() {
                         return;
                     }
                     waker.wake();
@@ -158,17 +182,24 @@ impl IconLoader {
         TransientIcons(self)
     }
 
-    /// Takes the icons that arrived; returns whether any did, so the sensors measure again.
-    pub fn receive(&self) -> bool {
+    /// Takes the icons that arrived, and forgets those whose drive was busy, so they are read
+    /// again when next asked for.
+    pub fn receive(&self) -> Received {
         let mut inner = self.inner.borrow_mut();
         let Some(Some(worker)) = &inner.worker else {
-            return false;
+            return Received::Nothing;
         };
         let arrived: Vec<_> = worker.results.try_iter().collect();
-        let any = !arrived.is_empty();
+        let mut received = Received::Nothing;
         let clock = inner.clock;
-        for (key, icon) in arrived {
+        for (key, read) in arrived {
             inner.queued.retain(|k| *k != key);
+            let Read::Done(icon) = read else {
+                inner.cache.remove(&key);
+                received = received.max(Received::Busy);
+                continue;
+            };
+            received = Received::Icons;
             let entry = inner.cache.entry(key).or_insert(Entry {
                 icon: None,
                 transient: true,
@@ -177,7 +208,7 @@ impl IconLoader {
             entry.icon = Some(icon);
         }
         inner.evict();
-        any
+        received
     }
 
     fn request(&self, kind: Kind, path: &str, px: u32, transient: bool) -> Fetched {
@@ -284,7 +315,7 @@ mod tests {
             wakes
                 .recv_timeout(Duration::from_secs(5))
                 .expect("woken by the worker");
-            if icons.receive() {
+            if icons.receive() == Received::Icons {
                 arrived = icons
                     .inner
                     .borrow()
@@ -301,6 +332,66 @@ mod tests {
         // Forgotten: read again.
         icons.forget("missing.exe");
         assert_eq!(icons.shell_icon("missing.exe", 2), Fetched::Loading);
+    }
+
+    /// Takes the worker's answers until no icon is being read; the most `receive` took.
+    fn answers(icons: &IconLoader, wakes: &Receiver<()>) -> Received {
+        let mut received = Received::Nothing;
+        while icons
+            .inner
+            .borrow()
+            .cache
+            .values()
+            .any(|e| e.icon.is_none())
+        {
+            wakes
+                .recv_timeout(Duration::from_secs(5))
+                .expect("woken by the worker");
+            received = received.max(icons.receive());
+        }
+        received
+    }
+
+    /// A loader on `platform` whose wake-ups arrive on the receiver.
+    fn loader(platform: Arc<FakePlatform>) -> (IconLoader, Receiver<()>) {
+        let (woken, wakes) = mpsc::channel();
+        let waker = UiWaker::new(move || {
+            let _ = woken.send(());
+        });
+        (IconLoader::new(platform, waker), wakes)
+    }
+
+    #[test]
+    fn an_icon_whose_drive_was_busy_is_read_again() {
+        let platform = Arc::new(shell());
+        platform.set_shell_busy(true);
+        let (icons, wakes) = loader(Arc::clone(&platform));
+        assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
+        assert_eq!(answers(&icons, &wakes), Received::Busy);
+        // The drive is back: asked for again, it is read again.
+        platform.set_shell_busy(false);
+        assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
+        assert_eq!(answers(&icons, &wakes), Received::Icons);
+        assert!(matches!(icons.shell_icon("app.exe", 2), Fetched::Ready(b) if b.width() == 2));
+    }
+
+    #[test]
+    fn a_busy_answer_stores_nothing() {
+        let platform = Arc::new(shell());
+        platform.set_shell_busy(true);
+        let (icons, wakes) = loader(platform);
+        // A sensor's icon, one the shell has none for, and a popup row's.
+        assert_eq!(icons.shell_icon("app.exe", 2), Fetched::Loading);
+        assert_eq!(icons.shell_icon("missing.exe", 2), Fetched::Loading);
+        assert_eq!(icons.transient().shell_icon("row", 2), Fetched::Loading);
+        assert_eq!(
+            answers(&icons, &wakes),
+            Received::Busy,
+            "nothing to measure now"
+        );
+        let inner = icons.inner.borrow();
+        assert!(inner.cache.is_empty(), "{:?}", inner.cache.keys());
+        assert!(inner.queued.is_empty());
     }
 
     #[test]
