@@ -5,8 +5,12 @@
 # a minute: a reading that has the drive open when a lock comes makes the lock fail, as it makes a
 # removal fail, and readings hold a drive only for a moment, so only a tight loop catches one.
 # Without the app the drive locks, and with a file held open on it the lock fails, so the loop can
-# see a holder. The app's log lines about drives are kept. Runs after the Show desktop check and
-# before the installer check, which removes the config; the config found is put back at the end.
+# see a holder. The app's log must also say, under each layout, that it watched the drive again
+# after an unlock, and its last line of letting go of the drive or watching it again must be a
+# watch-again: a drive let go of and never watched again is read no more, so every lock would
+# take while the drive's Recycle Bin, space and listing stay as they were. The app's log lines
+# about drives are kept. Runs after the Show desktop check and before the installer check, which
+# removes the config; the config found is put back at the end.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [string] $OutDir,
@@ -115,6 +119,11 @@ function Wait-Lock([string] $Letter, [int] $Seconds) {
     $false
 }
 
+# The app's lines among `Lines` that say it let go of drive `Letter` or watches it again.
+function Select-Watch([object[]] $Lines, [string] $Letter) {
+    @($Lines | Select-String -CaseSensitive -Pattern "let go of ${Letter}:|watching ${Letter}: again" | ForEach-Object Line)
+}
+
 # The loop's tries and failures, for the record.
 function Format-Loop($Loop) {
     $text = "$($Loop.Tries) tries, $($Loop.Failures) failed"
@@ -206,12 +215,26 @@ try {
         Start-Sleep -Seconds 10
         if ($app.HasExited) { throw "Infodock exited during start-up (code $($app.ExitCode))" }
         $loop = [DriveLock]::Loop($letter, $Seconds)
+        # The last unlock's watch-again may still be on its way: give it 10 s before the app quits.
+        $clock = [System.Diagnostics.Stopwatch]::StartNew()
+        do {
+            $last = Select-Watch @(Get-LogLines | Select-Object -Skip $before.Count) $letter | Select-Object -Last 1
+            if ($last -and $last.Contains("watching ${letter}: again")) { break }
+            Start-Sleep -Milliseconds 200
+        } while ($clock.Elapsed.TotalSeconds -lt 10)
         & taskkill.exe /pid $app.Id | Out-Null
         if (-not $app.WaitForExit(10000)) { & taskkill.exe /f /t /pid $app.Id | Out-Null }
         $app = $null
         $logged = @(Get-LogLines | Select-Object -Skip $before.Count)
         $drives = @($logged | Select-String -CaseSensitive -Pattern "\b${letter}:")
         Add-Result "With $($layout.Name), every lock takes" ($loop.Failures -eq 0) "$(Format-Loop $loop); $($drives.Count) log lines name ${letter}:"
+        $watch = @(Select-Watch $logged $letter)
+        $letGo = @($watch | Where-Object { $_.Contains("let go of ${letter}:") }).Count
+        $unlocked = @($watch | Where-Object { $_.Contains("watching ${letter}: again: it was unlocked") }).Count
+        $last = $watch | Select-Object -Last 1
+        $watchedAtEnd = [bool]$last -and $last.Contains("watching ${letter}: again")
+        $end = if (-not $last) { 'no such line' } elseif ($watchedAtEnd) { 'watched again' } else { 'let go of' }
+        Add-Result "With $($layout.Name), the app lets go of ${letter}: and watches it again after an unlock" ($unlocked -gt 0 -and $watchedAtEnd) "let go of it $letGo times, watched it again $($watch.Count - $letGo) times ($unlocked after an unlock); the last line: $end"
         $first = @($drives | Select-Object -First 10 | ForEach-Object { "   $($_.Line)" })
         $first | ForEach-Object { Write-Host $_; $records.Add($_) }
         # Locks the script makes no more, so the drive must lock at once again.

@@ -179,8 +179,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       # A drive Windows locks, as before it removes one, while the app runs layouts that read
-      # drives: a VHD locked and unlocked in a tight loop under three layouts, with the app's log
-      # lines that name it; enforced.
+      # drives: a VHD locked and unlocked in a tight loop under three layouts, every lock taking
+      # and the app's log showing the drive let go of and watched again after an unlock; enforced.
       - name: Drive release check
         shell: pwsh
         run: .github/scripts/check-drive-release.ps1 -Exe target/release/infodock.exe -OutDir "$env:RUNNER_TEMP/drive-release-check" -Enforce
