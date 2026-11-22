@@ -3,7 +3,10 @@
 # the AppUserModelID, and starts the app after installing (/R). The app's first run takes an
 # existing sign-in entry for a missing exe into its setting and points it at the installed exe,
 # and quits within 10 s of a taskkill without /f while its welcome page is open (one that has to
-# be killed lists its windows and fails).
+# be killed lists its windows and fails). An install over the running app (an upgrade) and an
+# uninstall while it runs ask it to close before the template's check would end it: it must quit
+# cleanly (its log says it exited) and write its config (the welcome page's place, moved just
+# before, which the app writes only as the window closes or the app quits).
 # The uninstaller removes the app, its shortcuts, its registration (the install
 # location under HKCU too), the sign-in entry and Task Manager's mark for it. A second
 # silent install with /AUTOSTART writes the sign-in entry for the installed exe and clears Task
@@ -57,6 +60,20 @@ public static class AppWindows {
     static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")]
     static extern IntPtr GetWindow(IntPtr window, uint relation);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr FindWindowW(string cls, string title);
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+
+    // The top-level window titled `title`; zero when there is none.
+    public static IntPtr Find(string title) {
+        return FindWindowW(null, title);
+    }
+
+    // Moves `window` to `x`, `y`, keeping its size and z-order, without activating it.
+    public static bool MoveTo(IntPtr window, int x, int y) {
+        return SetWindowPos(window, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010); // SWP_NOSIZE, NOZORDER, NOACTIVATE
+    }
 
     // The top-level windows of process `id`, the top of the z-order first.
     public static string[] Of(uint id) {
@@ -193,6 +210,41 @@ function Get-InstalledApp {
     Get-Process -Name 'infodock' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
 }
 
+$logDir = Join-Path $env:LOCALAPPDATA "$identifier\logs"
+
+# How many times the app logged that it exited cleanly, in all its logs.
+function Get-ExitCount {
+    if (-not (Test-Path $logDir)) { return 0 }
+    @(Get-ChildItem $logDir -Filter 'infodock*.log' | Get-Content | Select-String -SimpleMatch 'Infodock exiting').Count
+}
+
+# Starts the installed app, whose first run was not ended, so its welcome page opens, and moves the
+# welcome page to $X, $Y; returns the app's process.
+function Start-AppMoved([int] $X, [int] $Y) {
+    $process = Start-Process -FilePath $exe -PassThru
+    $window = [IntPtr]::Zero
+    for ($i = 0; $i -lt 75 -and $window -eq [IntPtr]::Zero; $i++) {
+        Start-Sleep -Milliseconds 200
+        $window = [AppWindows]::Find('Infodock Settings')
+    }
+    Check ($window -ne [IntPtr]::Zero) 'the installed app opened its welcome page again'
+    if ($window -ne [IntPtr]::Zero) {
+        Check ([AppWindows]::MoveTo($window, $X, $Y)) "the welcome page moved to $X, $Y"
+    }
+    Start-Sleep -Seconds 2
+    $process
+}
+
+# Whether a run asked the app to close rather than ending it: one clean exit more than $Exits in
+# the log, and the welcome page's place, written only as the app quits, in the config.
+function Test-ClosedCleanly($Process, [int] $Exits, [int] $X, [int] $Y, [string] $What) {
+    Check $Process.HasExited "$What ended the running app"
+    $logged = Get-ExitCount
+    Check ($logged -eq $Exits + 1) "$What asked the app to close, and it quit cleanly (clean exits logged: $logged, before: $Exits)"
+    $place = (Get-Content (Join-Path $configDir 'config.json') -Raw | ConvertFrom-Json).settings.settingsWindow
+    Check ($place.x -eq $X -and $place.y -eq $Y) "the app wrote its config as it quit: the welcome page at $X, $Y (got $($place.x), $($place.y))"
+}
+
 # No elevation: `RequestExecutionLevel user` gives the installer's manifest `asInvoker`.
 $bytes = [System.IO.File]::ReadAllBytes($Setup)
 $text = [System.Text.Encoding]::ASCII.GetString($bytes)
@@ -258,6 +310,12 @@ $config = Join-Path $configDir 'config.json'
 $autostart = (Test-Path $config) -and ((Get-Content $config -Raw | ConvertFrom-Json).settings.autostart -eq $true)
 Check $autostart 'the config has autostart on'
 
+Write-Host '== Installing over the running app'
+$exits = Get-ExitCount
+$running = Start-AppMoved 111 77
+Install-App '/S'
+Test-ClosedCleanly $running $exits 111 77 'the install over it'
+
 # Task Manager's Disabled mark, which the uninstaller removes with the entry. -Force creates the
 # parent keys too; only for a key that is not there, since it would clear one.
 if (-not (Test-Path $approvedKey)) { New-Item -Path $approvedKey -Force | Out-Null }
@@ -265,8 +323,11 @@ $disabled = [byte[]](3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 New-ItemProperty -Path $approvedKey -Name $runValue -Value $disabled -PropertyType Binary -Force | Out-Null
 Check (Test-Path $publisherKey) "the install location is kept at $publisherKey"
 
-Write-Host '== Uninstalling'
+Write-Host '== Uninstalling while the app runs'
+$exits = Get-ExitCount
+$running = Start-AppMoved 133 99
 Uninstall-App
+Test-ClosedCleanly $running $exits 133 99 'the uninstall'
 Check (-not (Test-Path $installDir)) "$installDir is removed"
 Check (-not (Test-Path $uninstallKey)) 'no longer in Apps & features'
 Check (-not (Test-Path $shortcut)) 'the Start Menu shortcut is removed'
