@@ -1,6 +1,6 @@
 //! The drive gate: no reading starts on a drive while Windows removes, locks or dismounts it,
-//! and whoever closes the drive waits for the readings already running there (INTERNALS.md,
-//! Windows data sources). Portable, so it is tested on every OS.
+//! and whoever closes the drive waits for the readings already running there but its own
+//! (INTERNALS.md, Windows data sources). Portable, so it is tested on every OS.
 
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -39,7 +39,7 @@ const OPEN: Slot = Slot {
 /// One slot per drive letter A–Z: whether the drive is closed, and the readings running on it.
 pub struct DriveGate {
     slots: Mutex<[Slot; 26]>,
-    /// Told when the last reading of a drive ends.
+    /// Told when a reading ends.
     left: Condvar,
 }
 
@@ -83,8 +83,9 @@ impl DriveGate {
     }
 
     /// Closes drive `letter`, so no new reading starts there, then waits up to `wait` for the
-    /// readings already running; `false` when some still run after it.
-    pub fn close(&self, letter: char, wait: Duration) -> bool {
+    /// readings already running but the caller's `own`, which cannot end while it waits;
+    /// `false` when others still run after it.
+    pub fn close(&self, letter: char, own: usize, wait: Duration) -> bool {
         let Some(slot) = slot_of(letter) else {
             return true;
         };
@@ -92,9 +93,9 @@ impl DriveGate {
         slots[slot].closed = true;
         let (slots, _) = self
             .left
-            .wait_timeout_while(slots, wait, |slots| slots[slot].readings > 0)
+            .wait_timeout_while(slots, wait, |slots| slots[slot].readings > own)
             .unwrap_or_else(PoisonError::into_inner);
-        slots[slot].readings == 0
+        slots[slot].readings <= own
     }
 
     /// Opens drive `letter` again.
@@ -118,9 +119,7 @@ impl Drop for Entry<'_> {
         };
         let mut slots = self.gate.slots();
         slots[slot].readings = slots[slot].readings.saturating_sub(1);
-        if slots[slot].readings == 0 {
-            self.gate.left.notify_all();
-        }
+        self.gate.left.notify_all();
     }
 }
 
@@ -144,7 +143,7 @@ mod tests {
     #[test]
     fn a_closed_drive_refuses_entries_and_other_drives_do_not() {
         let gate = DriveGate::new();
-        assert!(gate.close('F', Duration::ZERO), "nothing was reading F:");
+        assert!(gate.close('F', 0, Duration::ZERO), "nothing was reading F:");
         assert!(gate.enter("F:\\").is_none());
         assert!(gate.enter("f:\\Photos").is_none(), "either case");
         assert!(gate.enter("E:\\").is_some());
@@ -158,7 +157,7 @@ mod tests {
     #[test]
     fn open_lets_entries_in_again() {
         let gate = DriveGate::new();
-        gate.close('f', Duration::ZERO);
+        gate.close('f', 0, Duration::ZERO);
         assert!(gate.enter("F:\\").is_none());
         gate.open('F');
         assert!(gate.enter("F:\\").is_some());
@@ -179,7 +178,7 @@ mod tests {
                 drop(entry);
             });
             let started = Instant::now();
-            assert!(gate.close('F', Duration::from_secs(5)));
+            assert!(gate.close('F', 0, Duration::from_secs(5)));
             let waited = started.elapsed();
             assert!(waited >= Duration::from_millis(40), "{waited:?}");
             assert!(waited < Duration::from_secs(5), "{waited:?}");
@@ -194,15 +193,39 @@ mod tests {
         let other = gate.enter("E:\\").expect("open");
         let unlettered = gate.enter("\\\\server\\share").expect("counts nothing");
         let started = Instant::now();
-        assert!(!gate.close('F', Duration::from_millis(30)));
+        assert!(!gate.close('F', 0, Duration::from_millis(30)));
         assert!(started.elapsed() >= Duration::from_millis(25));
         assert!(
-            gate.close('G', Duration::ZERO),
+            gate.close('G', 0, Duration::ZERO),
             "readings of other drives do not count"
         );
         drop(other);
         drop(unlettered);
         drop(entry);
-        assert!(gate.close('F', Duration::ZERO), "the reading ended");
+        assert!(gate.close('F', 0, Duration::ZERO), "the reading ended");
+    }
+
+    #[test]
+    fn close_waits_for_the_readings_of_others_only() {
+        let gate = DriveGate::new();
+        let own = gate.enter("F:\\").expect("open");
+        std::thread::scope(|s| {
+            let other = gate.enter("F:\\Photos").expect("open");
+            s.spawn(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                drop(other);
+            });
+            let started = Instant::now();
+            assert!(gate.close('F', 1, Duration::from_secs(5)));
+            let waited = started.elapsed();
+            assert!(waited >= Duration::from_millis(40), "{waited:?}");
+            assert!(waited < Duration::from_secs(5), "{waited:?}");
+        });
+        assert!(
+            !gate.close('F', 0, Duration::from_millis(10)),
+            "the caller's own reading still runs"
+        );
+        drop(own);
+        assert!(gate.close('F', 0, Duration::ZERO));
     }
 }

@@ -9,6 +9,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
+use std::marker::PhantomData;
 use std::mem::{offset_of, size_of};
 use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -67,9 +68,38 @@ fn thread() -> Option<&'static Thread> {
 
 /// A reading of `path`'s drive (see [`DriveGate::enter`]); `None` while Windows takes the drive.
 /// The first call starts the drives thread.
-pub(super) fn enter(path: &str) -> Option<Entry<'static>> {
+pub(super) fn enter(path: &str) -> Option<Reading> {
     thread();
-    DRIVES.enter(path)
+    let entry = DRIVES.enter(path)?;
+    let letter = drive_letter(path);
+    if let Some(letter) = letter {
+        HELD.with_borrow_mut(|held| held.push(letter));
+    }
+    Some(Reading {
+        _entry: entry,
+        letter,
+        _here: PhantomData,
+    })
+}
+
+/// A reading of a drive in the gate, also counted for its thread (`HELD`) while it lives, so it
+/// stays on the thread that entered.
+pub(super) struct Reading {
+    _entry: Entry<'static>,
+    letter: Option<char>,
+    _here: PhantomData<*const ()>,
+}
+
+impl Drop for Reading {
+    fn drop(&mut self) {
+        if let Some(letter) = self.letter {
+            HELD.with_borrow_mut(|held| {
+                if let Some(index) = held.iter().position(|&l| l == letter) {
+                    held.swap_remove(index);
+                }
+            });
+        }
+    }
 }
 
 /// Runs `job` on the drives thread and waits for its answer; `None` if the thread could not
@@ -116,9 +146,12 @@ thread_local! {
     static WATCHED: RefCell<Vec<Watched>> = const { RefCell::new(Vec::new()) };
     /// The jobs handed to the drives thread, there.
     static JOBS: RefCell<Option<Receiver<Job>>> = const { RefCell::new(None) };
-    /// A job runs: a request that comes meanwhile (a call in the job handled messages) cannot
-    /// wait for the job's own readings.
+    /// A job runs, so the next one waits for it.
     static IN_JOB: Cell<bool> = const { Cell::new(false) };
+    /// The drive letters of this thread's readings ([`Reading`]). On the drives thread they are
+    /// a job's, which a request that comes inside the job (a call in it handled messages)
+    /// cannot wait for.
+    static HELD: RefCell<Vec<char>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Starts the drives thread and returns it once its window is created.
@@ -415,13 +448,10 @@ fn let_go(notify: HDEVNOTIFY, why: &str) {
     let Some((letter, device)) = found else {
         return;
     };
-    // A job's readings, below this call on the same thread, cannot end while it waits.
-    let wait = if IN_JOB.get() {
-        Duration::ZERO
-    } else {
-        READINGS_WAIT
-    };
-    let finished = DRIVES.close(letter, wait);
+    // A job's readings of the drive, below this call on the same thread, cannot end while it
+    // waits; the other threads' can.
+    let own = HELD.with_borrow(|held| held.iter().filter(|&&l| l == letter).count());
+    let finished = DRIVES.close(letter, own, READINGS_WAIT) && own == 0;
     drop(device);
     if finished {
         tracing::info!("let go of {letter}: for {why}");
