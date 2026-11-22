@@ -136,18 +136,22 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      # The third-party actions of the job that builds the released binaries are pinned by
+      # commit, with the tag or branch of that commit in a comment. rust-toolchain's is on its
+      # stable branch, whose action installs the stable toolchain by default.
       - name: Set up Rust
         if: ${{ inputs.build }}
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
 
       - name: Cache
         if: ${{ inputs.build }}
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      # Pinned: the installer's uninstaller section (Cargo.toml) relies on its NSIS template.
+      # cargo-packager's version is pinned: the installer's uninstaller section (Cargo.toml)
+      # relies on its NSIS template.
       - name: Install cargo-packager
         if: ${{ inputs.build }}
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-packager@0.11.8
 
