@@ -730,7 +730,10 @@ mod tests {
                     marked: None,
                 })
             }),
-            Box::new(|| {}),
+            crate::platform::ExitRequests {
+                quit: Box::new(|| {}),
+                session_end: Box::new(|| {}),
+            },
         )
         .expect("the bar thread");
         // SAFETY: plain UI Automation client calls on this test's thread.

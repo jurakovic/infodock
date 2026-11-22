@@ -645,7 +645,6 @@ impl BarHandler for BarLogic {
                 self.close_popup(window);
             }
             UiEvent::Fullscreen(false) => {}
-            UiEvent::CloseRequested => self.host.quit(),
             UiEvent::TimeChanged => self.clock_changed(window),
             UiEvent::LocaleChanged => self.locale_changed(window),
             UiEvent::Resumed => {

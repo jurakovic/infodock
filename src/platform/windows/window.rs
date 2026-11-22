@@ -71,8 +71,8 @@ use crate::i18n::t;
 use crate::platform::guard::guard;
 use crate::platform::{
     AppBarEvent, Band, BarHandler, BarThread, BarWindow, Canvas, DragEvent, DropEffect,
-    HandlerFactory, Key, MenuEntry, Modifiers, PlatformError, PointF, PointerButton, Rect,
-    SessionEnd, SizeF, TimerId, TrayIcon, UiEvent, UiWaker,
+    ExitRequests, HandlerFactory, Key, MenuEntry, Modifiers, PlatformError, PointF, PointerButton,
+    Rect, SizeF, TimerId, TrayIcon, UiEvent, UiWaker,
 };
 
 pub(super) const CLASS_NAME: PCWSTR = w!("Infodock.Bar");
@@ -139,8 +139,8 @@ struct WindowState {
     band: OnceCell<std::result::Result<BandWindow, ()>>,
     /// The UI Automation provider; created when a client first asks for it.
     uia: OnceCell<Uia>,
-    /// What runs when the session ends; set before the message loop starts.
-    session_end: OnceCell<SessionEnd>,
+    /// What the app does when it is asked to end; set before the message loop starts.
+    exit: OnceCell<ExitRequests>,
 }
 
 /// The window of another app that had the foreground before the bar took it for the keyboard;
@@ -217,8 +217,12 @@ impl WindowState {
                 self.dispatch(UiEvent::Wake);
                 return LRESULT(0);
             }
+            // A close request quits the app at once, not after a menu or a confirmation the bar
+            // logic shows; one posted to another of the app's windows comes here (`close.rs`).
             WM_CLOSE => {
-                self.dispatch(UiEvent::CloseRequested);
+                if let Some(exit) = self.exit.get() {
+                    (exit.quit)();
+                }
                 return LRESULT(0);
             }
             // Sent to every top-level window when the session ends; Windows may end the process
@@ -234,8 +238,8 @@ impl WindowState {
                     "Windows shuts down"
                 };
                 tracing::info!("the session ends: {why}");
-                if let Some(end) = self.session_end.get() {
-                    end();
+                if let Some(exit) = self.exit.get() {
+                    (exit.session_end)();
                 }
                 return LRESULT(0);
             }
@@ -1003,7 +1007,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
         popup: OnceCell::new(),
         band: OnceCell::new(),
         uia: OnceCell::new(),
-        session_end: OnceCell::new(),
+        exit: OnceCell::new(),
     }));
     let title = HSTRING::from(t("app.name"));
     // SAFETY: creates our own window; `state` outlives it.
@@ -1062,7 +1066,7 @@ fn create_window() -> Result<&'static WindowState, PlatformError> {
 
 fn run(
     make_handler: HandlerFactory,
-    session_end: SessionEnd,
+    exit: ExitRequests,
     ready: mpsc::Sender<Result<BarThread, PlatformError>>,
 ) {
     // A single-threaded apartment with OLE, which drag & drop needs. Never
@@ -1080,7 +1084,7 @@ fn run(
         }
     };
     crate::logging::startup_step("window");
-    let _ = state.session_end.set(session_end);
+    let _ = state.exit.set(exit);
     super::close::bar_created(state.hwnd());
     let (Some(appbar), Some(tray)) = (state.appbar.get().cloned(), state.tray.get().cloned())
     else {
@@ -1130,12 +1134,12 @@ fn run(
 
 pub fn start_bar_thread(
     make_handler: HandlerFactory,
-    session_end: SessionEnd,
+    exit: ExitRequests,
 ) -> Result<BarThread, PlatformError> {
     let (ready, started) = mpsc::channel();
     std::thread::Builder::new()
         .name("bar".into())
-        .spawn(move || run(make_handler, session_end, ready))
+        .spawn(move || run(make_handler, exit, ready))
         .map_err(|e| PlatformError::Os(format!("could not start the bar thread: {e}")))?;
     started
         .recv()

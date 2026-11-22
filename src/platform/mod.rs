@@ -1262,9 +1262,6 @@ pub enum UiEvent {
     Fullscreen(bool),
     /// Light/dark mode, accent colour or transparency effects may have changed.
     AppearanceChanged,
-    /// The app was asked to close: a `WM_CLOSE` to the bar window, or posted to another of its
-    /// windows (`taskkill` without `/f`).
-    CloseRequested,
     /// The system time or time zone changed (`WM_TIMECHANGE`).
     TimeChanged,
     /// The OS regional format changed (`WM_SETTINGCHANGE` "intl").
@@ -1600,10 +1597,16 @@ impl UiWaker {
 /// loader).
 pub type HandlerFactory = Box<dyn FnOnce(UiWaker) -> Box<dyn BarHandler> + Send>;
 
-/// Runs on the bar thread when the session ends (sign-out, shutdown) or Restart Manager closes
-/// the app, at once, even while the handler is busy (a menu is open). Windows may end the process
-/// as soon as it returns.
-pub type SessionEnd = Box<dyn Fn() + Send>;
+/// What the bar window has the app do when it is asked to end, on the bar thread and at once,
+/// even while the handler is busy (a menu or a confirmation is open).
+pub struct ExitRequests {
+    /// A close request (`WM_CLOSE` to the bar window, or posted to another of the app's windows,
+    /// as `taskkill` without `/f` posts one): the app quits.
+    pub quit: Box<dyn Fn() + Send>,
+    /// The session ends (sign-out, shutdown) or Restart Manager closes the app. Windows may end
+    /// the process as soon as it returns.
+    pub session_end: Box<dyn Fn() + Send>,
+}
 
 /// Handles to a running bar thread, usable from any thread.
 pub struct BarThread {
@@ -1613,17 +1616,17 @@ pub struct BarThread {
 }
 
 /// Starts the bar thread: creates the bar window and its AppBar, builds the handler with
-/// `make_handler` on that thread and runs the message loop; `session_end` runs there when the
-/// session ends. Returns once the window exists; the window becomes visible with the first
-/// [`AppBar::configure`].
+/// `make_handler` on that thread and runs the message loop; the bar window passes the requests
+/// to end the app to `exit`. Returns once the window exists; the window becomes visible with the
+/// first [`AppBar::configure`].
 pub fn start_bar_thread(
     make_handler: HandlerFactory,
-    session_end: SessionEnd,
+    exit: ExitRequests,
 ) -> Result<BarThread, PlatformError> {
     #[cfg(windows)]
-    return windows::window::start_bar_thread(make_handler, session_end);
+    return windows::window::start_bar_thread(make_handler, exit);
     #[cfg(not(windows))]
-    return stub::start_bar_thread(make_handler, session_end);
+    return stub::start_bar_thread(make_handler, exit);
 }
 
 #[cfg(test)]

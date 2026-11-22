@@ -31,7 +31,8 @@ use crate::config::model::{SensorInstance, Settings, Zone};
 use crate::config::store::{Newest, Revision};
 use crate::look::anim::slides_out;
 use crate::platform::{
-    self, AppBar, DockRequest, OsAppearance, Platform, PlatformError, TrayIcon, UiWaker,
+    self, AppBar, DockRequest, ExitRequests, OsAppearance, Platform, PlatformError, TrayIcon,
+    UiWaker,
 };
 use crate::sampler::{Change, Delivery, TopicRequest};
 use thread::BarLogic;
@@ -54,8 +55,8 @@ fn dock_request(s: &Settings, visible: bool) -> DockRequest {
 
 /// What the bar asks of the rest of the app. Called on the bar thread.
 pub trait BarHost: Send + Sync {
-    /// Quits the app: the tray's or the menu's *Quit*, or a close request
-    /// ([`UiEvent::CloseRequested`](crate::platform::UiEvent::CloseRequested)).
+    /// Quits the app: the tray's or the menu's *Quit*, or a close request, which the bar window
+    /// passes on itself, whatever the bar logic is doing.
     fn quit(&self);
     /// The session ends (sign-out, shutdown) or Restart Manager closes the app: the app cleans
     /// up before this returns, since Windows may end the process then, and quits. Called on the
@@ -148,7 +149,7 @@ impl BarController {
         let (config, revision) = store.get_revised();
         let settings = config.settings.clone();
         let (commands, queue) = mpsc::channel();
-        let ending = Arc::clone(&host);
+        let (quitting, ending) = (Arc::clone(&host), Arc::clone(&host));
         let thread = platform::start_bar_thread(
             Box::new(move |waker| {
                 Box::new(BarLogic::new(
@@ -160,7 +161,10 @@ impl BarController {
                     skins,
                 ))
             }),
-            Box::new(move || ending.session_ending()),
+            ExitRequests {
+                quit: Box::new(move || quitting.quit()),
+                session_end: Box::new(move || ending.session_ending()),
+            },
         )?;
 
         let controller = Arc::new(Self {
