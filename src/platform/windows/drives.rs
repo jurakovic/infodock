@@ -43,8 +43,8 @@ const WM_JOBS: u32 = WM_APP + 1;
 /// How long a request waits for the readings running on its drive.
 const READINGS_WAIT: Duration = Duration::from_secs(2);
 
-/// Which drives may be read now. Every reading of a drive in `platform/windows` enters it
-/// through [`enter`].
+/// Which drives may be read now. The platform's readings of a drive (`disk.rs`, `icons.rs`, the
+/// Recycle Bin in `shell.rs`) enter it through [`enter`]; the actions and the pickers do not.
 static DRIVES: DriveGate = DriveGate::new();
 
 /// Held by the tests that lock a drive, and by those that count on every drive being open
