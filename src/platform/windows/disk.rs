@@ -4,8 +4,10 @@
 //! fails quietly: the calls run with critical-error dialogs turned off for the thread. Labels
 //! are read only from local drives that answer at once: a network drive whose server is away
 //! would block for the SMB timeout, and an optical drive may spin up. Folder listings
-//! and path checks run the same way.
+//! and path checks run the same way. Every reading of a drive passes the drive gate
+//! (`drives.rs`), so none starts while Windows removes, locks or dismounts the drive.
 
+use windows::Win32::Foundation::ERROR_NOT_READY;
 use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, GetDiskFreeSpaceExW,
     GetDriveTypeW, GetFileAttributesW, GetLogicalDriveStringsW, GetVolumeInformationW,
@@ -16,7 +18,9 @@ use windows::Win32::System::Diagnostics::Debug::{
 };
 use windows::core::PCWSTR;
 
-use super::from_wide;
+use std::sync::{Mutex, PoisonError};
+
+use super::{drives, from_wide};
 use crate::platform::{DirItem, DiskSpace, DriveKind, PathKind, Volume};
 
 /// `GetDriveTypeW` results.
@@ -55,8 +59,9 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
 }
 
-pub fn volumes() -> Vec<Volume> {
-    let _quiet = QuietErrors::new();
+/// The roots of the drives with a letter (`C:\`), from the letters Windows has assigned: no
+/// drive is touched.
+pub(super) fn roots() -> Vec<String> {
     let mut buffer = [0u16; 512];
     // SAFETY: the buffer is writable; the result is the length used, or more if it is short.
     let length = unsafe { GetLogicalDriveStringsW(Some(&mut buffer)) } as usize;
@@ -66,42 +71,76 @@ pub fn volumes() -> Vec<Volume> {
     buffer[..length]
         .split(|&c| c == 0)
         .filter(|root| !root.is_empty())
-        .map(|root| {
-            let root = String::from_utf16_lossy(root);
-            let path = wide(&root);
-            // SAFETY: a NUL-terminated root path.
-            let kind = match unsafe { GetDriveTypeW(PCWSTR(path.as_ptr())) } {
-                DRIVE_FIXED => DriveKind::Fixed,
-                DRIVE_REMOVABLE => DriveKind::Removable,
-                DRIVE_CDROM => DriveKind::Optical,
-                DRIVE_REMOTE => DriveKind::Network,
-                DRIVE_RAMDISK => DriveKind::Ram,
-                _ => DriveKind::Other,
-            };
-            let local = matches!(
-                kind,
-                DriveKind::Fixed | DriveKind::Removable | DriveKind::Ram
-            );
-            let label = if local { label(&path) } else { String::new() };
-            let (ejectable, media) = match kind {
-                DriveKind::Removable | DriveKind::Optical => {
-                    (!is_system(&root), super::device::has_media(&root))
-                }
-                DriveKind::Fixed => (
-                    !is_system(&root) && super::device::on_removable_bus(&root),
-                    true,
-                ),
-                DriveKind::Network | DriveKind::Ram | DriveKind::Other => (false, true),
-            };
-            Volume {
-                root,
-                kind,
-                label,
-                ejectable,
-                media,
-            }
-        })
+        .map(String::from_utf16_lossy)
         .collect()
+}
+
+/// The kind of drive `root` (`E:\`).
+pub(super) fn kind(root: &str) -> DriveKind {
+    let path = wide(root);
+    // SAFETY: a NUL-terminated root path.
+    match unsafe { GetDriveTypeW(PCWSTR(path.as_ptr())) } {
+        DRIVE_FIXED => DriveKind::Fixed,
+        DRIVE_REMOVABLE => DriveKind::Removable,
+        DRIVE_CDROM => DriveKind::Optical,
+        DRIVE_REMOTE => DriveKind::Network,
+        DRIVE_RAMDISK => DriveKind::Ram,
+        _ => DriveKind::Other,
+    }
+}
+
+/// The last list of volumes: a drive Windows is taking is listed from it meanwhile.
+static LISTED: Mutex<Vec<Volume>> = Mutex::new(Vec::new());
+
+pub fn volumes() -> Vec<Volume> {
+    let _quiet = QuietErrors::new();
+    let last = LISTED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let volumes: Vec<Volume> = roots()
+        .into_iter()
+        .filter_map(|root| {
+            let Some(_reading) = drives::enter(&root) else {
+                // As it was last listed, so the lists do not change while Windows removes it.
+                return last.iter().find(|v| v.root == root).cloned();
+            };
+            Some(volume(root))
+        })
+        .collect();
+    LISTED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone_from(&volumes);
+    volumes
+}
+
+/// What drive `root` is, read from it.
+fn volume(root: String) -> Volume {
+    let path = wide(&root);
+    let kind = kind(&root);
+    let local = matches!(
+        kind,
+        DriveKind::Fixed | DriveKind::Removable | DriveKind::Ram
+    );
+    let label = if local { label(&path) } else { String::new() };
+    let (ejectable, media) = match kind {
+        DriveKind::Removable | DriveKind::Optical => {
+            (!is_system(&root), super::device::has_media(&root))
+        }
+        DriveKind::Fixed => (
+            !is_system(&root) && super::device::on_removable_bus(&root),
+            true,
+        ),
+        DriveKind::Network | DriveKind::Ram | DriveKind::Other => (false, true),
+    };
+    Volume {
+        root,
+        kind,
+        label,
+        ejectable,
+        media,
+    }
 }
 
 /// The label of the volume at the NUL-terminated `path`; empty if it has none or no medium.
@@ -122,8 +161,12 @@ fn label(path: &[u16]) -> String {
     .map_or_else(|_| String::new(), |()| from_wide(&name))
 }
 
-/// What `path` names, without a dialog for a drive that has no medium.
+/// What `path` names, without a dialog for a drive that has no medium; `Missing` while Windows
+/// takes its drive.
 pub fn path_kind(path: &str) -> PathKind {
+    let Some(_reading) = drives::enter(path) else {
+        return PathKind::Missing;
+    };
     let _quiet = QuietErrors::new();
     let wide = wide(path);
     // SAFETY: a NUL-terminated path.
@@ -138,9 +181,12 @@ pub fn path_kind(path: &str) -> PathKind {
 }
 
 /// The entries of folder `path` with their attributes (no "insert a disk" dialogs): links to
-/// folders (junctions) count as folders.
+/// folders (junctions) count as folders. While Windows takes its drive, the drive is not ready.
 pub fn list_dir(path: &str) -> Result<Vec<DirItem>, String> {
     use std::os::windows::fs::MetadataExt;
+    let Some(_reading) = drives::enter(path) else {
+        return Err(std::io::Error::from_raw_os_error(ERROR_NOT_READY.0 as i32).to_string());
+    };
     let _quiet = QuietErrors::new();
     let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
     Ok(entries
@@ -158,7 +204,9 @@ pub fn list_dir(path: &str) -> Result<Vec<DirItem>, String> {
         .collect())
 }
 
+/// The size and free space of drive `root`; `None` when it is absent, or while Windows takes it.
 pub fn space(root: &str) -> Option<DiskSpace> {
+    let _reading = drives::enter(root)?;
     let _quiet = QuietErrors::new();
     let path = wide(root);
     // SAFETY: a NUL-terminated root path.
@@ -180,7 +228,7 @@ pub fn space(root: &str) -> Option<DiskSpace> {
 }
 
 /// Whether `root` is the drive Windows runs from (`SystemDrive`), which is never ejected.
-fn is_system(root: &str) -> bool {
+pub(super) fn is_system(root: &str) -> bool {
     std::env::var("SystemDrive").is_ok_and(|drive| {
         let drive = drive.trim_end_matches('\\');
         !drive.is_empty() && root.trim_end_matches('\\').eq_ignore_ascii_case(drive)

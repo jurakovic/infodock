@@ -9,6 +9,7 @@ mod cpu;
 mod device;
 pub mod dialog;
 mod disk;
+mod drives;
 mod droptarget;
 mod eject;
 mod fileops;

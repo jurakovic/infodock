@@ -817,7 +817,7 @@ pub(super) fn on_this_thread(hwnd: HWND) -> bool {
 
 /// Whether a `WM_DEVICECHANGE` says a volume arrived or went (`DBT_DEVICEARRIVAL`,
 /// `DBT_DEVICEREMOVECOMPLETE` with a `DEV_BROADCAST_VOLUME`; a disc counts as arriving).
-fn is_volume_change(wparam: WPARAM, lparam: LPARAM) -> bool {
+pub(super) fn is_volume_change(wparam: WPARAM, lparam: LPARAM) -> bool {
     const DBT_DEVICEARRIVAL: usize = 0x8000;
     const DBT_DEVICEREMOVECOMPLETE: usize = 0x8004;
     const DBT_DEVTYP_VOLUME: u32 = 2;

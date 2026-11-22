@@ -11,6 +11,7 @@ pub mod accessible;
 pub mod bitmap;
 pub mod canvas;
 pub mod drag;
+pub mod drives;
 pub mod geometry;
 pub mod guard;
 pub mod keys;

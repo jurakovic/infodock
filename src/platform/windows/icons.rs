@@ -1,6 +1,7 @@
 //! Shell icons (`Platform::shell_icon`): the icon Explorer shows for a file, folder or drive, at a
 //! physical size, from `IShellItemImageFactory` (a `.lnk` gives its target's icon). It is
-//! called on the bar's icon worker, so a slow network path never holds up the bar.
+//! called on the bar's icon worker, so a slow network path never holds up the bar. It passes the
+//! drive gate (`drives.rs`): no icon is read from a drive while Windows takes it.
 
 use std::mem::size_of;
 
@@ -24,6 +25,7 @@ pub fn shell_icon(path: &str, px: u32) -> Option<Bitmap> {
     if px == 0 || px > MAX_PX || path.is_empty() {
         return None;
     }
+    let _reading = super::drives::enter(path)?;
     super::com::enter();
     // An empty card reader or optical drive must not ask for a disk.
     let _quiet = QuietErrors::new();
