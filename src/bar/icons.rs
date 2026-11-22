@@ -46,7 +46,7 @@ enum Read {
 pub(super) enum Received {
     Nothing,
     /// Only icons whose drive was busy, which are not kept: the sensors measure again at the
-    /// next paint, which asks for them again; nothing needs painting now.
+    /// bar's next paint, which asks for them again, and not before; nothing needs painting now.
     Busy,
     /// Icons or images: the sensors and a popup that asked for them measure again now.
     Icons,

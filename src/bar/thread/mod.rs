@@ -183,6 +183,9 @@ pub(super) struct BarLogic {
     text: Rc<dyn TextEngine>,
     /// Shell icons for the sensors, read on a worker thread.
     icons: IconLoader,
+    /// Icons whose drive was busy were dropped: every sensor measures again at the next paint,
+    /// which asks for them again.
+    retry_icons: bool,
     appearance: OsAppearance,
     theme: Theme,
     /// The classic bar's skin as last drawn.
@@ -308,6 +311,7 @@ impl BarLogic {
             sensors: BarSensors::default(),
             text: crate::platform::text_engine(),
             icons: IconLoader::new(Arc::clone(&platform), waker),
+            retry_icons: false,
             appearance,
             skin: SkinCache::new(skins),
             shadow: ShadowCache::default(),
@@ -442,14 +446,14 @@ impl BarLogic {
         }
         // Icons that arrived: the sensors (and a popup) that asked for them measure again.
         // Icons whose drive was busy are asked for again at the next paint, which they do not
-        // bring forward.
+        // bring forward; until then no sensor measures again because of them.
         match self.icons.receive() {
             Received::Icons => {
                 self.sensors.invalidate_all();
                 window.invalidate();
                 self.relayout_popup(window);
             }
-            Received::Busy => self.sensors.invalidate_all(),
+            Received::Busy => self.retry_icons = true,
             Received::Nothing => {}
         }
         // Work from the popup's own threads, e.g. a folder listing.

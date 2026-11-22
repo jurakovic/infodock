@@ -60,10 +60,14 @@ struct FakeWindow {
     popup_captured: Cell<bool>,
     /// Each material applied, with whether the bar is dark.
     materials: RefCell<Vec<(Material, bool)>>,
+    /// How often the bar asked to be painted.
+    invalidated: Cell<u32>,
 }
 
 impl BarWindow for FakeWindow {
-    fn invalidate(&self) {}
+    fn invalidate(&self) {
+        self.invalidated.set(self.invalidated.get() + 1);
+    }
     fn set_material(&self, material: Material, dark: bool) {
         self.materials.borrow_mut().push((material, dark));
     }

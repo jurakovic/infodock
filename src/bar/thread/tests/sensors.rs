@@ -136,3 +136,63 @@ fn a_new_locale_reaches_every_sensor_on_its_context() {
     assert!(after.contains("\"oktober\""), "{after}");
     assert!(!after.contains("\"october\""));
 }
+
+#[test]
+fn an_icon_whose_drive_was_busy_is_asked_for_again_at_the_next_paint() {
+    let (mut logic, window, _host, _config) = bar(Settings::default());
+    let platform = Arc::new(FakePlatform::default().with_shell_icon("E:\\"));
+    platform.set_shell_busy(true);
+    let (woken, wakes) = mpsc::channel();
+    logic.icons = IconLoader::new(
+        Arc::clone(&platform) as Arc<dyn Platform>,
+        UiWaker::new(move || {
+            let _ = woken.send(());
+        }),
+    );
+    // A Disk sensor for E: in the logo's place.
+    let mut config = Config {
+        settings: logic.settings.clone(),
+        layout: logic.layout.clone(),
+        state: logic.state.clone(),
+        ..Config::default()
+    };
+    let disk = &mut config.layout.center[0];
+    disk.kind = "disk".into();
+    disk.props = serde_json::json!({ "drive": "E:\\" })
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    let id = disk.id.clone();
+    logic.apply_config(&window, config);
+    logic.sync_sensors(&window);
+    let bitmaps = |logic: &mut BarLogic| {
+        let mut canvas = RecordingCanvas::new(1.0);
+        logic.paint(&mut canvas, SizeF::new(WIDTH, 28.0));
+        canvas
+            .dump()
+            .lines()
+            .filter(|l| l.starts_with("bitmap"))
+            .count()
+    };
+    // Measured, it asks for the icon while the drive is busy, and keeps its square free.
+    let without = bitmaps(&mut logic);
+    wakes
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the busy answer");
+    window.invalidated.set(0);
+    logic.drain(&window);
+    assert_eq!(window.invalidated.get(), 0, "nothing to paint");
+    assert!(
+        !logic.sensors.is_dirty(&id),
+        "measured again at the next paint, not before"
+    );
+    // The drive is back: the next paint asks again, and the icon arrives.
+    platform.set_shell_busy(false);
+    assert_eq!(bitmaps(&mut logic), without, "still being read");
+    wakes
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the icon");
+    logic.drain(&window);
+    assert!(window.invalidated.get() > 0, "painted with the icon");
+    assert_eq!(bitmaps(&mut logic), without + 1);
+}

@@ -85,6 +85,9 @@ impl BarLogic {
     /// sensors, the placer and the focus ring, faded while the bar rises.
     pub(super) fn paint_frame(&mut self, canvas: &mut dyn Canvas, size: SizeF) {
         self.painted = size;
+        if std::mem::take(&mut self.retry_icons) {
+            self.sensors.invalidate_all();
+        }
         self.sensors
             .update_layout(&layout_ctx!(self, canvas.scale()), size.width);
         let now = Instant::now();
