@@ -5,7 +5,8 @@
 //! closes the drive in the gate ([`DRIVES`]), waits for the readings running there, closes its
 //! handle and says yes; when the request fails or ends, it watches the drive again. It answers
 //! on a thread of its own, whatever the bar thread is doing. Jobs handed to it with [`run`] (the
-//! Recycle Bin's readings) run between its answers, so no answer comes while a job reads a drive.
+//! Recycle Bin's readings) run between its answers, unless a call in a job handles messages: an
+//! answer that comes then waits for the other threads' readings of the drive, not the job's own.
 
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;

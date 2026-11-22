@@ -93,10 +93,11 @@ pub fn has_recycle_bin() -> bool {
 }
 
 /// What the Recycle Bin holds on all fixed drives, read drive by drive on the drives thread
-/// (`drives.rs`): a drive Windows is taking is skipped, whatever the shell keeps of a bin lives
-/// on a thread that handles messages, and no answer to Windows comes while a bin is read. A
-/// drive whose bin cannot be read is left out; the shell's message is returned only when no
-/// bin can be read.
+/// (`drives.rs`): a drive Windows is taking is skipped, and whatever the shell keeps of a bin
+/// lives on a thread that handles messages. Windows' requests are answered between readings,
+/// unless the shell handles messages while it reads a bin: that answer then waits for the
+/// other threads' readings of the drive, not for this one. A drive whose bin cannot be read is
+/// left out; the shell's message is returned only when no bin can be read.
 pub fn recycle_bin() -> std::result::Result<RecycleBin, String> {
     // Read here when the drives thread cannot start or gave no answer.
     super::drives::run(bins).unwrap_or_else(bins)
