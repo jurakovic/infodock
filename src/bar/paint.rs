@@ -836,8 +836,8 @@ mod tests {
 
     /// Renders the bar with the real renderer to `target/screenshots/bar-*.png` (CI uploads
     /// them): plain bars per theme and every built-in skin, the canvas specimen, the first-run
-    /// layout, the General sensors, every system sensor with made-up samples and the launchers,
-    /// at 100 % and 150 %.
+    /// layout, the General sensors, every system sensor with made-up samples, the launchers and
+    /// the ready-made layouts (`bar-layout-<name>`), at 100 % and 150 %.
     #[cfg(windows)]
     #[test]
     #[ignore = "writes PNGs to target/screenshots; run with --ignored"]
@@ -1242,7 +1242,24 @@ mod tests {
         // The defaults with space above and below the sensors.
         let mut padded = Settings::default();
         padded.bar.sensor_padding = 3;
-        for (name, layout, settings, os, bar_width) in [
+        // The ready-made layouts in `layouts/`, imported as Import layout… imports them: their
+        // machine-derived props from this machine.
+        let ready_made: Vec<(String, Layout)> = crate::test_util::ready_made_layouts()
+            .into_iter()
+            .map(|(name, path)| {
+                use crate::config::exchange::{ImportMode, read};
+                use crate::sensors::import::{import, prepare};
+                let incoming = read(&path).expect("a layout file");
+                let ctx = crate::sensors::DefaultsCtx {
+                    platform: platform.as_ref(),
+                };
+                let prepared = prepare(crate::sensors::registry::registry(), &ctx, incoming);
+                let mut config = crate::config::Config::default();
+                import(&mut config, prepared, ImportMode::Replace);
+                (format!("bar-layout-{name}"), config.layout)
+            })
+            .collect();
+        let mut sensor_bars = vec![
             ("bar-first-run", &first_run, Settings::modern(), dark, 700.0),
             (
                 "bar-first-run-classic",
@@ -1276,7 +1293,17 @@ mod tests {
                 light,
                 680.0,
             ),
-        ] {
+        ];
+        for (name, layout) in &ready_made {
+            // The showcase has a sensor of every type.
+            let bar_width = if name == "bar-layout-showcase" {
+                1800.0
+            } else {
+                1000.0
+            };
+            sensor_bars.push((name.as_str(), layout, Settings::modern(), dark, bar_width));
+        }
+        for (name, layout, settings, os, bar_width) in sensor_bars {
             let theme = Theme::resolve(&settings, os);
             for (suffix, scale) in [("", 1.0), ("@1.5x", 1.5)] {
                 let (size, width, height) = window(bar_width, theme.bar_height, scale);
