@@ -62,7 +62,7 @@ src/
   transfer.rs       import and export as the user runs them: pickers, questions, the report (main thread)
   logging.rs        the log file and the panic hook
   i18n.rs           message catalogs, plural rules, t()
-  test_util.rs      what the tests share: the fake platform
+  test_util.rs      what the tests share: the fake platform, the en-US locale, the screenshot and budget files, the ready-made layouts' files
   settings/         the Settings window's glue: mod.rs (opening, filling and saving the Slint state, the plain pages), window.rs (the open window and the dialogs modal to it), model.rs (pure mapping: pages, routes, choices, patches), appearance.rs, applications.rs, layout.rs (Layout manager), picker.rs, properties.rs and form.rs (a sensor's properties), welcome.rs, about.rs; accessibility.rs, dropdown.rs, screenshots.rs and contract.rs are tests
   config/           mod.rs (ConfigError), model.rs (the typed config), store.rs (load, save, atomic write, debounce, listeners), migrate.rs, patch.rs (settings patches), exchange.rs (export and import files), legacy.rs (legacy XML reading)
   sampler/          mod.rs (the sampler thread, ChangeSink), scheduler.rs (subscriptions, intervals, backoff), topics.rs (topics, changes, samples)
