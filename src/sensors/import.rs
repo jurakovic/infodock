@@ -312,12 +312,15 @@ mod tests {
     }
 
     /// Whether `value` names a path that is not the same on every PC: an environment variable,
-    /// a shell folder, or a path outside `C:\Windows\`.
+    /// a shell folder, or a path outside `C:\Windows\`. A web address is not a path.
     fn per_user(value: &str) -> bool {
-        let value = value.to_ascii_lowercase();
+        if value.contains("://") {
+            return false;
+        }
+        let value = value.to_ascii_lowercase().replace('/', "\\");
         value.contains('%')
             || value.starts_with("shell:")
-            || (value.contains(['\\', '/']) && !value.starts_with("c:\\windows\\"))
+            || (value.contains('\\') && !value.starts_with("c:\\windows\\"))
     }
 
     /// Every ready-made layout is a layout export as `export` writes it, of this version's types
