@@ -12,6 +12,8 @@ mod appearance;
 mod applications;
 #[cfg(test)]
 mod contract;
+#[cfg(test)]
+mod dropdown;
 mod form;
 mod layout;
 mod model;

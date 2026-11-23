@@ -2,7 +2,8 @@
 // and About pages, a sensor's properties, the sensor picker and the first run's welcome page.
 // Rust fills `SettingsState` from the config and handles its callbacks; controls bind to it
 // two-way, and every change is saved through a settings patch.
-import { AboutSlint, Button, ComboBox, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
+import { AboutSlint, Button, LineEdit, Palette, ScrollView, Slider, StandardListView, Switch } from "std-widgets.slint";
+import { Dropdown } from "dropdown.slint";
 import { I18n } from "i18n.slint";
 
 // One field of a sensor's properties form; see `settings/form.rs`.
@@ -133,7 +134,7 @@ global Look {
     // The window is narrower than 720 px: the controls narrow, so a setting's label keeps at
     // least 160 px for its words down to the window's minimum width.
     in-out property <bool> narrow;
-    // The width of a setting's control (ComboBox, slider, hotkey), and of the wide ones that
+    // The width of a setting's control (dropdown, slider, hotkey), and of the wide ones that
     // show font names or a form's text.
     out property <length> control-width: self.narrow ? 180px : 240px;
     out property <length> wide-control-width: self.narrow ? 200px : 280px;
@@ -680,7 +681,7 @@ component GeneralPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.general.hotkeyAction");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.general.hotkeyAction.bringToFront"),
@@ -742,7 +743,7 @@ component GeneralPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.general.clicksWhenLocked");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.general.clicksWhenLocked.always"),
@@ -772,7 +773,7 @@ component GeneralPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.general.newSensorMenu");
         help: I18n.tr("settings.general.newSensorMenu.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.general.newSensorMenu.dialog"),
@@ -797,7 +798,7 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.mode");
         help: I18n.tr("settings.bar.mode.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [I18n.tr("settings.bar.mode.docked"), I18n.tr("settings.bar.mode.floating")];
             current-index <=> SettingsState.mode;
@@ -824,7 +825,7 @@ component BarPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.bar.edge");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [I18n.tr("settings.bar.edge.top"), I18n.tr("settings.bar.edge.bottom")];
             current-index <=> SettingsState.edge;
@@ -837,7 +838,7 @@ component BarPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.bar.monitor");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: SettingsState.monitors;
             current-index <=> SettingsState.monitor;
@@ -863,7 +864,7 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.zOrder");
         help: I18n.tr("settings.bar.zOrder.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.bar.zOrder.topmost"),
@@ -970,7 +971,7 @@ component BarPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.bar.animations");
         help: I18n.tr("settings.bar.animations.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.bar.animations.auto"),
@@ -1324,7 +1325,7 @@ component AppearancePage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.appearance.theme");
         help: I18n.tr("settings.appearance.theme.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.appearance.theme.modern"),
@@ -1341,7 +1342,7 @@ component AppearancePage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.appearance.colorScheme");
         help: I18n.tr("settings.appearance.colorScheme.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.appearance.colorScheme.system"),
@@ -1359,7 +1360,7 @@ component AppearancePage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.appearance.colorMode");
         help: SettingsState.theme == 1 ? I18n.tr("settings.appearance.colorMode.classicHelp") : "";
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.appearance.colorMode.standard"),
@@ -1418,7 +1419,7 @@ component AppearancePage inherits VerticalLayout {
         label: I18n.tr("settings.appearance.material");
         help: SettingsState.material-available ? I18n.tr("settings.appearance.material.help")
             : I18n.tr("settings.appearance.material.off");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: SettingsState.materials;
             current-index <=> SettingsState.material;
@@ -1567,7 +1568,7 @@ component SensorsPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.font");
-        ComboBox {
+        Dropdown {
             width: Look.wide-control-width;
             model: SettingsState.fonts;
             current-index <=> SettingsState.sensor-font;
@@ -1580,7 +1581,7 @@ component SensorsPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.fontStyle");
-        ComboBox {
+        Dropdown {
             width: Look.wide-control-width;
             model: SettingsState.sensor-font-styles;
             current-index <=> SettingsState.sensor-font-style;
@@ -1594,7 +1595,7 @@ component SensorsPage inherits VerticalLayout {
     Row {
         label: I18n.tr("settings.sensors.inactiveMode");
         help: I18n.tr("settings.sensors.inactiveMode.help");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [
                 I18n.tr("settings.sensors.inactiveMode.opacity"),
@@ -1705,7 +1706,7 @@ component PopupsPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.font");
-        ComboBox {
+        Dropdown {
             width: Look.wide-control-width;
             model: SettingsState.fonts;
             current-index <=> SettingsState.popup-font;
@@ -1718,7 +1719,7 @@ component PopupsPage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.fontStyle");
-        ComboBox {
+        Dropdown {
             width: Look.wide-control-width;
             model: SettingsState.popup-font-styles;
             current-index <=> SettingsState.popup-font-style;
@@ -2206,7 +2207,7 @@ component WelcomePage inherits VerticalLayout {
 
     Row {
         label: I18n.tr("settings.bar.edge");
-        ComboBox {
+        Dropdown {
             width: Look.control-width;
             model: [I18n.tr("settings.bar.edge.top"), I18n.tr("settings.bar.edge.bottom")];
             current-index <=> SettingsState.edge;
@@ -2315,7 +2316,7 @@ component PropertiesPage inherits VerticalLayout {
                     SettingsState.prop-flag(row.key, self.checked);
                 }
             }
-            if row.kind == RowKinds.choice: ComboBox {
+            if row.kind == RowKinds.choice: Dropdown {
                 width: Look.wide-control-width;
                 model: row.options;
                 current-index: row.index;
@@ -2345,7 +2346,7 @@ component PropertiesPage inherits VerticalLayout {
             }
             if row.kind == RowKinds.color-mode: VerticalLayout {
                 spacing: 8px;
-                ComboBox {
+                Dropdown {
                     width: Look.wide-control-width;
                     model: row.options;
                     current-index: row.index;
@@ -2464,7 +2465,7 @@ component PickerPage inherits VerticalLayout {
             color: Palette.foreground;
         }
 
-        ComboBox {
+        Dropdown {
             width: 120px;
             model: [I18n.tr("settings.picker.before"), I18n.tr("settings.picker.after")];
             current-index <=> SettingsState.picker-after;

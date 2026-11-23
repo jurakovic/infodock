@@ -1,0 +1,340 @@
+// A dropdown: one option chosen from a list, drawn as the Fluent style's ComboBox. Its list opens
+// as WinUI's does, with the selected option over the control (under the pointer that opened it)
+// and the options before it above.
+import { Palette, ScrollView } from "std-widgets.slint";
+
+// The Fluent style's colours for a control and its list that `Palette` has no names for, light
+// or dark as the palette is.
+global Fluent {
+    out property <bool> dark: Palette.background.to-hsv().value < 0.5;
+    out property <brush> control-stroke: self.dark
+        ? @linear-gradient(180deg, #ffffff17 0%, #00000012 8.33%)
+        : @linear-gradient(180deg, #0000000f 90.58%, #00000029 100%);
+    out property <color> control-hover: self.dark ? #ffffff14 : #f9f9f980;
+    out property <color> control-pressed: self.dark ? #ffffff0a : #0000000f;
+    out property <color> control-disabled: self.dark ? #ffffff0a : #f9f9f94d;
+    out property <color> text-secondary: self.dark ? #ffffffc9 : #00000099;
+    out property <color> text-tertiary: self.dark ? #ffffff8a : #00000073;
+    out property <color> text-disabled: self.dark ? #ffffff5e : #0000005e;
+    out property <color> focus-outer: self.dark ? #ffffff : #000000e6;
+    out property <color> focus-inner: self.dark ? #000000b3 : #ffffff;
+    out property <color> list-stroke: self.dark ? #00000033 : #0000000f;
+    out property <color> list-shadow: self.dark ? #00000042 : #00000024;
+    // An option hovered or selected, and pressed.
+    out property <color> option-fill: self.dark ? #ffffff0f : #0000000a;
+    out property <color> option-pressed: self.dark ? #ffffff0a : #00000005;
+}
+
+// An option of the list, as the Fluent style's list items draw it: a subtle fill when hovered or
+// selected, and the accent pill beside the selected one.
+component DropdownOption {
+    in property <string> text;
+    in property <bool> selected;
+    in property <int> index;
+    in property <int> count;
+    callback clicked;
+
+    accessible-role: list-item;
+    accessible-label: root.text;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.selected;
+    accessible-item-index: root.index;
+    accessible-item-count: root.count;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    states [
+        pressed when touch.pressed: {
+            fill.background: root.selected ? Fluent.option-fill : Fluent.option-pressed;
+        }
+        hover when touch.has-hover: {
+            label.color: Fluent.text-secondary;
+            fill.background: root.selected ? Fluent.option-pressed : Fluent.option-fill;
+            pill.height: root.selected ? 16px : 0;
+        }
+        selected when root.selected: {
+            fill.background: Fluent.option-fill;
+            pill.height: 16px;
+        }
+    ]
+
+    fill := Rectangle {
+        width: root.width - 6px;
+        height: root.height - 4px;
+        border-radius: 4px;
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            label := Text {
+                text: root.text;
+                color: Palette.control-foreground;
+                vertical-alignment: center;
+                overflow: elide;
+                accessible-role: none;
+
+                animate color { duration: 200ms; }
+            }
+        }
+
+        pill := Rectangle {
+            x: 0;
+            y: (parent.height - self.height) / 2;
+            width: 3px;
+            height: 0;
+            border-radius: 2px;
+            background: Palette.accent-background;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Chooses one of `model`, calling `selected` as the choice moves: with Up and Down on the
+// control or in the list, the wheel once the control has the focus, and a click on an option.
+// Enter or Space opens the list and closes it again; Esc or a click elsewhere closes it.
+export component Dropdown {
+    in property <[string]> model;
+    in property <bool> enabled: true;
+    in-out property <int> current-index: 0;
+    // The selected option; empty when none is.
+    out property <string> current-value: root.current-index >= 0 ? root.model[root.current-index] : "";
+    callback selected(current-value: string);
+
+    // The list's rows are the Fluent style's list items, at most six shown at once.
+    property <length> row-height: 40px;
+    property <length> list-padding: 4px;
+    property <int> rows: min(6, root.model.length);
+    // The option the list opened on, which places it: the list stays where it opened while the
+    // keys move the selection.
+    property <int> opened-on;
+    // The first option the list shows: the one it opened on as near the list's middle as the
+    // options allow.
+    property <int> first: (root.opened-on - Math.floor((root.rows - 1) / 2)).clamp(0, max(0, root.model.length - root.rows));
+
+    function select(index: int) {
+        if !root.enabled || root.model.length == 0 {
+            return;
+        }
+        root.current-index = index;
+        root.selected(root.current-value);
+    }
+
+    function open() {
+        root.opened-on = max(0, root.current-index);
+        list.show();
+    }
+
+    min-width: max(160px, layout.min-width);
+    min-height: max(32px, layout.min-height);
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    forward-focus: scope;
+
+    accessible-role: combobox;
+    accessible-enabled: root.enabled;
+    accessible-expandable: true;
+    accessible-expanded: list.is-open;
+    accessible-value: root.current-value;
+    accessible-action-expand => {
+        root.open();
+    }
+
+    // A shorter list keeps the selection within it.
+    changed model => {
+        let kept = root.model.length == 0 ? 0 : root.current-index.clamp(0, root.model.length - 1);
+        if kept != root.current-index {
+            root.current-index = kept;
+        }
+    }
+
+    states [
+        disabled when !root.enabled: {
+            control.background: Fluent.control-disabled;
+            control.border-color: Palette.border;
+            value.color: Fluent.text-disabled;
+            icon.colorize: Fluent.text-disabled;
+        }
+        pressed when touch.pressed: {
+            control.background: Fluent.control-pressed;
+            control.border-color: Palette.border;
+            value.color: Fluent.text-secondary;
+            icon.colorize: Fluent.text-tertiary;
+        }
+        hover when touch.has-hover: {
+            control.background: Fluent.control-hover;
+        }
+    ]
+
+    control := Rectangle {
+        border-radius: 3px;
+        border-width: 1px;
+        border-color: Fluent.control-stroke;
+        background: Palette.control-background;
+
+        animate border-color { duration: 200ms; }
+
+        layout := HorizontalLayout {
+            padding-left: 11px;
+            padding-right: 11px;
+            spacing: 8px;
+
+            value := Text {
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                text: root.current-value;
+                color: Palette.control-foreground;
+                overflow: elide;
+                accessible-role: none;
+            }
+
+            icon := Image {
+                width: 12px;
+                source: @image-url("icons/chevron-down.svg");
+                colorize: Fluent.text-secondary;
+                accessible-role: none;
+
+                animate colorize { duration: 150ms; }
+            }
+        }
+    }
+
+    if (scope.has-focus || list.is-open) && root.enabled: Rectangle {
+        border-radius: control.border-radius;
+        border-width: 2px;
+        border-color: Fluent.focus-outer;
+
+        Rectangle {
+            x: 2px;
+            y: 2px;
+            width: parent.width - 4px;
+            height: parent.height - 4px;
+            border-radius: 1px;
+            border-width: 1px;
+            border-color: Fluent.focus-inner;
+        }
+    }
+
+    scope := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.UpArrow {
+                root.select(max(root.current-index - 1, 0));
+                return accept;
+            }
+            if event.text == Key.DownArrow {
+                root.select(min(root.current-index + 1, root.model.length - 1));
+                return accept;
+            }
+            if event.text == Key.Return || event.text == " " {
+                root.open();
+                return accept;
+            }
+            reject
+        }
+
+        touch := TouchArea {
+            enabled: root.enabled;
+            clicked => {
+                scope.focus();
+                root.open();
+            }
+            // The wheel moves the selection once the control has the focus, so scrolling the
+            // page over it does not.
+            scroll-event(event) => {
+                if !scope.has-focus {
+                    return reject;
+                }
+                if event.delta-y < -2px {
+                    root.select(min(root.current-index + 1, root.model.length - 1));
+                    return accept;
+                }
+                if event.delta-y > 2px {
+                    root.select(max(root.current-index - 1, 0));
+                    return accept;
+                }
+                reject
+            }
+        }
+    }
+
+    // The option it opened on lies over the control, centred on it. Slint keeps a popup inside
+    // the window, so near the window's top or bottom the list moves in and that option with it.
+    list := PopupWindow {
+        x: 0;
+        y: (root.height - root.row-height) / 2 - root.list-padding - (root.opened-on - root.first) * root.row-height;
+        width: root.width;
+        height: root.rows * root.row-height + 2 * root.list-padding;
+        close-policy: close-on-click-outside;
+        forward-focus: keys;
+
+        keys := FocusScope {
+            // The selection as the keys move it, kept among the rows shown.
+            property <int> index: root.current-index;
+            changed index => {
+                let top = -options.content-y / root.row-height;
+                if self.index < top {
+                    options.content-y = -self.index * root.row-height;
+                } else if self.index > top + root.rows - 1 {
+                    options.content-y = -(self.index - root.rows + 1) * root.row-height;
+                }
+            }
+            key-pressed(event) => {
+                if event.text == Key.UpArrow {
+                    root.select(max(root.current-index - 1, 0));
+                    return accept;
+                }
+                if event.text == Key.DownArrow {
+                    root.select(min(root.current-index + 1, root.model.length - 1));
+                    return accept;
+                }
+                if event.text == Key.Return || event.text == " " || event.text == Key.Escape {
+                    list.close();
+                    return accept;
+                }
+                reject
+            }
+
+            // The list's flyout, as the Fluent style's menus draw it.
+            Rectangle {
+                border-radius: 7px;
+                background: Palette.alternate-background;
+                drop-shadow-blur: 16px;
+                drop-shadow-offset-y: 8px;
+                drop-shadow-color: Fluent.list-shadow;
+
+                options := ScrollView {
+                    content-y: -root.first * root.row-height;
+
+                    VerticalLayout {
+                        alignment: start;
+                        padding: root.list-padding;
+
+                        for text[index] in root.model: DropdownOption {
+                            height: root.row-height;
+                            text: text;
+                            selected: index == root.current-index;
+                            index: index;
+                            count: root.model.length;
+                            clicked => {
+                                root.select(index);
+                                list.close();
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    border-radius: parent.border-radius;
+                    border-width: 1px;
+                    border-color: Fluent.list-stroke;
+                }
+            }
+        }
+    }
+}

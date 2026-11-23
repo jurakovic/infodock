@@ -399,6 +399,41 @@ fn render_settings_pages() {
     assert_eq!(left(), ["network-graph", "memory-meter", "cpu-graph"]);
     nav(general);
 
+    // A dropdown's list opens with the selected option over the control and the options before
+    // it above: General's *Hotkey action* on its first option, Bar's *Z-order* on its last, and
+    // Sensors' *Font style*, which scrolls, on its last but one. Each is opened by a click, as
+    // the user opens it, and closed with Esc.
+    let open_list = |label: &str, height: u32| {
+        window.set_size(PhysicalSize::new(width, height));
+        settle();
+        let (x, y, _, h) = bounds(&ui, AccessibleRole::Combobox, label);
+        click_at((x + 40.0, y + h / 2.0));
+        let control = ElementHandle::find_by_accessible_label(&ui, label)
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Combobox));
+        let expanded = control.and_then(|c| c.accessible_expanded());
+        assert_eq!(expanded, Some(true), "{label}: the list is open");
+    };
+    open_list(&t("settings.general.hotkeyAction"), height);
+    render("settings-dropdown-first");
+    key(Key::Escape.into());
+    nav(bar);
+    open_list(&t("settings.bar.zOrder"), height);
+    render("settings-dropdown-later");
+    key(Key::Escape.into());
+    nav(sensors);
+    let font_style = t("settings.fontStyle");
+    open_list(&font_style, 1400);
+    (0..5).for_each(|_| key(Key::DownArrow.into()));
+    key(Key::Escape.into());
+    open_list(&font_style, 1400);
+    render_sized("settings-dropdown-scrolled", 1400);
+    key(Key::Escape.into());
+    (0..5).for_each(|_| key(Key::UpArrow.into()));
+    settle();
+    assert_eq!(app.store.get().settings.sensors.font_style, None);
+    window.set_size(PhysicalSize::new(width, height));
+    nav(general);
+
     // Appearance: a click on a gallery tile chooses its skin, and once the gallery has the
     // focus, the arrow keys move on.
     let refill = || {
