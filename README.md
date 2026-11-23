@@ -50,7 +50,7 @@ The version is computed from the latest tag: `master` gives the next release (`1
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE), except `ui/dropdown.slint`, which adapts the Fluent style's `ComboBox` from Slint and stays under Slint's licences, named in its header.
 
 The Settings window is built with [Slint](https://slint.dev), used under the Slint Royalty-free License 2.0:
 
