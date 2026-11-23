@@ -66,6 +66,28 @@ pub fn record_budget(
     std::fs::write(dir.join(format!("{id}.json")), record.to_string()).expect("budget file");
 }
 
+/// The ready-made layouts in `layouts/` by name (`minimal` for `minimal.infodock.json`), in
+/// name order. Every file there must be one.
+pub fn ready_made_layouts() -> Vec<(String, PathBuf)> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("layouts");
+    let suffix = format!(".{}", crate::config::exchange::EXTENSION);
+    let mut layouts: Vec<(String, PathBuf)> = std::fs::read_dir(dir)
+        .expect("layouts/")
+        .map(|entry| {
+            let path = entry.expect("a file in layouts/").path();
+            let file = path.file_name().unwrap_or_default().to_string_lossy();
+            let name = file
+                .strip_suffix(&suffix)
+                .unwrap_or_else(|| panic!("layouts/{file} is not a layout file ({suffix})"))
+                .to_owned();
+            (name, path)
+        })
+        .collect();
+    layouts.sort();
+    assert!(!layouts.is_empty(), "no layouts in layouts/");
+    layouts
+}
+
 /// The en-US locale, for contexts in tests.
 pub fn en_us() -> &'static Locale {
     static EN_US: std::sync::LazyLock<Locale> = std::sync::LazyLock::new(Locale::en_us);

@@ -1,0 +1,42 @@
+{
+  "layout": {
+    "center": [
+      {
+        "id": "s_fn0ir",
+        "props": {},
+        "type": "time"
+      },
+      {
+        "id": "s_vmqjw",
+        "props": {},
+        "type": "date"
+      }
+    ],
+    "left": [
+      {
+        "id": "s_fqe1n",
+        "props": {},
+        "type": "cpu-meter"
+      },
+      {
+        "id": "s_uvyga",
+        "props": {},
+        "type": "memory-meter"
+      }
+    ],
+    "right": [
+      {
+        "id": "s_3snpl",
+        "props": {},
+        "type": "network-graph"
+      },
+      {
+        "id": "s_ev40p",
+        "props": {},
+        "type": "recycle-bin"
+      }
+    ]
+  },
+  "schema": 1,
+  "state": {}
+}

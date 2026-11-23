@@ -41,6 +41,7 @@ i18n/                message catalogs: en.json, embedded in the binary
 assets/              embedded artwork: icons/*.svg (the sensors' icons), logo.svg, sounds/chime.wav, third-party.tsv (the About page's crate list)
 icons/               the app and tray icons, the README logos and installer/ images, each SVG beside its renders
 examples/icons.rs    renders the .ico, PNG and BMP files of icons/ from their SVGs
+layouts/             ready-made layouts to import, each a layout export (<name>.infodock.json)
 resources/           the Windows application manifest
 tests/fixtures/      legacy XML layouts (legacy/), a skin pack (skins/)
 .github/workflows/   ci.yml, publish.yml
@@ -396,6 +397,8 @@ Settings runs in the same process and calls the core directly (`sensors/ops.rs`,
 
 `transfer.rs` runs it for the user: the picker, the question (*Replace the layout*, *Add to the layout*, with the number of sensors, and the network paths the sensors would open), the report as a toast or a dialog of at most 15 lines. A file with no sensors this version can show asks nothing; one with more than 500 sensors is refused; names and values are cut to 80 characters. JSON files may be UTF-8 or UTF-16. One import or export runs at a time.
 
+**Ready-made layouts.** `layouts/` holds layout exports to start a bar from with *Import layout…*: `minimal`, `system-monitor`, `laptop`, `launcher`, `clock`, and `showcase`, with one sensor of every type but Folder Menu; a release does not ship them. So that one file fits every PC, they hold only this version's types, no machine-derived props (the import fills them from the machine), no network adapter (Automatic finds this PC's) and no per-user path: no Folder Menu, and Shortcuts to system tools by their full paths under `C:\Windows\`, since a bare program name shows the generic icon. `sensors/import.rs`'s tests import each one on the fake platform: it must be as an export writes it and import with nothing skipped and no warnings, its sensors in the zones it names.
+
 ### Legacy import
 
 `config/legacy.rs` reads the XML; each sensor type converts its own properties (`convert_legacy`, `sensors/legacy.rs`), then the props go through the import above.
@@ -527,7 +530,7 @@ All artwork is Infodock's own, except the Settings navigation's icons (`ui/icons
 
 | Level | What | How |
 |---|---|---|
-| Unit | layout, the move index, hint and popup placement, focus moves, resizing; formatters, colours, tint; schemas: validation, defaults, storage rules; each sensor's hint and drawing (against the recording canvas with fixed text metrics), its legacy conversion, and creation from its defaults and from every option of its lists; dates against fixed locales; CPU, network and battery arithmetic; geometry; config migrations, patches, exchange and the legacy import; Settings' mapping and every schema's form; the i18n keys | `cargo test`, on Linux and Windows |
+| Unit | layout, the move index, hint and popup placement, focus moves, resizing; formatters, colours, tint; schemas: validation, defaults, storage rules; each sensor's hint and drawing (against the recording canvas with fixed text metrics), its legacy conversion, and creation from its defaults and from every option of its lists; dates against fixed locales; CPU, network and battery arithmetic; geometry; config migrations, patches, exchange, the legacy import and the ready-made layouts; Settings' mapping and every schema's form; the i18n keys | `cargo test`, on Linux and Windows |
 | Windows integration | providers on a real machine, locale data, folder listings, links, shell icons, skin packs, the drive watch and the Recycle Bin read drive by drive; the Direct2D renderer drawing the bar and each sensor type to PNG | `cargo test -- --ignored` on Windows; the bar's renders with `cargo test render_bar -- --ignored` |
 | Settings | every page rendered offscreen to PNG and driven with clicks and keys that find their controls by accessible role and name; the accessible names and Tab order; where a dropdown's list opens and how the mouse and keys choose in it; the contract with the window | `cargo test`, the renders with `cargo test render_settings_pages -- --ignored` |
 | Budgets | see [Budgets](#budgets) | `cargo test budget_ -- --ignored --test-threads=1` on Windows; `measure-memory.ps1` |

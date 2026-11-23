@@ -19,6 +19,7 @@ ui/                  Slint UI: the Settings window (`.slint`, compiled by build.
 i18n/                message catalogs (`en.json`)
 icons/               app and tray icons, the README logo and the installer's images (`icons/installer`); SVG sources beside their renders
 examples/            `icons.rs`: renders the artwork's `.ico`, PNG and BMP files from the SVGs
+layouts/             ready-made layouts for Import layout… (`<name>.infodock.json`)
 assets/              artwork embedded in the binary (logo, icons)
 resources/           Windows application manifest
 .github/scripts/     CI helpers (memory, hotkey, Show desktop, drive release and installer checks)

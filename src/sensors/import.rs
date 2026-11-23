@@ -120,8 +120,9 @@ mod tests {
     use crate::config::exchange::{SkipReason, Skipped};
     use crate::config::model::{LegacyUnsupported, Zone};
     use crate::sensors::registry::registry;
+    use crate::sensors::schema::FieldKind;
     use crate::sensors::test_support::Clock;
-    use crate::test_util::NO_PLATFORM;
+    use crate::test_util::{FakePlatform, NO_PLATFORM, ready_made_layouts};
 
     static CTX: DefaultsCtx = DefaultsCtx {
         platform: &NO_PLATFORM,
@@ -308,5 +309,111 @@ mod tests {
         let use24h: Vec<&Value> = c.layout.left.iter().map(|s| &s.props["use24h"]).collect();
         assert_eq!(use24h, [&json!(false), &json!(true), &json!(false)]);
         assert_eq!(report.warnings.len(), 1);
+    }
+
+    /// Whether `value` names a path that is not the same on every PC: an environment variable,
+    /// a shell folder, or a path outside `C:\Windows\`.
+    fn per_user(value: &str) -> bool {
+        let value = value.to_ascii_lowercase();
+        value.contains('%')
+            || value.starts_with("shell:")
+            || (value.contains(['\\', '/']) && !value.starts_with("c:\\windows\\"))
+    }
+
+    /// Every ready-made layout is a layout export as `export` writes it, of this version's types
+    /// only, without the props the import fills from the machine (the drive, the hour cycle, the
+    /// network adapter) and without per-user paths, so one file fits every PC; it imports with
+    /// nothing skipped and no warnings, its sensors in the zones it names with its props as
+    /// they are and the machine's for the rest.
+    #[test]
+    fn ready_made_layouts_import_cleanly() {
+        use crate::config::exchange::{ExportScope, export, read};
+        use crate::platform::{DriveKind, Volume};
+
+        // A PC whose first drive is D:\ and whose clock has 12 hours (en-US).
+        let platform =
+            FakePlatform::new().with_volumes(vec![Volume::new("D:\\", DriveKind::Fixed, "Data")]);
+        let ctx = DefaultsCtx {
+            platform: &platform,
+        };
+        for (name, path) in ready_made_layouts() {
+            let text = std::fs::read_to_string(&path)
+                .expect("a layout file")
+                .replace("\r\n", "\n");
+            let file: Value = serde_json::from_str(&text).expect("JSON");
+            let layout: Layout = serde_json::from_value(file["layout"].clone()).expect("a layout");
+            let exported = Config {
+                layout: layout.clone(),
+                ..Config::default()
+            };
+            assert_eq!(
+                export(&exported, ExportScope::Layout).expect("exported"),
+                text,
+                "{name}: not as an export of the layout writes it"
+            );
+
+            let incoming = read(&path).expect("read");
+            assert!(incoming.unsupported.is_empty(), "{name}: legacy sensors");
+            for sensor in &incoming.sensors {
+                let kind = &sensor.kind;
+                let ty = registry()
+                    .get(kind)
+                    .unwrap_or_else(|| panic!("{name}: {kind} is not a type of this version"));
+                assert_ne!(kind, "folder-menu", "{name}: its folder is the user's");
+                for field in ty.schema() {
+                    let machine =
+                        field.machine_default || matches!(field.kind, FieldKind::NetAdapter);
+                    assert!(
+                        !(machine && sensor.props.contains_key(field.key)),
+                        "{name}: {kind} has {}, which the import fills from the machine",
+                        field.key
+                    );
+                }
+                for value in sensor.props.values().filter_map(Value::as_str) {
+                    assert!(!per_user(value), "{name}: {kind} has the path {value}");
+                }
+            }
+
+            let mut config = Config::first_run("1.0.0");
+            let prepared = prepare(registry(), &ctx, incoming);
+            let report = import(&mut config, prepared, ImportMode::Replace);
+            assert_eq!(report.added, layout.all().count(), "{name}");
+            assert!(report.skipped.is_empty(), "{name}: {:?}", report.skipped);
+            assert!(report.warnings.is_empty(), "{name}: {:?}", report.warnings);
+            for zone in [Zone::Left, Zone::Center, Zone::Right] {
+                assert_eq!(kinds(&config, zone), kinds(&exported, zone), "{name}");
+                for (imported, sensor) in config.layout.zone(zone).iter().zip(layout.zone(zone)) {
+                    let ty = registry().get(&sensor.kind).expect("a type");
+                    let machine = ty.machine_defaults(&ctx);
+                    let mut expected = sensor.props.clone();
+                    for field in ty.schema().iter().filter(|f| f.machine_default) {
+                        let value = machine.get(field.key).expect("the machine's value");
+                        expected.insert(field.key.to_owned(), value.clone());
+                    }
+                    assert_eq!(imported.props, expected, "{name}: {}", sensor.kind);
+                }
+            }
+        }
+    }
+
+    /// The showcase layout has one sensor of every type but Folder Menu, whose folder would be
+    /// the user's.
+    #[test]
+    fn the_showcase_has_every_type() {
+        let (_, path) = ready_made_layouts()
+            .into_iter()
+            .find(|(name, _)| name == "showcase")
+            .expect("the showcase");
+        let incoming = crate::config::exchange::read(&path).expect("read");
+        let mut kinds: Vec<&str> = incoming.sensors.iter().map(|s| s.kind.as_str()).collect();
+        kinds.sort_unstable();
+        let mut types: Vec<&str> = registry()
+            .types()
+            .iter()
+            .map(|ty| ty.id())
+            .filter(|&id| id != "folder-menu")
+            .collect();
+        types.sort_unstable();
+        assert_eq!(kinds, types);
     }
 }

@@ -1,0 +1,20 @@
+{
+  "layout": {
+    "center": [],
+    "left": [],
+    "right": [
+      {
+        "id": "s_t32cj",
+        "props": {},
+        "type": "date"
+      },
+      {
+        "id": "s_eihdo",
+        "props": {},
+        "type": "time"
+      }
+    ]
+  },
+  "schema": 1,
+  "state": {}
+}

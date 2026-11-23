@@ -1,0 +1,72 @@
+{
+  "layout": {
+    "center": [],
+    "left": [
+      {
+        "id": "s_yvz0l",
+        "props": {},
+        "type": "start-menu"
+      },
+      {
+        "id": "s_vxgzz",
+        "props": {
+          "target": "C:\\Windows\\System32\\Taskmgr.exe",
+          "title": "Task Manager"
+        },
+        "type": "shortcut"
+      },
+      {
+        "id": "s_cpggz",
+        "props": {
+          "target": "C:\\Windows\\System32\\cmd.exe",
+          "title": "Command Prompt"
+        },
+        "type": "shortcut"
+      },
+      {
+        "id": "s_ssop1",
+        "props": {
+          "title": "Settings",
+          "url": "ms-settings:"
+        },
+        "type": "shortcut"
+      },
+      {
+        "id": "s_0p5bg",
+        "props": {},
+        "type": "disk"
+      },
+      {
+        "id": "s_kny81",
+        "props": {},
+        "type": "recycle-bin"
+      }
+    ],
+    "right": [
+      {
+        "id": "s_6oqbc",
+        "props": {},
+        "type": "date"
+      },
+      {
+        "id": "s_wwcfa",
+        "props": {},
+        "type": "time"
+      },
+      {
+        "id": "s_uuarw",
+        "props": {},
+        "type": "eject-usb"
+      },
+      {
+        "id": "s_htvec",
+        "props": {
+          "mode": "shutDown"
+        },
+        "type": "power"
+      }
+    ]
+  },
+  "schema": 1,
+  "state": {}
+}

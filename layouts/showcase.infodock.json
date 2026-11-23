@@ -1,0 +1,130 @@
+{
+  "layout": {
+    "center": [
+      {
+        "id": "s_9zhex",
+        "props": {},
+        "type": "start-menu"
+      },
+      {
+        "id": "s_0ci47",
+        "props": {
+          "target": "C:\\Windows\\System32\\Taskmgr.exe",
+          "title": "Task Manager"
+        },
+        "type": "shortcut"
+      },
+      {
+        "id": "s_7jant",
+        "props": {},
+        "type": "disk"
+      },
+      {
+        "id": "s_nxl6w",
+        "props": {},
+        "type": "recycle-bin"
+      },
+      {
+        "id": "s_xu30h",
+        "props": {},
+        "type": "eject-usb"
+      },
+      {
+        "id": "s_fpgja",
+        "props": {},
+        "type": "power"
+      }
+    ],
+    "left": [
+      {
+        "id": "s_wdwey",
+        "props": {},
+        "type": "text"
+      },
+      {
+        "id": "s_c89bw",
+        "props": {},
+        "type": "image"
+      },
+      {
+        "id": "s_qwhml",
+        "props": {},
+        "type": "spacer"
+      },
+      {
+        "id": "s_ynkne",
+        "props": {},
+        "type": "cpu-meter"
+      },
+      {
+        "id": "s_mhypp",
+        "props": {},
+        "type": "cpu-graph"
+      },
+      {
+        "id": "s_lyuxf",
+        "props": {},
+        "type": "cpu-graph-dual"
+      },
+      {
+        "id": "s_jtc08",
+        "props": {},
+        "type": "memory-meter"
+      },
+      {
+        "id": "s_zw06b",
+        "props": {},
+        "type": "memory-graph"
+      },
+      {
+        "id": "s_okeo1",
+        "props": {},
+        "type": "swap-meter"
+      },
+      {
+        "id": "s_bwqi7",
+        "props": {},
+        "type": "swap-graph"
+      },
+      {
+        "id": "s_ya8j1",
+        "props": {},
+        "type": "disk-meter"
+      },
+      {
+        "id": "s_eq8g2",
+        "props": {},
+        "type": "network-graph"
+      }
+    ],
+    "right": [
+      {
+        "id": "s_s1ffk",
+        "props": {},
+        "type": "battery"
+      },
+      {
+        "id": "s_ctyp2",
+        "props": {},
+        "type": "wifi"
+      },
+      {
+        "id": "s_6dsu8",
+        "props": {},
+        "type": "uptime"
+      },
+      {
+        "id": "s_2qwdg",
+        "props": {},
+        "type": "date"
+      },
+      {
+        "id": "s_7i0v3",
+        "props": {},
+        "type": "time"
+      }
+    ]
+  },
+  "schema": 1,
+  "state": {}
+}

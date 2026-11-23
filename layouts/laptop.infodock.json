@@ -1,0 +1,54 @@
+{
+  "layout": {
+    "center": [
+      {
+        "id": "s_qd9m3",
+        "props": {},
+        "type": "date"
+      },
+      {
+        "id": "s_vbwka",
+        "props": {},
+        "type": "time"
+      }
+    ],
+    "left": [
+      {
+        "id": "s_pd31i",
+        "props": {},
+        "type": "battery"
+      },
+      {
+        "id": "s_3fp3p",
+        "props": {},
+        "type": "wifi"
+      },
+      {
+        "id": "s_djnsu",
+        "props": {},
+        "type": "cpu-meter"
+      },
+      {
+        "id": "s_bgzco",
+        "props": {},
+        "type": "memory-meter"
+      }
+    ],
+    "right": [
+      {
+        "id": "s_8348n",
+        "props": {},
+        "type": "eject-usb"
+      },
+      {
+        "id": "s_cwkop",
+        "props": {
+          "mode": "shutDown"
+        },
+        "type": "power"
+      }
+    ]
+  },
+  "schema": 1,
+  "state": {}
+}

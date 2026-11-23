@@ -1,0 +1,47 @@
+{
+  "layout": {
+    "center": [
+      {
+        "id": "s_du00v",
+        "props": {},
+        "type": "network-graph"
+      }
+    ],
+    "left": [
+      {
+        "id": "s_z04ft",
+        "props": {},
+        "type": "cpu-graph-dual"
+      },
+      {
+        "id": "s_rie94",
+        "props": {},
+        "type": "memory-graph"
+      },
+      {
+        "id": "s_yz45c",
+        "props": {},
+        "type": "swap-meter"
+      }
+    ],
+    "right": [
+      {
+        "id": "s_rombm",
+        "props": {},
+        "type": "disk-meter"
+      },
+      {
+        "id": "s_acf0w",
+        "props": {},
+        "type": "uptime"
+      },
+      {
+        "id": "s_lo0l4",
+        "props": {},
+        "type": "time"
+      }
+    ]
+  },
+  "schema": 1,
+  "state": {}
+}
