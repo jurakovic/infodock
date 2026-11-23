@@ -567,6 +567,7 @@ From Linux, `cargo check-win` runs clippy for the `x86_64-pc-windows-msvc` targe
 3. Its strings in `i18n/en.json`; its icon, if any, in `assets/icons/`.
 4. A provider and topic in `sampler/topics.rs` and `providers/`, with a `Platform` reading and its Windows implementation, if it needs new system data.
 5. Tests with the `Harness`: its hint, its drawing, creation from its defaults and every option, its legacy conversion. The registry's tests and the Settings form tests then cover it.
+6. A sensor of it in `layouts/showcase.infodock.json`, as an export writes it, with no machine-derived props and no per-user path: `sensors/import.rs`'s tests require one sensor of every type there but Folder Menu, whose folder is the user's.
 
 ## Known limitations
 
