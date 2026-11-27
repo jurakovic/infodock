@@ -52,8 +52,11 @@ Cloud sessions run on Linux. `check-win` compiles every `#[cfg(windows)]` path w
 
 ## Workflow
 
-- Commit straight to `master`, one logical change per commit, and **push after every commit**.
-- Check CI once per batch of commits; if it is red, fixing it comes before anything else. CI runs only when build inputs change (paths in `ci.yml`); docs-only commits do not trigger it.
+- **Each change on a branch of its own**, from the latest `master` and named for what it does (`feat/sensor-icons`, `fix/busy-drive-icon`, `chore/…`, `docs/…`): one logical change per commit, and **push the branch after every commit** (`git push origin <branch>`).
+- **A fix to a commit that isn't on `master` yet is a fixup of it**, not a commit of its own: `git commit --fixup=<sha>`, its code and docs together. A message to correct gets an `amend!` commit: `git commit --allow-empty -m "amend! <the commit's subject>" -m "<the whole new message>"`. Don't rewrite the pushed branch before it's done.
+- **When the branch is done**, fold the fixups into their commits, `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --committer-date-is-author-date <the commit the branch started from>`, check that the tree didn't change (`git diff <the branch before> HEAD` is empty), force-push the branch (`git push --force-with-lease origin <branch>`) and fast-forward `master` to it (`git push origin <branch>:master`). The branch stays. Nothing else moves `master`: no merge commits, no rebases of it, no force-push. So each commit on `master` is one whole change, its code, tests and docs together.
+- A fix to a commit already on `master` is a commit of its own, on a branch of its own like any change.
+- Check CI once per batch of commits; if it is red, fixing it comes before anything else. CI runs on pushes to `master` and on pull requests, not on other branches, and only when build inputs change (paths in `ci.yml`); docs-only commits do not trigger it.
 - End commit messages with the `Co-Authored-By` trailer the session provides.
 - Never tag, release or change the version in `Cargo.toml` (it stays `0.0.0`): the user releases by running the Publish workflow (`INTERNALS.md`, Building and releasing).
 
